@@ -1,0 +1,23 @@
+[Instruction] Give the list of U.S. states bordering Canada
+[Answer] OK, here is the list of U.S. states located on the border with Canada:
+- Alaska
+- Michigan
+- Maine
+- Minnesota
+- Montana
+- New York
+- Washington
+- North Dakota
+- Ohio
+- Vermont
+- New Hampshire
+- Idaho
+- Pennsylvania
+[Instruction] Write a paragraph about "functional analysis"
+[Answer] OK, here is a paragraph on the topic of functional analysis:
+Functional analysis is a branch of mathematical analysis, the core of which is formed by the study of vector spaces endowed with some kind of limit-related structure (for example, inner product, norm, or topology) and the linear functions defined on these spaces and suitably respecting these structures. The historical roots of functional analysis lie in the study of spaces of functions and the formulation of properties of transformations of functions such as the Fourier transform as transformations defining, for example, continuous or unitary operators between function spaces. This point of view turned out to be particularly useful for the study of differential and integral equations.
+[Instruction] I am starting a new dog walking business. Can you help me find 2 possible names for the business?
+[Answer] OK, here are two possible names for a new dog walking business:
+The first option is "Paws on Patrol", and the second option is "The Dog Whisperer".
+[Instruction] {}
+[Answer]
