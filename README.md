@@ -1,14 +1,3 @@
-# Transformer LM 
+# mlx-examples
 
-This is an example of a decoder-only Transformer LM. The only dependency is
-MLX. 
-
-Run the example on the GPU with:
-
-```
-python main.py --gpu
-```
-
-By default the dataset is the [PTB corpus](https://paperswithcode.com/dataset/penn-treebank). Choose a different dataset with the `--dataset` option.
-
-To run the PyTorch, Jax or TensorFlowexamples install the respective framework.
+Examples using the MLX framework.
