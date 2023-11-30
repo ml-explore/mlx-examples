@@ -5,6 +5,7 @@ import regex
 
 class Tokenizer:
     """A simple port of CLIPTokenizer from https://github.com/huggingface/transformers/ ."""
+
     def __init__(self, bpe_ranks, vocab):
         self.bpe_ranks = bpe_ranks
         self.vocab = vocab
@@ -46,7 +47,9 @@ class Tokenizer:
         #
         # Ported from https://github.com/huggingface/transformers/blob/main/src/transformers/models/clip/tokenization_clip.py
         while unique_bigrams:
-            bigram = min(unique_bigrams, key=lambda pair: self.bpe_ranks.get(pair, float("inf")))
+            bigram = min(
+                unique_bigrams, key=lambda pair: self.bpe_ranks.get(pair, float("inf"))
+            )
             if bigram not in self.bpe_ranks:
                 break
 

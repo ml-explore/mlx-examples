@@ -51,7 +51,9 @@ class SimpleEulerSampler:
 
     def sample_prior(self, shape, dtype=mx.float32, key=None):
         noise = mx.random.normal(shape, key=key)
-        return (noise * self._sigmas[-1] * (self._sigmas[-1].square() + 1).rsqrt()).astype(dtype)
+        return (
+            noise * self._sigmas[-1] * (self._sigmas[-1].square() + 1).rsqrt()
+        ).astype(dtype)
 
     def sigmas(self, t):
         return _interp(self._sigmas, t)
