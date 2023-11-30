@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 from .config import DiffusionConfig
 
 import mlx.core as mx
