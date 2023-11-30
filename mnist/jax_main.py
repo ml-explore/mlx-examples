@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 import jax
 import jax.numpy as jnp
 import functools

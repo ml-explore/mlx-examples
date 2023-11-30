@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 import base64
 import gzip
 from dataclasses import dataclass
