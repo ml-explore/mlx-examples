@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 """
 Code to preprocess the WikiSQL dataset adapted from
 https://github.com/salesforce/WikiSQL and

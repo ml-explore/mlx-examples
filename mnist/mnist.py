@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 import gzip
 import numpy as np
 import os

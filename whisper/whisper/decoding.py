@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 import mlx.core as mx
