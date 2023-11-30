@@ -73,8 +73,7 @@ class StableDiffusion:
 
         # Create the latent variables
         x_T = self.sampler.sample_prior(
-            (n_images, *latent_size, self.autoencoder.latent_channels),
-            dtype=self.dtype
+            (n_images, *latent_size, self.autoencoder.latent_channels), dtype=self.dtype
         )
 
         # Perform the denoising loop
