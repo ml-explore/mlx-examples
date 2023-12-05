@@ -12,7 +12,7 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Next, download the model and tokenizer.
+Next, download the model and tokenizer:
 
 ```
 curl -O https://files.mistral-7b-v0-1.mistral.ai/mistral-7B-v0.1.tar
@@ -22,16 +22,16 @@ tar -xf mistral-7B-v0.1.tar
 Then, convert the weights with:
 
 ```
-python convert.py <path_to_torch_weights> mlx_mistral_weights.npz
+python convert.py
 ```
 
 ### Run
 
-Once you've converted the weights to MLX format, you can interact with the
-Mistral model:
+Once you've converted the weights to MLX format, you can generate text with
+the Mistral model:
 
 ```
-python mistral.py mlx_mistral.npz tokenizer.model "hello"
+python mistral.py --prompt "It is a truth universally acknowledged,"  --temp 0
 ```
 
 Run `python mistral.py --help` for more details.
