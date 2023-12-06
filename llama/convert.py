@@ -12,8 +12,7 @@ def map_torch_to_mlx(key, value):
         key = "embedding.weight"
 
     elif "norm" in key:
-        key = key.replace("attention_norm", "norm1").replace(
-            "ffn_norm", "norm2")
+        key = key.replace("attention_norm", "norm1").replace("ffn_norm", "norm2")
 
     elif "wq" in key or "wk" in key or "wv" in key or "wo" in key:
         key = key.replace("wq", "query_proj")
@@ -33,12 +32,16 @@ def map_torch_to_mlx(key, value):
     elif "rope" in key:
         return None, None
 
-    return key, value.numpy() if value.dtype != torch.bfloat16 else value.to(torch.float32).numpy()
+    return (
+        key,
+        value.numpy()
+        if value.dtype != torch.bfloat16
+        else value.to(torch.float32).numpy(),
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Convert Llama weights to MLX")
+    parser = argparse.ArgumentParser(description="Convert Llama weights to MLX")
     parser.add_argument("torch_weights")
     parser.add_argument("output_file")
     args = parser.parse_args()
