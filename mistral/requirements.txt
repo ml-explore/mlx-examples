@@ -1,3 +1,4 @@
 mlx
 sentencepiece
 torch
+numpy
