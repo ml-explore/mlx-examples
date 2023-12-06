@@ -300,7 +300,7 @@ def transcribe(
                     seek += last_timestamp_pos * input_stride
             else:
                 duration = segment_duration
-                timestamps = tokens[timestamp_tokens.nonzero().flatten()]
+                timestamps = tokens[timestamp_tokens.nonzero()[0]]
                 if (
                     len(timestamps) > 0
                     and timestamps[-1].item() != tokenizer.timestamp_begin
