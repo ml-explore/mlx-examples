@@ -32,7 +32,7 @@ Once you've converted the weights to MLX format, you can interact with the
 LLaMA model:
 
 ```
-python llama.py mlx_llama.npz tokenizer.model "hello"
+python llama.py mlx_llama_weights.npz <path_to_tokenizer.model> "hello"
 ```
 
 Run `python llama.py --help` for more details.
