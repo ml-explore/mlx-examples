@@ -26,7 +26,7 @@ You can install all of the above with the `requirements.txt` as follows:
 Usage
 ------
 
-Although each component in this repository can be used by itsself, the fastest
+Although each component in this repository can be used by itself, the fastest
 way to get started is by using the `StableDiffusion` class from the `diffusion`
 module.
 
