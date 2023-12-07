@@ -51,7 +51,6 @@ To compute test set perplexity use
 ```
 python lora.py --model mlx_llama_7B.npz \
                --tokenizer tokenizer.model \
-               --data data \
                --test 
 ```
 
