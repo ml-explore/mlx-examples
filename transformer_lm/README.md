@@ -11,4 +11,4 @@ python main.py --gpu
 
 By default the dataset is the [PTB corpus](https://paperswithcode.com/dataset/penn-treebank). Choose a different dataset with the `--dataset` option.
 
-To run the PyTorch, Jax or TensorFlowexamples install the respective framework.
+To run the PyTorch, Jax or TensorFlow examples install the respective framework.
