@@ -1,3 +1,4 @@
+mlx
 numba
 numpy
 torch
