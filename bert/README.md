@@ -1,20 +1,10 @@
 # mlxbert
 
-A BERT implementation in Apple's new MLX framework.
+An implementation of BERT [(Devlin, et al., 2019)](https://aclanthology.org/N19-1423/) within mlx.
 
-## Dependency Installation
+## Downloading and Converting Weights
 
-```sh
-poetry install --no-root
-```
-
-If you don't want to do that, simply make sure you have the following dependencies installed:
-
-- `mlx`
-- `transformers`
-- `numpy`
-
-## Download and Convert
+The `convert.py` script relies on `transformers` to download the weights, and exports them as a single `.npz` file.
 
 ```
 python convert.py \
@@ -24,7 +14,7 @@ python convert.py \
 
 ## Run the Model
 
-Right now, this is just a test to show tha the outputs from mlx and huggingface don't change all that much.
+In order to run the model, and have it forward inference on a batch of examples:
 
 ```sh
 python model.py \
@@ -60,9 +50,3 @@ Which will show:
   [ 0.946011    0.13582966 -0.29456618 ...  0.00868565 -0.90271175
    -0.27854213]]]
 ```
-
-## To do's
-
-- [x] fix position encodings
-- [x] bert large and cased variants loaded
-- [x] example usage
