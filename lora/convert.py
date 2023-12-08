@@ -32,7 +32,12 @@ def map_torch_to_mlx(key, value):
     elif "rope" in key:
         return None, None
 
-    return key, value.numpy()
+    return (
+        key,
+        value.numpy()
+        if value.dtype != torch.bfloat16
+        else value.to(torch.float32).numpy(),
+    )
 
 
 if __name__ == "__main__":
