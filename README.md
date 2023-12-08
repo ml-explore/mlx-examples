@@ -8,7 +8,7 @@ The [MNIST](mnist) example is a good starting point to learn how to use MLX.
 Some more useful examples include:
 
 - [Transformer language model](transformer_lm) training.
-- Large scale text generation with [LLaMA](llama) or [Mistral](mistral)
+- Large scale text generation with [LLaMA](llama) or [Mistral](mistral).
 - Parameter efficient fine-tuning with [LoRA](lora).
 - Generating images with [Stable Diffusion](stable_diffusion).
 - Speech recognition with [OpenAI's Whisper](whisper).
