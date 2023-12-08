@@ -23,7 +23,7 @@ Alternatively, you can also download a select converted checkpoints from the [ml
 Convert the weights with:
 
 ```
-python convert.py <path_to_torch_weights> mlx_llama_weights.npz
+python convert.py <path_to_torch_weights> <path_to_mlx_llama_weights.npz>
 ```
 
 ### Run
