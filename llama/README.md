@@ -23,7 +23,7 @@ Alternatively, you can also download a select converted checkpoints from the [ml
 Convert the weights with:
 
 ```
-python convert.py <path_to_torch_weights> mlx_llama_weights.npz
+python convert.py <path_to_torch_weights> <path_to_mlx_llama_weights.npz>
 ```
 
 ### Run
@@ -32,7 +32,7 @@ Once you've converted the weights to MLX format, you can interact with the
 LLaMA model:
 
 ```
-python llama.py mlx_llama_weights.npz <path_to_tokenizer.model> "hello"
+python llama.py <path_to_mlx_llama_weights.npz> <path_to_tokenizer.model> "hello"
 ```
 
 Run `python llama.py --help` for more details.
