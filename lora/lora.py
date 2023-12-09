@@ -20,9 +20,13 @@ import wikisql
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="LoRA finetuning with Llama or Mistral")
+    parser = argparse.ArgumentParser(
+        description="LoRA finetuning with Llama or Mistral"
+    )
     parser.add_argument(
-        "--model", required=True, help="A path to the model files containing the tokenizer, weights, config."
+        "--model",
+        required=True,
+        help="A path to the model files containing the tokenizer, weights, config.",
     )
     # Generation args
     parser.add_argument(
@@ -227,6 +231,7 @@ def generate(model, prompt, tokenizer, args):
 
     def generate_step():
         temp = args.temp
+
         def sample(logits):
             if temp == 0:
                 return mx.argmax(logits, axis=-1)

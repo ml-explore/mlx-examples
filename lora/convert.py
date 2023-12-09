@@ -30,7 +30,7 @@ if __name__ == "__main__":
     torch_path = Path(args.torch_model)
     if not os.path.exists(args.mlx_model):
         os.makedirs(args.mlx_model)
-    mlx_path =  Path(args.mlx_model)
+    mlx_path = Path(args.mlx_model)
 
     state = torch.load(str(torch_path / "consolidated.00.pth"))
     np.savez(
@@ -57,5 +57,3 @@ if __name__ == "__main__":
             config["hidden_dim"] = state["layers.0.feed_forward.w1.weight"].shape
     with open(mlx_path / "params.json", "w") as outfile:
         json.dump(config, outfile)
-
-
