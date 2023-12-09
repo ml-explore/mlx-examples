@@ -24,10 +24,10 @@ def run(bert_model: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Run the BERT model using HuggingFace Transformers.")
     parser.add_argument(
         "--bert-model",
-        type=str,
+        choices=["bert-base-uncased", "bert-base-cased", "bert-large-uncased", "bert-large-cased"],
         default="bert-base-uncased",
         help="The huggingface name of the BERT model to save.",
     )
