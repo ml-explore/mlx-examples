@@ -1,6 +1,6 @@
-# mlxbert
+# BERT
 
-An implementation of BERT [(Devlin, et al., 2019)](https://aclanthology.org/N19-1423/) within mlx.
+An implementation of BERT [(Devlin, et al., 2019)](https://aclanthology.org/N19-1423/) within MLX.
 
 ## Downloading and Converting Weights
 

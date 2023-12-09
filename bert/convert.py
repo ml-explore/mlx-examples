@@ -26,14 +26,13 @@ def convert(bert_model: str, mlx_model: str) -> None:
         replace_key(key): tensor.numpy() for key, tensor in model.state_dict().items()
     }
     numpy.savez(mlx_model, **tensors)
-    # save the tokenizer
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert BERT weights to MLX.")
     parser.add_argument(
         "--bert-model",
-        type=str,
+        choices=["bert-base-uncased", "bert-base-cased", "bert-large-uncased", "bert-large-cased"],
         default="bert-base-uncased",
         help="The huggingface name of the BERT model to save.",
     )
