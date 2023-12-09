@@ -1,3 +1,4 @@
+import numpy as np
 from typing import Optional
 from dataclasses import dataclass
 from transformers import BertTokenizer
@@ -214,19 +215,29 @@ def run(bert_model: str, mlx_model: str):
         "A second string",
         "This is another string.",
     ]
-    
+
     tokens = tokenizer(batch, return_tensors="np", padding=True)
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
-    mlx_output, mlx_pooled = model(**tokens)
-    mlx_output = numpy.array(mlx_output)
-    mlx_pooled = numpy.array(mlx_pooled)
+    vs = model_configs[bert_model].vocab_size
+    ts = np.random.randint(0, vs, (8, 512))
+    tokens["input_ids"] = mx.array(ts)
+    tokens["token_type_ids"] = mx.zeros((8, 512), mx.int32)
+    tokens.pop("attention_mask")
 
-    print("MLX BERT:")
-    print(mlx_output)
+    for _ in range(5):
+        out = model(**tokens)
+        mx.eval(out)
 
-    print("\n\nMLX Pooled:")
-    print(mlx_pooled[0, :20])
+    import time
+
+    tic = time.time()
+    for _ in range(10):
+        out = model(**tokens)
+        mx.eval(out)
+    toc = time.time()
+    tps = (8 * 5 * 10) / (toc - tic)
+    print(tps)
 
 
 if __name__ == "__main__":
