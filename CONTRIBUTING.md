@@ -8,7 +8,7 @@ possible.
 1. Fork and submit pull requests to the repo. 
 2. If you've added code that should be tested, add tests.
 3. Every PR should have passing tests and at least one review. 
-4. For code formating install `pre-commit` using something like `pip install pre-commit` and run `pre-commit install`.
+4. For code formatting install `pre-commit` using something like `pip install pre-commit` and run `pre-commit install`.
    This should install hooks for running `black` and `clang-format` to ensure
    consistent style for C++ and python code.
  
