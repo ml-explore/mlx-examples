@@ -32,7 +32,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert BERT weights to MLX.")
     parser.add_argument(
         "--bert-model",
-        choices=["bert-base-uncased", "bert-base-cased", "bert-large-uncased", "bert-large-cased"],
+        choices=[
+            "bert-base-uncased",
+            "bert-base-cased",
+            "bert-large-uncased",
+            "bert-large-cased",
+        ],
         default="bert-base-uncased",
         help="The huggingface name of the BERT model to save.",
     )

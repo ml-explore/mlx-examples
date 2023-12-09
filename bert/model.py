@@ -1,3 +1,4 @@
+import numpy as np
 from typing import Optional
 from dataclasses import dataclass
 from transformers import BertTokenizer
@@ -214,7 +215,7 @@ def run(bert_model: str, mlx_model: str):
         "A second string",
         "This is another string.",
     ]
-    
+
     tokens = tokenizer(batch, return_tensors="np", padding=True)
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
