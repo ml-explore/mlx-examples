@@ -27,10 +27,10 @@ If you do not have access to the Llama weights you will need to [request
 access](https://docs.google.com/forms/d/e/1FAIpQLSfqNECQnMkycAp2jP4Z9TFX0cGR4uf7b_fBxjY_OjhJILlKGA/viewform)
 from Meta.
 
-Convert the weights with:
+Convert the model with:
 
 ```
-python convert.py <path_to_torch_weights> <path_to_mlx_weights.npz>
+python convert.py <path_to_torch_model> <path_to_mlx_model>
 ```
 
 ## Run
@@ -52,7 +52,7 @@ python lora.py --model <path_to_model> \
 ```
 
 Note, the model path should have the MLX weights, the tokenizer, and the
-`params.json` configuration which will all be output by the `conver.py` script.
+`params.json` configuration which will all be output by the `convert.py` script.
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
 the output location with `--adapter_file`.
@@ -95,8 +95,6 @@ training and validation loss at a few points over the course of training.
 | 600       |    1.123   |      1.274      |
 | 800       |    1.017   |      1.255      |
 | 1000      |    1.070   |      1.230      |
-
-After training for 1000 iterations, the validation perplexity reduces to XX.
 
 The model trains at around 475 tokens per second on an M2 Ultra.
 
