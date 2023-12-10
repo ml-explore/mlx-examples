@@ -44,9 +44,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Llama weights to MLX")
     parser.add_argument("torch_weights")
     parser.add_argument("output_file")
+    parser.add_argument('--cpu', '-c', action='store_true', help='Use CPU instead of GPU')
     args = parser.parse_args()
 
-    state = torch.load(args.torch_weights)
+    if args.cpu:
+        state = torch.load(args.torch_weights, map_location=torch.device('cpu'))
+    else:
+        state = torch.load(args.torch_weights)
     np.savez(
         args.output_file,
         **{k: v for k, v in starmap(map_torch_to_mlx, state.items()) if k is not None}
