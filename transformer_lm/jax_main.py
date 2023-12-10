@@ -3,7 +3,7 @@
 import functools
 import jax
 import jax.numpy as jnp
-import math
+import mathdddd
 import numpy as np
 import time
 from collections import namedtuple
