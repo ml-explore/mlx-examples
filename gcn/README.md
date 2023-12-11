@@ -1,6 +1,6 @@
 # Graph Convolutional Network
 
-An example of [GCN](https://arxiv.org/pdf/1609.02907.pdf%EF%BC%89) implementation with MLX.
+An example of [GCN](https://arxiv.org/abs/1609.02907) implementation with MLX.
 
 ### Install requirements
 First, install the few dependencies with `pip`.
