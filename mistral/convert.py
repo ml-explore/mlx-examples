@@ -2,26 +2,23 @@
 
 import argparse
 import numpy as np
+from pathlib import Path
 import torch
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Mistral weights to MLX.")
     parser.add_argument(
-        "--torch_model",
+        "--model_path",
         type=str,
-        default="mistral-7B-v0.1/consolidated.00.pth",
-        help="The path to the torch model weights",
-    )
-    parser.add_argument(
-        "--mlx_model",
-        type=str,
-        default="mistral-7B-v0.1/mlx_mistral_7b.npz",
-        help="The path to store the mlx model weights",
+        default="mistral-7B-v0.1/",
+        help="The path to the Mistral model. The MLX weights will also be saved there.",
     )
     args = parser.parse_args()
 
-    state = torch.load(args.torch_model)
+    model_path = Path(args.model_path)
+    state = torch.load(str(model_path / "consolidated.00.pth"))
     np.savez(
-        args.mlx_model, **{k: v.to(torch.float16).numpy() for k, v in state.items()}
+        str(model_path / "weights.npz"),
+        **{k: v.to(torch.float16).numpy() for k, v in state.items()}
     )

@@ -196,7 +196,7 @@ def load_model(folder: str, dtype=mx.float16):
         config = json.loads(f.read())
         config.pop("sliding_window")
         model_args = ModelArgs(**config)
-    weights = mx.load(str(model_path / "mlx_mistral_7b.npz"))
+    weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: p.astype(dtype), weights)
     model = Mistral(model_args)
