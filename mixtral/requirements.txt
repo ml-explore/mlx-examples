@@ -1,0 +1,4 @@
+mlx
+sentencepiece
+torch
+numpy
