@@ -1,4 +1,4 @@
-## Mixtral 8x7b
+## Mixtral 8x7B
 
 Run the Mixtral[^mixtral] 8x7B mixture-of-experts (MoE) model in MLX on Apple silicon.
 
