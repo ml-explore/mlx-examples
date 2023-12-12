@@ -33,12 +33,12 @@ Now from `mlx-exmaples/mixtral` conver the weights to NumPy so MLX can read them
 python convert.py --model_path mixtral-8x7b-32kseqlen/
 ```
 
-The conversion script will save the new weights in the same location.
+The conversion script will save the converted weights in the same location.
 
 After that's done, if you want to clean some stuff up:
 
 ```
-rm mixtral-8x7b-32kseqlen/*.pth
+rm mixtral-8x7b-32kseqlen/*.pth*
 ```
 
 ### Generate
