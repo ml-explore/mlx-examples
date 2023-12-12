@@ -26,7 +26,7 @@ cd mixtral-8x7b-32kseqlen/
 cat consolidated.00.pth-split0 consolidated.00.pth-split1 consolidated.00.pth-split2 consolidated.00.pth-split3 consolidated.00.pth-split4 consolidated.00.pth-split5 consolidated.00.pth-split6 consolidated.00.pth-split7 consolidated.00.pth-split8 consolidated.00.pth-split9 consolidated.00.pth-split10 > consolidated.00.pth
 ```
 
-Now from `mlx-exmaples/mixtral` conver and save the weights as NumPy arrays so
+Now from `mlx-exmaples/mixtral` convert and save the weights as NumPy arrays so
 MLX can read them:
 
 ```
