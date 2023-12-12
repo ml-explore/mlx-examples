@@ -1,0 +1,52 @@
+## Mixtral 8x7b
+
+Run the Mixtral[^mixtral] 8x7B mixture-of-experts (MoE) model in MLX on Apple silicon.
+
+Note, this model needs a machine with substantial RAM (>= 128GB) to run in
+16-bit precision. 
+
+### Setup
+
+Install [Git Large File
+Storage](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage).
+For example with Homebrew:
+
+```
+brew install git-lfs
+```
+
+Download the models from HugginFace:
+
+```
+git clone https://huggingface.co/someone13574/mixtral-8x7b-32kseqlen
+```
+
+After that's done, combine the files:
+```
+cd mixtral-8x7b-32kseqlen/
+cat consolidated.00.pth-split0 consolidated.00.pth-split1 consolidated.00.pth-split2 consolidated.00.pth-split3 consolidated.00.pth-split4 consolidated.00.pth-split5 consolidated.00.pth-split6 consolidated.00.pth-split7 consolidated.00.pth-split8 consolidated.00.pth-split9 consolidated.00.pth-split10 > consolidated.00.pth
+```
+
+Now from `mlx-exmaples/mixtral` conver the weights to NumPy so MLX can read them:
+
+```
+python convert.py --model_path mixtral-8x7b-32kseqlen/
+```
+
+The conversion script will save the new weights in the same location.
+
+After that's done, if you want to clean some stuff up:
+
+```
+rm mixtral-8x7b-32kseqlen/*.pth
+```
+
+### Generate
+
+As easy as:
+
+```
+python mixtral.py --model_path mixtral mixtral-8x7b-32kseqlen/
+```
+
+[^mixtral] Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) for more details.
