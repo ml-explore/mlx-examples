@@ -28,6 +28,17 @@ _MODELS = {
         "diffusion_config": "scheduler/scheduler_config.json",
         "tokenizer_vocab": "tokenizer/vocab.json",
         "tokenizer_merges": "tokenizer/merges.txt",
+    },
+        "nitrosocke/Ghibli-Diffusion": {
+        "unet_config": "unet/config.json",
+        "unet": "unet/diffusion_pytorch_model.safetensors",
+        "text_encoder_config": "text_encoder/config.json",
+        "text_encoder": "text_encoder/model.safetensors",
+        "vae_config": "vae/config.json",
+        "vae": "vae/diffusion_pytorch_model.safetensors",
+        "diffusion_config": "scheduler/scheduler_config.json",
+        "tokenizer_vocab": "tokenizer/vocab.json",
+        "tokenizer_merges": "tokenizer/merges.txt",
     }
 }
 
@@ -156,10 +167,23 @@ def _flatten(params):
     return [(k, v) for p in params for (k, v) in p]
 
 
+def _match_shapes(model, weights):
+    #check whether the safetensor weights have the same shape as the model, if not reshape them
+    weight_shapes = {x[0]:x[1].shape for x in weights if isinstance(x[1], mx.array)}
+    arrays_model_shapes = {x[0]:x[1].shape for x in tree_flatten(model) if isinstance(x[1], mx.array)}
+    mismatched_keys = [k for k in weight_shapes if weight_shapes[k]!= arrays_model_shapes.get(k, weight_shapes[k])]
+    weights_dict = dict(weights)
+    for k in mismatched_keys:
+        weights_dict[k] = weights_dict[k].reshape(arrays_model_shapes[k])
+    weights = list(weights_dict.items())
+    return weights
+
+
 def _load_safetensor_weights(mapper, model, weight_file, float16: bool = False):
     dtype = np.float16 if float16 else np.float32
     with safetensor_open(weight_file, framework="numpy") as f:
         weights = _flatten([mapper(k, f.get_tensor(k).astype(dtype)) for k in f.keys()])
+    weights = _match_shapes(model, weights)
     model.update(tree_unflatten(weights))
 
 
@@ -186,9 +210,7 @@ def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
             out_channels=config["out_channels"],
             block_out_channels=config["block_out_channels"],
             layers_per_block=[config["layers_per_block"]] * n_blocks,
-            num_attention_heads=[config["attention_head_dim"]] * n_blocks
-            if isinstance(config["attention_head_dim"], int)
-            else config["attention_head_dim"],
+            num_attention_heads=[config["attention_head_dim"]] * n_blocks if isinstance(config["attention_head_dim"], int) else config["attention_head_dim"],
             cross_attention_dim=[config["cross_attention_dim"]] * n_blocks,
             norm_num_groups=config["norm_num_groups"],
         )
