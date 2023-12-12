@@ -3,6 +3,7 @@
 import argparse
 from dataclasses import dataclass
 import json
+import numpy as np
 from pathlib import Path
 from typing import Optional, Tuple, List
 from sentencepiece import SentencePieceProcessor
@@ -22,6 +23,7 @@ class ModelArgs:
     n_kv_heads: int
     norm_eps: float
     vocab_size: int
+    moe: dict = None
 
 
 class RMSNorm(nn.Module):
@@ -107,13 +109,41 @@ class FeedForward(nn.Module):
         return self.w2(nn.silu(self.w1(x)) * self.w3(x))
 
 
-class TransformerBlock(nn.Module):
+class MOEFeedForward(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+
+        self.num_experts = args.moe["num_experts"]
+        self.num_experts_per_tok = args.moe["num_experts_per_tok"]
+        self.experts = [FeedForward(args) for _ in range(self.num_experts)]
+        self.gate = nn.Linear(args.dim, self.num_experts, bias=False)
+
+    def __call__(self, x) -> mx.array:
+        ne = self.num_experts_per_tok
+        orig_shape = x.shape
+        x = x.reshape(-1, x.shape[-1])
+
+        gates = self.gate(x)
+        inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        scores = mx.softmax(mx.take_along_axis(gates, inds, axis=-1), axis=-1)
+
+        y = []
+        for xt, st, it in zip(x, scores, inds.tolist()):
+            yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
+            yt = (yt * st).sum(axis=-1)
+            y.append(yt[None, :])
+        y = mx.concatenate(y)
+
+        return y.reshape(orig_shape)
+
+
+class MOETransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.attention = Attention(args)
-        self.feed_forward = FeedForward(args=args)
+        self.feed_forward = MOEFeedForward(args=args)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.args = args
@@ -131,7 +161,7 @@ class TransformerBlock(nn.Module):
         return out, cache
 
 
-class Mistral(nn.Module):
+class Mixtral(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -139,7 +169,7 @@ class Mistral(nn.Module):
         self.n_layers = args.n_layers
         assert self.vocab_size > 0
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
-        self.layers = [TransformerBlock(args=args) for _ in range(args.n_layers)]
+        self.layers = [MOETransformerBlock(args=args) for _ in range(args.n_layers)]
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.output = nn.Linear(args.dim, args.vocab_size, bias=False)
 
@@ -194,17 +224,16 @@ def load_model(folder: str, dtype=mx.float16):
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "params.json", "r") as f:
         config = json.loads(f.read())
-        config.pop("sliding_window")
         model_args = ModelArgs(**config)
     weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: p.astype(dtype), weights)
-    model = Mistral(model_args)
+    model = Mixtral(model_args)
     model.update(weights)
     return model, tokenizer
 
 
-def generate(prompt: mx.array, model: Mistral, temp: Optional[float] = 0.0):
+def generate(prompt: mx.array, model: Mixtral, temp: Optional[float] = 0.0):
     def sample(logits):
         if temp == 0:
             return mx.argmax(logits, axis=-1)
@@ -222,12 +251,12 @@ def generate(prompt: mx.array, model: Mistral, temp: Optional[float] = 0.0):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mistral inference script")
+    parser = argparse.ArgumentParser(description="Mixtral inference script")
     parser.add_argument(
         "--model_path",
         type=str,
-        default="mistral-7B-v0.1",
-        help="The path to the model weights and tokenizer",
+        default="mixtral-8x7b-32kseqlen",
+        help="The path to the model weights, tokenizer, and config",
     )
     parser.add_argument(
         "--prompt",
@@ -247,12 +276,6 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
     )
-    parser.add_argument(
-        "--tokens_per_eval",
-        help="The batch size of tokens to generate.",
-        type=int,
-        default=10,
-    )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
 
     args = parser.parse_args()
@@ -269,7 +292,7 @@ if __name__ == "__main__":
     for token, _ in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
         tokens.append(token)
 
-        if (len(tokens) % args.tokens_per_eval) == 0:
+        if (len(tokens) % 10) == 0:
             mx.eval(tokens)
             s = tokenizer.decode([t.item() for t in tokens])
             print(s, end="", flush=True)
@@ -278,4 +301,3 @@ if __name__ == "__main__":
     mx.eval(tokens)
     s = tokenizer.decode([t.item() for t in tokens])
     print(s, flush=True)
-    print("------")
