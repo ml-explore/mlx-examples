@@ -46,7 +46,7 @@ rm mixtral-8x7b-32kseqlen/*.pth*
 As easy as:
 
 ```
-python mixtral.py --model_path mixtral mixtral-8x7b-32kseqlen/
+python mixtral.py --model_path mixtral-8x7b-32kseqlen/
 ```
 
 [^mixtral]: Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) for more details.
