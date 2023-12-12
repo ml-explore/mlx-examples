@@ -14,9 +14,11 @@ pip install -r requirements.txt
 ```
 
 Next, download and convert the model. If you do not have access to the model
-weights you will need to [request
-access](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
-from Meta.
+weights you will need to request access from Meta:
+
+- [Request Llama v1](https://docs.google.com/forms/d/e/1FAIpQLSfqNECQnMkycAp2jP4Z9TFX0cGR4uf7b_fBxjY_OjhJILlKGA/viewform)
+- [Request Llama v2](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
+
 
 Alternatively, you can also download a select converted checkpoints from the
 [mlx-llama](https://huggingface.co/mlx-llama) community organisation on Hugging
