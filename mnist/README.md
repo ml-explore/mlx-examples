@@ -1,7 +1,12 @@
 # MNIST
 
-This example shows how to run some simple models on MNIST. The only
-dependency is MLX. 
+This example shows how to run some simple models on MNIST. 
+
+Install the dependencies:
+
+```
+pip install -r requirements.txt
+```
 
 Run the example with:
 
