@@ -7,6 +7,7 @@ import warnings
 from typing import List
 
 import mlx.core as mx
+from mlx.utils import tree_map
 
 import torch
 from tqdm import tqdm
@@ -163,7 +164,7 @@ def convert(model, rules=None):
 
 
 def torch_to_mlx(
-    torch_model: torch_whisper.Whisper,
+    torch_model: torch_whisper.Whisper, dtype: mx.Dtype = mx.float16,
 ) -> whisper.Whisper:
     def convert_rblock(model, rules):
         children = dict(model.named_children())
@@ -182,7 +183,8 @@ def torch_to_mlx(
 
     params = convert(torch_model, rules)
 
-    mlx_model = whisper.Whisper(torch_model.dims)
+    mlx_model = whisper.Whisper(torch_model.dims, dtype)
+    params = tree_map(lambda p: p.astype(dtype), params)
     mlx_model.update(params)
     return mlx_model
 
@@ -190,5 +192,6 @@ def torch_to_mlx(
 def load_model(
     name: str,
     download_root: str = None,
+    dtype : mx.Dtype = mx.float32,
 ) -> whisper.Whisper:
-    return torch_to_mlx(load_torch_model(name, download_root))
+    return torch_to_mlx(load_torch_model(name, download_root), dtype)

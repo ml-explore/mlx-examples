@@ -57,12 +57,13 @@ if __name__ == "__main__":
         if sys.argv[1] == "--all":
             models = ["tiny", "small", "medium", "large"]
 
+    feat_time = timer(feats)
+    print(f"\nFeature time {feat_time:.3f}")
+    mels = feats()[None].astype(mx.float16)
+
     for model_name in models:
-        feat_time = timer(feats)
 
         print(f"\nModel: {model_name.upper()}")
-        print(f"\nFeature time {feat_time:.3f}")
-        mels = feats()[None]
         tokens = mx.array(
             [
                 50364,
@@ -96,7 +97,7 @@ if __name__ == "__main__":
             ],
             mx.int32,
         )[None]
-        model = load_models.load_model(f"{model_name}")
+        model = load_models.load_model(f"{model_name}", dtype=mx.float16)
         model_forward_time = timer(model_forward, model, mels, tokens)
         print(f"Model forward time {model_forward_time:.3f}")
         decode_time = timer(decode, model, mels)
