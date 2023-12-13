@@ -9,6 +9,7 @@ from whisper import load_models
 from whisper import audio
 from whisper import decoding
 from whisper import transcribe
+from whisper.decoding import DecodingOptions
 
 audio_file = "whisper/assets/ls_test.flac"
 
@@ -41,11 +42,13 @@ def model_forward(model, mels, tokens):
 
 
 def decode(model, mels):
-    return decoding.decode(model, mels)
+    options = DecodingOptions(fp16 = False)
+    return decoding.decode(model, mels, options)
 
 
 def everything():
-    return transcribe(audio_file)
+    options = DecodingOptions(fp16 = False)
+    return transcribe(audio_file, **options.__dict__)
 
 
 if __name__ == "__main__":
