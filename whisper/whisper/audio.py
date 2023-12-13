@@ -11,7 +11,6 @@ import numpy as np
 # hard-coded audio hyperparameters
 SAMPLE_RATE = 16000
 N_FFT = 400
-N_MELS = 80
 HOP_LENGTH = 160
 CHUNK_LENGTH = 30
 N_SAMPLES = CHUNK_LENGTH * SAMPLE_RATE  # 480000 samples in a 30-second chunk
@@ -81,7 +80,7 @@ def pad_or_trim(array, length: int = N_SAMPLES, *, axis: int = -1):
 
 
 @lru_cache(maxsize=None)
-def mel_filters(n_mels: int = N_MELS) -> mx.array:
+def mel_filters(n_mels: int) -> mx.array:
     """
     load the mel filterbank matrix for projecting STFT into a Mel spectrogram.
     Allows decoupling librosa dependency; saved using:
@@ -89,9 +88,10 @@ def mel_filters(n_mels: int = N_MELS) -> mx.array:
         np.savez_compressed(
             "mel_filters.npz",
             mel_80=librosa.filters.mel(sr=16000, n_fft=400, n_mels=80),
+            mel_128=librosa.filters.mel(sr=16000, n_fft=400, n_mels=128),
         )
     """
-    assert n_mels == 80, f"Unsupported n_mels: {n_mels}"
+    assert n_mels in {80, 128}, f"Unsupported n_mels: {n_mels}"
 
     filename = os.path.join(os.path.dirname(__file__), "assets", "mel_filters.npz")
     return mx.load(filename)[f"mel_{n_mels}"]
@@ -130,7 +130,7 @@ def stft(x, window, nperseg=256, noverlap=None, nfft=None, axis=-1, pad_mode="re
 
 def log_mel_spectrogram(
     audio: Union[str, np.ndarray],
-    n_mels: int = N_MELS,
+    n_mels: int = 80,
     padding: int = 0,
 ):
     """
