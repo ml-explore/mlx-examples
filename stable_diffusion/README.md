@@ -1,9 +1,9 @@
 Stable Diffusion
 ================
 
-Stable Diffusion in MLX. The implementation was ported from Huggingface's
+Stable Diffusion in MLX. The implementation was ported from Hugging Face's
 [diffusers](https://huggingface.co/docs/diffusers/index) and we are fetching
-and using the weights available on the Huggingface Hub by Stability AI at
+and using the weights available on the Hugging Face Hub by Stability AI at
 [stabilitiai/stable-diffusion-2-1](https://huggingface.co/stabilityai/stable-diffusion-2-1).
 
 ![out](generated-mlx.png)    
