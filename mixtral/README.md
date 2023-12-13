@@ -17,7 +17,7 @@ brew install git-lfs
 Download the models from Hugging Face:
 
 ```
-git clone https://huggingface.co/someone13574/mixtral-8x7b-32kseqlen
+git-lfs clone https://huggingface.co/someone13574/mixtral-8x7b-32kseqlen
 ```
 
 After that's done, combine the files:
