@@ -43,9 +43,9 @@ class ModelHolder:
     model_name = None
 
     @classmethod
-    def get_model(cls, model: str):
+    def get_model(cls, model: str, dtype : mx.Dtype):
         if cls.model is None or model != cls.model_name:
-            cls.model = load_model(model)
+            cls.model = load_model(model, dtype=dtype)
             cls.model_name = model
         return cls.model
 
@@ -114,9 +114,8 @@ def transcribe(
     the spoken language ("language"), which is detected when `decode_options["language"]` is None.
     """
 
-    model = ModelHolder.get_model(model)
-
-    dtype = mx.float16 if decode_options.get("fp16", False) else mx.float32
+    dtype = mx.float16 if decode_options.get("fp16", True) else mx.float32
+    model = ModelHolder.get_model(model, dtype)
 
     # Pad 30-seconds of silence to the input audio, for slicing
     mel = log_mel_spectrogram(audio, padding=N_SAMPLES)
