@@ -8,7 +8,7 @@ The `convert.py` script relies on `transformers` to download the weights, and ex
 
 ```
 python convert.py \
-    --bert-model bert-base-uncased
+    --bert-model bert-base-uncased \
     --mlx-model weights/bert-base-uncased.npz
 ```
 
