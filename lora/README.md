@@ -24,7 +24,7 @@ tar -xf mistral-7B-v0.1.tar
 ```
 
 If you do not have access to the Llama weights you will need to [request
-access](https://docs.google.com/forms/d/e/1FAIpQLSfqNECQnMkycAp2jP4Z9TFX0cGR4uf7b_fBxjY_OjhJILlKGA/viewform)
+access](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
 from Meta.
 
 Convert the model with:
