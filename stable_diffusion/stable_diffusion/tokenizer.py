@@ -81,7 +81,7 @@ class Tokenizer:
         if isinstance(text, list):
             return [self.tokenize(t, prepend_bos, append_eos) for t in text]
 
-        # Lower case cleanup and split according to self.pat. Huggingface does
+        # Lower case cleanup and split according to self.pat. Hugging Face does
         # a much more thorough job here but this should suffice for 95% of
         # cases.
         clean_text = regex.sub(r"\s+", " ", text.lower())

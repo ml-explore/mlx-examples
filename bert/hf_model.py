@@ -25,7 +25,7 @@ def run(bert_model: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Run the BERT model using HuggingFace Transformers."
+        description="Run the BERT model using Hugging Face Transformers."
     )
     parser.add_argument(
         "--bert-model",

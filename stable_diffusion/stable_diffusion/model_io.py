@@ -169,7 +169,7 @@ def _check_key(key: str, part: str):
 
 
 def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
-    """Load the stable diffusion UNet from Huggingface Hub."""
+    """Load the stable diffusion UNet from Hugging Face Hub."""
     _check_key(key, "load_unet")
 
     # Download the config and create the model
@@ -199,7 +199,7 @@ def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
 
 
 def load_text_encoder(key: str = _DEFAULT_MODEL, float16: bool = False):
-    """Load the stable diffusion text encoder from Huggingface Hub."""
+    """Load the stable diffusion text encoder from Hugging Face Hub."""
     _check_key(key, "load_text_encoder")
 
     # Download the config and create the model
@@ -226,7 +226,7 @@ def load_text_encoder(key: str = _DEFAULT_MODEL, float16: bool = False):
 
 
 def load_autoencoder(key: str = _DEFAULT_MODEL, float16: bool = False):
-    """Load the stable diffusion autoencoder from Huggingface Hub."""
+    """Load the stable diffusion autoencoder from Hugging Face Hub."""
     _check_key(key, "load_autoencoder")
 
     # Download the config and create the model
@@ -255,7 +255,7 @@ def load_autoencoder(key: str = _DEFAULT_MODEL, float16: bool = False):
 
 
 def load_diffusion_config(key: str = _DEFAULT_MODEL):
-    """Load the stable diffusion config from Huggingface Hub."""
+    """Load the stable diffusion config from Hugging Face Hub."""
     _check_key(key, "load_diffusion_config")
 
     diffusion_config = _MODELS[key]["diffusion_config"]

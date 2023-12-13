@@ -14,7 +14,7 @@ For example with Homebrew:
 brew install git-lfs
 ```
 
-Download the models from HuggingFace:
+Download the models from Hugging Face:
 
 ```
 git clone https://huggingface.co/someone13574/mixtral-8x7b-32kseqlen
@@ -46,7 +46,7 @@ rm mixtral-8x7b-32kseqlen/*.pth*
 As easy as:
 
 ```
-python mixtral.py --model_path mixtral mixtral-8x7b-32kseqlen/
+python mixtral.py --model_path mixtral-8x7b-32kseqlen/
 ```
 
 [^mixtral]: Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) for more details.
