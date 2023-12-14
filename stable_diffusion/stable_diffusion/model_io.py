@@ -30,18 +30,7 @@ _MODELS = {
         "diffusion_config": "scheduler/scheduler_config.json",
         "tokenizer_vocab": "tokenizer/vocab.json",
         "tokenizer_merges": "tokenizer/merges.txt",
-    },
-    "nitrosocke/Ghibli-Diffusion": {
-        "unet_config": "unet/config.json",
-        "unet": "unet/diffusion_pytorch_model.safetensors",
-        "text_encoder_config": "text_encoder/config.json",
-        "text_encoder": "text_encoder/model.safetensors",
-        "vae_config": "vae/config.json",
-        "vae": "vae/diffusion_pytorch_model.safetensors",
-        "diffusion_config": "scheduler/scheduler_config.json",
-        "tokenizer_vocab": "tokenizer/vocab.json",
-        "tokenizer_merges": "tokenizer/merges.txt",
-    },
+    }
 }
 
 
