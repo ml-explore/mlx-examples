@@ -1,8 +1,9 @@
 # Phi-2
 
 Phi-2 is a 2.7B parameter model released by Microsoft[^1] and trained on a mixture
-of GPT-4 outputs and clean web-text. Its performance rivals
-much, much stronger models.
+of GPT-4 outputs and clean web-text. Its performance rivals much larger models.
+
+Phi-2 efficiently runs on an Apple silicon device with 8 GB memory in 16-bit precision.
 
 ## Setup 
 
@@ -12,14 +13,14 @@ Download and convert the model:
 python convert.py
 ```
 
-which will make a file `weights.npz`.
+This will make the `weights.npz` file which MLX can read.
 
 ## Generate 
 
 To generate text with the default prompt:
 
 ```sh
-python model.py
+python phi2.py
 ```
 
 Should give the output:
@@ -40,7 +41,13 @@ Answer: Logic in mathematics is like a compass in navigation. It helps
 To use your own prompt:
 
 ```sh
-python model.py --prompt <your prompt here> --max_tokens <max_token>
+python phi2.py --prompt <your prompt here> --max_tokens <max_tokens_to_generate>
+```
+
+To see a list of options run:
+
+```sh
+python phi2.py --help
 ```
 
 [^1]: For more details on the model see the [blog post](
