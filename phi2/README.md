@@ -1,9 +1,11 @@
 # Phi-2
 
-Phi-2 is a 2.7B parameter model released by Microsoft[^1] and trained on a mixture
-of GPT-4 outputs and clean web-text. Its performance rivals much larger models.
+Phi-2 is a 2.7B parameter language model released by Microsoft[^1] with
+performance that rivals much larger models. It was trained on a mixture of
+GPT-4 outputs and clean web text.
 
-Phi-2 efficiently runs on an Apple silicon device with 8 GB memory in 16-bit precision.
+Phi-2 efficiently runs on Apple silicon devices with 8GB of memory in 16-bit
+precision.
 
 ## Setup 
 
