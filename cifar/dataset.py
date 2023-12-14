@@ -36,4 +36,4 @@ def get_cifar10(batch_size, root=None):
     num_tr_steps_per_epoch = num_tr_samples // batch_size
     num_test_steps_per_epoch = num_test_samples // batch_size
 
-    return tr_iter, test_iter, num_tr_steps_per_epoch, num_test_steps_per_epoch
+    return tr_iter, test_iter
