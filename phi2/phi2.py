@@ -31,15 +31,12 @@ class RoPEAttention(nn.Module):
         self.num_heads = num_heads
 
         self.rope = nn.RoPE(rotary_dim, traditional=False)
-        self.query_proj = nn.Linear(dims, dims)
-        self.key_proj = nn.Linear(dims, dims)
-        self.value_proj = nn.Linear(dims, dims)
+        self.Wqkv = nn.Linear(dims, 3 * dims)
         self.out_proj = nn.Linear(dims, dims)
 
-    def __call__(self, queries, keys, values, mask=None, cache=None):
-        queries = self.query_proj(queries)
-        keys = self.key_proj(keys)
-        values = self.value_proj(values)
+    def __call__(self, x, mask=None, cache=None):
+        qkv = self.Wqkv(x)
+        queries, keys, values = mx.split(qkv, 3, axis=-1)
 
         # Extract some shapes
         num_heads = self.num_heads
@@ -81,7 +78,7 @@ class ParallelBlock(nn.Module):
         super().__init__()
         dims = config.model_dim
         mlp_dims = dims * 4
-        self.self_attention = RoPEAttention(dims, config.num_heads, config.rotary_dim)
+        self.mixer = RoPEAttention(dims, config.num_heads, config.rotary_dim)
         self.ln = LayerNorm(dims)
         self.fc1 = nn.Linear(dims, mlp_dims)
         self.fc2 = nn.Linear(mlp_dims, dims)
@@ -89,7 +86,7 @@ class ParallelBlock(nn.Module):
 
     def __call__(self, x, mask, cache):
         h = self.ln(x)
-        attn_h, cache = self.self_attention(h, h, h, mask, cache)
+        attn_h, cache = self.mixer(h, mask, cache)
         ff_h = self.fc2(self.act(self.fc1(h)))
         return attn_h + ff_h + x, cache
 
