@@ -8,7 +8,12 @@ def replace_key(key: str) -> str:
     key = key.replace(".o.", ".out_proj.")
     key = key.replace(".q.", ".query_proj.")
     key = key.replace(".v.", ".value_proj.")
+    key = key.replace(".layer.0.layer_norm.", ".ln1.")
+    key = key.replace(".layer.1.layer_norm.", ".ln2.")
     key = key.replace(".layer.1.DenseReluDense.wi.", ".linear1.")
+    key = key.replace(".layer.1.DenseReluDense.wo.", ".linear2.")
+    key = key.replace(".final_layer_norm.", ".ln.")
+    key = key.replace("shared.", "wte.")
     return key
 
 def convert():
