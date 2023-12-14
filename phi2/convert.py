@@ -60,7 +60,7 @@ def convert():
         del state_dict[key_stub + ".bias"]
 
     weights = {replace_key(k): v.numpy() for k, v in state_dict.items()}
-    numpy.savez("weights/phi-2.npz", **weights)
+    numpy.savez("weights.npz", **weights)
 
 
 if __name__ == "__main__":
