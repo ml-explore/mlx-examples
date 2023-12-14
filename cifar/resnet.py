@@ -59,7 +59,6 @@ class Block(nn.Module):
             self.shortcut = None
 
     def __call__(self, x):
-
         out = nn.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         if self.shortcut is None:

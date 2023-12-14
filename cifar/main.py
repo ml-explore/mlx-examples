@@ -12,17 +12,14 @@ parser.add_argument(
     "--arch",
     type=str,
     default="resnet20",
-    help="model architecture [resnet20, resnet32, resnet44, resnet56, resnet110, resnet1202]",
+    choices=[f"resnet{d}" for d in [20, 32, 44, 56, 110, 1202]],
+    help="model architecture",
 )
 parser.add_argument("--batch_size", type=int, default=256, help="batch size")
 parser.add_argument("--epochs", type=int, default=100, help="number of epochs")
 parser.add_argument("--lr", type=float, default=1e-3, help="learning rate")
 parser.add_argument("--seed", type=int, default=0, help="random seed")
 parser.add_argument("--cpu", action="store_true", help="use cpu only")
-
-
-def loss_fn(model, inp, tgt):
-    return mx.mean(nn.losses.cross_entropy(model(inp), tgt))
 
 
 def eval_fn(model, inp, tgt):
@@ -50,17 +47,25 @@ def train_epoch(model, train_iter, optimizer, epoch):
         optimizer.update(model, grads)
         mx.eval(model.parameters(), optimizer.state)
         toc = time.perf_counter()
-        loss_value = loss.item()
-        acc_value = acc.item()
-        losses.append(loss_value)
-        accs.append(acc_value)
-        samples_per_sec.append(x.shape[0] / (toc - tic))
+        loss = loss.item()
+        acc = acc.item()
+        losses.append(loss)
+        accs.append(acc)
+        throughput = x.shape[0] / (toc - tic)
+        samples_per_sec.append(throughput)
         if batch_counter % 10 == 0:
             print(
-                f"Epoch {epoch:02d} [{batch_counter:03d}] | tr_loss {loss_value:.3f} | tr_acc {acc_value:.3f} | Throughput: {x.shape[0] / (toc - tic):.2f} images/second"
+                " | ".join(
+                    (
+                        f"Epoch {epoch:02d} [{batch_counter:03d}]",
+                        f"Train loss {loss:.3f}",
+                        f"Train acc {acc:.3f}",
+                        f"Throughput: {throughput:.2f} images/second",
+                    )
+                )
             )
 
-    mean_tr_loss = mx.mean(mx.array(losses))
+    eean_tr_loss = mx.mean(mx.array(losses))
     mean_tr_acc = mx.mean(mx.array(accs))
     samples_per_sec = mx.mean(mx.array(samples_per_sec))
     return mean_tr_loss, mean_tr_acc, samples_per_sec
@@ -81,24 +86,28 @@ def test_epoch(model, test_iter, epoch):
 def main(args):
     mx.random.seed(args.seed)
 
-    model = resnet.__dict__[args.arch]()
+    model = getattr(resnet, args.arch)()
 
-    print("num_params: {:0.04f} M".format(model.num_params() / 1e6))
-    mx.eval(model.parameters())
+    print("Number of params: {:0.04f} M".format(model.num_params() / 1e6))
 
     optimizer = optim.Adam(learning_rate=args.lr)
 
     train_data, test_data = get_cifar10(args.batch_size)
     for epoch in range(args.epochs):
-        epoch_tr_loss, epoch_tr_acc, train_throughput = train_epoch(
-            model, train_data, optimizer, epoch
-        )
+        tr_loss, tr_acc, throughput = train_epoch(model, train_data, optimizer, epoch)
         print(
-            f"Epoch: {epoch} | avg. tr_loss {epoch_tr_loss.item():.3f} | avg. tr_acc {epoch_tr_acc.item():.3f} | Train Throughput: {train_throughput.item():.2f} images/sec"
+            " | ".join(
+                (
+                    f"Epoch: {epoch}",
+                    f"avg. Train loss {tr_loss.item():.3f}",
+                    f"avg. Train acc {tr_acc.item():.3f}",
+                    f"Throughput: {throughput.item():.2f} images/sec",
+                )
+            )
         )
 
-        epoch_test_acc = test_epoch(model, test_data, epoch)
-        print(f"Epoch: {epoch} | test_acc {epoch_test_acc.item():.3f}")
+        test_acc = test_epoch(model, test_data, epoch)
+        print(f"Epoch: {epoch} | Test acc {test_acc.item():.3f}")
 
         train_data.reset()
         test_data.reset()
