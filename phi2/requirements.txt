@@ -2,3 +2,4 @@ einops
 mlx
 numpy
 transformers
+torch
