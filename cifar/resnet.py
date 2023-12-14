@@ -3,9 +3,6 @@ Implementation of ResNets for CIFAR-10 as per the original paper [https://arxiv.
 Configurations include ResNet-20, ResNet-32, ResNet-44, ResNet-56, ResNet-110, ResNet-1202.
 
 There's no BatchNorm is mlx==0.0.4, using LayerNorm instead.
-
-Authors:
-    Sarthak Yadav, 2023
 """
 
 from typing import Any
