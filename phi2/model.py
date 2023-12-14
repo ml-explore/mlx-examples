@@ -203,11 +203,14 @@ if __name__ == "__main__":
 
     prompt = mx.array(prompt)
 
+    print("[INFO] Generating with Phi-2...", flush=True)
+    print(args.prompt, end="", flush=True)
+
     tokens = []
     for token, _ in zip(generate(prompt, model), range(args.max_tokens)):
         tokens.append(token)
 
-        if (len(tokens) % args.tokens_per_eval) == 0:
+        if (len(tokens) % 10) == 0:
             mx.eval(tokens)
             s = tokenizer.decode([t.item() for t in tokens])
             print(s, end="", flush=True)
