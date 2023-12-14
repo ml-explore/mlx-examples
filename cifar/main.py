@@ -65,7 +65,7 @@ def train_epoch(model, train_iter, optimizer, epoch):
                 )
             )
 
-    eean_tr_loss = mx.mean(mx.array(losses))
+    mean_tr_loss = mx.mean(mx.array(losses))
     mean_tr_acc = mx.mean(mx.array(accs))
     samples_per_sec = mx.mean(mx.array(samples_per_sec))
     return mean_tr_loss, mean_tr_acc, samples_per_sec
