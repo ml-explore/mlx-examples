@@ -202,7 +202,6 @@ if __name__ == "__main__":
 
     tokens = []
     for token, _ in zip(generate(prompt, model), range(args.max_tokens)):
-        
         if token == tokenizer.eos_token_id:
             break
         else:
