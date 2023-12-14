@@ -202,7 +202,11 @@ if __name__ == "__main__":
 
     tokens = []
     for token, _ in zip(generate(prompt, model), range(args.max_tokens)):
-        tokens.append(token)
+        
+        if token == tokenizer.eos_token_id:
+            break
+        else:
+            tokens.append(token)
 
         if (len(tokens) % 10) == 0:
             mx.eval(tokens)
