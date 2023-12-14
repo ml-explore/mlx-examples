@@ -65,7 +65,6 @@ class TestWhisper(unittest.TestCase):
         logits = mlx_model(mels, tokens)
         self.assertEqual(logits.dtype, mx.float16)
 
-
     def test_decode_lang(self):
         options = decoding.DecodingOptions(task="lang_id", fp16=False)
         result = decoding.decode(self.model, self.mels, options)
