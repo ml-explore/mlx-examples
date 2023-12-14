@@ -1,0 +1,4 @@
+einops
+mlx
+numpy
+transformers
