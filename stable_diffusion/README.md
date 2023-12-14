@@ -27,7 +27,7 @@ Usage
 ------
 
 Although each component in this repository can be used by itself, the fastest
-way to get started is by using the `StableDiffusion` class from the `diffusion`
+way to get started is by using the `StableDiffusion` class from the `stable_diffusion`
 module.
 
 ```python
