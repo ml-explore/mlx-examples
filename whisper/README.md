@@ -1,7 +1,7 @@
-# whisper
+# Whisper
 
 Speech recognition with Whisper in MLX. Whisper is a set of open source speech
-recognition models from Open AI, ranging from 39 million to 1.5 billion
+recognition models from OpenAI, ranging from 39 million to 1.5 billion
 parameters[^1].
 
 ### Setup
@@ -15,7 +15,7 @@ pip install -r requirements.txt
 Install [`ffmpeg`](https://ffmpeg.org/):
 
 ```
-# on MacOS using Homebrew (https://brew.sh/)
+# on macOS using Homebrew (https://brew.sh/)
 brew install ffmpeg
 ```
 
