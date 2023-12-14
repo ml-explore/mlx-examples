@@ -47,5 +47,5 @@ Epoch: 99 | Test acc 0.807
 Note this was run on an M1 Macbook Pro with 16GB RAM.
 
 At the time of writing, `mlx` doesn't have built-in learning rate schedules,
-nor a `BatchNorm` layer. We intend to update this example once these features
+or a `BatchNorm` layer. We intend to update this example once these features
 are added.
