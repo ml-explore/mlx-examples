@@ -181,7 +181,7 @@ class LayerNorm(nn.Module):
 
 
 class TransformerEncoderLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: ModelArgs):
         super().__init__()
         mlp_dims = config.d_ff or config.d_model * 4
         self.attention = MultiHeadAttention(config.d_model, config.num_heads)
@@ -212,6 +212,7 @@ class TransformerEncoder(nn.Module):
             for _ in range(config.num_layers)
         ]
         self.ln = LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.position_bias = RelativePositionBias(config)
 
     def __call__(self, x, mask):
         for layer in self.layers:
@@ -221,12 +222,59 @@ class TransformerEncoder(nn.Module):
         return x
 
 
+class TransformerDecoderLayer(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+        mlp_dims = config.d_ff or config.d_model * 4
+        self.self_attention = MultiHeadAttention(config.d_model, config.num_heads)
+        self.cross_attention = MultiHeadAttention(config.d_model, config.num_heads)
+        self.ln1 = LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln2 = LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln3 = LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.linear1 = nn.Linear(config.d_model, mlp_dims, bias=False)
+        self.linear2 = nn.Linear(mlp_dims, config.d_model, bias=False)
+
+    def __call__(self, x, memory, x_mask, memory_mask):
+        y = self.ln1(x)
+        y = self.self_attention(y, y, y, x_mask)
+        x = x + y
+
+        y = self.ln2(x)
+        y = self.cross_attention(x, memory, memory, memory_mask)
+        x = x + y
+
+        y = self.ln3(x)
+        y = self.linear1(y)
+        y = mx.maximum(y, 0)
+        y = self.linear2(y)
+        x = x + y
+
+        return x
+
+
+class TransformerDecoder(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+        self.layers = [
+            TransformerDecoderLayer(config)
+            for _ in range(config.num_layers)
+        ]
+        self.ln = LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.position_bias = RelativePositionBias(config)
+
+    def __call__(self, x, memory, x_mask, memory_mask):
+        for layer in self.layers:
+            x = layer(x, memory, x_mask, memory_mask)
+        x = self.ln(x)
+
+        return x
+
+
 class T5(nn.Module):
     def __init__(self, config: ModelArgs):
         self.wte = nn.Embedding(config.vocab_size, config.d_model)
         self.encoder = TransformerEncoder(config)
-        self.position_bias = RelativePositionBias(config)
-        # self.decoder = TransformerDecoder(config)
+        self.decoder = TransformerDecoder(config)
         # self.lm_head = OutputHead(config)
 
     def __call__(
