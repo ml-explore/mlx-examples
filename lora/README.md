@@ -150,6 +150,19 @@ of memory. Here are some tips to reduce memory use should you need to do so:
    you can do is break your examples into smaller
    sequences when making the `{train, valid, test}.jsonl` files.
 
+For example, for a machine with 32 GB the following should run reasonably fast:
+
+```
+python lora.py \
+   --model <path_to_model> \
+   --train \
+   --batch-size 1 \
+   --lora-layers 4
+```
+
+On an M1 Max with 32 GB we process about 250 tokens-per-second.
+
+
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
 [^llama]: Refer to the [arXiv paper](https://arxiv.org/abs/2302.13971) and [blog post](https://ai.meta.com/blog/large-language-model-llama-meta-ai/) for more details.
 [^mistral]: Refer to the [blog post](https://mistral.ai/news/announcing-mistral-7b/) and [github repository](https://github.com/mistralai/mistral-src) for more details.
