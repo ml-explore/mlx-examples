@@ -44,7 +44,7 @@ _ALIGNMENT_HEADS = {
     "large-v1": b"ABzY8r9j$a0{>%R7#4sLmoOs{s)o3~84-RPdcFk!JR<kSfC2yj",
     "large-v2": b"ABzY8zd+h!0{>%R7=D0pU<_bnWW*tkYAhobTNnu$jnkEkXqp)j;w1Tzk)UH3X%SZd&fFZ2fC2yj",
     "large-v3": b"ABzY8gWO1E0{>%R7(9S+Kn!D~%ngiGaR?*L!iJG9p-nab0JQ=-{D1-g00",
-    "large": b"ABzY8gWO1E0{>%R7(9S+Kn!D~%ngiGaR?*L!iJG9p-nab0JQ=-{D1-g00"
+    "large": b"ABzY8gWO1E0{>%R7(9S+Kn!D~%ngiGaR?*L!iJG9p-nab0JQ=-{D1-g00",
 }
 
 
@@ -166,7 +166,8 @@ def convert(model, rules=None):
 
 
 def torch_to_mlx(
-    torch_model: torch_whisper.Whisper, dtype: mx.Dtype = mx.float16,
+    torch_model: torch_whisper.Whisper,
+    dtype: mx.Dtype = mx.float16,
 ) -> whisper.Whisper:
     def convert_rblock(model, rules):
         children = dict(model.named_children())
@@ -194,6 +195,6 @@ def torch_to_mlx(
 def load_model(
     name: str,
     download_root: str = None,
-    dtype : mx.Dtype = mx.float32,
+    dtype: mx.Dtype = mx.float32,
 ) -> whisper.Whisper:
     return torch_to_mlx(load_torch_model(name, download_root), dtype)

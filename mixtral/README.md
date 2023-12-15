@@ -62,6 +62,12 @@ For more options including how to prompt the model, run:
 python mixtral.py --help
 ```
 
-[^mixtral]: Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) for more details.
+For the Instruction model, make sure to follow the prompt format:
+
+```
+[INST] Instruction prompt [/INST]
+```
+
+[^mixtral]: Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) and the [Hugging Face blog post](https://huggingface.co/blog/mixtral) for more details.
 [^instruc]: Refer to the [Hugging Face repo](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) for more
 details
