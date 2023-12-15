@@ -37,6 +37,7 @@ def sinusoids(length, channels, max_timescale=10000):
     scaled_time = mx.arange(length)[:, None] * inv_timescales[None, :]
     return mx.concatenate([mx.sin(scaled_time), mx.cos(scaled_time)], axis=1)
 
+
 class LayerNorm(nn.LayerNorm):
     def __call__(self, x: mx.array) -> mx.array:
         return super().__call__(x.astype(mx.float32)).astype(x.dtype)
@@ -123,7 +124,13 @@ class ResidualAttentionBlock(nn.Module):
 
 class AudioEncoder(nn.Module):
     def __init__(
-        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int, dtype: mx.Dtype = mx.float16,
+        self,
+        n_mels: int,
+        n_ctx: int,
+        n_state: int,
+        n_head: int,
+        n_layer: int,
+        dtype: mx.Dtype = mx.float16,
     ):
         super().__init__()
         self.conv1 = nn.Conv1d(n_mels, n_state, kernel_size=3, padding=1)
@@ -148,7 +155,13 @@ class AudioEncoder(nn.Module):
 
 class TextDecoder(nn.Module):
     def __init__(
-        self, n_vocab: int, n_ctx: int, n_state: int, n_head: int, n_layer: int, dtype: mx.Dtype = mx.float16,
+        self,
+        n_vocab: int,
+        n_ctx: int,
+        n_state: int,
+        n_head: int,
+        n_layer: int,
+        dtype: mx.Dtype = mx.float16,
     ):
         super().__init__()
 
@@ -160,7 +173,9 @@ class TextDecoder(nn.Module):
             for _ in range(n_layer)
         ]
         self.ln = LayerNorm(n_state)
-        self._mask = nn.MultiHeadAttention.create_additive_causal_mask(n_ctx).astype(dtype)
+        self._mask = nn.MultiHeadAttention.create_additive_causal_mask(n_ctx).astype(
+            dtype
+        )
 
     def __call__(self, x, xa, kv_cache=None):
         """

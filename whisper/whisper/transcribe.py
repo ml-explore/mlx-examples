@@ -43,7 +43,7 @@ class ModelHolder:
     model_name = None
 
     @classmethod
-    def get_model(cls, model: str, dtype : mx.Dtype):
+    def get_model(cls, model: str, dtype: mx.Dtype):
         if cls.model is None or model != cls.model_name:
             cls.model = load_model(model, dtype=dtype)
             cls.model_name = model

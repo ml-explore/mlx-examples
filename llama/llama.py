@@ -315,7 +315,7 @@ def load_model(model_path):
             config["hidden_dim"] = weights["layers.0.feed_forward.w1.weight"].shape[0]
         if config.get("vocab_size", -1) < 0:
             config["vocab_size"] = weights["output.weight"].shape[-1]
-        unused = ["multiple_of", "ffn_dim_multiplier", 'rope_theta']
+        unused = ["multiple_of", "ffn_dim_multiplier", "rope_theta"]
         for k in unused:
             if k in config:
                 config.pop(k)
