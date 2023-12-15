@@ -13,6 +13,10 @@ SHARED_REPLACEMENT_PATTERNS = [
     (".layer.1.layer_norm.", ".ln2."),
     (".layer.2.layer_norm.", ".ln3."),
     (".final_layer_norm.", ".ln."),
+    (
+        ".relative_attention_bias.",
+        ".relative_attention_bias.embeddings."
+    ),
 ]
 
 ENCODER_REPLACEMENT_PATTERNS = [
