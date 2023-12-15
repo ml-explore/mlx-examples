@@ -1,5 +1,5 @@
 einops
 mlx
 numpy
-transformers
+transformers>=4.35
 torch
