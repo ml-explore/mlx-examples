@@ -14,6 +14,8 @@ def replace_key(key: str) -> str:
     key = key.replace(".layer.1.DenseReluDense.wo.", ".linear2.")
     key = key.replace(".final_layer_norm.", ".ln.")
     key = key.replace("shared.", "wte.")
+    key = key.replace("encoder.layers.0.attention.relative_attention_bias.",
+                      "position_bias.relative_attention_bias.")
     return key
 
 def convert():
