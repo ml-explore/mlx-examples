@@ -2,6 +2,8 @@
 
 Run the Mixtral[^mixtral] 8x7B mixture-of-experts (MoE) model in MLX on Apple silicon.
 
+This example also supports the instruction fine-tuned Mixtral model.[^instruct]
+
 Note, for 16-bit precision this model needs a machine with substantial RAM (~100GB) to run.
 
 ### Setup
@@ -16,37 +18,56 @@ brew install git-lfs
 
 Download the models from Hugging Face:
 
+For the base model use:
+
 ```
-git-lfs clone https://huggingface.co/someone13574/mixtral-8x7b-32kseqlen
+export MIXTRAL_MODEL=Mixtral-8x7B-v0.1
 ```
 
-After that's done, combine the files:
+For the instruction fine-tuned model use:
+
 ```
-cd mixtral-8x7b-32kseqlen/
-cat consolidated.00.pth-split0 consolidated.00.pth-split1 consolidated.00.pth-split2 consolidated.00.pth-split3 consolidated.00.pth-split4 consolidated.00.pth-split5 consolidated.00.pth-split6 consolidated.00.pth-split7 consolidated.00.pth-split8 consolidated.00.pth-split9 consolidated.00.pth-split10 > consolidated.00.pth
+export MIXTRAL_MODEL=Mixtral-8x7B-Instruct-v0.1
+```
+
+Then run:
+
+```
+GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/mistralai/${MIXTRAL_MODEL}/
+cd $MIXTRAL_MODEL/ && \
+  git lfs pull --include "consolidated.*.pt" && \
+  git lfs pull --include "tokenizer.model"
 ```
 
 Now from `mlx-exmaples/mixtral` convert and save the weights as NumPy arrays so
 MLX can read them:
 
 ```
-python convert.py --model_path mixtral-8x7b-32kseqlen/
+python convert.py --model_path $MIXTRAL_MODEL/
 ```
 
 The conversion script will save the converted weights in the same location.
-
-After that's done, if you want to clean some stuff up:
-
-```
-rm mixtral-8x7b-32kseqlen/*.pth*
-```
 
 ### Generate
 
 As easy as:
 
 ```
-python mixtral.py --model_path mixtral-8x7b-32kseqlen/
+python mixtral.py --model_path $MIXTRAL_MODEL/
 ```
 
-[^mixtral]: Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) for more details.
+For more options including how to prompt the model, run:
+
+```
+python mixtral.py --help
+```
+
+For the Instruction model, make sure to follow the prompt format:
+
+```
+[INST] Instruction prompt [/INST]
+```
+
+[^mixtral]: Refer to Mistral's [blog post](https://mistral.ai/news/mixtral-of-experts/) and the [Hugging Face blog post](https://huggingface.co/blog/mixtral) for more details.
+[^instruc]: Refer to the [Hugging Face repo](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) for more
+details
