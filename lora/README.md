@@ -160,7 +160,7 @@ python lora.py \
    --lora-layers 4
 ```
 
-On an M1 Max with 32 GB we process about 250 tokens-per-second.
+The above command on an M1 Max with 32 GB runs at about 250 tokens-per-second.
 
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
