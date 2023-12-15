@@ -1,6 +1,7 @@
 from transformers import AutoModelForCausalLM
 import numpy as np
 
+
 def replace_key(key: str) -> str:
     if "wte.weight" in key:
         key = "wte.weight"
