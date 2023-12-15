@@ -10,14 +10,14 @@ be general should you wish to use a custom dataset.
 
 ## Contents
 
-* [Setup](Setup)
-* [Run](Run)
-  * [Fine-tune](Fine-tune)
-  * [Evaluate](Evaluate)
-  * [Generate](Generate)
-* [Results](Results)
-* [Custom-Data](Custom Data)
-* [Memory-Issues](Memory Issues)
+* [Setup](#Setup)
+* [Run](#Run)
+  * [Fine-tune](#Fine-tune)
+  * [Evaluate](#Evaluate)
+  * [Generate](#Generate)
+* [Results](#Results)
+* [Custom Data](#Custom-Data)
+* [Memory Issues](#Memory-Issues)
 
 
 ## Setup 
