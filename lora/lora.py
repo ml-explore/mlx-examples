@@ -58,44 +58,44 @@ def build_parser():
         help="Directory with {train, valid, test}.jsonl files",
     )
     parser.add_argument(
-        "--lora_layers",
+        "--lora-layers",
         type=int,
         default=16,
         help="Number of layers to fine-tune",
     )
-    parser.add_argument("--batch_size", type=int, default=4, help="Minibatch size.")
+    parser.add_argument("--batch-size", type=int, default=4, help="Minibatch size.")
     parser.add_argument(
         "--iters", type=int, default=1000, help="Iterations to train for."
     )
     parser.add_argument(
-        "--val_batches",
+        "--val-batches",
         type=int,
         default=25,
         help="Number of validation batches, -1 uses the entire validation set.",
     )
     parser.add_argument(
-        "--learning_rate", type=float, default=1e-5, help="Adam learning rate."
+        "--learning-rate", type=float, default=1e-5, help="Adam learning rate."
     )
     parser.add_argument(
-        "--steps_per_report",
+        "--steps-per-report",
         type=int,
         default=10,
         help="Number of training steps between loss reporting.",
     )
     parser.add_argument(
-        "--steps_per_eval",
+        "--steps-per-eval",
         type=int,
         default=200,
         help="Number of training steps between validations.",
     )
     parser.add_argument(
-        "--resume_adapter_file",
+        "--resume-adapter-file",
         type=str,
         default=None,
         help="Load path to resume training with the given adapter weights.",
     )
     parser.add_argument(
-        "--adapter_file",
+        "--adapter-file",
         type=str,
         default="adapters.npz",
         help="Save/load path for the trained adapter weights.",
@@ -106,7 +106,7 @@ def build_parser():
         help="Evaluate on the test set after training",
     )
     parser.add_argument(
-        "--test_batches",
+        "--test-batches",
         type=int,
         default=500,
         help="Number of test set batches, -1 uses the entire test set.",
