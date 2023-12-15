@@ -184,6 +184,7 @@ def load(args):
 def loss(model, inputs, targets, lengths):
     # Run model on inputs
     logits, _ = model(inputs)
+    logits = logits.astype(mx.float32)
 
     # Mask padding tokens
     length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
@@ -326,7 +327,7 @@ def generate(model, prompt, tokenizer, args):
     print(s, flush=True)
 
 
-def load_model(folder: str, dtype=mx.float32):
+def load_model(folder: str, dtype=mx.float16):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "params.json", "r") as f:
