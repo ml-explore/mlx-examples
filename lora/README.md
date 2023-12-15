@@ -42,18 +42,20 @@ from Meta.
 Convert the model with:
 
 ```
-python convert.py <path_to_torch_model> <path_to_mlx_model>
+python convert.py \
+    --torch-model <path_to_torch_model> \
+    --mlx-model <path_to_mlx_model>
 ```
 
 ## Run
-
-#### Fine-tune
 
 The main script is `lora.py`. To see a full list of options run
 
 ```
 python lora.py --help
 ```
+
+### Fine-tune
 
 To fine-tune a model use:
 
@@ -67,28 +69,28 @@ Note, the model path should have the MLX weights, the tokenizer, and the
 `params.json` configuration which will all be output by the `convert.py` script.
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
-the output location with `--adapter_file`.
+the output location with `--adapter-file`.
 
-You can resume fine-tuning with an existing adapter with
-`--resume_adapter_file` to specify the location of the adapter weights. 
+You can resume fine-tuning with an existing adapter with `--resume-adapter-file
+<path_to_adapters.npz>`. 
 
-#### Evaluate
+### Evaluate
 
 To compute test set perplexity use
 
 ```
 python lora.py --model <path_to_model> \
-               --adapter_file <path_to_adapters.npz> \
+               --adapter-file <path_to_adapters.npz> \
                --test 
 ```
 
-#### Generate
+### Generate
 
 For generation use
 
 ```
 python lora.py --model <path_to_model> \
-               --adapter_file <path_to_adapters.npz> \
+               --adapter-file <path_to_adapters.npz> \
                --num-tokens 50 \
                --prompt "table: 1-10015132-16
 columns: Player, No., Nationality, Position, Years in Toronto, School/Club Team
@@ -119,10 +121,10 @@ You can make your own dataset for fine-tuning with LoRA. You can specify the
 dataset with `--data=<my_data_directory>`. Check the subdirectory `data/` to
 see the expected format.
 
-For fine-tuning, the data loader expects a `train.jsonl` and a `valid.jsonl` to
-be in the data directory. For evaluation (`--test`), the data loader expects a
-`test.jsonl` in the directory. Each line in the `*.jsonl` file should look
-like: are:
+For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
+`valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
+loader expects a `test.jsonl` in the data directory. Each line in the `*.jsonl`
+file should look like:
 
 ```
 {"text": "This is an example for the model."}
