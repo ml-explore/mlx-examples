@@ -6,7 +6,19 @@ task.
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
 generate SQL queries from natural language. However, the example is intended to
-be general should you wish to modify the task.
+be general should you wish to use a custom dataset.
+
+## Contents
+
+* [Setup](#Setup)
+* [Run](#Run)
+  * [Fine-tune](#Fine-tune)
+  * [Evaluate](#Evaluate)
+  * [Generate](#Generate)
+* [Results](#Results)
+* [Custom Data](#Custom-Data)
+* [Memory Issues](#Memory-Issues)
+
 
 ## Setup 
 
@@ -30,18 +42,20 @@ from Meta.
 Convert the model with:
 
 ```
-python convert.py <path_to_torch_model> <path_to_mlx_model>
+python convert.py \
+    --torch-model <path_to_torch_model> \
+    --mlx-model <path_to_mlx_model>
 ```
 
 ## Run
-
-#### Fine-tune
 
 The main script is `lora.py`. To see a full list of options run
 
 ```
 python lora.py --help
 ```
+
+### Fine-tune
 
 To fine-tune a model use:
 
@@ -55,25 +69,28 @@ Note, the model path should have the MLX weights, the tokenizer, and the
 `params.json` configuration which will all be output by the `convert.py` script.
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
-the output location with `--adapter_file`.
+the output location with `--adapter-file`.
 
-#### Evaluate
+You can resume fine-tuning with an existing adapter with `--resume-adapter-file
+<path_to_adapters.npz>`. 
+
+### Evaluate
 
 To compute test set perplexity use
 
 ```
 python lora.py --model <path_to_model> \
-               --adapter_file <path_to_adapters.npz> \
+               --adapter-file <path_to_adapters.npz> \
                --test 
 ```
 
-#### Generate
+### Generate
 
 For generation use
 
 ```
 python lora.py --model <path_to_model> \
-               --adapter_file <path_to_adapters.npz> \
+               --adapter-file <path_to_adapters.npz> \
                --num-tokens 50 \
                --prompt "table: 1-10015132-16
 columns: Player, No., Nationality, Position, Years in Toronto, School/Club Team
@@ -97,6 +114,54 @@ training and validation loss at a few points over the course of training.
 | 1000      |    1.070   |      1.230      |
 
 The model trains at around 475 tokens per second on an M2 Ultra.
+
+## Custom Data
+
+You can make your own dataset for fine-tuning with LoRA. You can specify the
+dataset with `--data=<my_data_directory>`. Check the subdirectory `data/` to
+see the expected format.
+
+For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
+`valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
+loader expects a `test.jsonl` in the data directory. Each line in the `*.jsonl`
+file should look like:
+
+```
+{"text": "This is an example for the model."}
+```
+
+Note other keys will be ignored by the loader.
+
+## Memory Issues
+
+Fine-tuning a large model with LoRA requires a machine with a deccent amount
+of memory. Here are some tips to reduce memory use should you need to do so:
+
+1. Try using a smaller batch size with `--batch-size`. The default is `4` so
+   setting this to `2` or `1` will reduce memory consumption. This may slow
+   things down a little, but will also reduce the memory use.
+
+2. Reduce the number of layers to fine-tune with `--lora-layers`. The default
+   is `16`, so you can try `8` or `4`. This reduces the amount of memory
+   needed for back propagation. It may also reduce the quality of the
+   fine-tuned model if you are fine-tuning with a lot of data.
+
+3. Longer examples require more memory. If it makes sense for your data, one thing
+   you can do is break your examples into smaller
+   sequences when making the `{train, valid, test}.jsonl` files.
+
+For example, for a machine with 32 GB the following should run reasonably fast:
+
+```
+python lora.py \
+   --model <path_to_model> \
+   --train \
+   --batch-size 1 \
+   --lora-layers 4
+```
+
+The above command on an M1 Max with 32 GB runs at about 250 tokens-per-second.
+
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
 [^llama]: Refer to the [arXiv paper](https://arxiv.org/abs/2302.13971) and [blog post](https://ai.meta.com/blog/large-language-model-llama-meta-ai/) for more details.

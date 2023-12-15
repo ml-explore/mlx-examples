@@ -14,13 +14,13 @@ if __name__ == "__main__":
         description="Convert Mistral or Llama models to MLX.",
     )
     parser.add_argument(
-        "--torch_model",
+        "--torch-model",
         type=str,
         default="mistral-7B-v0.1/",
         help="The torch model directory",
     )
     parser.add_argument(
-        "--mlx_model",
+        "--mlx-model",
         type=str,
         default="mlx-mistral-7B-v0.1/",
         help="The directory to store the mlx model",
