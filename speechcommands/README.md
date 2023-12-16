@@ -6,13 +6,13 @@ load and process an audio dataset.
 
 ## Pre-requisites
 
-Install the `mlx`
+Install `mlx`
 
 ```
 pip install mlx==0.0.5
 ```
 
-At the time of writing, the SpeechCommands dataset is not yet a part of a `mlx-data` release. Install `mlx-data` from source using this [commit](https://github.com/ml-explore/mlx-data/commit/ae3431648b8e1594d63175a8f121d9873aeb9daa).
+At the time of writing, the SpeechCommands dataset is not yet a part of a `mlx-data` release. Install `mlx-data` from source from this [commit](https://github.com/ml-explore/mlx-data/commit/ae3431648b8e1594d63175a8f121d9873aeb9daa).
 
 ## Running the example
 
