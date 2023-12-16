@@ -3,7 +3,8 @@
 An example of generating text with Llama (1 or 2) using MLX.
 
 Llama is a set of open source language models from Meta AI Research[^1][^2]
-ranging from 7B to 70B parameters.
+ranging from 7B to 70B parameters. This example also supports Llama Chat and
+Code Llama.
 
 ### Setup
 
