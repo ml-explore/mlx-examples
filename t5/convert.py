@@ -9,6 +9,7 @@ SHARED_REPLACEMENT_PATTERNS = [
     (".q.", ".query_proj."),
     (".v.", ".value_proj."),
     ("shared.", "wte."),
+    ("lm_head.", "lm_head.linear."),
     (".layer.0.layer_norm.", ".ln1."),
     (".layer.1.layer_norm.", ".ln2."),
     (".layer.2.layer_norm.", ".ln3."),
