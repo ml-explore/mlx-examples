@@ -206,7 +206,10 @@ if __name__ == "__main__":
 
         if (len(tokens) % 10) == 0:
             mx.eval(tokens)
-            eos_index = next((i for i, t in enumerate(tokens) if t.item() == tokenizer.eos_token_id), None)
+            eos_index = next(
+                (i for i, t in enumerate(tokens) if t.item() == tokenizer.eos_token_id),
+                None,
+            )
 
             if eos_index is not None:
                 tokens = tokens[:eos_index]
