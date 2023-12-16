@@ -328,8 +328,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="T5 Inference script")
     parser.add_argument(
         "--prompt",
-        help="translate English to German: That is good.",
-        default="",
+        help="",
+        default="translate English to German: That is good.",
     )
     parser.add_argument(
         "--max_tokens",
