@@ -12,7 +12,7 @@ def run(t5_model: str):
     tokenizer = AutoTokenizer.from_pretrained(t5_model)
     torch_model = T5EncoderModel.from_pretrained(t5_model)
     torch_tokens = tokenizer(batch, return_tensors="pt", padding=True)
-    torch_forward = torch_model(**torch_tokens)
+    torch_forward = torch_model(**torch_tokens, output_hidden_states=True)
     torch_output = torch_forward.last_hidden_state.detach().numpy()
 
     print("\n TF BERT:")
