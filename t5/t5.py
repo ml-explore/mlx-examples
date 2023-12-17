@@ -356,6 +356,12 @@ if __name__ == "__main__":
         default="translate English to German: That is good.",
     )
     parser.add_argument(
+        "--encode-only",
+        action='store_true',
+        default=False,
+        help="Whether to decode or not",
+    )
+    parser.add_argument(
         "--max_tokens",
         "-m",
         type=int,
@@ -383,6 +389,14 @@ if __name__ == "__main__":
     )["input_ids"]
 
     prompt = mx.array(prompt)
+
+    if args.encode_only:
+        print("[INFO] Encoding with T5...", flush=True)
+        print(args.prompt, end="", flush=True)
+        embeddings = model.wte(prompt)
+        encoder_output = model.encoder(embeddings, mask=None)
+        print(encoder_output, flush=True)
+        exit(0)
 
     print("[INFO] Generating with T5...", flush=True)
     print(args.prompt, end="", flush=True)
