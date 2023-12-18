@@ -46,11 +46,12 @@ def replace_key(key: str) -> str:
     return key
 
 
-def convert(model_name, half_precision=False):
+def convert(model_name):
     model = T5ForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto")
-    weights = {replace_key(k): v.numpy() for k, v in model.state_dict().items()}
-    if half_precision:
-        weights = {k: v.astype(np.float16) for k, v in weights.items()}
+    weights = {
+        replace_key(k): v.numpy().astype(np.float16)
+        for k, v in model.state_dict().items()
+    }
     np.savez(f"{model_name}.npz", **weights)
 
 
@@ -65,10 +66,5 @@ if __name__ == "__main__":
         choices=["t5-small", "t5-base", "t5-large", "t5-3b", "t5-11b"],
         default="t5-small",
     )
-    parser.add_argument(
-        "--half-precision",
-        action="store_true",
-        help="Convert weights to half precision (float16).",
-    )
     args = parser.parse_args()
-    convert(args.model, args.half_precision)
+    convert(args.model)
