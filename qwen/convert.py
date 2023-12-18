@@ -1,6 +1,8 @@
 import argparse
 from transformers import AutoModelForCausalLM
 import numpy as np
+import torch
+import json
 
 
 def replace_key(key: str) -> str:
@@ -13,11 +15,17 @@ def replace_key(key: str) -> str:
 
 def convert(model_path: str = "Qwen/Qwen-1_8B"):
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, trust_remote_code=True
+        model_path, trust_remote_code=True, torch_dtype=torch.float16
     )
     state_dict = model.state_dict()
     weights = {replace_key(k): v.numpy() for k, v in state_dict.items()}
     np.savez("weights.npz", **weights)
+
+    # write config
+    config = model.config
+    config_dict = config.to_dict()
+    with open("config.json", "w") as f:
+        json.dump(config_dict, f)
 
 
 if __name__ == "__main__":
