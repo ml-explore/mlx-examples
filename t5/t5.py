@@ -353,7 +353,7 @@ def load_model(model_config):
             print("Loading shape: ", weights_to_load_dict[key].shape)
     model.update(tree_unflatten(weights_to_load))
     mx.eval(model.parameters())
-    tokenizer = T5Tokenizer.from_pretrained("t5-small", trust_remote_code=True)
+    tokenizer = T5Tokenizer.from_pretrained("t5-small", legacy=False)
     return model, tokenizer
 
 
@@ -368,7 +368,7 @@ if __name__ == "__main__":
         "--encode-only",
         action="store_true",
         default=False,
-        help="Whether to decode or not",
+        help="Whether to decode or not. If true, will output last layer of encoder.",
     )
     parser.add_argument(
         "--max_tokens",
