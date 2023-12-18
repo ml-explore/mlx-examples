@@ -14,10 +14,8 @@ SHARED_REPLACEMENT_PATTERNS = [
     (".layer.1.layer_norm.", ".ln2."),
     (".layer.2.layer_norm.", ".ln3."),
     (".final_layer_norm.", ".ln."),
-    (
-        ".relative_attention_bias.",
-        ".relative_attention_bias.embeddings."
-    ),
+    ("layers.0.layer.0.SelfAttention.relative_attention_bias.",
+     "relative_attention_bias.embeddings."),
 ]
 
 ENCODER_REPLACEMENT_PATTERNS = [
@@ -33,6 +31,7 @@ DECODER_REPLACEMENT_PATTERNS = [
     (".layer.2.DenseReluDense.wo.", ".linear2."),
 ]
 
+
 def replace_key(key: str) -> str:
     for old, new in SHARED_REPLACEMENT_PATTERNS:
         key = key.replace(old, new)
@@ -45,14 +44,22 @@ def replace_key(key: str) -> str:
     return key
 
 
-def convert():
-    model = T5ForConditionalGeneration.from_pretrained(
-        "t5-small", torch_dtype="auto"
-    )
-    state_dict = model.state_dict()
-    weights = {replace_key(k): v.numpy() for k, v in state_dict.items()}
+def convert(model_name):
+    model = T5ForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto")
+    weights = {replace_key(k): v.numpy() for k, v in model.state_dict().items()}
     np.savez("weights.npz", **weights)
 
 
 if __name__ == "__main__":
-    convert()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Convert T5 weights to MLX")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        help="Name of the T5 model.",
+        choices=["t5-small", "t5-base", "t5-large", "t5-3b", "t5-11b"],
+        default="t5-small",
+    )
+    args = parser.parse_args()
+    convert(args.model_name)
