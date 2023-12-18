@@ -28,9 +28,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        choices=[
-            "t5-small",
-        ],
         default="t5-small",
         help="The huggingface name of the T5 model to save.",
     )
