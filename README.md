@@ -20,14 +20,14 @@ Some more useful examples include:
 
 We are grateful for all of [our
 contributors](ACKNOWLEDGMENTS.md#Individual-Contributors). If you contribute
-to MLX and wish to be acknowledged, please add your name to to the list in your
+to MLX Examples and wish to be acknowledged, please add your name to to the list in your
 pull request.
 
 ## Citing MLX Examples
 
 The MLX software suite was initially developed with equal contribution by Awni
 Hannun, Jagrit Digani, Angelos Katharopoulos, and Ronan Collobert. If you find
-MLX useful in your research and wish to cite it, please use the following
+MLX Examples useful in your research and wish to cite it, please use the following
 BibTex entry:
 
 ```
