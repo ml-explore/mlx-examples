@@ -1,3 +1,4 @@
+import argparse
 from transformers import AutoModelForCausalLM
 import numpy as np
 
@@ -10,9 +11,9 @@ def replace_key(key: str) -> str:
     return key
 
 
-def convert():
+def convert(model_path: str = "Qwen/Qwen-1_8B"):
     model = AutoModelForCausalLM.from_pretrained(
-        "Qwen/Qwen-1_8B", trust_remote_code=True
+        model_path, trust_remote_code=True
     )
     state_dict = model.state_dict()
     weights = {replace_key(k): v.numpy() for k, v in state_dict.items()}
@@ -20,4 +21,14 @@ def convert():
 
 
 if __name__ == "__main__":
-    convert()
+    parser = argparse.ArgumentParser(description="Convert Qwen model to npz")
+
+    parser.add_argument(
+        "--model",
+        help="The huggingface model to be converted",
+        default="Qwen/Qwen-1_8B",
+    )
+
+    args = parser.parse_args()
+
+    convert(args.model)
