@@ -27,7 +27,7 @@ def generate(t5_model: str):
     tokenizer = AutoTokenizer.from_pretrained(t5_model)
     torch_model = T5ForConditionalGeneration.from_pretrained(t5_model)
     torch_tokens = tokenizer(prompt, return_tensors="pt", padding=True).input_ids
-    outputs = torch_model.generate(torch_tokens)
+    outputs = torch_model.generate(torch_tokens, do_sample=False, max_length=512)
     print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 
 
