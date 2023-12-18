@@ -33,7 +33,7 @@ Generate text with:
 python t5.py --model t5-small --prompt "translate English to German: A tasty apple"
 ```
 
-This should give the output: `Ein schmackhafter Apfel`
+This should give the output: `Ein leckerer Apfel`
 
 To see a list of options run:
 
