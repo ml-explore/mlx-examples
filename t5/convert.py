@@ -51,7 +51,7 @@ def convert(model_name, half_precision=False):
     weights = {replace_key(k): v.numpy() for k, v in model.state_dict().items()}
     if half_precision:
         weights = {k: v.astype(np.float16) for k, v in weights.items()}
-    np.savez("weights.npz", **weights)
+    np.savez(f"{model_name}.npz", **weights)
 
 
 if __name__ == "__main__":
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Convert T5 weights to MLX")
     parser.add_argument(
-        "--model_name",
+        "--model",
         type=str,
         help="Name of the T5 model.",
         choices=["t5-small", "t5-base", "t5-large", "t5-3b", "t5-11b"],
@@ -71,4 +71,4 @@ if __name__ == "__main__":
         help="Convert weights to half precision (float16).",
     )
     args = parser.parse_args()
-    convert(args.model_name, args.half_precision)
+    convert(args.model, args.half_precision)
