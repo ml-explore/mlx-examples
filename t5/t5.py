@@ -394,8 +394,7 @@ if __name__ == "__main__":
     if args.encode_only:
         print("[INFO] Encoding with T5...", flush=True)
         print(args.prompt, flush=True)
-        embeddings = model.wte(prompt)
-        encoder_output = model.encoder(embeddings, mask=None)
+        encoder_output = model.encode(prompt)
         print(encoder_output, flush=True)
         exit(0)
 
