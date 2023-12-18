@@ -27,13 +27,13 @@ The `<model>` can be any of the following:
 
 ## Generate
 
-To gneerate text with the model, use the `t5.py` script:
+Generate text with:
 
 ```sh
 python t5.py --model t5-small --prompt "translate English to German: A tasty apple"
 ```
 
-Should give the output: `Ein schmackhafter Apfel`
+This should give the output: `Ein schmackhafter Apfel`
 
 To see a list of options run:
 
