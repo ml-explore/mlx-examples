@@ -314,7 +314,7 @@ class T5(nn.Module):
         inputs: mx.array,
         decoder_inputs: mx.array,
     ):
-        return decode(decoder_inputs, encode(inputs))[0]
+        return self.decode(decoder_inputs, self.encode(inputs))[0]
 
 
 def generate(
