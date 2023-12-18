@@ -210,7 +210,7 @@ class TransformerDecoderLayer(nn.Module):
         x = x + y
 
         y = self.ln2(x)
-        y, _ = self.cross_attention(x, memory, memory, memory_mask)
+        y, _ = self.cross_attention(y, memory, memory, memory_mask)
         x = x + y
 
         y = self.ln3(x)
