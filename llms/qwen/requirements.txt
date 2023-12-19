@@ -1,0 +1,7 @@
+einops
+mlx
+numpy
+transformers>=4.35
+transformers_stream_generator>=0.0.4
+torch
+tiktoken
