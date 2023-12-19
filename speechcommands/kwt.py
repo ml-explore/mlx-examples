@@ -8,27 +8,15 @@ __all__ = ["KWT", "kwt1", "kwt2", "kwt3"]
 STD = 0.02
 
 
-class FeedForward(nn.Module):
+class FeedForward(nn.Sequential):
     def __init__(self, dim, hidden_dim, dropout=0.0):
-        super().__init__()
-        self.net = nn.Sequential(
+        super().__init__(
             nn.Linear(dim, hidden_dim),
             nn.GELU(),
-            nn.Dropout(dropout) if dropout != 0.0 else Identity(),
+            nn.Dropout(dropout),
             nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout) if dropout != 0.0 else Identity(),
+            nn.Dropout(dropout),
         )
-
-    def __call__(self, x):
-        return self.net(x)
-
-
-class Identity(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, x):
-        return x
 
 
 class Attention(nn.Module):
@@ -38,17 +26,17 @@ class Attention(nn.Module):
         self.scale = dim**-0.5
         self.qkv = nn.Linear(dim, dim * 3, bias=False)
         self.out = nn.Sequential(
-            nn.Linear(dim, dim), nn.Dropout(dropout) if dropout != 0.0 else Identity()
+            nn.Linear(dim, dim), nn.Dropout(dropout)
         )
 
     def __call__(self, x):
         b, n, _, h = *x.shape, self.heads
         qkv = self.qkv(x)
-        qkv = qkv.reshape(b, n, 3, h, -1).transpose((2, 0, 3, 1, 4))
+        qkv = qkv.reshape(b, n, 3, h, -1).transpose(2, 0, 3, 1, 4)
         q, k, v = qkv
         attn = (q @ k.transpose(0, 1, 3, 2)) * self.scale
         attn = mx.softmax(attn, axis=-1)
-        x = (attn @ v).transpose((0, 2, 1, 3)).reshape(b, n, -1)
+        x = (attn @ v).transpose(0, 2, 1, 3).reshape(b, n, -1)
         x = self.out(x)
         return x
 
@@ -56,7 +44,6 @@ class Attention(nn.Module):
 class Block(nn.Module):
     def __init__(self, dim, heads, mlp_dim, dropout=0.0):
         super().__init__()
-        # self.attn = nn.MultiHeadAttention(dim, heads)
         self.attn = Attention(dim, heads, dropout=dropout)
         self.norm1 = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, mlp_dim, dropout=dropout)
@@ -89,8 +76,9 @@ class KWT(nn.Module):
     Implements the Keyword Transformer (KWT) [1] model.
 
     KWT is essentially a vision transformer [2] with minor modifications:
-    - Instead of square patches, KWT uses rectangular patches -> a patch across frequency for every timestep
-    - KWT modules apply LayerNormalization after attention/feedforward layers, also referred to as PostNorm
+    - Instead of square patches, KWT uses rectangular patches -> a patch
+      across frequency for every timestep
+    - KWT modules apply layer normalization after attention/feedforward layers
 
     [1] https://arxiv.org/abs/2104.11178
     [2] https://arxiv.org/abs/2010.11929
@@ -148,7 +136,7 @@ class KWT(nn.Module):
             -1 * STD / 2, STD / 2, (1, self.num_patches + 1, dim)
         )
         self.cls_token = mx.random.truncated_normal(-1 * STD / 2, STD / 2, (1, 1, dim))
-        self.dropout = nn.Dropout(emb_dropout) if emb_dropout != 0.0 else Identity()
+        self.dropout = nn.Dropout(emb_dropout)
         self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
         self.pool = pool
         self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))

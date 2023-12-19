@@ -67,6 +67,7 @@ def train_epoch(model, train_iter, optimizer, epoch):
     accs = []
     samples_per_sec = []
 
+    model.train(True)
     for batch_counter, batch in enumerate(train_iter):
         x = mx.array(batch["audio"])
         y = mx.array(batch["label"])
@@ -92,6 +93,7 @@ def train_epoch(model, train_iter, optimizer, epoch):
                     )
                 )
             )
+        break
 
     mean_tr_loss = mx.mean(mx.array(losses))
     mean_tr_acc = mx.mean(mx.array(accs))
@@ -100,13 +102,13 @@ def train_epoch(model, train_iter, optimizer, epoch):
 
 
 def test_epoch(model, test_iter):
+    model.train(False)
     accs = []
     for batch_counter, batch in enumerate(test_iter):
         x = mx.array(batch["audio"])
         y = mx.array(batch["label"])
         acc = eval_fn(model, x, y)
-        acc_value = acc.item()
-        accs.append(acc_value)
+        accs.append(acc.item())
     mean_acc = mx.mean(mx.array(accs))
     return mean_acc
 
@@ -146,7 +148,7 @@ def main(args):
             best_acc = val_acc
             best_epoch = epoch
             best_params = model.parameters()
-    print(f"Testing best model from Epoch {best_epoch}")
+    print(f"Testing best model from epoch {best_epoch}")
     model.update(best_params)
     test_data = prepare_dataset(args.batch_size, "test")
     test_acc = test_epoch(model, test_data)

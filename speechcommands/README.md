@@ -1,18 +1,22 @@
 # Training a Vision Transformer on SpeechCommands
 
-An example of training [Keyword Spotting Transformer](https://www.isca-speech.org/archive/interspeech_2021/berg21_interspeech.html), a variant of the Vision Transformer, on the [Speech Commands](https://arxiv.org/abs/1804.03209) (v0.02) dataset with MLX. All supervised only configurations from the paper are available.The example also
-illustrates how to use [MLX Data](https://github.com/ml-explore/mlx-data) to
-load and process an audio dataset.
+An example of training a Keyword Spotting Transformer[^1] on the Speech
+Commands dataset[^2] with MLX. All supervised only configurations from the
+paper are available.The example also illustrates how to use [MLX
+Data](https://github.com/ml-explore/mlx-data) to load and process an audio
+dataset.
 
 ## Pre-requisites
 
-Install `mlx`
+Follow the [installation
+instructions](https://ml-explore.github.io/mlx-data/build/html/install.html)
+for MLX Data.
+
+Install the remaining python requirements:
 
 ```
-pip install mlx==0.0.5
+pip install -r requirements.txt
 ```
-
-At the time of writing, the SpeechCommands dataset is not yet a part of a `mlx-data` release. Install `mlx-data` from source from this [commit](https://github.com/ml-explore/mlx-data/commit/ae3431648b8e1594d63175a8f121d9873aeb9daa).
 
 ## Running the example
 
@@ -22,7 +26,7 @@ Run the example with:
 python main.py
 ```
 
-By default the example runs on the GPU. To run on the CPU, use: 
+By default the example runs on the GPU. To run it on the CPU, use:
 
 ```
 python main.py --cpu
@@ -56,5 +60,10 @@ Test acc -> 0.718
 
 Note that this was run on an M1 Macbook Pro with 16GB RAM.
 
-At the time of writing, `mlx` doesn't have built-in `cosine` learning rate schedules, which is used along with the AdamW optimizer in the official implementaiton. We intend to update this example once these features
-are added, as well as with appropriate data augmentations.
+At the time of writing, `mlx` doesn't have built-in `cosine` learning rate
+schedules, which is used along with the AdamW optimizer in the official
+implementaiton. We intend to update this example once these features are added,
+as well as with appropriate data augmentations.
+
+[^1]: Based one the paper [Keyword Transformer: A Self-Attention Model for Keyword Spotting](https://www.isca-speech.org/archive/interspeech_2021/berg21_interspeech.html)
+[^2]: We use version 0.02. See the [paper]((https://arxiv.org/abs/1804.03209) for more details.
