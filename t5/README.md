@@ -27,7 +27,7 @@ The `<model>` can be any of the following:
 | t5-3b      | 3 billion   |
 | t5-11b     | 11 billion  |
 
-The FLAN variants can be specified with the e.g. `google/flan-t5-small`,
+The FLAN variants can be specified with `google/flan-t5-small`,
 `google/flan-t5-base`, etc. See the [Hugging Face
 page](https://huggingface.co/docs/transformers/model_doc/flan-t5) for a
 complete list of models.
