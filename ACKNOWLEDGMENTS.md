@@ -8,3 +8,4 @@ with a short description of your contribution(s) below. For example:
 MLX Examples was developed with contributions from the following individuals:
 
 - Juarez Bochi: Added support for T5 models.
+- Sarthak Yadav: Added the `cifar` and `speechcommands` examples.
