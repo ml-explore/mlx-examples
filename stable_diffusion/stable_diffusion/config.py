@@ -23,6 +23,7 @@ class CLIPTextModelConfig:
     num_heads: int = 16
     max_length: int = 77
     vocab_size: int = 49408
+    projection_dims: int = 512
 
 
 @dataclass

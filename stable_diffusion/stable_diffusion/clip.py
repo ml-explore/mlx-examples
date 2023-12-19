@@ -68,3 +68,13 @@ class CLIPTextModel(nn.Module):
 
         # Apply the final layernorm and return
         return self.final_layer_norm(x)
+
+
+class CLIPTextModelWithProjection(CLIPTextModel):
+    def __init__(self, config: CLIPTextModelConfig):
+        super().__init__(config)
+        self.projection = nn.Linear(config.model_dims, config.projection_dims)
+
+    def __call__(self, x):
+        x = super().__call__(x)
+        return self.projection(x)
