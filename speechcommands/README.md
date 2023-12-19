@@ -40,29 +40,29 @@ python main.py --help
 
 ## Results
 
-After training with the `kwt1` architecture for 100 epochs, you
+After training with the `kwt1` architecture for 10 epochs, you
 should see the following results:
 
 ```
-Epoch: 99 | avg. Train loss 0.581 | avg. Train acc 0.826 | Throughput: 677.37 samples/sec
-Epoch: 99 | Val acc 0.710
-Testing best model from Epoch 98
-Test acc -> 0.687
+Epoch: 9 | avg. Train loss 0.519 | avg. Train acc 0.857 | Throughput: 661.28 samples/sec
+Epoch: 9 | Val acc 0.861 | Throughput: 2976.54 samples/sec
+Testing best model from epoch 9
+Test acc -> 0.841
 ```
 
 For the `kwt2` model, you should see:
 ```
-Epoch: 99 | avg. Train loss 0.137 | avg. Train acc 0.956 | Throughput: 401.47 samples/sec
-Epoch: 99 | Val acc 0.739
-Testing best model from Epoch 97
-Test acc -> 0.718
+Epoch: 9 | avg. Train loss 0.374 | avg. Train acc 0.895 | Throughput: 395.26 samples/sec
+Epoch: 9 | Val acc 0.879 | Throughput: 1542.44 samples/sec
+Testing best model from epoch 9
+Test acc -> 0.861
 ```
 
 Note that this was run on an M1 Macbook Pro with 16GB RAM.
 
 At the time of writing, `mlx` doesn't have built-in `cosine` learning rate
 schedules, which is used along with the AdamW optimizer in the official
-implementaiton. We intend to update this example once these features are added,
+implementation. We intend to update this example once these features are added,
 as well as with appropriate data augmentations.
 
 [^1]: Based one the paper [Keyword Transformer: A Self-Attention Model for Keyword Spotting](https://www.isca-speech.org/archive/interspeech_2021/berg21_interspeech.html)

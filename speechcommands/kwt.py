@@ -47,10 +47,8 @@ class Block(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
 
     def __call__(self, x):
-        x = self.attn(x)
-        x = self.norm1(x)
-        x = self.ff(x)
-        x = self.norm2(x)
+        x = self.norm1(self.attn(x)) + x
+        x = self.norm2(self.ff(x)) + x
         return x
 
 

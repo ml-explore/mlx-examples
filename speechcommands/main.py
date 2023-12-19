@@ -93,7 +93,6 @@ def train_epoch(model, train_iter, optimizer, epoch):
                     )
                 )
             )
-        break
 
     mean_tr_loss = mx.mean(mx.array(losses))
     mean_tr_acc = mx.mean(mx.array(accs))
@@ -104,13 +103,18 @@ def train_epoch(model, train_iter, optimizer, epoch):
 def test_epoch(model, test_iter):
     model.train(False)
     accs = []
+    throughput = []
     for batch_counter, batch in enumerate(test_iter):
         x = mx.array(batch["audio"])
         y = mx.array(batch["label"])
+        tic = time.perf_counter()
         acc = eval_fn(model, x, y)
         accs.append(acc.item())
+        toc = time.perf_counter()
+        throughput.append(x.shape[0] / (toc - tic))
     mean_acc = mx.mean(mx.array(accs))
-    return mean_acc
+    mean_throughput = mx.mean(mx.array(throughput))
+    return mean_acc, mean_throughput
 
 
 def main(args):
@@ -141,8 +145,8 @@ def main(args):
             )
         )
 
-        val_acc = test_epoch(model, val_data)
-        print(f"Epoch: {epoch} | Val acc {val_acc.item():.3f}")
+        val_acc, val_throughput = test_epoch(model, val_data)
+        print(f"Epoch: {epoch} | Val acc {val_acc.item():.3f} | Throughput: {val_throughput.item():.2f} samples/sec")
 
         if val_acc >= best_acc:
             best_acc = val_acc
@@ -151,7 +155,7 @@ def main(args):
     print(f"Testing best model from epoch {best_epoch}")
     model.update(best_params)
     test_data = prepare_dataset(args.batch_size, "test")
-    test_acc = test_epoch(model, test_data)
+    test_acc, _ = test_epoch(model, test_data)
     print(f"Test acc -> {test_acc.item():.3f}")
 
 
