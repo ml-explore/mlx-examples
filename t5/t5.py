@@ -337,7 +337,7 @@ class Tokenizer:
         self._tokenizer = T5Tokenizer.from_pretrained(
             args.model,
             legacy=False,
-            model_max_length=config.n_positions,
+            model_max_length=getattr(config, 'n_positions', 512)
         )
 
     @property
@@ -430,7 +430,7 @@ if __name__ == "__main__":
         help="The model data type.",
         type=str,
         choices=["float16", "bfloat16", "float32"],
-        default="float32",
+        default="bfloat16",
     )
 
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
