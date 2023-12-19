@@ -13,10 +13,10 @@ Some more useful examples are listed below.
 - Large scale text generation with [LLaMA](llms/llama),
   [Mistral](llms/mistral), [Phi-2](llms/phi2), and more in the [LLMs](llms)
   directory.
-- A mixture-of-experts (MoE) language model with [Mixtral 8x7B](llms/mixtral)
+- A mixture-of-experts (MoE) language model with [Mixtral 8x7B](llms/mixtral).
 - Parameter efficient fine-tuning with [LoRA](lora).
 - Text-to-text multi-task Transformers with [T5](t5).
-- Bidirectional language understanding with [BERT](bert)
+- Bidirectional language understanding with [BERT](bert).
 
 ### Image Models 
 
