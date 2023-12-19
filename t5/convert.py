@@ -71,7 +71,7 @@ if __name__ == "__main__":
         help="The model data type.",
         type=str,
         choices=["float16", "float32"],
-        default="float16",
+        default="float32",
     )
     args = parser.parse_args()
     convert(args.model, args.dtype)
