@@ -146,7 +146,9 @@ def main(args):
         )
 
         val_acc, val_throughput = test_epoch(model, val_data)
-        print(f"Epoch: {epoch} | Val acc {val_acc.item():.3f} | Throughput: {val_throughput.item():.2f} samples/sec")
+        print(
+            f"Epoch: {epoch} | Val acc {val_acc.item():.3f} | Throughput: {val_throughput.item():.2f} samples/sec"
+        )
 
         if val_acc >= best_acc:
             best_acc = val_acc

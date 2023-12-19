@@ -1,8 +1,8 @@
-# Training a Vision Transformer on SpeechCommands
+# Train a Keyword Spotting Transformer on Speech Commands
 
 An example of training a Keyword Spotting Transformer[^1] on the Speech
 Commands dataset[^2] with MLX. All supervised only configurations from the
-paper are available.The example also illustrates how to use [MLX
+paper are available. The example also illustrates how to use [MLX
 Data](https://github.com/ml-explore/mlx-data) to load and process an audio
 dataset.
 
