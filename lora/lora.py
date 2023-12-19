@@ -332,9 +332,9 @@ def load_model(folder: str, dtype=mx.float16):
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "params.json", "r") as f:
         config = json.loads(f.read())
-        model_args = ModelArgs(**config)
         if config.get("vocab_size", -1) < 0:
             config["vocab_size"] = tokenizer.vocab_size
+        model_args = ModelArgs(**config)
     weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: p.astype(dtype), weights)

@@ -18,5 +18,24 @@ Some more useful examples include:
 
 ## Contributing 
 
-Check out the [contribution guidelines](CONTRIBUTING.md) for more information
-on contributing to this repo.
+We are grateful for all of [our
+contributors](ACKNOWLEDGMENTS.md#Individual-Contributors). If you contribute
+to MLX Examples and wish to be acknowledged, please add your name to to the list in your
+pull request.
+
+## Citing MLX Examples
+
+The MLX software suite was initially developed with equal contribution by Awni
+Hannun, Jagrit Digani, Angelos Katharopoulos, and Ronan Collobert. If you find
+MLX Examples useful in your research and wish to cite it, please use the following
+BibTex entry:
+
+```
+@software{mlx2023,
+  author = {Awni Hannun and Jagrit Digani and Angelos Katharopoulos and Ronan Collobert},
+  title = {{MLX}: Efficient and flexible machine learning on Apple silicon},
+  url = {https://github.com/ml-explore},
+  version = {0.0},
+  year = {2023},
+}
+```
