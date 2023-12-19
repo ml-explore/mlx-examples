@@ -2,10 +2,11 @@
 
 import io
 import itertools
-import numpy as np
 import os
-from urllib import request
 import zipfile
+from urllib import request
+
+import numpy as np
 
 
 def load_dataset(dataname):

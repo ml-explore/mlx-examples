@@ -32,8 +32,8 @@ class WikiSQL:
     def _maybe_download(self, data_dir):
         if not os.path.exists(data_dir):
             import io
-            from urllib import request
             import tarfile
+            from urllib import request
 
             url = "https://raw.githubusercontent.com/salesforce/WikiSQL/master/data.tar.bz2"
             r = request.urlopen(url)

@@ -1,5 +1,5 @@
-from transformers import AutoModelForCausalLM
 import numpy as np
+from transformers import AutoModelForCausalLM
 
 
 def replace_key(key: str) -> str:

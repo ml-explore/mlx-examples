@@ -4,8 +4,9 @@ import argparse
 import json
 import numpy as np
 from pathlib import Path
-import torch
 
+import numpy as np
+import torch
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Mistral weights to MLX.")

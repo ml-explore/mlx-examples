@@ -1,14 +1,14 @@
 # Copyright © 2023 Apple Inc.
 
 import functools
-import jax
-import jax.numpy as jnp
 import math
-import numpy as np
 import time
 from collections import namedtuple
 
 import datasets
+import jax
+import jax.numpy as jnp
+import numpy as np
 from tree_utils import tree_flatten
 
 """

@@ -1,13 +1,13 @@
-import numpy as np
-from typing import Optional
+import argparse
 from dataclasses import dataclass
-from transformers import BertTokenizer
-from mlx.utils import tree_unflatten
+from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-import argparse
 import numpy
+import numpy as np
+from mlx.utils import tree_unflatten
+from transformers import BertTokenizer
 
 
 @dataclass

@@ -1,6 +1,5 @@
-from transformers import T5ForConditionalGeneration
 import numpy as np
-
+from transformers import T5ForConditionalGeneration
 
 SHARED_REPLACEMENT_PATTERNS = [
     (".block.", ".layers."),

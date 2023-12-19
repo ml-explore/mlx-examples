@@ -3,19 +3,17 @@
 import argparse
 import json
 import math
-import numpy as np
-from pathlib import Path
-from sentencepiece import SentencePieceProcessor
 import time
-from typing import Optional, Tuple, List
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
-from mlx.utils import tree_map, tree_flatten, tree_unflatten
-
-
-from models import ModelArgs, Model, LoRALinear
+import numpy as np
+from mlx.utils import tree_flatten, tree_map, tree_unflatten
+from models import LoRALinear, Model, ModelArgs
+from sentencepiece import SentencePieceProcessor
 
 
 def build_parser():

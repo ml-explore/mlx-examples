@@ -1,15 +1,15 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, List
-from sentencepiece import SentencePieceProcessor
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_map, tree_unflatten
+from sentencepiece import SentencePieceProcessor
 
 
 @dataclass

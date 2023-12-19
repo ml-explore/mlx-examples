@@ -1,13 +1,13 @@
 import argparse
 from pathlib import Path
-from typing import Optional
+import math
 from dataclasses import dataclass
-from mlx.utils import tree_unflatten
-from transformers import AutoTokenizer
+from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-import math
+from mlx.utils import tree_unflatten
+from transformers import AutoTokenizer
 
 
 @dataclass
