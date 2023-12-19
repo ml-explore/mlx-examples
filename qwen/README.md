@@ -1,23 +1,35 @@
 # Qwen
 
-Qwen (通义千问) is a language model proposed by Alibaba Cloud[^1]. The architecture of Qwen is similar to Llama except for the bias in the attention layers.
+Qwen (通义千问) is a language model developed by Alibaba Cloud.[^1] The
+architecture of Qwen is similar to Llama except for the bias in the attention
+layers.
 
 ## Setup
 
-Download (from huggingface) and conver the model. By default, the model is `Qwen/Qwen-1_8B`.
+First download and convert the model with: 
 
 ```sh
 python convert.py
 ```
+The script downloads the model from Hugging Face. The default model is
+`Qwen/Qwen-1_8B`. Check out the [Hugging Face page](https://huggingface.co/Qwen) to see a list of available models.
 
-This will make the `weights.npz` file which MLX can read.
+The conversion script will make the `weights.npz` and `params.json` files in
+the working directory.
 
 ## Generate
 
-To generate text with the default prompt (default tokenizer is `Qwen/Qwen-1_8B`):
+To generate text with the default prompt:
 
 ```sh
 python qwen.py
+```
+
+If you change the model, make sure to pass the corresponding tokenizer. E.g.,
+for Qwen 7B use:
+
+```
+python qwen.py --tokenizer  Qwen/Qwen-7B
 ```
 
 To see a list of options, run:

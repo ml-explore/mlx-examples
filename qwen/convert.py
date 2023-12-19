@@ -25,7 +25,7 @@ def convert(model_path: str = "Qwen/Qwen-1_8B"):
     config = model.config
     config_dict = config.to_dict()
     with open("config.json", "w") as f:
-        json.dump(config_dict, f)
+        json.dump(config_dict, f, indent=4)
 
 
 if __name__ == "__main__":
