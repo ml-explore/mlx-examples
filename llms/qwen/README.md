@@ -1,8 +1,8 @@
 # Qwen
 
-Qwen (通义千问) is a language model developed by Alibaba Cloud.[^1] The
-architecture of Qwen is similar to Llama except for the bias in the attention
-layers.
+Qwen (通义千问) are a family of language models developed by Alibaba Cloud.[^1]
+The architecture of the Qwen models is similar to Llama except for the bias in
+the attention layers.
 
 ## Setup
 
