@@ -62,19 +62,6 @@ if __name__ == "__main__":
         "--model",
         type=str,
         help="Name of the T5 model.",
-        choices=[
-            "t5-small",
-            "t5-base",
-            "t5-large",
-            "t5-3b",
-            "t5-11b",
-            "google/flan-t5-small",
-            "google/flan-t5-base",
-            "google/flan-t5-large",
-            "google/flan-t5-xl",
-            "google/flan-t5-xxl",
-            "google/flan-t5-ul2",
-        ],
         default="t5-small",
     )
     args = parser.parse_args()

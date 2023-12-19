@@ -384,7 +384,8 @@ def load_model(model_name: str, dtype: str = "float16"):
     config = T5Config.from_pretrained(args.model)
     dtype = getattr(mx, dtype)
     model = T5(config)
-    weights = mx.load(f"{model_name}.npz")
+    file_name = model_name.replace("/", "-")
+    weights = mx.load(f"{file_name}.npz")
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: p.astype(dtype), weights)
     model.update(weights)
@@ -398,19 +399,6 @@ if __name__ == "__main__":
         "--model",
         type=str,
         help="Name of the T5 model.",
-        choices=[
-            "t5-small",
-            "t5-base",
-            "t5-large",
-            "t5-3b",
-            "t5-11b",
-            "google/flan-t5-small",
-            "google/flan-t5-base",
-            "google/flan-t5-large",
-            "google/flan-t5-xl",
-            "google/flan-t5-xxl",
-            "google/flan-t5-ul2",
-        ],
         default="t5-small",
     )
     parser.add_argument(

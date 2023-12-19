@@ -25,6 +25,8 @@ The `<model>` can be any of the following:
 | t5-3b      | 3 billion   |
 | t5-11b     | 11 billion  |
 
+It also supports t5 variants, such as `google/flan-t5-small`, `google/flan-t5-base`, etc.
+
 ## Generate
 
 Generate text with:
