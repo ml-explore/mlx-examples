@@ -1,19 +1,18 @@
 # Copyright © 2023 Apple Inc.
 
+import os
+import subprocess
 import unittest
 
 import mlx.core as mx
 import numpy as np
-import os
-import subprocess
 import torch
 
 import whisper
 import whisper.audio as audio
+import whisper.decoding as decoding
 import whisper.load_models as load_models
 import whisper.torch_whisper as torch_whisper
-import whisper.decoding as decoding
-
 
 TEST_AUDIO = "whisper/assets/ls_test.flac"
 

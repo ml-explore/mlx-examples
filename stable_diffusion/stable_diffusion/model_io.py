@@ -3,19 +3,17 @@
 import json
 from functools import partial
 
+import mlx.core as mx
 import numpy as np
 from huggingface_hub import hf_hub_download
+from mlx.utils import tree_unflatten
 from safetensors import safe_open as safetensor_open
 
-import mlx.core as mx
-from mlx.utils import tree_unflatten
-
 from .clip import CLIPTextModel
-from .config import UNetConfig, CLIPTextModelConfig, AutoencoderConfig, DiffusionConfig
+from .config import AutoencoderConfig, CLIPTextModelConfig, DiffusionConfig, UNetConfig
 from .tokenizer import Tokenizer
 from .unet import UNetModel
 from .vae import Autoencoder
-
 
 _DEFAULT_MODEL = "stabilityai/stable-diffusion-2-1-base"
 _MODELS = {

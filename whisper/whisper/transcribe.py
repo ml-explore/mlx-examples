@@ -1,11 +1,11 @@
 # Copyright © 2023 Apple Inc.
 
-import mlx.core as mx
-import numpy as np
 import sys
 from typing import Optional, Tuple, Union
-import tqdm
 
+import mlx.core as mx
+import numpy as np
+import tqdm
 
 from .audio import (
     FRAMES_PER_SECOND,

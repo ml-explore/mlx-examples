@@ -1,10 +1,11 @@
 # Copyright © 2023 Apple Inc.
 
 import gzip
-import numpy as np
 import os
 import pickle
 from urllib import request
+
+import numpy as np
 
 
 def mnist(save_dir="/tmp"):

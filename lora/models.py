@@ -1,8 +1,8 @@
 # Copyright © 2023 Apple Inc.
 
-from dataclasses import dataclass
 import math
-from typing import Optional, Tuple, List
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn

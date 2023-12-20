@@ -1,9 +1,9 @@
 import os
-import requests
 import tarfile
 
 import mlx.core as mx
 import numpy as np
+import requests
 import scipy.sparse as sparse
 
 """
