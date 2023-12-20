@@ -21,7 +21,7 @@ weights you will need to request access from Meta:
 - [Request Llama v2](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
 
 > [!TIP]
-> Alternatively, you can also download a select converted checkpoints from the [mlx-community](https://huggingface.co/mlx-community) community organisation on Hugging Face and skip the conversion step.
+> Alternatively, you can also download a few converted checkpoints from the [mlx-community](https://huggingface.co/mlx-community) community organisation on Hugging Face and skip the conversion step.
 
 You can download the TinyLlama models directly from [Hugging
 Face](https://huggingface.co/TinyLlama).
