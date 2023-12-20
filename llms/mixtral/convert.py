@@ -34,7 +34,7 @@ def convert(k, v, config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Mixtral weights to MLX.")
     parser.add_argument(
-        "--model_path",
+        "--model-path",
         type=str,
         default="Mixtral-8x7B-v0.1/",
         help="The path to the Mixtral model. The MLX model weights will also be saved there.",

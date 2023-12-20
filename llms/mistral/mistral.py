@@ -225,7 +225,7 @@ def generate(prompt: mx.array, model: Mistral, temp: Optional[float] = 0.0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mistral inference script")
     parser.add_argument(
-        "--model_path",
+        "--model-path",
         type=str,
         default="mistral-7B-v0.1",
         help="The path to the model weights and tokenizer",
