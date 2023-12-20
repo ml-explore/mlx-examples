@@ -178,6 +178,12 @@ class Llama(nn.Module):
         return self.output(x)
 
     def generate(self, x, temp=1.0):
+        def sample(logits):
+            if temp == 0:
+                return mx.argmax(logits, axis=-1)
+            else:
+                return mx.random.categorical(logits * (1 / temp))
+
         cache = []
 
         # Make an additive causal mask. We will need that to process the prompt.
@@ -194,7 +200,7 @@ class Llama(nn.Module):
         x = self.norm(x)
         # We only care about the last logits that generate the next token
         y = self.output(x[:, -1])
-        y = mx.random.categorical(y * (1 / temp))
+        y = sample(y)
 
         # y now has size [1]
         # Since MLX is lazily evaluated nothing is computed yet.
@@ -218,8 +224,7 @@ class Llama(nn.Module):
                 # old cache the moment it is not needed anymore.
                 x, cache[i] = self.layers[i](x, mask=None, cache=cache[i])
             x = self.norm(x)
-            y = self.output(x[:, -1])
-            y = mx.random.categorical(y * (1 / temp))
+            y = sample(self.output(x[:, -1]))
 
             yield y
 
@@ -378,7 +383,7 @@ if __name__ == "__main__":
         "--write-every", type=int, default=1, help="After how many tokens to detokenize"
     )
     parser.add_argument(
-        "--temp", type=float, default=0.8, help="The sampling temperature"
+        "--temp", type=float, default=0.0, help="The sampling temperature"
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
 

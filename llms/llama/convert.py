@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import copy
 import glob
 import json
 from pathlib import Path
@@ -115,8 +116,10 @@ def tiny_llama(model_path):
 
 
 def quantize(weights, config):
+    import mlx.core as mx
     import mlx.nn as nn
-    from llama import LLama, ModelArgs
+    from llama import Llama, ModelArgs
+    from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
     quantized_config = copy.deepcopy(config)
 
@@ -137,13 +140,13 @@ def quantize(weights, config):
     for k in unused:
         config.pop(k, None)
     model = Llama(ModelArgs(**config))
+    weights = tree_map(mx.array, weights)
     model.update(tree_unflatten(list(weights.items())))
     nn.QuantizedLinear.quantize_module(model)
 
     # Update the config
-    quantized_config["quantization"] = {"groups": 128, "width": 4}
-    quantized_weights = tree_flatten(model.parameters())
-    mx.eval(quantized_weights)
+    quantized_config["quantization"] = {"groups": 64, "width": 4}
+    quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config
 
@@ -174,12 +177,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     model_path = Path(args.model_path)
+    print("[INFO] Loading")
     weights, params = globals()[args.model_name](model_path)
     params["model_type"] = "llama"
     if args.quantize:
-        print("[INFO] Quantizing model...")
+        print("[INFO] Quantizing")
         weights, params = quantize(weights, params)
 
+    print("[INFO] Saving")
     np.savez(str(model_path / "weights.npz"), **weights)
     with open(model_path / "config.json", "w") as fid:
         json.dump(params, fid, indent=4)
