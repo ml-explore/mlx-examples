@@ -329,7 +329,8 @@ def few_shot_generate(args):
 def load_model(model_path):
     model_path = Path(model_path)
     weights = mx.load(str(model_path / "weights.npz"))
-    with open(model_path / "params.json", "r") as f:
+    with open(model_path / "config.json", "r") as f:
+        config.pop("model_type", None)
         config = json.loads(f.read())
         n_heads = config["n_heads"]
         if "n_kv_heads" not in config:

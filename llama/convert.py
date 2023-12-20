@@ -106,6 +106,7 @@ def tiny_llama(model_path):
     params["vocab_size"] = config.vocab_size
     params["norm_eps"] = config.rms_norm_eps
     params["rope_traditional"] = False
+    params["model_type"] = "llama"
     weights = {k: v.to(torch.float16).numpy() for k, v in model.items()}
 
     return weights, params
@@ -134,5 +135,5 @@ if __name__ == "__main__":
     weights, params = globals()[args.model_name](model_path)
     np.savez(str(model_path / "weights.npz"), **weights)
     if params is not None:
-        with open(model_path / "params.json", "w") as fid:
+        with open(model_path / "config.json", "w") as fid:
             json.dump(params, fid, indent=4)
