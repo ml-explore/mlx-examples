@@ -247,8 +247,9 @@ class Tokenizer:
 def load_model(folder: str, dtype=mx.float16):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
-    with open("params.json", "r") as f:
+    with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
+        config.pop("model_type", None)
         model_args = ModelArgs(**config)
     weight_files = glob.glob(str(model_path / "weights.*.npz"))
     weights = {}
