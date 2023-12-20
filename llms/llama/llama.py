@@ -345,9 +345,13 @@ def load_model(model_path):
             config["rope_theta"] = 10000
         unused = ["multiple_of", "ffn_dim_multiplier"]
         for k in unused:
-            if k in config:
-                config.pop(k)
+            config.pop(k, None)
+        quantization = config.pop("quantization", None)
     model = Llama(ModelArgs(**config))
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(
+            model, groups=quantization["groups"], width=quantization["width"]
+        )
     model.update(tree_unflatten(list(weights.items())))
     return model
 
