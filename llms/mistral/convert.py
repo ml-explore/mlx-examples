@@ -1,10 +1,11 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-import numpy as np
+import json
 from pathlib import Path
-import torch
 
+import numpy as np
+import torch
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Mistral weights to MLX.")
@@ -22,3 +23,10 @@ if __name__ == "__main__":
         str(model_path / "weights.npz"),
         **{k: v.to(torch.float16).numpy() for k, v in state.items()}
     )
+
+    # Save config.json with model_type
+    with open(model_path / "params.json", "r") as f:
+        config = json.loads(f.read())
+        config["model_type"] = "mistral"
+    with open(model_path / "config.json", "w") as f:
+        json.dump(config, f, indent=4)

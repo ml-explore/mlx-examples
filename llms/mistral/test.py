@@ -2,10 +2,9 @@
 
 import unittest
 
+import mistral
 import mlx.core as mx
 from mlx.utils import tree_map
-
-import mistral
 
 
 class TestMistral(unittest.TestCase):

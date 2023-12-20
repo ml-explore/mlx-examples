@@ -1,6 +1,4 @@
 # Copyright © 2023 Apple Inc.
 
-from . import load_models
-from . import audio
-from . import decoding
+from . import audio, decoding, load_models
 from .transcribe import transcribe

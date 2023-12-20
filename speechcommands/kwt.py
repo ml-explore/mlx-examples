@@ -1,8 +1,8 @@
 from typing import Any
+
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten
-
 
 __all__ = ["KWT", "kwt1", "kwt2", "kwt3"]
 

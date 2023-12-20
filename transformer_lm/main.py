@@ -3,14 +3,12 @@
 import math
 import time
 
-import numpy as np
-
+import datasets
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+import numpy as np
 from mlx.utils import tree_flatten
-
-import datasets
 
 
 class TransformerLM(nn.Module):

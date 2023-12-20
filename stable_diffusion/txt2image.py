@@ -1,13 +1,12 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
+
+import mlx.core as mx
 from PIL import Image
 from tqdm import tqdm
 
-import mlx.core as mx
-
 from stable_diffusion import StableDiffusion
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

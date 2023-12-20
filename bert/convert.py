@@ -1,7 +1,7 @@
-from transformers import BertModel
-
 import argparse
+
 import numpy
+from transformers import BertModel
 
 
 def replace_key(key: str) -> str:

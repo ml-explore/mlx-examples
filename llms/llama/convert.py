@@ -4,8 +4,9 @@ import argparse
 import collections
 import glob
 import json
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 import torch
 
 

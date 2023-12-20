@@ -3,8 +3,9 @@
 import argparse
 import glob
 import json
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 import torch
 
 
@@ -43,6 +44,9 @@ if __name__ == "__main__":
 
     with open("params.json") as fid:
         args = json.load(fid)
+        args["model_type"] = "mixtral"
+    with open(model_path / "config.json", "w") as f:
+        json.dump(args, f, indent=4)
 
     torch_files = glob.glob(str(model_path / "consolidated.*.pt"))
     torch_files = sorted(torch_files, key=lambda tf: int(tf.split(".")[-2]))

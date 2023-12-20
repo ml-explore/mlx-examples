@@ -1,11 +1,11 @@
 import argparse
-from typing import Optional, Tuple, List
 from time import perf_counter_ns
+from typing import List, Optional, Tuple
 
-import numpy as np
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_unflatten, tree_map
+import numpy as np
+from mlx.utils import tree_map, tree_unflatten
 from transformers import T5Config, T5Tokenizer
 
 
@@ -166,7 +166,7 @@ class DenseActivation(nn.Module):
             self.act = nn.relu
         elif activation == "gelu":
             self.act = nn.gelu
-        elif activation ==  "silu":
+        elif activation == "silu":
             self.act = nn.silu
         else:
             raise ValueError(f"Unknown activation: {activation}")
@@ -337,7 +337,7 @@ class Tokenizer:
         self._tokenizer = T5Tokenizer.from_pretrained(
             args.model,
             legacy=False,
-            model_max_length=getattr(config, 'n_positions', 512)
+            model_max_length=getattr(config, "n_positions", 512),
         )
 
     @property

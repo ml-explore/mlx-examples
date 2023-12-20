@@ -1,6 +1,6 @@
-from transformers import T5ForConditionalGeneration, T5EncoderModel, AutoTokenizer
-
 import argparse
+
+from transformers import AutoTokenizer, T5EncoderModel, T5ForConditionalGeneration
 
 
 def embed(t5_model: str):
@@ -51,4 +51,3 @@ if __name__ == "__main__":
         embed(args.model)
     else:
         generate(args.model)
-

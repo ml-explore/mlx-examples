@@ -1,13 +1,13 @@
 import argparse
 import time
-import kwt
-import mlx.nn as nn
-import mlx.data as dx
-import mlx.core as mx
-import mlx.optimizers as optim
-from mlx.data.features import mfsc
-from mlx.data.datasets import load_speechcommands
 
+import kwt
+import mlx.core as mx
+import mlx.data as dx
+import mlx.nn as nn
+import mlx.optimizers as optim
+from mlx.data.datasets import load_speechcommands
+from mlx.data.features import mfsc
 
 parser = argparse.ArgumentParser(add_help=True)
 parser.add_argument(

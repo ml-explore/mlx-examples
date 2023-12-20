@@ -2,13 +2,12 @@
 
 import base64
 import gzip
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Dict, Iterable, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-
 import numpy as np
 
 from .decoding import decode as decode_function

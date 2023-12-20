@@ -3,10 +3,9 @@
 import math
 import time
 
+import datasets
 import numpy as np
 import tensorflow as tf
-
-import datasets
 
 
 def to_samples(context_size, dataset):
