@@ -13,7 +13,7 @@ class Bijector:
 
 
 class AffineBijector(Bijector):
-    def __init__(self, shift_and_log_scale):
+    def __init__(self, shift_and_log_scale: mx.array):
         self.shift_and_log_scale = shift_and_log_scale
 
     def forward_and_log_det(self, x: mx.array):
