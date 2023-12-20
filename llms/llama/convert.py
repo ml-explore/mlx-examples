@@ -46,7 +46,9 @@ def llama(model_path):
 
     for k, v in weights.items():
         weights[k] = unshard(k, v)
-    return weights, None
+    with open(model_path / "params.json", "r") as f:
+        params = json.loads(f.read())
+    return weights, params
 
 
 def tiny_llama(model_path):
@@ -123,7 +125,7 @@ if __name__ == "__main__":
         help=(
             "Name of the model to convert. Use 'llama' for models in the "
             "Llama family distributed by Meta including Llama 1, Llama 2, "
-            "Coda Llama, and Llama chat."
+            "Code Llama, and Llama chat."
         ),
         choices=["tiny_llama", "llama"],
         default="llama",
@@ -133,7 +135,7 @@ if __name__ == "__main__":
 
     model_path = Path(args.model_path)
     weights, params = globals()[args.model_name](model_path)
+    params["model_type"] = "llama"
     np.savez(str(model_path / "weights.npz"), **weights)
-    if params is not None:
-        with open(model_path / "params.json", "w") as fid:
-            json.dump(params, fid, indent=4)
+    with open(model_path / "config.json", "w") as fid:
+        json.dump(params, fid, indent=4)
