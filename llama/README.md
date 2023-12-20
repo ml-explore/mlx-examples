@@ -20,10 +20,8 @@ weights you will need to request access from Meta:
 - [Request Llama v1](https://docs.google.com/forms/d/e/1FAIpQLSfqNECQnMkycAp2jP4Z9TFX0cGR4uf7b_fBxjY_OjhJILlKGA/viewform)
 - [Request Llama v2](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
 
-
-Alternatively, you can also download a select converted checkpoints from the
-[mlx-llama](https://huggingface.co/mlx-llama) community organisation on Hugging
-Face and skip the conversion step.
+> [!TIP]
+> Alternatively, you can also download a select converted checkpoints from the [mlx-community](https://huggingface.co/mlx-community) community organisation on Hugging Face and skip the conversion step.
 
 You can download the TinyLlama models directly from [Hugging
 Face](https://huggingface.co/TinyLlama).
