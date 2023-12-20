@@ -1,6 +1,7 @@
+import math
+
 import mlx.core as mx
 from mlx.data.datasets import load_cifar10
-import math
 
 
 def get_cifar10(batch_size, root=None):

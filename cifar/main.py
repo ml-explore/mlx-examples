@@ -1,11 +1,11 @@
 import argparse
 import time
-import resnet
-import mlx.nn as nn
-import mlx.core as mx
-import mlx.optimizers as optim
-from dataset import get_cifar10
 
+import mlx.core as mx
+import mlx.nn as nn
+import mlx.optimizers as optim
+import resnet
+from dataset import get_cifar10
 
 parser = argparse.ArgumentParser(add_help=True)
 parser.add_argument(

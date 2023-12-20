@@ -5,10 +5,7 @@ import time
 
 import mlx.core as mx
 
-from whisper import load_models
-from whisper import audio
-from whisper import decoding
-from whisper import transcribe
+from whisper import audio, decoding, load_models, transcribe
 
 audio_file = "whisper/assets/ls_test.flac"
 

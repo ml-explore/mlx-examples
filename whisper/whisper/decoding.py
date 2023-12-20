@@ -1,12 +1,13 @@
 # Copyright © 2023 Apple Inc.
 
+import zlib
 from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+
 import mlx.core as mx
-from mlx.utils import tree_map
 import mlx.nn as nn
 import numpy as np
-import zlib
+from mlx.utils import tree_map
 
 from .audio import CHUNK_LENGTH
 from .tokenizer import Tokenizer, get_tokenizer

@@ -2,12 +2,12 @@
 
 import argparse
 import json
-import numpy as np
-from pathlib import Path
-import shutil
 import os
-import torch
+import shutil
+from pathlib import Path
 
+import numpy as np
+import torch
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

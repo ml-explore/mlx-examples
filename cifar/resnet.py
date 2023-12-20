@@ -6,10 +6,10 @@ There's no BatchNorm is mlx==0.0.4, using LayerNorm instead.
 """
 
 from typing import Any
+
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten
-
 
 __all__ = [
     "ResNet",

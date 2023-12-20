@@ -1,6 +1,6 @@
-from transformers import AutoModel, AutoTokenizer
-
 import argparse
+
+from transformers import AutoModel, AutoTokenizer
 
 
 def run(bert_model: str):

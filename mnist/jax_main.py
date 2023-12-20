@@ -1,9 +1,10 @@
 # Copyright © 2023 Apple Inc.
 
-import jax
-import jax.numpy as jnp
 import functools
 import time
+
+import jax
+import jax.numpy as jnp
 
 import mnist
 

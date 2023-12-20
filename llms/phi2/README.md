@@ -17,8 +17,10 @@ python convert.py
 
 This will make the `weights.npz` file which MLX can read.
 
-> [!TIP]
-> Alternatively, you can also download a few converted checkpoints from the the [MLX Community](https://huggingface.co/mlx-community) organisation on Hugging Face and skip the conversion step.
+> [!TIP] Alternatively, you can also download a few converted checkpoints from
+> the [MLX Community](https://huggingface.co/mlx-community) organization on
+> Hugging Face and skip the conversion step.
+
 
 ## Generate 
 

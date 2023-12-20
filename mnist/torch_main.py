@@ -1,8 +1,9 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-import torch
 import time
+
+import torch
 
 import mnist
 

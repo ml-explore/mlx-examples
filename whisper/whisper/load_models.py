@@ -7,13 +7,11 @@ import warnings
 from typing import List
 
 import mlx.core as mx
-from mlx.utils import tree_map
-
 import torch
+from mlx.utils import tree_map
 from tqdm import tqdm
 
-from . import whisper
-from . import torch_whisper
+from . import torch_whisper, whisper
 
 _MODELS = {
     "tiny.en": "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt",
