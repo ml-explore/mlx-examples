@@ -124,7 +124,7 @@ if __name__ == "__main__":
         help=(
             "Name of the model to convert. Use 'llama' for models in the "
             "Llama family distributed by Meta including Llama 1, Llama 2, "
-            "Coda Llama, and Llama chat."
+            "Code Llama, and Llama chat."
         ),
         choices=["tiny_llama", "llama"],
         default="llama",
