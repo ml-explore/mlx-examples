@@ -28,6 +28,9 @@ python convert.py
 
 The conversion script will save the converted weights in the same location.
 
+> [!TIP]
+> Alternatively, you can also download a few converted checkpoints from the the [MLX Community](https://huggingface.co/mlx-community) organisation on Hugging Face and skip the conversion step.
+
 ### Run
 
 Once you've converted the weights to MLX format, you can generate text with
