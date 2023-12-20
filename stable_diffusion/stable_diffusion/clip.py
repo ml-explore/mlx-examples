@@ -73,8 +73,8 @@ class CLIPTextModel(nn.Module):
 class CLIPTextModelWithProjection(CLIPTextModel):
     def __init__(self, config: CLIPTextModelConfig):
         super().__init__(config)
-        self.projection = nn.Linear(config.model_dims, config.projection_dims)
+        self.text_projection = nn.Linear(config.model_dims, config.projection_dims)
 
     def __call__(self, x):
         x = super().__call__(x)
-        return self.projection(x)
+        return self.text_projection(x)

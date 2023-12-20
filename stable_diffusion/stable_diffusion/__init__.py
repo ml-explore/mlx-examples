@@ -136,9 +136,9 @@ class StableDiffusionXL(StableDiffusion):
         )
         if cfg_weight > 1:
             tokens2 += (
-                [self.tokenizer.tokenize(negative_text_2)]
+                [self.tokenizer_2.tokenize(negative_text_2)]
                 if text_2
-                else [self.tokenizer.tokenize(negative_text)]
+                else [self.tokenizer_2.tokenize(negative_text)]
             )
         lengths2 = [len(t) for t in tokens2]
         N = max(lengths2)

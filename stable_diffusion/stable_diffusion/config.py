@@ -38,7 +38,21 @@ class UNetConfig:
     transformer_layers_per_block: Tuple[int] = (1, 1, 1, 1)
     num_attention_heads: Tuple[int] = (5, 10, 20, 20)
     cross_attention_dim: Tuple[int] = (1024,) * 4
-    norm_num_groups: int = 32
+    norm_num_groups: int = (32,)
+    down_block_types: Tuple[str] = (
+        (
+            "CrossAttnDownBlock2D",
+            "CrossAttnDownBlock2D",
+            "CrossAttnDownBlock2D",
+            "DownBlock2D",
+        ),
+    )
+    up_block_types: Tuple[str] = (
+        "UpBlock2D",
+        "CrossAttnUpBlock2D",
+        "CrossAttnUpBlock2D",
+        "CrossAttnUpBlock2D",
+    )
 
 
 @dataclass
