@@ -1,8 +1,9 @@
 import argparse
-from transformers import AutoModelForCausalLM
+import json
+
 import numpy as np
 import torch
-import json
+from transformers import AutoModelForCausalLM
 
 
 def replace_key(key: str) -> str:

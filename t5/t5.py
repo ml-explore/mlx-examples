@@ -337,7 +337,7 @@ class Tokenizer:
         self._tokenizer = T5Tokenizer.from_pretrained(
             args.model,
             legacy=False,
-            model_max_length=getattr(config, 'n_positions', 512)
+            model_max_length=getattr(config, "n_positions", 512),
         )
 
     @property

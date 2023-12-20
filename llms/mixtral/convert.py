@@ -46,7 +46,7 @@ if __name__ == "__main__":
         args = json.load(fid)
         args["model_type"] = "mixtral"
     with open(model_path / "config.json", "w") as f:
-        json.dump(args, f, indent=4)        
+        json.dump(args, f, indent=4)
 
     torch_files = glob.glob(str(model_path / "consolidated.*.pt"))
     torch_files = sorted(torch_files, key=lambda tf: int(tf.split(".")[-2]))
