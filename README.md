@@ -16,6 +16,8 @@ Some more useful examples include:
 - Bidirectional language understanding with [BERT](bert)
 - Semi-supervised learning on graph-structured data with [GCN](gcn).
 
+Note: You can now directly download a few converted checkpoints from the [MLX Community](https://huggingface.co/mlx-community) organisation on Hugging Face.
+
 ## Contributing 
 
 We are grateful for all of [our
