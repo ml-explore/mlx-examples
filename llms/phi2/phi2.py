@@ -167,7 +167,7 @@ def load_model(model_path: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Phi-2 inference script")
     parser.add_argument(
-        "--model_path",
+        "--model-path",
         type=str,
         default="phi-2",
         help="The path to the model weights",
@@ -178,7 +178,7 @@ if __name__ == "__main__":
         default="Write a detailed analogy between mathematics and a lighthouse.",
     )
     parser.add_argument(
-        "--max_tokens",
+        "--max-tokens",
         "-m",
         type=int,
         default=100,

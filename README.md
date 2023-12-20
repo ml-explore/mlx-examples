@@ -30,7 +30,12 @@ Some more useful examples are listed below.
 
 - Semi-supervised learning on graph-structured data with [GCN](gcn).
 
-Note: You can now directly download a few converted checkpoints from the [MLX Community](https://huggingface.co/mlx-community) organisation on Hugging Face.
+### Hugging Face
+
+Note: You can now directly download a few converted checkpoints from the [MLX
+Community](https://huggingface.co/mlx-community) organization on Hugging Face.
+We encourage you to join the community and [contribute new
+models](https://github.com/ml-explore/mlx-examples/issues/155).
 
 ## Contributing 
 
