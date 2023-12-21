@@ -14,14 +14,32 @@ from mistral import Mistral, ModelArgs
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 
+def savez_stream(filename, **kwargs):
+    import os
+    import zipfile
+    with zipfile.ZipFile(filename, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for k, v in kwargs.items():
+            print(f"EVALING AND SAVING {k}")
+            mx.eval(v)
+            tmpfilename = f"{k}.npy"
+            np.save(tmpfilename, v)
+            del v
+            zf.write(tmpfilename)
+            os.remove(tmpfilename)
+
+
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
     # Load the model:
     config.pop("sliding_window", None)
     model = Mistral(ModelArgs(**config))
-    weights = tree_map(mx.array, weights)
+    for k, v in weights.items():
+        weights[k] = mx.array(v)
+        del v
+
     model.update(tree_unflatten(list(weights.items())))
+    del weights
 
     # Quantize the model:
     nn.QuantizedLinear.quantize_module(model, args.q_group_size, args.q_bits)
@@ -71,11 +89,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     torch_path = Path(args.torch_path)
-    state = torch.load(str(torch_path / "consolidated.00.pth"))
+    weights = torch.load(str(torch_path / "consolidated.00.pth"), mmap=True)
     mlx_path = Path(args.mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
 
-    weights = {k: v.to(torch.float16).numpy() for k, v in state.items()}
+    weights = {k: v.to(torch.float16).numpy() for k, v in weights.items()}
     with open(torch_path / "params.json", "r") as f:
         config = json.loads(f.read())
 
@@ -84,7 +102,7 @@ if __name__ == "__main__":
         weights, config = quantize(weights, config, args)
 
     # Save weights
-    np.savez(str(mlx_path / "weights.npz"), **weights)
+    savez_stream(str(mlx_path / "weights.npz"), **weights)
 
     # Copy tokenizer
     shutil.copyfile(
