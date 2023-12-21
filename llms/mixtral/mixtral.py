@@ -258,14 +258,8 @@ def load_model(folder: str):
         weights.update(mx.load(wf).items())
     weights = tree_unflatten(list(weights.items()))
     model = Mixtral(model_args)
-    #    model.update(weights)
-    #    quantization = {
-    #        "group_size": 64,
-    #        "bits": 4,
-    #    }
     if quantization is not None:
         # TODO: Quantize gate matrices when < 32 tiles supported
-        print("QUANTIZING")
         quantization["linear_class_predicate"] = (
             lambda m: isinstance(m, nn.Linear) and m.weight.shape[0] != 8
         )
