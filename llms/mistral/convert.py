@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "--torch-path",
         type=str,
         default="mistral-7B-v0.1/",
-        help="The path to the PyTorch Mistral model.",
+        help="The path to the PyTorch model.",
     )
     parser.add_argument(
         "--mlx-path",
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-q",
         "--quantize",
-        help="Generate a 4-bit quantized model.",
+        help="Generate a quantized model.",
         action="store_true",
     )
     parser.add_argument(
@@ -84,9 +84,6 @@ if __name__ == "__main__":
         weights, config = quantize(weights, config, args)
 
     # Save weights
-    import pdb
-
-    pdb.set_trace()
     np.savez(str(mlx_path / "weights.npz"), **weights)
 
     # Copy tokenizer

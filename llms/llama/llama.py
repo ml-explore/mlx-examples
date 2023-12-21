@@ -360,15 +360,17 @@ def load_model(model_path):
     if quantization is not None:
         nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(tree_unflatten(list(weights.items())))
-    return model
+    tokenizer = SentencePieceProcessor(model_file=str(model_path / "tokenizer.model"))
+    return model, tokenizer
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Llama inference script")
     parser.add_argument(
-        "model", help="Path to the model directory containing the MLX weights"
+        "--model-path",
+        help="Path to the model directory containing the MLX weights",
+        default="mlx_model",
     )
-    parser.add_argument("tokenizer", help="The sentencepiece tokenizer")
     parser.add_argument(
         "--prompt",
         help="The message to be processed by the model. Ignored when --few-shot is provided.",
@@ -393,9 +395,8 @@ if __name__ == "__main__":
 
     mx.random.seed(args.seed)
 
-    tokenizer = SentencePieceProcessor(model_file=args.tokenizer)
     print("[INFO] Loading model from disk.")
-    model = load_model(args.model)
+    model, tokenizer = load_model(args.model_path)
     if args.few_shot:
         few_shot_generate(args)
     else:
