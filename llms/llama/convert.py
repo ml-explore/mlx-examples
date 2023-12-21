@@ -2,12 +2,18 @@
 
 import argparse
 import collections
+import copy
 import glob
 import json
+import shutil
 from pathlib import Path
 
+import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 import torch
+from llama import Llama, ModelArgs, sanitize_config
+from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 
 def llama(model_path):
@@ -57,9 +63,7 @@ def tiny_llama(model_path):
     except ImportError as e:
         print("The transformers package must be installed for this model conversion:")
         print("pip install transformers")
-        import sys
-
-        sys.exit(0)
+        exit(0)
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         str(model_path)
@@ -114,11 +118,40 @@ def tiny_llama(model_path):
     return weights, params
 
 
+def quantize(weights, config, args):
+    quantized_config = copy.deepcopy(config)
+
+    # Load the model:
+    config = sanitize_config(config, weights)
+    model = Llama(ModelArgs(**config))
+    weights = tree_map(mx.array, weights)
+    model.update(tree_unflatten(list(weights.items())))
+
+    # Quantize the model:
+    nn.QuantizedLinear.quantize_module(model, args.q_group_size, args.q_bits)
+
+    # Update the config:
+    quantized_config["quantization"] = {
+        "group_size": args.q_group_size,
+        "bits": args.q_bits,
+    }
+    quantized_weights = dict(tree_flatten(model.parameters()))
+
+    return quantized_weights, quantized_config
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Llama weights to MLX")
     parser.add_argument(
-        "--model-path",
-        help="Path to the model. The MLX weights will also be saved there.",
+        "--torch-path",
+        type=str,
+        help="Path to the PyTorch model.",
+    )
+    parser.add_argument(
+        "--mlx-path",
+        type=str,
+        default="mlx_model",
+        help="Path to save the MLX model.",
     )
     parser.add_argument(
         "--model-name",
@@ -130,12 +163,43 @@ if __name__ == "__main__":
         choices=["tiny_llama", "llama"],
         default="llama",
     )
+    parser.add_argument(
+        "-q",
+        "--quantize",
+        help="Generate a quantized model.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--q_group_size",
+        help="Group size for quantization.",
+        type=int,
+        default=64,
+    )
+    parser.add_argument(
+        "--q_bits",
+        help="Bits per weight for quantization.",
+        type=int,
+        default=4,
+    )
 
     args = parser.parse_args()
 
-    model_path = Path(args.model_path)
-    weights, params = globals()[args.model_name](model_path)
+    torch_path = Path(args.torch_path)
+    mlx_path = Path(args.mlx_path)
+    mlx_path.mkdir(parents=True, exist_ok=True)
+
+    print("[INFO] Loading")
+    weights, params = globals()[args.model_name](torch_path)
     params["model_type"] = "llama"
-    np.savez(str(model_path / "weights.npz"), **weights)
-    with open(model_path / "config.json", "w") as fid:
+    if args.quantize:
+        print("[INFO] Quantizing")
+        weights, params = quantize(weights, params, args)
+
+    print("[INFO] Saving")
+    shutil.copyfile(
+        str(torch_path / "tokenizer.model"),
+        str(mlx_path / "tokenizer.model"),
+    )
+    np.savez(str(mlx_path / "weights.npz"), **weights)
+    with open(mlx_path / "config.json", "w") as fid:
         json.dump(params, fid, indent=4)

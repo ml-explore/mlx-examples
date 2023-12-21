@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_map, tree_unflatten
+from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
 
 
@@ -189,18 +189,20 @@ class Tokenizer:
         return out
 
 
-def load_model(folder: str, dtype=mx.float16):
+def load_model(folder: str):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
         config.pop("sliding_window", None)
         config.pop("model_type", None)
+        quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
     weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
     model = Mistral(model_args)
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(weights)
     return model, tokenizer
 
@@ -227,7 +229,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-path",
         type=str,
-        default="mistral-7B-v0.1",
+        default="mlx_model",
         help="The path to the model weights and tokenizer",
     )
     parser.add_argument(
@@ -236,7 +238,7 @@ if __name__ == "__main__":
         default="In the beginning the Universe was created.",
     )
     parser.add_argument(
-        "--max_tokens",
+        "--max-tokens",
         "-m",
         type=int,
         default=100,
@@ -246,7 +248,7 @@ if __name__ == "__main__":
         "--temp",
         help="The sampling temperature.",
         type=float,
-        default=1.0,
+        default=0.0,
     )
     parser.add_argument(
         "--tokens_per_eval",
