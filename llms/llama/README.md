@@ -30,24 +30,32 @@ Face](https://huggingface.co/TinyLlama).
 Convert the weights with:
 
 ```
-python convert.py --model-path <path_to_torch_model>
+python convert.py --torch-path <path_to_torch_model>
+```
+
+To generate a 4-bit quantized model use the `-q` flag:
+
+```
+python convert.py --torch-path <path_to_torch_model> -q
 ```
 
 For TinyLlama use
 
 ```
-python convert.py --model-path <path_to_torch_model> --model-name tiny_llama
+python convert.py --torch-path <path_to_torch_model> --model-name tiny_llama
 ```
 
-The conversion script will save the converted weights in the same location.
+By default, the conversion script will make the directory `mlx_model` and save
+the converted `weights.npz`, `tokenizer.model`, and `config.json` there.
+
 
 ### Run
 
 Once you've converted the weights to MLX format, you can interact with the
-LlaMA model:
+LlamA model:
 
 ```
-python llama.py <path_to_model> <path_to_tokenizer.model> --prompt "hello"
+python llama.py --prompt "hello"
 ```
 
 Run `python llama.py --help` for more details.

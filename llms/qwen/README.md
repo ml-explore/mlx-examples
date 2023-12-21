@@ -11,11 +11,15 @@ First download and convert the model with:
 ```sh
 python convert.py
 ```
-The script downloads the model from Hugging Face. The default model is
-`Qwen/Qwen-1_8B`. Check out the [Hugging Face page](https://huggingface.co/Qwen) to see a list of available models.
 
-The conversion script will make the `weights.npz` and `config.json` files in
-the working directory.
+To generate a 4-bit quantized model, use ``-q``. For a full list of options:
+
+The script downloads the model from Hugging Face. The default model is
+`Qwen/Qwen-1_8B`. Check out the [Hugging Face
+page](https://huggingface.co/Qwen) to see a list of available models.
+
+By default, the conversion script will make the directory `mlx_model` and save
+the converted `weights.npz` and `config.json` there.
 
 ## Generate
 
