@@ -40,22 +40,22 @@ python main.py --help
 
 ## Results
 
-After training with the `kwt1` architecture for 10 epochs, you
+After training with the `kwt1` architecture for 100 epochs, you
 should see the following results:
 
 ```
-Epoch: 9 | avg. Train loss 0.519 | avg. Train acc 0.857 | Throughput: 661.28 samples/sec
-Epoch: 9 | Val acc 0.861 | Throughput: 2976.54 samples/sec
-Testing best model from epoch 9
-Test acc -> 0.841
+Epoch: 99 | avg. Train loss 0.018 | avg. Train acc 0.996 | Throughput: 662.51 samples/sec
+Epoch: 99 | Val acc 0.893 | Throughput: 3091.26 samples/sec
+Testing best model from epoch 97
+Test acc -> 0.882
 ```
 
 For the `kwt2` model, you should see:
 ```
-Epoch: 9 | avg. Train loss 0.374 | avg. Train acc 0.895 | Throughput: 395.26 samples/sec
-Epoch: 9 | Val acc 0.879 | Throughput: 1542.44 samples/sec
-Testing best model from epoch 9
-Test acc -> 0.861
+Epoch: 99 | avg. Train loss 0.003 | avg. Train acc 1.000 | Throughput: 396.53 samples/sec
+Epoch: 99 | Val acc 0.901 | Throughput: 1543.48 samples/sec
+Testing best model from epoch 94
+Test acc -> 0.893
 ```
 
 Note that this was run on an M1 Macbook Pro with 16GB RAM.
@@ -65,5 +65,5 @@ schedules, which is used along with the AdamW optimizer in the official
 implementation. We intend to update this example once these features are added,
 as well as with appropriate data augmentations.
 
-[^1]: Based one the paper [Keyword Transformer: A Self-Attention Model for Keyword Spotting](https://www.isca-speech.org/archive/interspeech_2021/berg21_interspeech.html)
-[^2]: We use version 0.02. See the [paper]((https://arxiv.org/abs/1804.03209) for more details.
+[^1]: Based on the paper [Keyword Transformer: A Self-Attention Model for Keyword Spotting](https://www.isca-speech.org/archive/interspeech_2021/berg21_interspeech.html)  
+[^2]: We use version 0.02. See the [paper](https://arxiv.org/abs/1804.03209) for more details.
