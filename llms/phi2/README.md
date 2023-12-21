@@ -15,7 +15,14 @@ Download and convert the model:
 python convert.py
 ```
 
-This will make the `weights.npz` file which MLX can read.
+To generate a 4-bit quantized model use the `-q` flag:
+
+```
+python convert.py -q
+```
+
+By default, the conversion script will make the directory `mlx_model` and save
+the converted `weights.npz`, and `config.json` there.
 
 > [!TIP] Alternatively, you can also download a few converted checkpoints from
 > the [MLX Community](https://huggingface.co/mlx-community) organization on
