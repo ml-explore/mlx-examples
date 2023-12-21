@@ -26,6 +26,12 @@ Then, convert the weights with:
 python convert.py
 ```
 
+To generate a 4-bit quantized model, use:
+
+```
+python convert.py -q
+```
+
 The conversion script will save the converted weights in the same location.
 
 > [!TIP]

@@ -33,6 +33,12 @@ Convert the weights with:
 python convert.py --model-path <path_to_torch_model>
 ```
 
+To generate a 4-bit quantized model use the `-q` flag:
+
+```
+python convert.py --model-path <path_to_torch_model> -q
+```
+
 For TinyLlama use
 
 ```

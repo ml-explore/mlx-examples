@@ -196,11 +196,14 @@ def load_model(folder: str, dtype=mx.float16):
         config = json.loads(f.read())
         config.pop("sliding_window", None)
         config.pop("model_type", None)
+        quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
     weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: p.astype(dtype), weights)
     model = Mistral(model_args)
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(weights)
     return model, tokenizer
 

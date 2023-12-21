@@ -7,8 +7,12 @@ import glob
 import json
 from pathlib import Path
 
+import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 import torch
+from llama import Llama, ModelArgs, sanitize_config
+from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 
 def llama(model_path):
@@ -116,11 +120,6 @@ def tiny_llama(model_path):
 
 
 def quantize(weights, config):
-    import mlx.core as mx
-    import mlx.nn as nn
-    from llama import Llama, ModelArgs, sanitize_config
-    from mlx.utils import tree_flatten, tree_map, tree_unflatten
-
     quantized_config = copy.deepcopy(config)
 
     # Load the model:
@@ -133,7 +132,7 @@ def quantize(weights, config):
     nn.QuantizedLinear.quantize_module(model)
 
     # Update the config:
-    quantized_config["quantization"] = {"groups": 64, "width": 4}
+    quantized_config["quantization"] = {"group_size": 64, "bits": 4}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config
@@ -158,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-q",
         "--quantize",
-        help="Quantize the model before saving",
+        help="Generate a 4-bit quantized model.",
         action="store_true",
     )
 
