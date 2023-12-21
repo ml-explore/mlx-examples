@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from mlx.utils import tree_map, tree_flatten, tree_unflatten
+from mlx.utils import tree_map, tree_unflatten
 from transformers import T5Config, AutoTokenizer
 
 
