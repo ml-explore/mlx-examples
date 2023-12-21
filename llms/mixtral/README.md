@@ -43,7 +43,7 @@ Now from `mlx-exmaples/mixtral` convert and save the weights as NumPy arrays so
 MLX can read them:
 
 ```
-python convert.py --model_path $MIXTRAL_MODEL/
+python convert.py --model-path $MIXTRAL_MODEL/
 ```
 
 The conversion script will save the converted weights in the same location.
@@ -53,7 +53,7 @@ The conversion script will save the converted weights in the same location.
 As easy as:
 
 ```
-python mixtral.py --model_path $MIXTRAL_MODEL/
+python mixtral.py --model-path $MIXTRAL_MODEL/
 ```
 
 For more options including how to prompt the model, run:

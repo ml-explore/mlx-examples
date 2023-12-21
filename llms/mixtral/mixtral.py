@@ -282,7 +282,7 @@ def generate(prompt: mx.array, model: Mixtral, temp: Optional[float] = 0.0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mixtral inference script")
     parser.add_argument(
-        "--model_path",
+        "--model-path",
         type=str,
         default="Mixtral-8x7B-v0.1",
         help="The path to the model weights, tokenizer, and config",
