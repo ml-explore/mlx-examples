@@ -244,20 +244,33 @@ class Tokenizer:
         return out
 
 
-def load_model(folder: str, dtype=mx.float16):
+def load_model(folder: str):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
         config.pop("model_type", None)
+        quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
     weight_files = glob.glob(str(model_path / "weights.*.npz"))
     weights = {}
     for wf in weight_files:
         weights.update(mx.load(wf).items())
     weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
     model = Mixtral(model_args)
+    #    model.update(weights)
+    #    quantization = {
+    #        "group_size": 64,
+    #        "bits": 4,
+    #    }
+    if quantization is not None:
+        # TODO: Quantize gate matrices when < 32 tiles supported
+        print("QUANTIZING")
+        quantization["linear_class_predicate"] = (
+            lambda m: isinstance(m, nn.Linear) and m.weight.shape[0] != 8
+        )
+        nn.QuantizedLinear.quantize_module(model, **quantization)
+
     model.update(weights)
     return model, tokenizer
 
@@ -284,7 +297,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-path",
         type=str,
-        default="Mixtral-8x7B-v0.1",
+        default="mlx_model",
         help="The path to the model weights, tokenizer, and config",
     )
     parser.add_argument(

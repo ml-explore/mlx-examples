@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--torch-path",
         type=str,
-        default="mistral-7B-v0.1/",
+        default="mistral-7B-v0.1",
         help="The path to the PyTorch model.",
     )
     parser.add_argument(

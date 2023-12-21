@@ -43,10 +43,18 @@ Now from `mlx-exmaples/mixtral` convert and save the weights as NumPy arrays so
 MLX can read them:
 
 ```
-python convert.py --model-path $MIXTRAL_MODEL/
+python convert.py --torch-path $MIXTRAL_MODEL/
 ```
 
-The conversion script will save the converted weights in the same location.
+To generate a 4-bit quantized model, use ``-q``. For a full list of options:
+
+```
+python convert.py --help
+```
+
+By default, the conversion script will make the directory `mlx_model` and save
+the converted `weights.npz`, `tokenizer.model`, and `config.json` there.
+
 
 ### Generate
 

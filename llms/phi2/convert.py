@@ -47,7 +47,7 @@ def convert():
         "--mlx-path",
         type=str,
         default="mlx_model",
-        help="Path to save the MLX model.",
+        help="The path to save the MLX model.",
     )
     parser.add_argument(
         "-q",
