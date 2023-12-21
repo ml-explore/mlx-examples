@@ -7,11 +7,11 @@ GPT-4 outputs and clean web text.
 Phi-2 efficiently runs on Apple silicon devices with 8GB of memory in 16-bit
 precision.
 
-## Setup 
+## Setup
 
 Download and convert the model:
 
-```sh 
+```sh
 python convert.py
 ```
 
@@ -22,7 +22,7 @@ This will make the `weights.npz` file which MLX can read.
 > Hugging Face and skip the conversion step.
 
 
-## Generate 
+## Generate
 
 To generate text with the default prompt:
 
@@ -48,7 +48,7 @@ Answer: Logic in mathematics is like a compass in navigation. It helps
 To use your own prompt:
 
 ```sh
-python phi2.py --prompt <your prompt here> --max_tokens <max_tokens_to_generate>
+python phi2.py --prompt <your prompt here> --max-tokens <max_tokens_to_generate>
 ```
 
 To see a list of options run:
