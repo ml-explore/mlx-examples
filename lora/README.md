@@ -134,7 +134,7 @@ Note other keys will be ignored by the loader.
 
 ## Memory Issues
 
-Fine-tuning a large model with LoRA requires a machine with a deccent amount
+Fine-tuning a large model with LoRA requires a machine with a decent amount
 of memory. Here are some tips to reduce memory use should you need to do so:
 
 1. Try using a smaller batch size with `--batch-size`. The default is `4` so
