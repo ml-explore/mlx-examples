@@ -60,7 +60,7 @@ def llama(model_path):
 def tiny_llama(model_path):
     try:
         import transformers
-    except ImportError as e:
+    except ImportError:
         print("The transformers package must be installed for this model conversion:")
         print("pip install transformers")
         exit(0)
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         help="Path to save the MLX model.",
     )
     parser.add_argument(
-        "--model-name",
+        "--model_name",
         help=(
             "Name of the model to convert. Use 'llama' for models in the "
             "Llama family distributed by Meta including Llama 1, Llama 2, "
