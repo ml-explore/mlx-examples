@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-path",
         type=str,
-        default="phi-2",
+        default=".",
         help="The path to the model weights",
     )
     parser.add_argument(
