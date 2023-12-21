@@ -10,7 +10,7 @@ import torch
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Mistral weights to MLX.")
     parser.add_argument(
-        "--model_path",
+        "--model-path",
         type=str,
         default="mistral-7B-v0.1/",
         help="The path to the Mistral model. The MLX weights will also be saved there.",
