@@ -23,6 +23,7 @@ class ModelArgs:
     n_kv_heads: int
     norm_eps: float
     vocab_size: int
+    rope_theta: float = 10000
 
 
 class RMSNorm(nn.Module):
@@ -55,7 +56,7 @@ class Attention(nn.Module):
         self.wk = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
-        self.rope = nn.RoPE(args.head_dim, traditional=True)
+        self.rope = nn.RoPE(args.head_dim, traditional=True, base=args.rope_theta)
 
     def __call__(
         self,
@@ -196,7 +197,6 @@ def load_model(folder: str):
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
         config.pop("sliding_window", None)
-        config.pop("rope_theta", None)
         config.pop("model_type", None)
         quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
@@ -275,8 +275,8 @@ if __name__ == "__main__":
     for token, ntoks in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
         tokens.append(token)
         if ntoks == 0:
-            toc = time.time()
             mx.eval(tokens)
+            toc = time.time()
             prompt_tps = prompt.size / (toc - tic)
             tic = time.time()
 
