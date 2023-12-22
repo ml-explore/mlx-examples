@@ -10,6 +10,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
+import time
 
 
 @dataclass
@@ -266,11 +267,15 @@ if __name__ == "__main__":
 
     print("[INFO] Starting generation...")
 
+    start_time = time.time()
+
     print(args.prompt, end="", flush=True)
     prompt = mx.array(tokenizer.encode(args.prompt))
     tokens = []
+    tokens_len = 0
     for token, _ in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
         tokens.append(token)
+        tokens_len = tokens_len + len(tokens)
 
         if (len(tokens) % args.tokens_per_eval) == 0:
             mx.eval(tokens)
@@ -282,3 +287,8 @@ if __name__ == "__main__":
     s = tokenizer.decode([t.item() for t in tokens])
     print(s, flush=True)
     print("------")
+
+    # Calculate overall tokens per second
+    elapsed_time = time.time() - start_time
+    tokens_per_sec = tokens_len / elapsed_time
+    print(f"Tokens per second: {tokens_per_sec:.2f}")
