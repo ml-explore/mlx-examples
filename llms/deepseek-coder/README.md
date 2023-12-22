@@ -16,7 +16,11 @@ python convert.py --model-path <path_to_huggingface_model> --mlx-path <path_to_s
 ```
 To generate a 4-bit quantized model, use -q. For a full list of options:
 
-The script downloads the model from Hugging Face. The default model is deepseek-ai/deepseek-coder-6.7b-instruct. Check out the [Hugging Face page](https://huggingface.co/deepseek-ai) to see a list of available models.
+```
+python convert.py --help
+```
+
+This process retrieves the model from Hugging Face. The default model is deepseek-ai/deepseek-coder-6.7b-instruct. Check out the [Hugging Face page](https://huggingface.co/deepseek-ai) to see a list of available models.
 
 By default, the conversion script will save 
 the converted `weights.npz`, `tokenizer`, and `config.json` there in the mlx-path you speficied .
