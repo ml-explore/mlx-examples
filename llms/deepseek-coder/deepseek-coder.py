@@ -105,7 +105,9 @@ class Attention(nn.Module):
             args.num_attention_heads * self.head_dim, args.hidden_size, bias=False
         )
         self.rope = LinearScalingRoPE(
-            self.head_dim, rope_scaling_factor=4.0, base=args.rope_theta
+            self.head_dim,
+            rope_scaling_factor=args.rope_scaling_factor,
+            base=args.rope_theta,
         )
 
     def __call__(
