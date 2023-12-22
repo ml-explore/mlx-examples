@@ -1,6 +1,6 @@
 import argparse
 
-from transformers import AutoTokenizer, T5EncoderModel, AutoModelForSeq2SeqLM
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5EncoderModel
 
 
 def embed(t5_model: str):

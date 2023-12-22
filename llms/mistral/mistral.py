@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -10,7 +11,6 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
-import time
 
 
 @dataclass
@@ -205,6 +205,7 @@ def load_model(folder: str):
     if quantization is not None:
         nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(weights)
+    mx.eval(model.parameters())
     return model, tokenizer
 
 
@@ -266,16 +267,17 @@ if __name__ == "__main__":
     model, tokenizer = load_model(args.model_path)
 
     print("[INFO] Starting generation...")
-
-    start_time = time.time()
-
+    tic = time.time()
     print(args.prompt, end="", flush=True)
     prompt = mx.array(tokenizer.encode(args.prompt))
     tokens = []
-    tokens_len = 0
-    for token, _ in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
+    for token, ntoks in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
         tokens.append(token)
-        tokens_len = tokens_len + len(tokens)
+        if ntoks == 0:
+            toc = time.time()
+            mx.eval(tokens)
+            prompt_tps = prompt.size / (toc - tic)
+            tic = time.time()
 
         if (len(tokens) % args.tokens_per_eval) == 0:
             mx.eval(tokens)
@@ -287,8 +289,8 @@ if __name__ == "__main__":
     s = tokenizer.decode([t.item() for t in tokens])
     print(s, flush=True)
     print("------")
-
-    # Calculate overall tokens per second
-    elapsed_time = time.time() - start_time
-    tokens_per_sec = tokens_len / elapsed_time
-    print(f"Tokens per second: {tokens_per_sec:.2f}")
+    generation_tps = ntoks / (time.time() - tic)
+    print(
+        f"Tokens per second: prompt {prompt_tps:.3f}, "
+        f"generation {generation_tps:.3f}"
+    )
