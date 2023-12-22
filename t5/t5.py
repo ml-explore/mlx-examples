@@ -6,7 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from mlx.utils import tree_map, tree_unflatten
-from transformers import T5Config, AutoTokenizer
+from transformers import AutoTokenizer, T5Config
 
 
 def _relative_position_bucket(
@@ -252,9 +252,7 @@ class TransformerDecoder(nn.Module):
     def __init__(self, config: T5Config):
         super().__init__()
         n_layers = getattr(config, "num_decoder_layers", config.num_layers)
-        self.layers = [
-            TransformerDecoderLayer(config) for i in range(n_layers)
-        ]
+        self.layers = [TransformerDecoderLayer(config) for i in range(n_layers)]
         self.ln = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.relative_attention_bias = RelativePositionBias(config, bidirectional=False)
 

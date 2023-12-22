@@ -209,10 +209,13 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
                 for j in range(batch_size)
             ]
             lengths = [len(x) for x in batch]
-            
+
             # Check if any sequence is longer than 2048 tokens
             if max(lengths) > 2048:
-                print("Warning: Some sequences are longer than 2048 tokens. Consider pre-splitting your data to save memory.")
+                print(
+                    "[WARNING] Some sequences are longer than 2048 tokens. "
+                    "Consider pre-splitting your data to save memory."
+                )
 
             # Pad to the max length
             batch_arr = np.zeros((batch_size, max(lengths)), np.int32)
