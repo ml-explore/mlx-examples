@@ -5,7 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -218,7 +218,6 @@ def toc(msg, start):
 
 
 def generate(args):
-
     input("Press enter to start generation")
     print("------")
     print(args.prompt)
@@ -347,7 +346,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Llama inference script")
     parser.add_argument(
         "--model-path",
-        help="Path to the model directory containing the MLX weights",
+        help="Path to the model weights and tokenizer",
         default="mlx_model",
     )
     parser.add_argument(
