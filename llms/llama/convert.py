@@ -154,7 +154,7 @@ if __name__ == "__main__":
         help="Path to save the MLX model.",
     )
     parser.add_argument(
-        "--model_name",
+        "--model-name",
         help=(
             "Name of the model to convert. Use 'llama' for models in the "
             "Llama family distributed by Meta including Llama 1, Llama 2, "
