@@ -60,7 +60,7 @@ def llama(model_path):
 def tiny_llama(model_path):
     try:
         import transformers
-    except ImportError as e:
+    except ImportError:
         print("The transformers package must be installed for this model conversion:")
         print("pip install transformers")
         exit(0)
