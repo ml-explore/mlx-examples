@@ -2,7 +2,7 @@
 
 This is an example of using MLX to fine-tune either a Llama 7B[^llama] or a
 Mistral 7B[^mistral] model with low rank adaptation (LoRA)[^lora] for a target
-task. 
+task. The example alsos upport quantized LoRA (QLoRA).[^qlora]
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
 generate SQL queries from natural language. However, the example is intended to
@@ -47,6 +47,9 @@ python convert.py \
     --mlx-model <path_to_mlx_model>
 ```
 
+If you wish to use QLoRA, then convert the model with 4-bit quantization using
+the `-q` option.
+
 ## Run
 
 The main script is `lora.py`. To see a full list of options run
@@ -65,8 +68,11 @@ python lora.py --model <path_to_model> \
                --iters 600
 ```
 
+If `--model` points to a quantized model, then the training will use QLoRA,
+otherwise it will use regular LoRA.
+
 Note, the model path should have the MLX weights, the tokenizer, and the
-`params.json` configuration which will all be output by the `convert.py` script.
+`config.json` which will all be output by the `convert.py` script.
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
 the output location with `--adapter-file`.
@@ -164,6 +170,7 @@ The above command on an M1 Max with 32 GB runs at about 250 tokens-per-second.
 
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
+[^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
 [^llama]: Refer to the [arXiv paper](https://arxiv.org/abs/2302.13971) and [blog post](https://ai.meta.com/blog/large-language-model-llama-meta-ai/) for more details.
 [^mistral]: Refer to the [blog post](https://mistral.ai/news/announcing-mistral-7b/) and [github repository](https://github.com/mistralai/mistral-src) for more details.
 [^wikisql]: Refer to the [GitHub repo](https://github.com/salesforce/WikiSQL/tree/master) for more information about WikiSQL.

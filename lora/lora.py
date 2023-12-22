@@ -22,7 +22,7 @@ def build_parser():
     )
     parser.add_argument(
         "--model",
-        required=True,
+        default="mlx_model",
         help="A path to the model files containing the tokenizer, weights, config.",
     )
     # Generation args
@@ -332,18 +332,22 @@ def generate(model, prompt, tokenizer, args):
     print(s, flush=True)
 
 
-def load_model(folder: str, dtype=mx.float16):
+def load_model(folder: str):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
-    with open(model_path / "params.json", "r") as f:
+    with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
-        if config.get("vocab_size", -1) < 0:
-            config["vocab_size"] = tokenizer.vocab_size
+        quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
+    model = Model(model_args)
+    if quantization is not None:
+        quantization["linear_class_predicate"] = lambda m: isinstance(
+            m, nn.Linear
+        ) and (m.weight.shape[0] != model_args.vocab_size)
+        nn.QuantizedLinear.quantize_module(model, **quantization)
+
     weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
-    model = Model(model_args)
     model.update(weights)
     return model, tokenizer
 
@@ -362,6 +366,8 @@ if __name__ == "__main__":
     for l in model.layers[-args.lora_layers :]:
         l.attention.wq = LoRALinear.from_linear(l.attention.wq)
         l.attention.wv = LoRALinear.from_linear(l.attention.wv)
+        # TODO, don't need this if we get rid of stop grad in quantized linear
+        l.attention.wo = LoRALinear.from_linear(l.attention.wo)
 
     p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
     print(f"Total parameters {p:.3f}M")
