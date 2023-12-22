@@ -18,7 +18,7 @@ class ModelArgs:
     num_hidden_layers: int = 32
     num_key_value_heads: int = 32
     max_position_embeddings: int = 16384
-    layer_norm_epsilon: float = 1e-6
+    rms_norm_eps: float = 1e-6
     intermediate_size: int = 11008
     rope_theta: float = 100000
     rope_scaling_factor: float = 4.0
@@ -169,8 +169,8 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.attention = Attention(args)
         self.feed_forward = FeedForward(args=args)
-        self.attention_norm = RMSNorm(args.hidden_size, eps=args.layer_norm_epsilon)
-        self.ffn_norm = RMSNorm(args.hidden_size, eps=args.layer_norm_epsilon)
+        self.attention_norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.ffn_norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
         self,
@@ -194,7 +194,7 @@ class DeepseekCoder(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.layer_norm_epsilon)
+        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(self, x, mask=None, cache=None):
@@ -243,7 +243,7 @@ def load_model(model_path: str):
         model_args.num_key_value_heads = config["num_key_value_heads"]
         model_args.num_hidden_layers = config["num_hidden_layers"]
         model_args.max_position_embeddings = config["max_position_embeddings"]
-        model_args.layer_norm_epsilon = config["rms_norm_eps"]
+        model_args.rms_norm_eps = config["rms_norm_eps"]
         model_args.intermediate_size = config["intermediate_size"]
         model_args.rope_scaling_factor = config["rope_scaling"]["factor"]
 
@@ -275,7 +275,7 @@ if __name__ == "__main__":
         "--max-tokens",
         "-m",
         type=int,
-        default=500,
+        default=100,
         help="Maximum number of tokens to generate",
     )
     parser.add_argument(

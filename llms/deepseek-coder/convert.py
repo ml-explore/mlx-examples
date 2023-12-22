@@ -1,10 +1,47 @@
 import argparse
-from pathlib import Path
+import copy
 import json
+from pathlib import Path
 
+import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 import torch
+from mlx.utils import tree_flatten, tree_map, tree_unflatten
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from deepseek_coder import ModelArgs, DeepseekCoder
+
+
+def quantize(weights, config, args):
+    quantized_config = copy.deepcopy(config)
+
+    # Load the model:
+    model_args = ModelArgs()
+    model_args.vocab_size = config["vocab_size"]
+    model_args.hidden_size = config["hidden_size"]
+    model_args.num_attention_heads = config["num_attention_heads"]
+    model_args.num_key_value_heads = config["num_key_value_heads"]
+    model_args.num_hidden_layers = config["num_hidden_layers"]
+    model_args.max_position_embeddings = config["max_position_embeddings"]
+    model_args.rms_norm_eps = config["rms_norm_eps"]
+    model_args.intermediate_size = config["intermediate_size"]
+    model_args.rope_scaling_factor = config["rope_scaling"]["factor"]
+    model = DeepseekCoder(model_args)
+
+    weights = tree_map(mx.array, weights)
+    model.update(tree_unflatten(list(weights.items())))
+
+    # Quantize the model:
+    nn.QuantizedLinear.quantize_module(model, args.q_group_size, args.q_bits)
+
+    # Update the config:
+    quantized_config["quantization"] = {
+        "group_size": args.q_group_size,
+        "bits": args.q_bits,
+    }
+    quantized_weights = dict(tree_flatten(model.parameters()))
+
+    return quantized_weights, quantized_config
 
 
 def convert(args):
@@ -59,6 +96,10 @@ def convert(args):
 
     weights = {k: v.numpy() for k, v in state_dict.items()}
 
+    if args.quantize:
+        print("[INFO] Quantizing")
+        weights, config = quantize(weights, config, args)
+
     np.savez(str(mlx_path / "weights.npz"), **weights)
     tokenizer.save_pretrained(mlx_path)
     with open(mlx_path / "config.json", "w") as f:
@@ -79,6 +120,24 @@ if __name__ == "__main__":
         type=str,
         default="mlx_model",
         help="The path to save the MLX model.",
+    )
+    parser.add_argument(
+        "-q",
+        "--quantize",
+        help="Generate a quantized model.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--q_group_size",
+        help="Group size for quantization.",
+        type=int,
+        default=64,
+    )
+    parser.add_argument(
+        "--q_bits",
+        help="Bits per weight for quantization.",
+        type=int,
+        default=4,
     )
     args = parser.parse_args()
     convert(args)
