@@ -19,6 +19,7 @@ def quantize(weights, config, args):
 
     # Load the model:
     config.pop("sliding_window", None)
+    config.pop("rope_theta", None)
     model = Mistral(ModelArgs(**config))
     weights = tree_map(mx.array, weights)
     model.update(tree_unflatten(list(weights.items())))

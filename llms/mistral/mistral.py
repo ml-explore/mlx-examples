@@ -196,6 +196,7 @@ def load_model(folder: str):
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
         config.pop("sliding_window", None)
+        config.pop("rope_theta", None)
         config.pop("model_type", None)
         quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
