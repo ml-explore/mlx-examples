@@ -23,13 +23,13 @@ def convert(weights, config):
         if "gate" in k:
             return [(k.replace("block_sparse_moe", "feed_forward"), v)]
 
-    # From: layers.N.block_sparse_moe.w
-    # To: layers.N.experts.M.w
-    num_experts = config["moe"]["num_experts"]
-    key_path = k.split(".")
-    v = np.split(v, num_experts, axis=0)
-    if key_path[-1] == "w2":
-        v = [u.T for u in v]
+        # From: layers.N.block_sparse_moe.w
+        # To: layers.N.experts.M.w
+        num_experts = config["moe"]["num_experts"]
+        key_path = k.split(".")
+        v = np.split(v, num_experts, axis=0)
+        if key_path[-1] == "w2":
+            v = [u.T for u in v]
 
         w_name = key_path.pop()
         key_path[-1] = "feed_forward.experts"
@@ -128,12 +128,6 @@ if __name__ == "__main__":
 
     with open("params.json") as fid:
         config = json.load(fid)
-<<<<<<< HEAD
-=======
-        config["model_type"] = "mixtral"
-    with open(model_path / "config.json", "w") as f:
-        json.dump(config, f, indent=4)
->>>>>>> b76d6c6 (Fix variable naming of `config` in `mixtral/convert.py`)
 
     # Copy tokenizer
     shutil.copyfile(
@@ -146,7 +140,6 @@ if __name__ == "__main__":
     torch_files = sorted(torch_files, key=lambda tf: int(tf.split(".")[-2]))
     for e, tf in enumerate(torch_files):
         print(f"[INFO] Converting file {e + 1}/{len(torch_files)}")
-<<<<<<< HEAD
         weights = convert(tf, config)
         if args.quantize:
             print("[INFO] Quantizing")
@@ -157,10 +150,3 @@ if __name__ == "__main__":
     with open(mlx_path / "config.json", "w") as f:
         config["model_type"] = "mixtral"
         json.dump(config, f, indent=4)
-=======
-        state = torch.load(tf)
-        new_state = {}
-        for k, v in state.items():
-            new_state.update(convert(k, v, config))
-        np.savez(str(model_path / f"weights.{e}.npz"), **new_state)
->>>>>>> b76d6c6 (Fix variable naming of `config` in `mixtral/convert.py`)

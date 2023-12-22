@@ -346,7 +346,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Llama inference script")
     parser.add_argument(
         "--model-path",
-        help="Path to the model directory containing the MLX weights and tokenizer",
+        help="Path to the model weights and tokenizer",
         default="mlx_model",
     )
     parser.add_argument(
@@ -355,14 +355,14 @@ if __name__ == "__main__":
         default="In the beginning the Universe was created.",
     )
     parser.add_argument(
-        "--few_shot",
+        "--few-shot",
         help="Read a few shot prompt from a file (as in `sample_prompt.txt`).",
     )
     parser.add_argument(
-        "--max_tokens", "-m", type=int, default=100, help="How many tokens to generate"
+        "--max-tokens", "-m", type=int, default=100, help="How many tokens to generate"
     )
     parser.add_argument(
-        "--write_every", type=int, default=1, help="After how many tokens to detokenize"
+        "--write-every", type=int, default=1, help="After how many tokens to detokenize"
     )
     parser.add_argument(
         "--temp", type=float, default=0.0, help="The sampling temperature"
