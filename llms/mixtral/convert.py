@@ -15,7 +15,7 @@ from mixtral import Mixtral, ModelArgs
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 
-def convert(weights, config):
+def convert(tf, config):
     def convert_single(k, v):
         v = v.to(torch.float16).numpy()
         if "block_sparse_moe" not in k:
