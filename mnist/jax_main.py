@@ -54,9 +54,12 @@ if __name__ == "__main__":
     batch_size = 256
     num_epochs = 10
     learning_rate = 1e-1
+    fashion_mnist = False
 
     # Load the data
-    train_images, train_labels, test_images, test_labels = mnist.mnist()
+    train_images, train_labels, test_images, test_labels = (
+        mnist.fashion_mnist() if fashion_mnist else mnist.mnist()
+    )
 
     # Load the model
     key, subkey = jax.random.split(jax.random.PRNGKey(seed))

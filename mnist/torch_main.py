@@ -49,6 +49,9 @@ def batch_iterate(batch_size, X, y, device):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Train a simple MLP on MNIST with PyTorch.")
     parser.add_argument("--gpu", action="store_true", help="Use the Metal back-end.")
+    parser.add_argument(
+        "--fashion_mnist", action="store_false", help="Use Fashion-MNIST."
+    )
     args = parser.parse_args()
 
     if not args.gpu:
@@ -71,7 +74,9 @@ if __name__ == "__main__":
         else:
             return torch.from_numpy(x.astype(int)).to(device)
 
-    train_images, train_labels, test_images, test_labels = map(to_tensor, mnist.mnist())
+    train_images, train_labels, test_images, test_labels = map(
+        to_tensor, mnist.fashion_mnist() if args.fashion_mnist else mnist.mnist()
+    )
 
     # Load the model
     model = MLP(num_layers, train_images.shape[-1], hidden_dim, num_classes).to(device)

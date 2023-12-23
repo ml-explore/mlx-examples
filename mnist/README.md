@@ -14,10 +14,16 @@ Run the example with:
 python main.py
 ```
 
-By default the example runs on the CPU. To run on the GPU, use: 
+By default, the example runs on the CPU. To run on the GPU, use: 
 
 ```
 python main.py --gpu
 ```
 
 To run the PyTorch or Jax examples install the respective framework.
+
+To run the example with the Fashion-MNIST dataset, use:
+
+```
+python main.py --fashion_mnist
+```
