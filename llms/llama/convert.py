@@ -63,7 +63,7 @@ def tiny_llama(model_path):
     except ImportError as e:
         print("The transformers package must be installed for this model conversion:")
         print("pip install transformers")
-        exit(0)
+        exit(1)
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         str(model_path)
