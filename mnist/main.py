@@ -58,7 +58,7 @@ def main(args):
 
     # Load the data
     train_images, train_labels, test_images, test_labels = map(
-        mx.array, mnist.fashion_mnist() if args.fashion_mnist else mnist.mnist()
+        mx.array, getattr(mnist, args.dataset)()
     )
 
     # Load the model
@@ -86,7 +86,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Train a simple MLP on MNIST with MLX.")
     parser.add_argument("--gpu", action="store_true", help="Use the Metal back-end.")
     parser.add_argument(
-        "--fashion_mnist", action="store_false", help="Use Fashion-MNIST."
+        "--dataset",
+        type=str,
+        default="mnist",
+        choices=["mnist", "fashion_mnist"],
+        help="The dataset to use.",
     )
     args = parser.parse_args()
     if not args.gpu:
