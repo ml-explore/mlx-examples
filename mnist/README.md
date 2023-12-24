@@ -26,4 +26,4 @@ For a full list of options run:
 python main.py --help
 ```
 
-To run the PyTorch or Jax examples install the respective framework.
+To run the PyTorch or JAX examples install the respective framework.
