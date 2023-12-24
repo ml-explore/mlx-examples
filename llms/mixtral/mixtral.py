@@ -1,8 +1,27 @@
 #Copyright © 2023 Apple Inc.
 
-import argparse import glob import json from dataclasses import dataclass from pathlib import Path from typing import List, Optional, Tuple
+import argparse
+import dataclasses
+import glob
+import json
+import pathlib
+import typing
 
-                                                                                                                                      import mlx.core as mx import mlx.nn as nn from mlx.utils import tree_map, tree_unflatten from sentencepiece import SentencePieceProcessor
+import dataclass
+import from
+import import
+import List
+import mlx.core as mx
+import mlx.nn
+import mlx.nn as nn
+import mlx.utils
+import Optional
+import Path
+import sentencepiece
+import SentencePieceProcessor
+import tree_map
+import tree_unflatten
+import Tuple
 
     @dataclass class ModelArgs:dim: int n_layers: int head_dim: int hidden_dim: int n_heads: int n_kv_heads: int norm_eps: float vocab_size: int moe:dict = None
 
