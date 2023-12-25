@@ -57,6 +57,8 @@ if __name__ == "__main__":
             if k in config:
                 config.pop(k)
         n_heads = config["n_heads"]
+        if "rope_theta" in config:
+            config.pop("rope_theta")
         if "sliding_window" in config:
             config.pop("sliding_window")
         if "n_kv_heads" not in config:

@@ -31,8 +31,8 @@ pip install -r requirements.txt
 Next, download and convert the model. The Mistral weights can be downloaded with:
 
 ```
-curl -O https://files.mistral-7b-v0-1.mistral.ai/mistral-7B-v0.1.tar
-tar -xf mistral-7B-v0.1.tar
+curl -O https://files.mistral-7b-v0-2.mistral.ai/Mistral-7B-v0.2-Instruct.tar
+tar -xf Mistral-7B-v0.2-Instruct.tar
 ```
 
 If you do not have access to the Llama weights you will need to [request
