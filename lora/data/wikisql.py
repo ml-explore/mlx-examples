@@ -32,8 +32,8 @@ class WikiSQL:
     def _maybe_download(self, data_dir):
         if not os.path.exists(data_dir):
             import io
-            from urllib import request
             import tarfile
+            from urllib import request
 
             url = "https://raw.githubusercontent.com/salesforce/WikiSQL/master/data.tar.bz2"
             r = request.urlopen(url)
@@ -100,4 +100,20 @@ if __name__ == "__main__":
     datanames = ["train", "dev", "test"]
     sizes = [56355, 8421, 15878]
     for dataname, size in zip(datanames, sizes):
-        len(WikiSQL(dataname)) == 56355, f"Wrong {dataname} set size."
+        len(WikiSQL(dataname)) == size, f"Wrong {dataname} set size."
+
+    # Write the sets to jsonl
+    import json
+
+    train, dev, test = load()
+    datasets = [
+        (train, "train", 1000),
+        (dev, "valid", 100),
+        (test, "test", 100),
+    ]
+    for dataset, name, size in datasets:
+        with open(f"data/{name}.jsonl", "w") as fid:
+            for e, t in zip(range(size), dataset):
+                # Strip the <s>, </s> since the tokenizer adds them
+                json.dump({"text": t[3:-4]}, fid)
+                fid.write("\n")

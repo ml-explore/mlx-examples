@@ -3,19 +3,17 @@
 import json
 from functools import partial
 
+import mlx.core as mx
 import numpy as np
 from huggingface_hub import hf_hub_download
+from mlx.utils import tree_unflatten
 from safetensors import safe_open as safetensor_open
 
-import mlx.core as mx
-from mlx.utils import tree_unflatten
-
 from .clip import CLIPTextModel
-from .config import UNetConfig, CLIPTextModelConfig, AutoencoderConfig, DiffusionConfig
+from .config import AutoencoderConfig, CLIPTextModelConfig, DiffusionConfig, UNetConfig
 from .tokenizer import Tokenizer
 from .unet import UNetModel
 from .vae import Autoencoder
-
 
 _DEFAULT_MODEL = "stabilityai/stable-diffusion-2-1-base"
 _MODELS = {
@@ -74,6 +72,10 @@ def map_unet_weights(key, value):
         return [(k1, _from_numpy(v1)), (k2, _from_numpy(v2))]
 
     if "conv_shortcut.weight" in key:
+        value = value.squeeze()
+
+    # Transform the weights from 1x1 convs to linear
+    if len(value.shape) == 4 and ("proj_in" in key or "proj_out" in key):
         value = value.squeeze()
 
     if len(value.shape) == 4:
@@ -169,7 +171,7 @@ def _check_key(key: str, part: str):
 
 
 def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
-    """Load the stable diffusion UNet from Huggingface Hub."""
+    """Load the stable diffusion UNet from Hugging Face Hub."""
     _check_key(key, "load_unet")
 
     # Download the config and create the model
@@ -184,7 +186,9 @@ def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
             out_channels=config["out_channels"],
             block_out_channels=config["block_out_channels"],
             layers_per_block=[config["layers_per_block"]] * n_blocks,
-            num_attention_heads=config["attention_head_dim"],
+            num_attention_heads=[config["attention_head_dim"]] * n_blocks
+            if isinstance(config["attention_head_dim"], int)
+            else config["attention_head_dim"],
             cross_attention_dim=[config["cross_attention_dim"]] * n_blocks,
             norm_num_groups=config["norm_num_groups"],
         )
@@ -199,7 +203,7 @@ def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
 
 
 def load_text_encoder(key: str = _DEFAULT_MODEL, float16: bool = False):
-    """Load the stable diffusion text encoder from Huggingface Hub."""
+    """Load the stable diffusion text encoder from Hugging Face Hub."""
     _check_key(key, "load_text_encoder")
 
     # Download the config and create the model
@@ -226,7 +230,7 @@ def load_text_encoder(key: str = _DEFAULT_MODEL, float16: bool = False):
 
 
 def load_autoencoder(key: str = _DEFAULT_MODEL, float16: bool = False):
-    """Load the stable diffusion autoencoder from Huggingface Hub."""
+    """Load the stable diffusion autoencoder from Hugging Face Hub."""
     _check_key(key, "load_autoencoder")
 
     # Download the config and create the model
@@ -255,7 +259,7 @@ def load_autoencoder(key: str = _DEFAULT_MODEL, float16: bool = False):
 
 
 def load_diffusion_config(key: str = _DEFAULT_MODEL):
-    """Load the stable diffusion config from Huggingface Hub."""
+    """Load the stable diffusion config from Hugging Face Hub."""
     _check_key(key, "load_diffusion_config")
 
     diffusion_config = _MODELS[key]["diffusion_config"]

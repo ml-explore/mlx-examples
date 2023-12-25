@@ -1,8 +1,8 @@
 # Copyright © 2023 Apple Inc.
 
-from .config import DiffusionConfig
-
 import mlx.core as mx
+
+from .config import DiffusionConfig
 
 
 def _linspace(a, b, num):

@@ -109,6 +109,7 @@ LANGUAGES = {
     "ba": "bashkir",
     "jw": "javanese",
     "su": "sundanese",
+    "yue": "cantonese",
 }
 
 # language code lookup by name, with a few language aliases
@@ -125,6 +126,7 @@ TO_LANGUAGE_CODE = {
     "moldovan": "ro",
     "sinhalese": "si",
     "castilian": "es",
+    "mandarin": "zh",
 }
 
 
@@ -133,6 +135,7 @@ class Tokenizer:
     """A thin wrapper around `tiktoken` providing quick access to special tokens"""
 
     encoding: tiktoken.Encoding
+    num_languages: int
     language: Optional[str] = None
     task: Optional[str] = None
     sot_sequence: Tuple[int] = ()
@@ -147,7 +150,7 @@ class Tokenizer:
         translate: int = self.special_tokens["<|translate|>"]
         transcribe: int = self.special_tokens["<|transcribe|>"]
 
-        langs = tuple(LANGUAGES.keys())
+        langs = tuple(LANGUAGES.keys())[: self.num_languages]
         sot_sequence = [sot]
         if self.language is not None:
             sot_sequence.append(sot + 1 + langs.index(self.language))
@@ -213,10 +216,13 @@ class Tokenizer:
         if self.language is None:
             raise ValueError("This tokenizer does not have language token configured")
 
-        if token := self.special_tokens.get(f"<|{self.language}|>", None):
+        return self.to_language_token(self.language)
+
+    def to_language_token(self, language):
+        if token := self.special_tokens.get(f"<|{language}|>", None):
             return token
 
-        raise KeyError(f"Language {self.language} not found in tokenizer.")
+        raise KeyError(f"Language {language} not found in tokenizer.")
 
     @cached_property
     def all_language_tokens(self) -> Tuple[int]:
@@ -224,7 +230,7 @@ class Tokenizer:
         for token, token_id in self.special_tokens.items():
             if token.strip("<|>") in LANGUAGES:
                 result.append(token_id)
-        return tuple(result)
+        return tuple(result)[: self.num_languages]
 
     @cached_property
     def all_language_codes(self) -> Tuple[str]:
@@ -271,7 +277,7 @@ class Tokenizer:
         return tuple(sorted(result))
 
     def split_to_word_tokens(self, tokens: List[int]):
-        if self.language in {"zh", "ja", "th", "lo", "my"}:
+        if self.language in {"zh", "ja", "th", "lo", "my", "yue"}:
             # These languages don't typically use spaces, so it is difficult to split words
             # without morpheme analysis. Here, we instead split words at any
             # position where the tokens are decoded as valid unicode points
@@ -324,7 +330,7 @@ class Tokenizer:
 
 
 @lru_cache(maxsize=None)
-def get_encoding(name: str = "gpt2"):
+def get_encoding(name: str = "gpt2", num_languages: int = 99):
     vocab_path = os.path.join(os.path.dirname(__file__), "assets", f"{name}.tiktoken")
     with open(vocab_path) as fid:
         ranks = {
@@ -337,7 +343,7 @@ def get_encoding(name: str = "gpt2"):
     specials = [
         "<|endoftext|>",
         "<|startoftranscript|>",
-        *[f"<|{lang}|>" for lang in LANGUAGES.keys()],
+        *[f"<|{lang}|>" for lang in list(LANGUAGES.keys())[:num_languages]],
         "<|translate|>",
         "<|transcribe|>",
         "<|startoflm|>",
@@ -364,6 +370,7 @@ def get_encoding(name: str = "gpt2"):
 def get_tokenizer(
     multilingual: bool,
     *,
+    num_languages: int = 99,
     language: Optional[str] = None,
     task: Optional[str] = None,  # Literal["transcribe", "translate", None]
 ) -> Tokenizer:
@@ -384,6 +391,8 @@ def get_tokenizer(
         language = None
         task = None
 
-    encoding = get_encoding(name=encoding_name)
+    encoding = get_encoding(name=encoding_name, num_languages=num_languages)
 
-    return Tokenizer(encoding=encoding, language=language, task=task)
+    return Tokenizer(
+        encoding=encoding, num_languages=num_languages, language=language, task=task
+    )

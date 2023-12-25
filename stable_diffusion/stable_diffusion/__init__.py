@@ -6,12 +6,12 @@ from typing import Tuple
 import mlx.core as mx
 
 from .model_io import (
-    load_unet,
-    load_text_encoder,
+    _DEFAULT_MODEL,
     load_autoencoder,
     load_diffusion_config,
+    load_text_encoder,
     load_tokenizer,
-    _DEFAULT_MODEL,
+    load_unet,
 )
 from .sampler import SimpleEulerSampler
 

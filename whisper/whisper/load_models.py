@@ -7,12 +7,11 @@ import warnings
 from typing import List
 
 import mlx.core as mx
-
 import torch
+from mlx.utils import tree_map
 from tqdm import tqdm
 
-from . import whisper
-from . import torch_whisper
+from . import torch_whisper, whisper
 
 _MODELS = {
     "tiny.en": "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt",
@@ -25,7 +24,8 @@ _MODELS = {
     "medium": "https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt",
     "large-v1": "https://openaipublic.azureedge.net/main/whisper/models/e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a/large-v1.pt",
     "large-v2": "https://openaipublic.azureedge.net/main/whisper/models/81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524/large-v2.pt",
-    "large": "https://openaipublic.azureedge.net/main/whisper/models/81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524/large-v2.pt",
+    "large-v3": "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt",
+    "large": "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt",
 }
 
 # base85-encoded (n_layers, n_heads) boolean arrays indicating the cross-attention heads that are
@@ -41,7 +41,8 @@ _ALIGNMENT_HEADS = {
     "medium": b"ABzY8B0Jh+0{>%R7}kK1fFL7w6%<-Pf*t^=N)Qr&0RR9",
     "large-v1": b"ABzY8r9j$a0{>%R7#4sLmoOs{s)o3~84-RPdcFk!JR<kSfC2yj",
     "large-v2": b"ABzY8zd+h!0{>%R7=D0pU<_bnWW*tkYAhobTNnu$jnkEkXqp)j;w1Tzk)UH3X%SZd&fFZ2fC2yj",
-    "large": b"ABzY8zd+h!0{>%R7=D0pU<_bnWW*tkYAhobTNnu$jnkEkXqp)j;w1Tzk)UH3X%SZd&fFZ2fC2yj",
+    "large-v3": b"ABzY8gWO1E0{>%R7(9S+Kn!D~%ngiGaR?*L!iJG9p-nab0JQ=-{D1-g00",
+    "large": b"ABzY8gWO1E0{>%R7(9S+Kn!D~%ngiGaR?*L!iJG9p-nab0JQ=-{D1-g00",
 }
 
 
@@ -164,6 +165,7 @@ def convert(model, rules=None):
 
 def torch_to_mlx(
     torch_model: torch_whisper.Whisper,
+    dtype: mx.Dtype = mx.float16,
 ) -> whisper.Whisper:
     def convert_rblock(model, rules):
         children = dict(model.named_children())
@@ -182,7 +184,8 @@ def torch_to_mlx(
 
     params = convert(torch_model, rules)
 
-    mlx_model = whisper.Whisper(torch_model.dims)
+    mlx_model = whisper.Whisper(torch_model.dims, dtype)
+    params = tree_map(lambda p: p.astype(dtype), params)
     mlx_model.update(params)
     return mlx_model
 
@@ -190,5 +193,6 @@ def torch_to_mlx(
 def load_model(
     name: str,
     download_root: str = None,
+    dtype: mx.Dtype = mx.float32,
 ) -> whisper.Whisper:
-    return torch_to_mlx(load_torch_model(name, download_root))
+    return torch_to_mlx(load_torch_model(name, download_root), dtype)

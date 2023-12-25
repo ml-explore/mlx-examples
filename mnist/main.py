@@ -3,11 +3,10 @@
 import argparse
 import time
 
-import numpy as np
-
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+import numpy as np
 
 import mnist
 
@@ -46,7 +45,7 @@ def batch_iterate(batch_size, X, y):
         yield X[ids], y[ids]
 
 
-def main():
+def main(args):
     seed = 0
     num_layers = 2
     hidden_dim = 32
@@ -58,7 +57,9 @@ def main():
     np.random.seed(seed)
 
     # Load the data
-    train_images, train_labels, test_images, test_labels = map(mx.array, mnist.mnist())
+    train_images, train_labels, test_images, test_labels = map(
+        mx.array, getattr(mnist, args.dataset)()
+    )
 
     # Load the model
     model = MLP(num_layers, train_images.shape[-1], hidden_dim, num_classes)
@@ -84,7 +85,14 @@ def main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Train a simple MLP on MNIST with MLX.")
     parser.add_argument("--gpu", action="store_true", help="Use the Metal back-end.")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="mnist",
+        choices=["mnist", "fashion_mnist"],
+        help="The dataset to use.",
+    )
     args = parser.parse_args()
     if not args.gpu:
         mx.set_default_device(mx.cpu)
-    main()
+    main(args)

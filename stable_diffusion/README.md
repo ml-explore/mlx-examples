@@ -1,9 +1,9 @@
 Stable Diffusion
 ================
 
-Stable Diffusion in MLX. The implementation was ported from Hugginface's
+Stable Diffusion in MLX. The implementation was ported from Hugging Face's
 [diffusers](https://huggingface.co/docs/diffusers/index) and we are fetching
-and using the weights available on the Huggingface Hub by Stability AI at
+and using the weights available on the Hugging Face Hub by Stability AI at
 [stabilitiai/stable-diffusion-2-1](https://huggingface.co/stabilityai/stable-diffusion-2-1).
 
 ![out](generated-mlx.png)    
@@ -26,8 +26,8 @@ You can install all of the above with the `requirements.txt` as follows:
 Usage
 ------
 
-Although each component in this repository can be used by itsself, the fastest
-way to get started is by using the `StableDiffusion` class from the `diffusion`
+Although each component in this repository can be used by itself, the fastest
+way to get started is by using the `StableDiffusion` class from the `stable_diffusion`
 module.
 
 ```python
@@ -65,8 +65,9 @@ Performance
 -----------
 
 The following table compares the performance of the UNet in stable diffusion.
-We report throughput in images per second for the provided `txt2image.py`
-script and the `diffusers` library using the MPS PyTorch backend.
+We report throughput in images per second **processed by the UNet** for the
+provided `txt2image.py` script and the `diffusers` library using the MPS
+PyTorch backend.
 
 At the time of writing this comparison convolutions are still some of the least
 optimized operations in MLX. Despite that, MLX still achieves **~40% higher
@@ -93,3 +94,7 @@ The above experiments were made on an M2 Ultra with PyTorch version 2.1,
 diffusers version 0.21.4 and transformers version 4.33.3. For the generation we
 used classifier free guidance which means that the above batch sizes result
 double the images processed by the UNet.
+
+Note that the above table means that it takes about 90 seconds to fully
+generate 16 images with MLX and 50 diffusion steps with classifier free
+guidance and about 120 for PyTorch.

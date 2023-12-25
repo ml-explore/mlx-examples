@@ -1,10 +1,12 @@
-# whisper
+# Whisper
 
-Whisper in MLX.
+Speech recognition with Whisper in MLX. Whisper is a set of open source speech
+recognition models from OpenAI, ranging from 39 million to 1.5 billion
+parameters[^1].
 
-First install the dependencies:
+### Setup
 
-(TODO, MLX install link / command / add to requirements.txt)
+First, install the dependencies.
 
 ```
 pip install -r requirements.txt
@@ -12,12 +14,14 @@ pip install -r requirements.txt
 
 Install [`ffmpeg`](https://ffmpeg.org/):
 
-```bash
-# on MacOS using Homebrew (https://brew.sh/)
+```
+# on macOS using Homebrew (https://brew.sh/)
 brew install ffmpeg
 ```
 
-Then transcribe audio with:
+### Run
+
+Transcribe audio with:
 
 ```
 import whisper
@@ -25,3 +29,4 @@ import whisper
 text = whisper.transcribe(speech_file)["text"]
 ```
 
+[^1]: Refer to the [arXiv paper](https://arxiv.org/abs/2212.04356), [blog post](https://openai.com/research/whisper), and [code](https://github.com/openai/whisper) for more details.

@@ -1,15 +1,16 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-from dataclasses import dataclass
 import json
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, List
-from sentencepiece import SentencePieceProcessor
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_map, tree_unflatten
+from mlx.utils import tree_unflatten
+from sentencepiece import SentencePieceProcessor
 
 
 @dataclass
@@ -22,6 +23,7 @@ class ModelArgs:
     n_kv_heads: int
     norm_eps: float
     vocab_size: int
+    rope_theta: float = 10000
 
 
 class RMSNorm(nn.Module):
@@ -54,7 +56,7 @@ class Attention(nn.Module):
         self.wk = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
-        self.rope = nn.RoPE(args.head_dim, traditional=True)
+        self.rope = nn.RoPE(args.head_dim, traditional=True, base=args.rope_theta)
 
     def __call__(
         self,
@@ -189,18 +191,22 @@ class Tokenizer:
         return out
 
 
-def load_model(folder: str, dtype=mx.float16):
+def load_model(folder: str):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
-    with open(model_path / "params.json", "r") as f:
+    with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
-        config.pop("sliding_window")
+        config.pop("sliding_window", None)
+        config.pop("model_type", None)
+        quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
-    weights = mx.load(str(model_path / "mlx_mistral_7b.npz"))
+    weights = mx.load(str(model_path / "weights.npz"))
     weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
     model = Mistral(model_args)
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(weights)
+    mx.eval(model.parameters())
     return model, tokenizer
 
 
@@ -224,9 +230,9 @@ def generate(prompt: mx.array, model: Mistral, temp: Optional[float] = 0.0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mistral inference script")
     parser.add_argument(
-        "--model_path",
+        "--model-path",
         type=str,
-        default="mistral-7B-v0.1",
+        default="mlx_model",
         help="The path to the model weights and tokenizer",
     )
     parser.add_argument(
@@ -235,7 +241,7 @@ if __name__ == "__main__":
         default="In the beginning the Universe was created.",
     )
     parser.add_argument(
-        "--max_tokens",
+        "--max-tokens",
         "-m",
         type=int,
         default=100,
@@ -245,7 +251,13 @@ if __name__ == "__main__":
         "--temp",
         help="The sampling temperature.",
         type=float,
-        default=1.0,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--tokens_per_eval",
+        help="The batch size of tokens to generate.",
+        type=int,
+        default=10,
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
 
@@ -256,14 +268,19 @@ if __name__ == "__main__":
     model, tokenizer = load_model(args.model_path)
 
     print("[INFO] Starting generation...")
-
+    tic = time.time()
     print(args.prompt, end="", flush=True)
     prompt = mx.array(tokenizer.encode(args.prompt))
     tokens = []
-    for token, _ in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
+    for token, ntoks in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
         tokens.append(token)
+        if ntoks == 0:
+            mx.eval(tokens)
+            toc = time.time()
+            prompt_tps = prompt.size / (toc - tic)
+            tic = time.time()
 
-        if (len(tokens) % 10) == 0:
+        if (len(tokens) % args.tokens_per_eval) == 0:
             mx.eval(tokens)
             s = tokenizer.decode([t.item() for t in tokens])
             print(s, end="", flush=True)
@@ -273,3 +290,8 @@ if __name__ == "__main__":
     s = tokenizer.decode([t.item() for t in tokens])
     print(s, flush=True)
     print("------")
+    generation_tps = ntoks / (time.time() - tic)
+    print(
+        f"Tokens per second: prompt {prompt_tps:.3f}, "
+        f"generation {generation_tps:.3f}"
+    )

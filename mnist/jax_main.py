@@ -1,9 +1,10 @@
 # Copyright © 2023 Apple Inc.
 
-import jax
-import jax.numpy as jnp
 import functools
 import time
+
+import jax
+import jax.numpy as jnp
 
 import mnist
 
@@ -53,10 +54,10 @@ if __name__ == "__main__":
     batch_size = 256
     num_epochs = 10
     learning_rate = 1e-1
+    dataset = "mnist"
 
     # Load the data
-    train_images, train_labels, test_images, test_labels = mnist.mnist()
-
+    train_images, train_labels, test_images, test_labels = getattr(mnist, dataset)()
     # Load the model
     key, subkey = jax.random.split(jax.random.PRNGKey(seed))
     params = init_model(

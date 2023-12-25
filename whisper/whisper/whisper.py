@@ -2,13 +2,12 @@
 
 import base64
 import gzip
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Dict, Iterable, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-
 import numpy as np
 
 from .decoding import decode as decode_function
@@ -36,6 +35,11 @@ def sinusoids(length, channels, max_timescale=10000):
     inv_timescales = mx.exp(-log_timescale_increment * mx.arange(channels // 2))
     scaled_time = mx.arange(length)[:, None] * inv_timescales[None, :]
     return mx.concatenate([mx.sin(scaled_time), mx.cos(scaled_time)], axis=1)
+
+
+class LayerNorm(nn.LayerNorm):
+    def __call__(self, x: mx.array) -> mx.array:
+        return super().__call__(x.astype(mx.float32)).astype(x.dtype)
 
 
 class MultiHeadAttention(nn.Module):
@@ -94,17 +98,17 @@ class ResidualAttentionBlock(nn.Module):
         super().__init__()
 
         self.attn = MultiHeadAttention(n_state, n_head)
-        self.attn_ln = nn.LayerNorm(n_state)
+        self.attn_ln = LayerNorm(n_state)
 
         self.cross_attn = (
             MultiHeadAttention(n_state, n_head) if cross_attention else None
         )
-        self.cross_attn_ln = nn.LayerNorm(n_state) if cross_attention else None
+        self.cross_attn_ln = LayerNorm(n_state) if cross_attention else None
 
         n_mlp = n_state * 4
         self.mlp1 = nn.Linear(n_state, n_mlp)
         self.mlp2 = nn.Linear(n_mlp, n_state)
-        self.mlp_ln = nn.LayerNorm(n_state)
+        self.mlp_ln = LayerNorm(n_state)
 
     def __call__(self, x, xa=None, mask=None, kv_cache=None):
         kv, cross_kv = kv_cache if kv_cache else (None, None)
@@ -113,25 +117,31 @@ class ResidualAttentionBlock(nn.Module):
         if self.cross_attn:
             y, cross_kv = self.cross_attn(self.cross_attn_ln(x), xa, kv_cache=cross_kv)
             x += y
-        x = x + self.mlp2(nn.gelu(self.mlp1(self.mlp_ln(x))))
+        x = x + self.mlp2(nn.gelu(self.mlp1(self.mlp_ln(x))).astype(x.dtype))
         return x, (kv, cross_kv)
 
 
 class AudioEncoder(nn.Module):
     def __init__(
-        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int
+        self,
+        n_mels: int,
+        n_ctx: int,
+        n_state: int,
+        n_head: int,
+        n_layer: int,
+        dtype: mx.Dtype = mx.float16,
     ):
         super().__init__()
         self.conv1 = nn.Conv1d(n_mels, n_state, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(n_state, n_state, kernel_size=3, stride=2, padding=1)
-        self._positional_embedding = sinusoids(n_ctx, n_state)
+        self._positional_embedding = sinusoids(n_ctx, n_state).astype(dtype)
 
         self.blocks = [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
-        self.ln_post = nn.LayerNorm(n_state)
+        self.ln_post = LayerNorm(n_state)
 
     def __call__(self, x):
-        x = nn.gelu(self.conv1(x))
-        x = nn.gelu(self.conv2(x))
+        x = nn.gelu(self.conv1(x)).astype(x.dtype)
+        x = nn.gelu(self.conv2(x)).astype(x.dtype)
         assert x.shape[1:] == self._positional_embedding.shape, "incorrect audio shape"
         x = x + self._positional_embedding
 
@@ -144,7 +154,13 @@ class AudioEncoder(nn.Module):
 
 class TextDecoder(nn.Module):
     def __init__(
-        self, n_vocab: int, n_ctx: int, n_state: int, n_head: int, n_layer: int
+        self,
+        n_vocab: int,
+        n_ctx: int,
+        n_state: int,
+        n_head: int,
+        n_layer: int,
+        dtype: mx.Dtype = mx.float16,
     ):
         super().__init__()
 
@@ -155,8 +171,10 @@ class TextDecoder(nn.Module):
             ResidualAttentionBlock(n_state, n_head, cross_attention=True)
             for _ in range(n_layer)
         ]
-        self.ln = nn.LayerNorm(n_state)
-        self._mask = nn.MultiHeadAttention.create_additive_causal_mask(n_ctx)
+        self.ln = LayerNorm(n_state)
+        self._mask = nn.MultiHeadAttention.create_additive_causal_mask(n_ctx).astype(
+            dtype
+        )
 
     def __call__(self, x, xa, kv_cache=None):
         """
@@ -181,7 +199,7 @@ class TextDecoder(nn.Module):
 
 
 class Whisper(nn.Module):
-    def __init__(self, dims: ModelDimensions):
+    def __init__(self, dims: ModelDimensions, dtype: mx.Dtype = mx.float16):
         super().__init__()
         self.dims = dims
         self.encoder = AudioEncoder(
@@ -190,6 +208,7 @@ class Whisper(nn.Module):
             self.dims.n_audio_state,
             self.dims.n_audio_head,
             self.dims.n_audio_layer,
+            dtype,
         )
         self.decoder = TextDecoder(
             self.dims.n_vocab,
@@ -197,6 +216,7 @@ class Whisper(nn.Module):
             self.dims.n_text_state,
             self.dims.n_text_head,
             self.dims.n_text_layer,
+            dtype,
         )
 
     def embed_audio(self, mel):
@@ -210,7 +230,11 @@ class Whisper(nn.Module):
 
     @property
     def is_multilingual(self):
-        return self.dims.n_vocab == 51865
+        return self.dims.n_vocab >= 51865
+
+    @property
+    def num_languages(self):
+        return self.dims.n_vocab - 51765 - int(self.is_multilingual)
 
     detect_language = detect_language_function
     decode = decode_function

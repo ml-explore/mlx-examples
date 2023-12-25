@@ -1,12 +1,13 @@
 # Copyright © 2023 Apple Inc.
 
+import zlib
 from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+
 import mlx.core as mx
-from mlx.utils import tree_map
 import mlx.nn as nn
 import numpy as np
-import zlib
+from mlx.utils import tree_map
 
 from .audio import CHUNK_LENGTH
 from .tokenizer import Tokenizer, get_tokenizer
@@ -33,7 +34,9 @@ def detect_language(
         list of dictionaries containing the probability distribution over all languages.
     """
     if tokenizer is None:
-        tokenizer = get_tokenizer(model.is_multilingual)
+        tokenizer = get_tokenizer(
+            model.is_multilingual, num_languages=model.num_languages
+        )
     if (
         tokenizer.language is None
         or tokenizer.language_token not in tokenizer.sot_sequence
@@ -110,7 +113,7 @@ class DecodingOptions:
     max_initial_timestamp: Optional[float] = 1.0
 
     # implementation details
-    fp16: bool = False  # use fp16 for most of the calculation
+    fp16: bool = True  # use fp16 for most of the calculation
 
 
 @dataclass(frozen=True)
@@ -141,7 +144,7 @@ class Inference:
         logits, self.kv_cache = self.model.decoder(
             tokens, audio_features, kv_cache=self.kv_cache
         )
-        return logits
+        return logits.astype(mx.float32)
 
     def rearrange_kv_cache(self, source_indices):
         """Update the key-value cache according to the updated beams"""
@@ -401,7 +404,10 @@ class DecodingTask:
 
         language = options.language or "en"
         tokenizer = get_tokenizer(
-            model.is_multilingual, language=language, task=options.task
+            model.is_multilingual,
+            num_languages=model.num_languages,
+            language=language,
+            task=options.task,
         )
         self.tokenizer: Tokenizer = tokenizer
         self.options: DecodingOptions = self._verify_options(options)
@@ -542,7 +548,7 @@ class DecodingTask:
             audio_features = self.model.encoder(mel)
 
         if audio_features.dtype != (mx.float16 if self.options.fp16 else mx.float32):
-            return TypeError(
+            raise TypeError(
                 f"audio_features has an incorrect dtype: {audio_features.dtype}"
             )
 

@@ -257,7 +257,7 @@ class Autoencoder(nn.Module):
 
     def __call__(self, x, key=None):
         x = self.encoder(x)
-        x = self.query_proj(x)
+        x = self.quant_proj(x)
 
         mean, logvar = x.split(2, axis=-1)
         std = mx.exp(0.5 * logvar)
