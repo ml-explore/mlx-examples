@@ -32,7 +32,8 @@ Next, download and convert the model. The Mistral weights can be downloaded with
 
 ```
 curl -O https://files.mistral-7b-v0-2.mistral.ai/Mistral-7B-v0.2-Instruct.tar
-tar -xf Mistral-7B-v0.2-Instruct.tar
+mkdir mistral
+tar -xf Mistral-7B-v0.2-Instruct.tar -C mistral
 ```
 
 If you do not have access to the Llama weights you will need to [request
@@ -45,6 +46,14 @@ Convert the model with:
 python convert.py \
     --torch-model <path_to_torch_model> \
     --mlx-model <path_to_mlx_model>
+```
+
+For example：
+
+```bash
+python convert.py \
+    --torch-model mistral \
+    --mlx-model mistral-mlx
 ```
 
 ## Run
@@ -74,6 +83,17 @@ the output location with `--adapter-file`.
 You can resume fine-tuning with an existing adapter with `--resume-adapter-file
 <path_to_adapters.npz>`. 
 
+For example：
+
+```bash
+python lora.py --model mistral-mlx \
+               --adapter-file mistral-mlx/adapters.npz \
+               --batch-size 4 \
+               --lora-layers 16 \
+               --train \
+               --iters 600
+```
+
 ### Evaluate
 
 To compute test set perplexity use
@@ -84,6 +104,14 @@ python lora.py --model <path_to_model> \
                --test 
 ```
 
+For example：
+
+```bash
+python lora.py --model mistral-mlx \
+               --adapter-file mistral-mlx/adapters.npz \
+               --test 
+```
+
 ### Generate
 
 For generation use
@@ -91,6 +119,18 @@ For generation use
 ```
 python lora.py --model <path_to_model> \
                --adapter-file <path_to_adapters.npz> \
+               --num-tokens 50 \
+               --prompt "table: 1-10015132-16
+columns: Player, No., Nationality, Position, Years in Toronto, School/Club Team
+Q: What is terrence ross' nationality
+A: "
+```
+
+For example：
+
+```bash
+python lora.py --model mistral-mlx \
+               --adapter-file mistral-mlx/adapters.npz \
                --num-tokens 50 \
                --prompt "table: 1-10015132-16
 columns: Player, No., Nationality, Position, Years in Toronto, School/Club Team
