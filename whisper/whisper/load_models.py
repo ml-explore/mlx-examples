@@ -1,14 +1,17 @@
 # Copyright © 2023 Apple Inc.
 
+import glob
 import hashlib
+import json
 import os
 import urllib
 import warnings
+from pathlib import Path
 from typing import List
 
 import mlx.core as mx
 import torch
-from mlx.utils import tree_map
+from mlx.utils import tree_map, tree_unflatten
 from tqdm import tqdm
 
 from . import torch_whisper, whisper
@@ -96,7 +99,7 @@ def available_models() -> List[str]:
 
 
 def load_torch_model(
-    name: str,
+    name_or_path: str,
     download_root: str = None,
 ) -> torch_whisper.Whisper:
     """
@@ -104,8 +107,8 @@ def load_torch_model(
 
     Parameters
     ----------
-    name : str
-        one of the official model names listed by `whisper.available_models()`
+    name_or_path : str
+        one of the official model names listed by `whisper.available_models()` or a local Pytorch checkpoint
     download_root: str
         path to download the model files; by default, it uses "~/.cache/whisper"
 
@@ -118,15 +121,14 @@ def load_torch_model(
     if download_root is None:
         download_root = os.path.join(os.path.expanduser("~"), ".cache/whisper")
 
-    if name in _MODELS:
-        checkpoint_file = _download(_MODELS[name], download_root)
-        alignment_heads = _ALIGNMENT_HEADS[name]
-    else:
-        raise RuntimeError(
-            f"Model {name} not found; available models = {available_models()}"
-        )
+    if name_or_path in _MODELS:
+        name_or_path = _download(_MODELS[name_or_path], download_root)
+    elif not Path(name_or_path).is_file():
+        raise RuntimeError(f"Model {name_or_path} is neither found in {available_models()} nor as a local path")
 
-    with open(checkpoint_file, "rb") as fp:
+    alignment_heads = _ALIGNMENT_HEADS.get(name_or_path)
+
+    with open(name_or_path, "rb") as fp:
         checkpoint = torch.load(fp)
 
     dims = torch_whisper.ModelDimensions(**checkpoint["dims"])
@@ -191,8 +193,48 @@ def torch_to_mlx(
 
 
 def load_model(
-    name: str,
+    name_or_path: str,
     download_root: str = None,
     dtype: mx.Dtype = mx.float32,
 ) -> whisper.Whisper:
-    return torch_to_mlx(load_torch_model(name, download_root), dtype)
+    if name_or_path in _MODELS:
+        print(f"[INFO] Loading and converting {name_or_path} model")
+        return torch_to_mlx(load_torch_model(name_or_path, download_root), dtype)
+    elif not (glob.glob(f"{name_or_path}/weights*.npz") and glob.glob(f"{name_or_path}/config.json")):
+        raise ValueError(
+            f"{name_or_path} not found in {available_models()}. Ensure that weights*.npz and config.json files are"
+            " present in the specified path"
+        )
+
+    model_path = Path(name_or_path)
+
+    unsharded_weights_path = model_path / "weights.npz"
+    if unsharded_weights_path.is_file():
+        print(f"[INFO] Loading model from {unsharded_weights_path}")
+        weights = mx.load(str(unsharded_weights_path))
+    else:
+        sharded_weights_glob = str(model_path / "weights.*.npz")
+        weight_files = glob.glob(sharded_weights_glob)
+        print(f"[INFO] Loading model from {sharded_weights_glob}")
+
+        if len(weight_files) == 0:
+            raise FileNotFoundError("No weights found in {}".format(model_path))
+
+        weights = {}
+        for wf in weight_files:
+            weights.update(mx.load(wf).items())
+
+    with open(model_path / "config.json", "r") as f:
+        config = json.loads(f.read())
+        config.pop("model_type", None)
+        model_args = torch_whisper.ModelDimensions(**config)
+
+    model = whisper.Whisper(model_args, dtype)
+
+    weights = tree_unflatten(list(weights.items()))
+    weights = tree_map(lambda p: p.astype(dtype), weights)
+    model.update(weights)
+
+    mx.eval(model.parameters())
+
+    return model

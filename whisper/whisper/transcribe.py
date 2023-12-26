@@ -40,20 +40,20 @@ def _format_timestamp(seconds: float):
 
 class ModelHolder:
     model = None
-    model_name = None
+    model_name_or_path = None
 
     @classmethod
-    def get_model(cls, model: str, dtype: mx.Dtype):
-        if cls.model is None or model != cls.model_name:
-            cls.model = load_model(model, dtype=dtype)
-            cls.model_name = model
+    def get_model(cls, model_name_or_path: str, dtype: mx.Dtype):
+        if cls.model is None or model_name_or_path != cls.model_name_or_path:
+            cls.model = load_model(model_name_or_path, dtype=dtype)
+            cls.model_name_or_path = model_name_or_path
         return cls.model
 
 
 def transcribe(
     audio: Union[str, np.ndarray, mx.array],
     *,
-    model: str = "tiny",
+    model_name_or_path: str = "tiny",
     verbose: Optional[bool] = None,
     temperature: Union[float, Tuple[float, ...]] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
     compression_ratio_threshold: Optional[float] = 2.4,
@@ -73,8 +73,9 @@ def transcribe(
     audio: Union[str, np.ndarray, mx.array]
         The path to the audio file to open, or the audio waveform
 
-    model: str
-        The Whisper model. Can be any of ["tiny", "base", "small", "medium", "large"].
+    model_name_or_path: str
+        The Whisper model. Can be any of ["tiny", "base", "small", "medium", "large"],
+        or a local folder in MLX format.
         Default is "tiny".
 
     verbose: bool
@@ -115,7 +116,7 @@ def transcribe(
     """
 
     dtype = mx.float16 if decode_options.get("fp16", True) else mx.float32
-    model = ModelHolder.get_model(model, dtype)
+    model = ModelHolder.get_model(model_name_or_path, dtype)
 
     # Pad 30-seconds of silence to the input audio, for slicing
     mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
