@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List
 
 import mlx.core as mx
+import mlx.nn as nn
 import torch
 from mlx.utils import tree_map, tree_unflatten
 from tqdm import tqdm
@@ -227,12 +228,15 @@ def load_model(
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
         config.pop("model_type", None)
-        model_args = torch_whisper.ModelDimensions(**config)
+        quantization = config.pop("quantization", None)
 
+    model_args = torch_whisper.ModelDimensions(**config)
     model = whisper.Whisper(model_args, dtype)
 
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(model, **quantization)
+
     weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
     model.update(weights)
 
     mx.eval(model.parameters())
