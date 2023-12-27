@@ -334,16 +334,26 @@ def generate(model, prompt, tokenizer, args):
 
 def load_model(folder: str, dtype=mx.float16):
     model_path = Path(folder)
+    weights = mx.load(str(model_path / "weights.npz"))
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "params.json", "r") as f:
         config = json.loads(f.read())
+        n_heads = config["n_heads"]
+        if "n_kv_heads" not in config:
+            config["n_kv_heads"] = n_heads
+        if "head_dim" not in config:
+            config["head_dim"] = config["dim"] // n_heads
+        if "hidden_dim" not in config:
+            config["hidden_dim"] = weights["layers.0.feed_forward.w1.weight"].shape[0]
         if config.get("vocab_size", -1) < 0:
-            config["vocab_size"] = tokenizer.vocab_size
-        model_args = ModelArgs(**config)
-    weights = mx.load(str(model_path / "weights.npz"))
+            config["vocab_size"] = weights["output.weight"].shape[-1]
+        unused = ["multiple_of", "ffn_dim_multiplier"]
+        for k in unused:
+            if k in config:
+                config.pop(k)
+    model = Model(ModelArgs(**config))
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: p.astype(dtype), weights)
-    model = Model(model_args)
     model.update(weights)
     return model, tokenizer
 
