@@ -6,6 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from typing import Optional, Tuple
 
+
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
         super().__init__()
@@ -30,11 +31,15 @@ class Attention(nn.Module):
         self.repeats = self.n_heads // self.n_kv_heads
         # print("heads", self.n_heads, "kv heads", self.n_kv_heads, "repeats", self.repeats)
         self.head_dim = config.hidden_size // self.n_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
 
         self.q_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
-        self.k_proj = nn.Linear(config.hidden_size, config.hidden_size // self.repeats, bias=False)
-        self.v_proj = nn.Linear(config.hidden_size, config.hidden_size // self.repeats, bias=False)
+        self.k_proj = nn.Linear(
+            config.hidden_size, config.hidden_size // self.repeats, bias=False
+        )
+        self.v_proj = nn.Linear(
+            config.hidden_size, config.hidden_size // self.repeats, bias=False
+        )
         self.o_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
         self.rope = nn.RoPE(self.head_dim, traditional=False)
 
@@ -51,7 +56,9 @@ class Attention(nn.Module):
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3) # B, n_kv_heads, L, head_dim
+        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(
+            0, 2, 1, 3
+        )  # B, n_kv_heads, L, head_dim
 
         def repeat(a):
             a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
@@ -87,15 +94,23 @@ class Attention(nn.Module):
         output = (scores @ repeat(values)).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
+
 class FeedForward(nn.Module):
     def __init__(self, config: LlamaConfig):
         super().__init__()
-        self.gate_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
-        self.up_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
+        self.gate_proj = nn.Linear(
+            config.hidden_size, config.intermediate_size, bias=False
+        )
+        self.down_proj = nn.Linear(
+            config.intermediate_size, config.hidden_size, bias=False
+        )
+        self.up_proj = nn.Linear(
+            config.hidden_size, config.intermediate_size, bias=False
+        )
 
     def __call__(self, x) -> mx.array:
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
+
 
 class TransformerBlock(nn.Module):
     def __init__(self, config: LlamaConfig):
@@ -105,7 +120,9 @@ class TransformerBlock(nn.Module):
         self.self_attn = Attention(config=config)
         self.mlp = FeedForward(config=config)
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
     def __call__(
         self,
@@ -126,7 +143,9 @@ class Llama(nn.Module):
         self.config = config
         self.vocab_size = config.vocab_size
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.layers = [TransformerBlock(config=config) for _ in range(config.num_hidden_layers)]
+        self.layers = [
+            TransformerBlock(config=config) for _ in range(config.num_hidden_layers)
+        ]
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.kv_cache = []
@@ -137,20 +156,24 @@ class Llama(nn.Module):
         if num_to_truncate == 0:
             return False
         else:
-            self.kv_cache = tree_map(lambda x: x[:, :, :-num_to_truncate, :], self.kv_cache)
+            self.kv_cache = tree_map(
+                lambda x: x[:, :, :-num_to_truncate, :], self.kv_cache
+            )
             return True
 
     def __call__(
         self,
-        x: mx.array, 
+        x: mx.array,
         read_cache: bool = False,
         write_cache: bool = False,
-        next_token_only: bool = False
+        next_token_only: bool = False,
     ):
         mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
         mask = mask.astype(self.embed_tokens.weight.dtype)
         if read_cache and len(self.kv_cache) != len(self.layers):
-            raise RuntimeError(f"Length of cache ({len(self.kv_cache)}) must match number of layers ({len(self.layers)})")
+            raise RuntimeError(
+                f"Length of cache ({len(self.kv_cache)}) must match number of layers ({len(self.layers)})"
+            )
         x = self.embed_tokens(x)
         for idx, layer in enumerate(self.layers):
             x, c = layer(x, mask, cache=self.kv_cache[idx] if read_cache else None)
@@ -162,34 +185,38 @@ class Llama(nn.Module):
         if next_token_only:
             x = x[:, -1]
         return self.lm_head(x)
-    
+
     @classmethod
     def from_hugging_face(cls, model_path: str):
         config = LlamaConfig.from_pretrained(model_path)
         torch_weights = AutoModelForCausalLM.from_pretrained(model_path).state_dict()
-        mx_weights = {k.replace("model.", ""):mx.array(v.numpy()) for k, v in torch_weights.items()}
+        mx_weights = {
+            k.replace("model.", ""): mx.array(v.numpy())
+            for k, v in torch_weights.items()
+        }
         for k in mx_weights.keys():
             mx_weights[k] = mx_weights[k].astype(mx.float16)
         mlx_model = cls(config)
         mlx_model.update(tree_unflatten(list(mx_weights.items())))
-            
+
         return mlx_model
 
-    def generate(
-        self, 
-        x: mx.array, 
-        temp=1.0,
-        read_cache: bool = False
-    ):
+    def generate(self, x: mx.array, temp=0.0, read_cache: bool = False):
         # Make an additive causal mask. We will need that to process the prompt.
+        def sample(logits):
+            if temp == 0:
+                return mx.argmax(logits, axis=-1)
+            else:
+                return mx.random.categorical(logits * (1 / temp))
+
         mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
         mask = mask.astype(self.embed_tokens.weight.dtype)
 
         logit = self(x, read_cache=read_cache, write_cache=True, next_token_only=True)
-        tok = mx.random.categorical(logit * (1 / temp))
+        tok = sample(logit)
         yield tok
         while True:
             x = tok.reshape(-1, 1)
             logit = self(x, read_cache=True, write_cache=True, next_token_only=True)
-            tok = mx.random.categorical(logit * (1 / temp))
+            tok = sample(logit)
             yield tok
