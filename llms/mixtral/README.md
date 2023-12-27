@@ -61,7 +61,7 @@ the converted `weights.npz`, `tokenizer.model`, and `config.json` there.
 As easy as:
 
 ```
-python mixtral.py --model-path $MIXTRAL_MODEL/
+python mixtral.py --model-path mlx_model
 ```
 
 For more options including how to prompt the model, run:
