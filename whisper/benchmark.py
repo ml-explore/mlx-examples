@@ -23,10 +23,10 @@ def timer(fn, *args):
     return (toc - tic) / num_its
 
 
-def feats():
+def feats(n_mels: int = 80):
     data = audio.load_audio(audio_file)
     data = audio.pad_or_trim(data)
-    mels = audio.log_mel_spectrogram(data)
+    mels = audio.log_mel_spectrogram(data, n_mels)
     mx.eval(mels)
     return mels
 
@@ -46,19 +46,26 @@ def everything():
 
 
 if __name__ == "__main__":
-
     # get command line arguments without 3rd party libraries
     # the command line argument to benchmark all models is "all"
     models = ["tiny"]
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--all":
-            models = ["tiny", "small", "medium", "large"]
+    for i, arg in enumerate(sys.argv):
+        if arg == "-all":
+            models = ["tiny", "small", "medium", "large-v1", "large-v3"]
+            break
+        elif arg in ("-m", "--models") and i + 1 < len(sys.argv):
+            models = sys.argv[i + 1].split(",")
 
     feat_time = timer(feats)
     print(f"\nFeature time {feat_time:.3f}")
-    mels = feats()[None].astype(mx.float16)
-
     for model_name in models:
+        # as long large "points" to "large-v3"
+        if model_name == "large" or model_name == "large-v3":
+            n_mels = 128
+        else:
+            n_mels = 80
+
+        mels = feats(n_mels)[None].astype(mx.float16)
 
         print(f"\nModel: {model_name.upper()}")
         tokens = mx.array(
