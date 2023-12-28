@@ -1,0 +1,4 @@
+mlx>=0.0.6
+sentencepiece
+torch
+numpy
