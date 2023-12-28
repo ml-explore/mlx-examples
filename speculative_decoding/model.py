@@ -7,6 +7,14 @@ import mlx.nn as nn
 from typing import Optional, Tuple
 
 
+def create_additive_causal_mask(N: int, offset: int = 0, dtype: mx.Dtype = mx.float32):
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    mask = mask.astype(dtype) * -1e9
+    return mask
+
+
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
         super().__init__()
@@ -29,7 +37,6 @@ class Attention(nn.Module):
         self.n_heads: int = config.num_attention_heads
         self.n_kv_heads: int = config.num_key_value_heads
         self.repeats = self.n_heads // self.n_kv_heads
-        # print("heads", self.n_heads, "kv heads", self.n_kv_heads, "repeats", self.repeats)
         self.head_dim = config.hidden_size // self.n_heads
         self.scale = self.head_dim**-0.5
 
@@ -63,11 +70,7 @@ class Attention(nn.Module):
         def repeat(a):
             a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
             kv_size = a.shape[-1]
-            # can't use the L from x here, this is like cross-attention during decoding
             return a.reshape([B, self.n_heads, -1, kv_size])
-
-        # cache should be with unrepeated kv, otherwise GQA is pointless lol
-        # keys, values = map(repeat, (keys, values))
 
         if cache is not None:
             key_cache, value_cache = cache
@@ -79,17 +82,9 @@ class Attention(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        # print("queries shape", queries.shape, "keys shape", keys.shape, "values shape", values.shape)
-
         scores = (queries * self.scale) @ repeat(keys).transpose(0, 1, 3, 2)
         if mask is not None:
-            # print("we need to add mask of shape", mask.shape, "to scores of shape", scores.shape)
-            if cache is None:
-                scores += mask
-            else:
-                # we're doing "cross-attn"; add mask to the "end" of the attn matrix along the K dimension
-                a, b = mx.split(scores, indices_or_sections=[-mask.shape[-1]], axis=-1)
-                scores = mx.concatenate([a, b + mask], axis=-1)
+            scores += mask
         scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ repeat(values)).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
@@ -148,75 +143,55 @@ class Llama(nn.Module):
         ]
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        self.kv_cache = []
+        self.reset_cache()
 
-    def truncate_kv_cache(self, num_to_truncate):
+    def truncate_cache(self, num_to_truncate):
         cache_length = self.kv_cache[0][0].shape[2]
-        num_to_truncate = min(num_to_truncate, cache_length)
-        if num_to_truncate == 0:
-            return False
-        else:
+        if num_to_truncate < cache_length:
             self.kv_cache = tree_map(
                 lambda x: x[:, :, :-num_to_truncate, :], self.kv_cache
             )
-            return True
+        else:
+            self.reset_cache()
+
+    def reset_cache(self):
+        self.kv_cache = [None] * len(self.layers)
 
     def __call__(
         self,
         x: mx.array,
-        read_cache: bool = False,
-        write_cache: bool = False,
         next_token_only: bool = False,
     ):
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-        mask = mask.astype(self.embed_tokens.weight.dtype)
-        if read_cache and len(self.kv_cache) != len(self.layers):
-            raise RuntimeError(
-                f"Length of cache ({len(self.kv_cache)}) must match number of layers ({len(self.layers)})"
-            )
+        if self.kv_cache[0]:
+            offset = self.kv_cache[0][0].shape[-2]
+        else:
+            offset = 0
+
+        if x.shape[1] > 1:
+            mask = create_additive_causal_mask(x.shape[1], offset)
+            mask = mask.astype(self.embed_tokens.weight.dtype)
+        else:
+            mask = None
+
         x = self.embed_tokens(x)
         for idx, layer in enumerate(self.layers):
-            x, c = layer(x, mask, cache=self.kv_cache[idx] if read_cache else None)
-            if write_cache:
-                if len(self.kv_cache) == 0:
-                    self.kv_cache = [None] * len(self.layers)
-                self.kv_cache[idx] = c
-        x = self.norm(x)
+            x, self.kv_cache[idx] = layer(x, mask, cache=self.kv_cache[idx])
+
         if next_token_only:
             x = x[:, -1]
+
+        x = self.norm(x)
         return self.lm_head(x)
 
     @classmethod
     def from_hugging_face(cls, model_path: str):
         config = LlamaConfig.from_pretrained(model_path)
         torch_weights = AutoModelForCausalLM.from_pretrained(model_path).state_dict()
-        mx_weights = {
-            k.replace("model.", ""): mx.array(v.numpy())
+        weights = {
+            k.replace("model.", ""): mx.array(v.numpy(), mx.float16)
             for k, v in torch_weights.items()
         }
-        for k in mx_weights.keys():
-            mx_weights[k] = mx_weights[k].astype(mx.float16)
-        mlx_model = cls(config)
-        mlx_model.update(tree_unflatten(list(mx_weights.items())))
-
-        return mlx_model
-
-    def generate(self, x: mx.array, temp=0.0, read_cache: bool = False):
-        # Make an additive causal mask. We will need that to process the prompt.
-        def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
-
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-        mask = mask.astype(self.embed_tokens.weight.dtype)
-
-        logit = self(x, read_cache=read_cache, write_cache=True, next_token_only=True)
-        tok = sample(logit)
-        yield tok
-        while True:
-            x = tok.reshape(-1, 1)
-            logit = self(x, read_cache=True, write_cache=True, next_token_only=True)
-            tok = sample(logit)
-            yield tok
+        model = cls(config)
+        model.update(tree_unflatten(list(weights.items())))
+        mx.eval(model.parameters())
+        return model
