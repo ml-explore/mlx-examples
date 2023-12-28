@@ -17,13 +17,13 @@ pip install -r requirements.txt
 ```
 
 Then convert the model and the draft model. We'll use T5-XXL (11B parameters)
-for the main model. You can convert it with:
+for the main model. Convert it with:
 
 ```
 python convert.py --model t5-11b
 ```
 
-We'll use T5 small for the draft model. Convert it with:
+We'll use T5-small for the draft model. Convert it with:
 
 ```
 python convert.py --model t5-small
