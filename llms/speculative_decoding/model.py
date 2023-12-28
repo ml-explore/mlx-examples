@@ -1,5 +1,3 @@
-import argparse
-from time import perf_counter_ns
 from typing import List, Optional, Tuple
 
 import mlx.core as mx
@@ -116,16 +114,16 @@ class MultiHeadAttention(nn.Module):
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
+        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
         if cache is not None:
             key_cache, value_cache = cache
-            keys = mx.concatenate([key_cache, keys], axis=3)
+            keys = mx.concatenate([key_cache, keys], axis=2)
             values = mx.concatenate([value_cache, values], axis=2)
 
         # Dimensions are [batch x num heads x sequence x hidden dim]
-        scores = queries @ keys
+        scores = queries @ keys.transpose(0, 1, 3, 2)
         if mask is not None:
             scores = scores + mask.astype(scores.dtype)
 
@@ -247,6 +245,13 @@ class TransformerDecoderLayer(nn.Module):
         return x, cache
 
 
+def create_additive_causal_mask(N: int, offset: int = 0):
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    return mask * -1e9
+
+
 class TransformerDecoder(nn.Module):
     def __init__(self, config: T5Config):
         super().__init__()
@@ -255,22 +260,26 @@ class TransformerDecoder(nn.Module):
         self.ln = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.relative_attention_bias = RelativePositionBias(config, bidirectional=False)
 
-    def __call__(self, x, memory, mask, memory_mask, cache=None):
-        if cache is not None:
-            offset = cache[0][0].shape[3]
+    def __call__(self, x, memory, cache=None):
+        if cache[0] is not None:
+            offset = cache[0][0].shape[2]
         else:
             offset = 0
-            cache = [None] * len(self.layers)
 
-        T = offset + x.shape[1]
-        pos_bias = self.relative_attention_bias(T, T, offset=offset)
+        T = x.shape[1]
+        if T > 1:
+            mask = create_additive_causal_mask(T, offset)
+        else:
+            mask = None
+
+        pos_bias = self.relative_attention_bias(T + offset, T + offset, offset=offset)
         if mask is not None:
             mask += pos_bias
         else:
             mask = pos_bias
 
         for e, layer in enumerate(self.layers):
-            x, cache[e] = layer(x, memory, mask, memory_mask, cache=cache[e])
+            x, cache[e] = layer(x, memory, mask, None, cache=cache[e])
         x = self.ln(x)
 
         return x, cache
@@ -284,7 +293,7 @@ class OutputHead(nn.Module):
         return self.linear(inputs)
 
 
-class T5(nn.Module):
+class Model(nn.Module):
     def __init__(self, config: T5Config):
         self.wte = nn.Embedding(config.vocab_size, config.d_model)
         self.encoder = TransformerEncoder(config)
@@ -293,33 +302,36 @@ class T5(nn.Module):
         if not self.tie_word_embeddings:
             self.lm_head = OutputHead(config)
         self.model_dim = config.d_model
+        self.reset_cache()
 
     def encode(self, inputs: mx.array):
         return self.encoder(self.wte(inputs))
+
+    def truncate_cache(self, num_to_truncate):
+        if num_to_truncate <= 0:
+            return
+        cache_length = self.cache[0][0].shape[2]
+        if num_to_truncate < cache_length:
+            self.cache = tree_map(lambda x: x[:, :, :-num_to_truncate, :], self.cache)
+        else:
+            self.reset_cache()
+
+    def reset_cache(self):
+        self.cache = [None] * len(self.decoder.layers)
 
     def decode(
         self,
         inputs: mx.array,
         memory: mx.array,
-        cache=None,
     ):
         inputs = self.wte(inputs)
-        T = inputs.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(inputs.dtype)
-        else:
-            mask = None
-
-        y, cache = self.decoder(
-            inputs, memory=memory, mask=mask, memory_mask=None, cache=cache
-        )
+        y, self.cache = self.decoder(inputs, memory=memory, cache=self.cache)
         if not self.tie_word_embeddings:
             y *= self.model_dim**-0.5
             y = self.lm_head(y)
         else:
             y = y @ self.wte.weight.T
-        return y, cache
+        return y
 
     def __call__(
         self,
@@ -327,141 +339,3 @@ class T5(nn.Module):
         decoder_inputs: mx.array,
     ):
         return self.decode(decoder_inputs, self.encode(inputs))[0]
-
-
-class Tokenizer:
-    def __init__(self, config: T5Config):
-        self._decoder_start_id = config.decoder_start_token_id
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            args.model,
-            legacy=False,
-            model_max_length=getattr(config, "n_positions", 512),
-        )
-
-    @property
-    def eos_id(self) -> int:
-        return self._tokenizer.eos_token_id
-
-    @property
-    def decoder_start_id(self) -> int:
-        return self._decoder_start_id
-
-    def encode(self, s: str) -> mx.array:
-        return mx.array(
-            self._tokenizer(
-                s,
-                return_tensors="np",
-                return_attention_mask=False,
-            )["input_ids"]
-        )
-
-    def decode(self, t: List[int], with_sep: bool = True) -> str:
-        tokens = self._tokenizer.convert_ids_to_tokens(t)
-        return "".join(t.replace("▁", " " if with_sep else "") for t in tokens)
-
-
-def generate(prompt: str, model: T5, tokenizer: Tokenizer, temp: Optional[float] = 0.0):
-    def sample(logits):
-        if temp == 0:
-            return mx.argmax(logits, axis=-1)
-        else:
-            return mx.random.categorical(logits * (1 / temp))
-
-    prompt = tokenizer.encode(prompt)
-    decoder_inputs = mx.array([tokenizer.decoder_start_id])
-    memory = model.encode(prompt)
-    cache = None
-    y = decoder_inputs
-    while True:
-        logits, cache = model.decode(y[None], memory, cache=cache)
-        y = sample(logits[:, -1, :])
-        yield y.squeeze()
-
-
-def load_model(model_name: str, dtype: str = "float16"):
-    config = T5Config.from_pretrained(args.model)
-    dtype = getattr(mx, dtype)
-    model = T5(config)
-    file_name = model_name.replace("/", "-")
-    weights = mx.load(f"{file_name}.npz")
-    weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
-    model.update(weights)
-    mx.eval(model.parameters())
-    return model, Tokenizer(config)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="T5 Inference script")
-    parser.add_argument(
-        "--model",
-        type=str,
-        help="Name of the T5 model.",
-        default="t5-small",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="",
-        default="translate English to German: That is good.",
-    )
-    parser.add_argument(
-        "--encode-only",
-        action="store_true",
-        default=False,
-        help="Whether to decode or not. If true, will output last layer of encoder.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        "-m",
-        type=int,
-        default=100,
-        help="Maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--temp",
-        help="The sampling temperature.",
-        type=float,
-        default=0.0,
-    )
-    parser.add_argument(
-        "--dtype",
-        help="The model data type.",
-        type=str,
-        choices=["float16", "bfloat16", "float32"],
-        default="bfloat16",
-    )
-
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-    args = parser.parse_args()
-
-    mx.random.seed(args.seed)
-
-    model, tokenizer = load_model(args.model, args.dtype)
-
-    if args.encode_only:
-        print("[INFO] Encoding with T5...", flush=True)
-        print(args.prompt, flush=True)
-        encoder_output = model.encode(tokenizer.encode(args.prompt))
-        print(encoder_output, flush=True)
-        exit(0)
-
-    print("[INFO] Generating with T5...", flush=True)
-    print("Input: ", args.prompt, flush=True)
-
-    start = perf_counter_ns()
-    for token, n_tokens in zip(
-        generate(args.prompt, model, tokenizer, args.temp), range(args.max_tokens)
-    ):
-        if token.item() == tokenizer.eos_id:
-            break
-        print(
-            tokenizer.decode([token.item()], with_sep=n_tokens > 0),
-            end="",
-            flush=True,
-        )
-
-    n_tokens += 1
-    end = perf_counter_ns()
-    elapsed = (end - start) / 1.0e9
-    print()
-    print(f"Time: {elapsed:.2f} seconds, tokens/s: {n_tokens / elapsed:.2f}")
