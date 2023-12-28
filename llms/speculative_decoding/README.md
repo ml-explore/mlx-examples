@@ -1,7 +1,7 @@
 # Speculative Decoding
 
 This example implements speculative decoding with the T5 model for text
-generation.[^1] Speculative decoding uses a smaller draft model to propose
+generation.[^1][^2] Speculative decoding uses a smaller draft model to propose
 several tokens, and a larger model to decide which tokens to accept. The
 distribution of the generated text is identical to what the larger model would
 produce on its own, but with far fewer forward passes of the large model since
@@ -23,7 +23,7 @@ T5 11B model with:
 python convert.py --model t5-11b
 ```
 
-And for the draft model, convert the T5 small model with:
+We'll use T5 small for the draft model. Convert it with:
 
 ```
 python convert.py --model t5-small
@@ -59,5 +59,7 @@ speculative decoding is. You can use `--draft` to tune the number of draft
 tokens per model evaluation in order to reduce the number of discarded draft
 tokens.
 
-[^1] See the paper [Fast Inference from Transformers via Speculative
+[^1]: See the paper [Fast Inference from Transformers via Speculative
 Decoding](https://arxiv.org/abs/2211.17192)
+[^1]: For more information on T5 see the [original paper](https://arxiv.org/abs/1910.10683)
+   or the [Hugging Face page](https://huggingface.co/docs/transformers/model_doc/t5).
