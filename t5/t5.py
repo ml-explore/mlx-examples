@@ -125,7 +125,6 @@ class MultiHeadAttention(nn.Module):
             values = mx.concatenate([value_cache, values], axis=2)
 
         # Dimensions are [batch x num heads x sequence x hidden dim]
-        queries = queries
         scores = queries @ keys
         if mask is not None:
             scores = scores + mask.astype(scores.dtype)

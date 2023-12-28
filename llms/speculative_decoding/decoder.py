@@ -1,4 +1,3 @@
-import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -6,17 +5,25 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 import transformers
-from model import Llama
-from prompts import create_urial_prompt
+from model import Model
 
 
 class Tokenizer:
     def __init__(self, model_name: str):
-        self._tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+        self._tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_name,
+            legacy=False,
+            model_max_length=512,
+        )
+        self._decoder_start_id = 0
 
     @property
     def eos_id(self) -> int:
         return self._tokenizer.eos_token_id
+
+    @property
+    def decoder_start_id(self) -> int:
+        return self._decoder_start_id
 
     def encode(self, s: str) -> mx.array:
         return mx.array(
@@ -25,44 +32,34 @@ class Tokenizer:
             ].squeeze(0)
         )
 
-    def decode(self, t: List[int], with_sep: bool = True) -> str:
-        tokens = self._tokenizer.convert_ids_to_tokens(t)
-        return "".join(t.replace("▁", " " if with_sep else "") for t in tokens)
+    def decode(self, t: List[int]) -> str:
+        return self._tokenizer.decode(t)
 
 
 class SpeculativeDecoder:
     def __init__(
         self,
-        model: str,
-        draft_model: str = None,
+        model: Model,
+        draft_model: Model,
+        tokenizer: str,
         num_draft: int = 5,
         delta: float = 0.0,
     ):
-        self.tokenizer = Tokenizer(model)
-        self.model = Llama.from_hugging_face(model)
-        if draft_model is not None:
-            self.draft_model = Llama.from_hugging_face(draft_model)
+        self.tokenizer = Tokenizer(tokenizer)
+        self.model = model
+        self.draft_model = draft_model
         self.num_draft = num_draft
         self.delta = delta
-
-    def tokenize(self, prompt):
-        # if self.tokenizer.chat_template is not None:
-        #    tokenized = self.tokenizer.apply_chat_template(
-        #        prompt, tokenize=True, add_generation_prompt=True
-        #    )
-        # else:
-        # use urial zero-shot template
-        tokenized = self.tokenizer.encode(create_urial_prompt(prompt["content"]))
-        return tokenized
 
     def _generate(
         self,
         x: mx.array,
+        memory: mx.array,
         draft: bool = False,
     ):
         model = self.draft_model if draft else self.model
         while True:
-            logits = model(x[None, :], next_tokens=1).squeeze((0, 1))
+            logits = model.decode(x[None], memory)[0, -1]
             x = mx.argmax(logits, keepdims=True)
             lognorm = mx.logsumexp(logits.astype(mx.float32))
             logprob = logits[x] - lognorm
@@ -72,25 +69,26 @@ class SpeculativeDecoder:
         self,
         prompt,
         max_tokens: int = 100,
-        draft: bool = False,
     ):
-        x = self.tokenize(prompt)
-        start = time.time()
-        for (token, _), n in zip(self._generate(x, draft=draft), range(max_tokens)):
-            token = token.item()
+        memory = self.model.encode(self.tokenizer.encode(prompt)[None])
+        x = mx.array([self.tokenizer.decoder_start_id])
+        skip = 0
+        outputs = []
+        for (token, _), n in zip(self._generate(x, memory), range(max_tokens)):
             if token == self.tokenizer.eos_id:
                 break
-            print(self.tokenizer.decode(token, with_sep=n > 0), end="", flush=True)
-        run_time = time.time() - start
+            outputs.append(token.item())
+            if (n + 1) % 10 == 0:
+                str_output = self.tokenizer.decode(outputs)
+                print(str_output[skip:], end="", flush=True)
+                skip = len(str_output)
+
+        print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
         print()
-        print(f"=== GENERATED {n + 1} TOKENS in {run_time} SECONDS ===")
-        if draft:
-            self.draft_model.reset_cache()
-        else:
-            self.model.reset_cache()
+        self.model.reset_cache()
 
     def _get_num_accept(self, draft_tokens, draft_probs, model_logits):
-        # equal_toks = sampled[:-1] == draft_tokens
+        # accept_toks = mx.argmax(model_logits, axis=-1) == draft_tokens
         model_probs = mx.take_along_axis(
             model_logits,
             draft_tokens[:, None],
@@ -111,14 +109,19 @@ class SpeculativeDecoder:
         def sample(logits):
             return mx.argmax(logits, axis=-1)
 
-        tokens = mx.array(self.tokenize(prompt), mx.uint32)
-        start = time.time()
+        prompt = mx.array(self.tokenizer.encode(prompt), mx.uint32)[None]
+        memory = self.model.encode(prompt)
+        draft_memory = self.draft_model.encode(prompt)
 
-        decoding_steps = 0
+        tokens = mx.array([self.tokenizer.decoder_start_id])
+
+        n_steps = 0
         ntoks = 0
-        accepted_draft_tokens = 0
-        total_draft_tokens = 0
+        n_accepted = 0
+        n_draft = 0
 
+        outputs = []
+        skip = 0
         draft_inputs = tokens
         inputs = tokens
         while True:
@@ -127,7 +130,7 @@ class SpeculativeDecoder:
             draft_probs = []
             for _, (t, p) in zip(
                 range(ntoks, min(ntoks + self.num_draft, max_tokens)),
-                self._generate(draft_inputs, draft=True),
+                self._generate(draft_inputs, draft_memory, draft=True),
             ):
                 draft_tokens.append(t)
                 draft_probs.append(p)
@@ -138,10 +141,10 @@ class SpeculativeDecoder:
             draft_tokens = mx.concatenate(draft_tokens)
             draft_probs = mx.concatenate(draft_probs)
             verify_tokens = mx.concatenate([inputs, draft_tokens])
-            logits = self.model(
-                verify_tokens[None, :], next_tokens=draft_tokens.size + 1
+            logits = self.model.decode(
+                verify_tokens[None, :],
+                memory,
             ).squeeze(0)
-            # sampled = sample(logits).squeeze(0)
 
             # Only keep samples that match the draft:
             num_to_accept = self._get_num_accept(
@@ -155,38 +158,34 @@ class SpeculativeDecoder:
                 [new_tokens, mx.argmax(logits[num_to_accept], keepdims=True)]
             )
 
-            accepted_draft_tokens += num_to_accept
-            total_draft_tokens += draft_tokens.size
+            n_accepted += num_to_accept
+            n_draft += draft_tokens.size
 
             # Rewind the cache for unaccepted tokens:
             if (n := draft_tokens.size) > num_to_accept:
                 self.draft_model.truncate_cache(n - new_tokens.size)
                 self.model.truncate_cache(n - new_tokens.size + 1)
 
-            decoding_steps += 1
+            n_steps += 1
 
             for t in new_tokens.tolist():
                 if t == self.tokenizer.eos_id or ntoks >= max_tokens:
                     break
-                print(self.tokenizer.decode(t, with_sep=ntoks > 0), end="", flush=True)
+                outputs.append(t)
                 ntoks += 1
+
+            str_output = self.tokenizer.decode(outputs)
+            print(str_output[skip:], end="", flush=True)
+            skip = len(str_output)
+
             if ntoks >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
                 break
             draft_inputs = new_tokens[max(new_tokens.size - 2, 0) :]
             inputs = draft_inputs[-1:]
 
-        end = time.time()
+        print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
+        print()
+
         self.model.reset_cache()
         self.draft_model.reset_cache()
-        print()
-        print(
-            "=== GENERATED",
-            ntoks,
-            "TOKENS IN",
-            round(end - start, 2),
-            "SECONDS ===",
-        )
-        print(
-            f"=== ACCEPTED {accepted_draft_tokens} of {total_draft_tokens} DRAFT TOKENS ==="
-        )
-        print("=== DECODING STEPS", decoding_steps, "===")
+        return {"n_accepted": n_accepted, "n_draft": n_draft, "n_steps": n_steps}

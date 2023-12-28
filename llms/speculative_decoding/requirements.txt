@@ -1,3 +1,4 @@
-mlx>=0.0.5
+mlx>=0.0.6
 transformers
 numpy
+accelerate
