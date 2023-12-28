@@ -16,8 +16,8 @@ cd speculative_decoding
 pip install -r requirements.txt
 ```
 
-Then convert the model and the draft model. For example, you can convert th
-T5 11B model with:
+Then convert the model and the draft model. We'll use T5-XXL (11B parameters)
+for the main model. You can convert it with:
 
 ```
 python convert.py --model t5-11b
