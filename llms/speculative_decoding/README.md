@@ -29,4 +29,4 @@ are accepted by the larger model. That's more likely to happen if the models
 are trained on similar data. The default setting in this example uses TinyLlama
 as a draft morel for Llama 7B.
 
-[^1] See the paper [Fast Inference from Transformers via Speculative Decoding]((https://arxiv.org/abs/2211.17192)
+[^1] See the paper [Fast Inference from Transformers via Speculative Decoding](https://arxiv.org/abs/2211.17192)

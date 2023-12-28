@@ -145,6 +145,8 @@ class Llama(nn.Module):
         self.reset_cache()
 
     def truncate_cache(self, num_to_truncate):
+        if num_to_truncate <= 0:
+            return
         cache_length = self.kv_cache[0][0].shape[2]
         if num_to_truncate < cache_length:
             self.kv_cache = tree_map(
@@ -159,7 +161,7 @@ class Llama(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        next_token_only: bool = False,
+        next_tokens: int = -1,
     ):
         if self.kv_cache[0]:
             offset = self.kv_cache[0][0].shape[-2]
@@ -176,14 +178,14 @@ class Llama(nn.Module):
         for idx, layer in enumerate(self.layers):
             x, self.kv_cache[idx] = layer(x, mask, cache=self.kv_cache[idx])
 
-        if next_token_only:
-            x = x[:, -1]
+        if next_tokens > 0:
+            x = x[:, -next_tokens:]
 
         x = self.norm(x)
         return self.lm_head(x)
 
     @classmethod
-    def from_hugging_face(cls, model_path: str):
+    def from_hugging_face(cls, model_path: str, quantized: bool = True):
         config = LlamaConfig.from_pretrained(model_path)
         torch_weights = AutoModelForCausalLM.from_pretrained(model_path).state_dict()
         weights = {
@@ -192,5 +194,7 @@ class Llama(nn.Module):
         }
         model = cls(config)
         model.update(tree_unflatten(list(weights.items())))
+        # if quantization is not None:
+        #    nn.QuantizedLinear.quantize_module(model, **quantization)
         mx.eval(model.parameters())
         return model

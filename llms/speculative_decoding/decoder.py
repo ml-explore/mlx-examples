@@ -31,11 +31,19 @@ class Tokenizer:
 
 
 class SpeculativeDecoder:
-    def __init__(self, model: str, draft_model: str = None):
+    def __init__(
+        self,
+        model: str,
+        draft_model: str = None,
+        num_draft: int = 5,
+        delta: float = 0.0,
+    ):
         self.tokenizer = Tokenizer(model)
         self.model = Llama.from_hugging_face(model)
         if draft_model is not None:
             self.draft_model = Llama.from_hugging_face(draft_model)
+        self.num_draft = num_draft
+        self.delta = delta
 
     def tokenize(self, prompt):
         # if self.tokenizer.chat_template is not None:
@@ -50,32 +58,25 @@ class SpeculativeDecoder:
     def _generate(
         self,
         x: mx.array,
-        temp: float = 0.0,
         draft: bool = False,
     ):
         model = self.draft_model if draft else self.model
-
-        def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
-
         while True:
-            logit = model(x[None, :], next_token_only=True)
-            x = sample(logit)
-            yield x
+            logits = model(x[None, :], next_tokens=1).squeeze((0, 1))
+            x = mx.argmax(logits, keepdims=True)
+            lognorm = mx.logsumexp(logits.astype(mx.float32))
+            logprob = logits[x] - lognorm
+            yield x, logprob
 
     def generate(
         self,
         prompt,
         max_tokens: int = 100,
-        temp: float = 0.0,
         draft: bool = False,
     ):
         x = self.tokenize(prompt)
         start = time.time()
-        for token, n in zip(self._generate(x, temp, draft=draft), range(max_tokens)):
+        for (token, _), n in zip(self._generate(x, draft=draft), range(max_tokens)):
             token = token.item()
             if token == self.tokenizer.eos_id:
                 break
@@ -88,14 +89,27 @@ class SpeculativeDecoder:
         else:
             self.model.reset_cache()
 
+    def _get_num_accept(self, draft_tokens, draft_probs, model_logits):
+        # equal_toks = sampled[:-1] == draft_tokens
+        model_probs = mx.take_along_axis(
+            model_logits,
+            draft_tokens[:, None],
+            axis=-1,
+        ).squeeze(-1)
+        model_probs -= mx.logsumexp(model_logits.astype(mx.float32), axis=-1)
+        unis = mx.random.uniform(shape=(draft_tokens.size,))
+        log_unis = mx.log(mx.maximum(unis - self.delta, 0.0))
+        accept_toks = log_unis <= ((model_probs - draft_probs))
+        num_to_accept = (accept_toks.tolist() + [False]).index(False)
+        return num_to_accept
+
     def speculative_decode(
-        self, prompt, max_tokens: int = 100, temp: float = 0.0, n_draft: int = 5
+        self,
+        prompt,
+        max_tokens: int = 100,
     ):
         def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
+            return mx.argmax(logits, axis=-1)
 
         tokens = mx.array(self.tokenize(prompt), mx.uint32)
         start = time.time()
@@ -103,47 +117,63 @@ class SpeculativeDecoder:
         decoding_steps = 0
         ntoks = 0
         accepted_draft_tokens = 0
+        total_draft_tokens = 0
 
+        draft_inputs = tokens
+        inputs = tokens
         while True:
             # For each decoding step: generate n tokens from a draft model
             draft_tokens = []
-            for _, t in zip(
-                range(ntoks, min(ntoks + n_draft, max_tokens)),
-                self._generate(tokens, temp=temp, draft=True),
+            draft_probs = []
+            for _, (t, p) in zip(
+                range(ntoks, min(ntoks + self.num_draft, max_tokens)),
+                self._generate(draft_inputs, draft=True),
             ):
                 draft_tokens.append(t)
+                draft_probs.append(p)
                 if t.item() == self.tokenizer.eos_id:
                     break
 
-            # Verify the draft tokens with the last verified token
+            # Verify the draft tokens with the last verified token:
             draft_tokens = mx.concatenate(draft_tokens)
-            verify_tokens = mx.concatenate([tokens, draft_tokens])
-            logits = self.model(verify_tokens[None, :-1])
-            sampled = sample(logits[:, -draft_tokens.size :]).squeeze(0)
+            draft_probs = mx.concatenate(draft_probs)
+            verify_tokens = mx.concatenate([inputs, draft_tokens])
+            logits = self.model(
+                verify_tokens[None, :], next_tokens=draft_tokens.size + 1
+            ).squeeze(0)
+            # sampled = sample(logits).squeeze(0)
 
             # Only keep samples that match the draft:
-            equal_toks = sampled == draft_tokens
-            num_to_accept = (equal_toks.tolist() + [False]).index(False)
-            new_tokens = sampled[: max(1, num_to_accept)]
+            num_to_accept = self._get_num_accept(
+                draft_tokens,
+                draft_probs,
+                logits[:-1],
+            )
+            new_tokens = draft_tokens[:num_to_accept]
+            # Get the next token from the main model as well
+            new_tokens = mx.concatenate(
+                [new_tokens, mx.argmax(logits[num_to_accept], keepdims=True)]
+            )
 
             accepted_draft_tokens += num_to_accept
+            total_draft_tokens += draft_tokens.size
 
             # Rewind the cache for unaccepted tokens:
             if (n := draft_tokens.size) > num_to_accept:
                 self.draft_model.truncate_cache(n - new_tokens.size)
-                self.model.truncate_cache(n - new_tokens.size)
+                self.model.truncate_cache(n - new_tokens.size + 1)
 
             decoding_steps += 1
 
-            # Check stop decodig criteria:
             for t in new_tokens.tolist():
-                if t == self.tokenizer.eos_id:
+                if t == self.tokenizer.eos_id or ntoks >= max_tokens:
                     break
                 print(self.tokenizer.decode(t, with_sep=ntoks > 0), end="", flush=True)
-            ntoks += new_tokens.size
+                ntoks += 1
             if ntoks >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
                 break
-            tokens = new_tokens[-1:]
+            draft_inputs = new_tokens[max(new_tokens.size - 2, 0) :]
+            inputs = draft_inputs[-1:]
 
         end = time.time()
         self.model.reset_cache()
@@ -156,5 +186,7 @@ class SpeculativeDecoder:
             round(end - start, 2),
             "SECONDS ===",
         )
-        print("=== ACCEPTED", accepted_draft_tokens, "DRAFT TOKENS ===")
+        print(
+            f"=== ACCEPTED {accepted_draft_tokens} of {total_draft_tokens} DRAFT TOKENS ==="
+        )
         print("=== DECODING STEPS", decoding_steps, "===")
