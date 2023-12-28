@@ -19,6 +19,7 @@ def create_additive_causal_mask(N: int, offset: int = 0, dtype: mx.Dtype = mx.fl
     mask = mask.astype(dtype) * -1e9
     return mask
 
+
 @dataclass
 class ModelArgs:
     dim: int
@@ -99,7 +100,7 @@ class Attention(nn.Module):
 
         if mask is not None:
             scores += mask
-        
+
         scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.wo(output), (keys, values)
@@ -169,7 +170,7 @@ class Mistral(nn.Module):
             mask = mask.astype(self.tok_embeddings.weight.dtype)
         else:
             mask = None
-        
+
         x = self.tok_embeddings(x)
 
         if cache is None:
@@ -207,7 +208,7 @@ class Tokenizer:
         if t and self._model.id_to_piece(t[0])[0] == self._sep:
             return " " + out
         return out
-    
+
 
 def load_model(folder: str):
     model_path = Path(folder)
