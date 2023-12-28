@@ -1,5 +1,4 @@
 # Copyright © 2023 Apple Inc.
-
 import argparse
 import json
 import time
@@ -158,6 +157,7 @@ class Mistral(nn.Module):
         self,
         x: mx.array,
         cache=None,
+        next_token_only: bool = False,
     ):
         if cache is not None:
             offset = cache[0][0].shape[-2]
@@ -177,6 +177,9 @@ class Mistral(nn.Module):
 
         for e, layer in enumerate(self.layers):
             x, cache[e] = layer(x, mask, cache[e])
+
+        if next_token_only:
+            x = x[:, -1]
 
         return self.output(self.norm(x)), cache
 
@@ -272,7 +275,7 @@ if __name__ == "__main__":
         "--tokens_per_eval",
         help="The batch size of tokens to generate.",
         type=int,
-        default=10,
+        default=1,
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
 
