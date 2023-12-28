@@ -41,8 +41,8 @@ def decode(model, mels):
     return decoding.decode(model, mels)
 
 
-def everything():
-    return transcribe(audio_file)
+def everything(model_name):
+    return transcribe(audio_file, model=model_name)
 
 
 if __name__ == "__main__":
@@ -99,6 +99,6 @@ if __name__ == "__main__":
         print(f"Model forward time {model_forward_time:.3f}")
         decode_time = timer(decode, model, mels)
         print(f"Decode time {decode_time:.3f}")
-        everything_time = timer(everything)
+        everything_time = timer(everything, model_name)
         print(f"Everything time {everything_time:.3f}")
         print(f"\n{'-----' * 10}\n")
