@@ -1,9 +1,5 @@
-# Mistral 
-
-An example of generating text with Mistral using MLX.
-
-Mistral 7B is one of the top large language models in its size class. It is
-also fully open source with a permissive license[^1].
+# Prompt Lookup Decoding
+This example implements [prompt lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) for LLM text generation. This particular example uses [Mistral](/llms/mistral/) as the model but that can be changed with minimal adjustments to `decoder.py`. Prompt lookup decoding is a variation of [speculative decoding](https://arxiv.org/abs/2211.17192) where the draft model has been replaced with a simple prompt lookup function to generate the draft. For *input-grounded* tasks such as summarization, document QA or code editing, this technique can provide significant speedups with no effect on output quality.
 
 ### Setup
 
@@ -13,7 +9,7 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Next, download the model and tokenizer:
+Next, download a **Mistral** model and tokenizer:
 
 ```
 curl -O https://files.mistral-7b-v0-1.mistral.ai/mistral-7B-v0.1.tar
@@ -40,18 +36,20 @@ the converted `weights.npz`, `tokenizer.model`, and `config.json` there.
 > [MLX Community](https://huggingface.co/mlx-community) organization on Hugging
 > Face and skip the conversion step.
 
-
 ### Run
-
-Once you've converted the weights to MLX format, you can generate text with
-the Mistral model:
-
 ```
-python mistral.py --prompt "It is a truth universally acknowledged,"
+python decoder.py --prompt "[INST] Repeat the following phrase 10 times: 'The quick brown fox jumps over the lazy dog.'. Don't say antyhing else. [/INST]" --max-tokens 250
 ```
 
-Run `python mistral.py --help` for more details.
+Alternatively you can call the API
 
-[^1]: Refer to the [blog post](https://mistral.ai/news/announcing-mistral-7b/)
-and [github repository](https://github.com/mistralai/mistral-src) for more
-details.
+```python
+from decoder import PromptLookupDecoder
+
+prompt = "[INST] Repeat the following phrase 10 times: 'The quick brown fox jumps over the lazy dog.'. Don't say antyhing else. [/INST] "
+
+engine = PromptLookupDecoder("mlx_model")
+
+engine.prompt_lookup(prompt=prompt, max_tokens=250, n_draft=10, 
+    ngram_max=3, ngram_min=1, temp=0.0, seed=0, color=True)
+```

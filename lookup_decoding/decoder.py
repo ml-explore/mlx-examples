@@ -1,36 +1,14 @@
 import mlx.core as mx
-import mlx.nn as nn
-from mlx.utils import tree_unflatten, tree_map
+from mlx.utils import tree_map
 import argparse
 import time
-import json
-from mistral import Mistral, Tokenizer, ModelArgs
-from pathlib import Path
+from mistral import load_model
 
 class PromptLookupDecoder:
-
     def __init__(self, model: str) -> None:
-        model, tokenizer = self.load_model(model)
+        model, tokenizer = load_model(model)
         self.model = model 
         self.tokenizer = tokenizer
-    
-    def load_model(self, folder: str):
-        model_path = Path(folder)
-        tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
-        with open(model_path / "config.json", "r") as f:
-            config = json.loads(f.read())
-            config.pop("sliding_window", None)
-            config.pop("model_type", None)
-            quantization = config.pop("quantization", None)
-            model_args = ModelArgs(**config)
-        weights = mx.load(str(model_path / "weights.npz"))
-        weights = tree_unflatten(list(weights.items()))
-        model = Mistral(model_args)
-        if quantization is not None:
-            nn.QuantizedLinear.quantize_module(model, **quantization)
-        model.update(weights)
-        mx.eval(model.parameters())
-        return model, tokenizer
     
     def _generate(
         self,
@@ -236,7 +214,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--color",
         type=bool,
-        default=True,
+        default=False,
         help="Color the accepted draft tokens"
     )
 
@@ -247,9 +225,7 @@ if __name__ == "__main__":
 
     engine = PromptLookupDecoder(args.model_path)
 
-    engine.generate(args.prompt, args.max_tokens, args.temp)
-
-    """ engine.prompt_lookup(
+    engine.prompt_lookup(
         args.prompt, 
         args.max_tokens, 
         args.n_draft, 
@@ -258,6 +234,6 @@ if __name__ == "__main__":
         args.temp, 
         args.seed,
         args.color
-        ) """
+        )
     
 

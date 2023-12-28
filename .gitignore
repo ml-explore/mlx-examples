@@ -134,3 +134,5 @@ dmypy.json
 
 # .DS_Store files
 .DS_Store
+
+mlx_model/

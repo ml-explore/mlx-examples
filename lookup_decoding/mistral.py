@@ -207,7 +207,7 @@ class Tokenizer:
         if t and self._model.id_to_piece(t[0])[0] == self._sep:
             return " " + out
         return out
-
+    
 
 def load_model(folder: str):
     model_path = Path(folder)
@@ -226,90 +226,3 @@ def load_model(folder: str):
     model.update(weights)
     mx.eval(model.parameters())
     return model, tokenizer
-
-
-def generate(prompt: mx.array, model: Mistral, temp: Optional[float] = 0.0):
-    def sample(logits):
-        if temp == 0:
-            return mx.argmax(logits, axis=-1)
-        else:
-            return mx.random.categorical(logits * (1 / temp))
-
-    logits, cache = model(prompt[None])
-    y = sample(logits[:, -1, :])
-    yield y
-
-    while True:
-        logits, cache = model(y[:, None], cache)
-        y = sample(logits.squeeze(1))
-        yield y
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mistral inference script")
-    parser.add_argument(
-        "--model-path",
-        type=str,
-        default="mlx_model",
-        help="The path to the model weights and tokenizer",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="The message to be processed by the model",
-        default="In the beginning the Universe was created.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        "-m",
-        type=int,
-        default=100,
-        help="Maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--temp",
-        help="The sampling temperature.",
-        type=float,
-        default=0.0,
-    )
-    parser.add_argument(
-        "--tokens_per_eval",
-        help="The batch size of tokens to generate.",
-        type=int,
-        default=1,
-    )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-
-    args = parser.parse_args()
-
-    mx.random.seed(args.seed)
-    print("[INFO] Loading model from disk.")
-    model, tokenizer = load_model(args.model_path)
-
-    print("[INFO] Starting generation...")
-    tic = time.time()
-    print(args.prompt, end="", flush=True)
-    prompt = mx.array(tokenizer.encode(args.prompt))
-    tokens = []
-    for token, ntoks in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
-        tokens.append(token)
-        if ntoks == 0:
-            mx.eval(tokens)
-            toc = time.time()
-            prompt_tps = prompt.size / (toc - tic)
-            tic = time.time()
-
-        if (len(tokens) % args.tokens_per_eval) == 0:
-            mx.eval(tokens)
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s, end="", flush=True)
-            tokens = []
-
-    mx.eval(tokens)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s, flush=True)
-    print("------")
-    generation_tps = ntoks / (time.time() - tic)
-    print(
-        f"Tokens per second: prompt {prompt_tps:.3f}, "
-        f"generation {generation_tps:.3f}"
-    )
