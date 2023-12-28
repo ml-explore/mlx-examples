@@ -24,5 +24,6 @@ Sure, here are some of the most common types of renewable energy sources:
 Each type of renewable energy source has its own set of advantages and challenges, but collectively, they represent our best hope at achieving sustainable and environmentally friendly energy consumption. Please let me know if you have any other questions!
 ```"""
 
+
 def create_urial_prompt(message: str):
     return URIAL_1_SHOT + "\n\n# Query:\n```" + message + "```\n\n# Answer:\n```\n"

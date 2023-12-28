@@ -1,4 +1,5 @@
 import time
+
 from decoder import SpeculativeDecoder
 
 # This will use the chat template from the primary model

@@ -1,12 +1,12 @@
-import transformers
-from dataclasses import dataclass, field
-from model import Llama
-import mlx.core as mx
-import mlx.nn as nn
 import time
-import numpy as np
+from dataclasses import dataclass, field
 from typing import List, Optional
 
+import mlx.core as mx
+import mlx.nn as nn
+import numpy as np
+import transformers
+from model import Llama
 from prompts import create_urial_prompt
 
 

@@ -1,10 +1,9 @@
-from transformers import LlamaConfig, AutoModelForCausalLM
-import mlx.core as mx
-import mlx.nn as nn
-from mlx.utils import tree_unflatten, tree_map
-import mlx.core as mx
-import mlx.nn as nn
 from typing import Optional, Tuple
+
+import mlx.core as mx
+import mlx.nn as nn
+from mlx.utils import tree_map, tree_unflatten
+from transformers import AutoModelForCausalLM, LlamaConfig
 
 
 def create_additive_causal_mask(N: int, offset: int = 0, dtype: mx.Dtype = mx.float32):
