@@ -70,7 +70,6 @@ if __name__ == "__main__":
     else:
         models = ["tiny"]
 
-    # Rest of your code using the 'models' list
     print("Selected models:", models)
 
     feat_time = timer(feats)
