@@ -61,5 +61,5 @@ tokens.
 
 [^1]: See the paper [Fast Inference from Transformers via Speculative
 Decoding](https://arxiv.org/abs/2211.17192)
-[^1]: For more information on T5 see the [original paper](https://arxiv.org/abs/1910.10683)
+[^2]: For more information on T5 see the [original paper](https://arxiv.org/abs/1910.10683)
    or the [Hugging Face page](https://huggingface.co/docs/transformers/model_doc/t5).
