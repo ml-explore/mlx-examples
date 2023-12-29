@@ -12,16 +12,16 @@ import numpy as np
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 from whisper.load_models import load_torch_model, torch_to_mlx
-from whisper.torch_whisper import ModelDimensions
-from whisper.whisper import Whisper
+from whisper.whisper import ModelDimensions, Whisper
 
 MODEL_DTYPES = {"float16", "float32"}
 
-def quantize(weights, config, dtype, args):
+
+def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
     # Load the model:
-    model = Whisper(ModelDimensions(**config), dtype)
+    model = Whisper(ModelDimensions(**config))
     weights = tree_map(mx.array, weights)
     model.update(tree_unflatten(list(weights.items())))
 
@@ -39,7 +39,7 @@ def quantize(weights, config, dtype, args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert Mistral weights to MLX.")
+    parser = argparse.ArgumentParser(description="Convert Whisper weights to MLX.")
     parser.add_argument(
         "--torch-name-or-path",
         type=str,
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     if args.quantize:
         print("[INFO] Quantizing")
-        weights, config = quantize(weights, config, dtype, args)
+        weights, config = quantize(weights, config, args)
 
     mlx_path = Path(args.mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
@@ -98,6 +98,6 @@ if __name__ == "__main__":
     np.savez(str(mlx_path / "weights.npz"), **weights)
 
     # Save config.json with model_type
-    with open(mlx_path / "config.json", "w") as f:
+    with open(str(mlx_path / "config.json"), "w") as f:
         config["model_type"] = "whisper"
         json.dump(config, f, indent=4)

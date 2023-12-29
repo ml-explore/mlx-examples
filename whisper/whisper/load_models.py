@@ -201,42 +201,29 @@ def load_model(
     if name_or_path in _MODELS:
         print(f"[INFO] Loading and converting {name_or_path} model")
         return torch_to_mlx(load_torch_model(name_or_path, download_root), dtype)
-    elif not (glob.glob(f"{name_or_path}/weights*.npz") and glob.glob(f"{name_or_path}/config.json")):
+    elif not (glob.glob(f"{name_or_path}/weights.npz") and glob.glob(f"{name_or_path}/config.json")):
         raise ValueError(
-            f"{name_or_path} not found in {available_models()}. Ensure that weights*.npz and config.json files are"
+            f"{name_or_path} not found in {available_models()}. Ensure that weights.npz and config.json files are"
             " present in the specified path"
         )
 
     model_path = Path(name_or_path)
 
-    unsharded_weights_path = model_path / "weights.npz"
-    if unsharded_weights_path.is_file():
-        print(f"[INFO] Loading model from {unsharded_weights_path}")
-        weights = mx.load(str(unsharded_weights_path))
-    else:
-        sharded_weights_glob = str(model_path / "weights.*.npz")
-        weight_files = glob.glob(sharded_weights_glob)
-        print(f"[INFO] Loading model from {sharded_weights_glob}")
-
-        if len(weight_files) == 0:
-            raise FileNotFoundError("No weights found in {}".format(model_path))
-
-        weights = {}
-        for wf in weight_files:
-            weights.update(mx.load(wf).items())
-
-    with open(model_path / "config.json", "r") as f:
+    with open(str(model_path / "config.json"), "r") as f:
         config = json.loads(f.read())
         config.pop("model_type", None)
         quantization = config.pop("quantization", None)
 
-    model_args = torch_whisper.ModelDimensions(**config)
+    model_args = whisper.ModelDimensions(**config)
+
+    weights = mx.load(str(model_path / "weights.npz"))
+    weights = tree_unflatten(list(weights.items()))
+
     model = whisper.Whisper(model_args, dtype)
 
     if quantization is not None:
         nn.QuantizedLinear.quantize_module(model, **quantization)
 
-    weights = tree_unflatten(list(weights.items()))
     model.update(weights)
 
     mx.eval(model.parameters())
