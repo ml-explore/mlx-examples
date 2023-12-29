@@ -27,7 +27,7 @@ python convert.py --help
 
 The converter downloads the model from Hugging Face. The default model is
 `deepseek-ai/deepseek-coder-6.7b-instruct`. Check out the [Hugging Face
-page]((https://huggingface.co/deepseek-ai) to see a list of available models.
+page](https://huggingface.co/deepseek-ai) to see a list of available models.
 
 By default, the conversion script will save the converted `weights.npz`,
 tokenizer, and `config.json` in the `mlx_model` directory.
@@ -41,4 +41,5 @@ model:
 python deepseek_coder.py --prompt "write a quick sort algorithm in python."
 ```
 
-[^1]: For more information [blog post](https://deepseekcoder.github.io/) by DeepSeek AI 
+[^1]: For more information [blog post](https://deepseekcoder.github.io/) by
+  DeepSeek AI 
