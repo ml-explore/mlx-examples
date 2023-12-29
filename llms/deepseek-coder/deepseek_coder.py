@@ -244,7 +244,7 @@ def load_model(model_path: str):
 
     model = DeepseekCoder(model_args)
     weights = mx.load(str(model_path / "weights.npz"))
-    if quantization := config.get("quantization", False):
+    if quantization:
         nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(tree_unflatten(list(weights.items())))
 
