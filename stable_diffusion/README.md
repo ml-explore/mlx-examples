@@ -76,7 +76,7 @@ random noise.
 
 The command to generate the above images is:
 
-    python image2image.py --strength 0.5 origina.png 'A lit fireplace'
+    python image2image.py --strength 0.5 original.png 'A lit fireplace'
 
 
 Performance
