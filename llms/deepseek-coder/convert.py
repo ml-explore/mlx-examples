@@ -7,25 +7,16 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 import torch
+from deepseek_coder import DeepseekCoder, ModelArgs
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from deepseek_coder import ModelArgs, DeepseekCoder
 
 
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
     # Load the model:
-    model_args = ModelArgs()
-    model_args.vocab_size = config["vocab_size"]
-    model_args.hidden_size = config["hidden_size"]
-    model_args.num_attention_heads = config["num_attention_heads"]
-    model_args.num_key_value_heads = config["num_key_value_heads"]
-    model_args.num_hidden_layers = config["num_hidden_layers"]
-    model_args.max_position_embeddings = config["max_position_embeddings"]
-    model_args.rms_norm_eps = config["rms_norm_eps"]
-    model_args.intermediate_size = config["intermediate_size"]
-    model_args.rope_scaling_factor = config["rope_scaling"]["factor"]
+    model_args = ModelArgs(**config)
     model = DeepseekCoder(model_args)
 
     weights = tree_map(mx.array, weights)
@@ -45,18 +36,15 @@ def quantize(weights, config, args):
 
 
 def convert(args):
-    model_path = Path(args.model_path)
-
-    mlx_path = Path(args.mlx_path)
-    mlx_path.mkdir(parents=True, exist_ok=True)
+    hf_path = Path(args.hf_path)
 
     model = AutoModelForCausalLM.from_pretrained(
-        str(model_path), trust_remote_code=True, torch_dtype=torch.float16
+        str(hf_path), trust_remote_code=True, torch_dtype=torch.float16
     )
     config = model.config.to_dict()
 
     state_dict = model.state_dict()
-    tokenizer = AutoTokenizer.from_pretrained(str(model_path), trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(str(hf_path), trust_remote_code=True)
 
     # things to change
     # 1. there's no "model." in the weight names
@@ -96,25 +84,34 @@ def convert(args):
 
     weights = {k: v.numpy() for k, v in state_dict.items()}
 
-    if args.quantize:
-        print("[INFO] Quantizing")
-        weights, config = quantize(weights, config, args)
+    config["rope_scaling_factor"] = config["rope_scaling"]["factor"]
+    keep_keys = set(
+        [
+            "vocab_size",
+            "hidden_size",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "num_hidden_layers",
+            "max_position_embeddings",
+            "rms_norm_eps",
+            "intermediate_size",
+            "rope_scaling_factor",
+        ]
+    )
+    for k in list(config.keys()):
+        if k not in keep_keys:
+            config.pop(k)
 
-    np.savez(str(mlx_path / "weights.npz"), **weights)
-    tokenizer.save_pretrained(mlx_path)
-    with open(mlx_path / "config.json", "w") as f:
-        json.dump(config, f, indent=4)
+    return weights, config, tokenizer
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Deepseek coder model to npz")
-
     parser.add_argument(
-        "--model-path",
+        "--hf-path",
         help="The huggingface model to be converted",
         default="deepseek-ai/deepseek-coder-6.7b-instruct",
     )
-
     parser.add_argument(
         "--mlx-path",
         type=str,
@@ -128,16 +125,30 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--q_group_size",
+        "--q-group-size",
         help="Group size for quantization.",
         type=int,
         default=64,
     )
     parser.add_argument(
-        "--q_bits",
+        "--q-bits",
         help="Bits per weight for quantization.",
         type=int,
         default=4,
     )
     args = parser.parse_args()
-    convert(args)
+
+    mlx_path = Path(args.mlx_path)
+    mlx_path.mkdir(parents=True, exist_ok=True)
+
+    weights, config, tokenizer = convert(args)
+
+    if args.quantize:
+        print("[INFO] Quantizing")
+        weights, config = quantize(weights, config, args)
+
+    np.savez(str(mlx_path / "weights.npz"), **weights)
+    tokenizer.save_pretrained(mlx_path)
+    with open(mlx_path / "config.json", "w") as f:
+        config["model_type"] = "deepseek_coder"
+        json.dump(config, f, indent=4)

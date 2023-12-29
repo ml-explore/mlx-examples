@@ -15,6 +15,7 @@ import torch
 from llama import Llama, ModelArgs, sanitize_config
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
+
 def llama(model_path):
     SHARD_FIRST = ["wv", "wq", "wk", "w1", "w3", "output"]
     SHARD_SECOND = ["tok_embeddings", "wo", "w2"]
@@ -185,13 +186,13 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--q_group_size",
+        "--q-group-size",
         help="Group size for quantization.",
         type=int,
         default=64,
     )
     parser.add_argument(
-        "--q_bits",
+        "--q-bits",
         help="Bits per weight for quantization.",
         type=int,
         default=4,

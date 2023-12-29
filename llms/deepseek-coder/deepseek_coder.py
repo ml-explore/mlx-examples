@@ -1,6 +1,6 @@
 import argparse
-import math
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -214,22 +214,10 @@ class DeepseekCoder(nn.Module):
         return self.output(x), cache
 
 
-def apply_repeat_penalty(logits, context, penalty):
-    if len(context) > 0:
-        indices = mx.array([token.item() for token in context])
-        selected_logists = logits[:, indices]
-        selected_logists = mx.where(
-            selected_logists < 0, selected_logists * penalty, selected_logists / penalty
-        )
-        logits[:, indices] = selected_logists
-
-
 def generate(
     prompt: mx.array,
     model: DeepseekCoder,
-    temp: 0.0,
-    generated_tokens,
-    repetition_penalty,
+    temp: float = 0.0,
 ):
     def sample(logits):
         if temp == 0:
@@ -237,34 +225,22 @@ def generate(
         else:
             return mx.random.categorical(logits * (1 / temp))
 
-    logits, cache = model(prompt)
-    y = sample(logits[:, -1, :])
-    yield y
-
+    y = prompt
+    cache = None
     while True:
-        logits, cache = model(y[:, None], cache=cache)
-        logits = logits.squeeze(1)
-        if repetition_penalty is not None and repetition_penalty != 1.0:
-            apply_repeat_penalty(logits, generated_tokens, repetition_penalty)
+        logits, cache = model(y[None], cache=cache)
+        logits = logits[:, -1, :]
         y = sample(logits)
         yield y
 
 
 def load_model(model_path: str):
-    model_args = ModelArgs()
-
     model_path = Path(model_path)
     with open(model_path / "config.json", "r") as f:
         config = json.load(f)
-        model_args.vocab_size = config["vocab_size"]
-        model_args.hidden_size = config["hidden_size"]
-        model_args.num_attention_heads = config["num_attention_heads"]
-        model_args.num_key_value_heads = config["num_key_value_heads"]
-        model_args.num_hidden_layers = config["num_hidden_layers"]
-        model_args.max_position_embeddings = config["max_position_embeddings"]
-        model_args.rms_norm_eps = config["rms_norm_eps"]
-        model_args.intermediate_size = config["intermediate_size"]
-        model_args.rope_scaling_factor = config["rope_scaling"]["factor"]
+        config.pop("model_type")
+        quantization = config.pop("quantization", None)
+        model_args = ModelArgs(**config)
 
     model = DeepseekCoder(model_args)
     weights = mx.load(str(model_path / "weights.npz"))
@@ -282,9 +258,8 @@ if __name__ == "__main__":
         "--model-path",
         type=str,
         default="mlx_model",
-        help="The path to the mlx model weights, tokenizer and config",
+        help="The path to the mlx model weights, tokenizer, and config",
     )
-
     parser.add_argument(
         "--prompt",
         help="The message to be processed by the model",
@@ -303,14 +278,6 @@ if __name__ == "__main__":
         type=float,
         default=0.6,
     )
-
-    parser.add_argument(
-        "--repetition-penalty",
-        help="The parameter for repetition penalty.",
-        type=float,
-        default=1.2,
-    )
-
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
     args = parser.parse_args()
 
@@ -318,39 +285,25 @@ if __name__ == "__main__":
 
     model, tokenizer = load_model(args.model_path)
 
-    prompt = tokenizer(
-        args.prompt,
-        return_tensors="np",
-        return_attention_mask=False,
-    )["input_ids"]
+    prompt = tokenizer(args.prompt, return_tensors="np", return_attention_mask=False,)[
+        "input_ids"
+    ][0]
 
     prompt = mx.array(prompt)
 
     print(args.prompt, end="", flush=True)
 
     tokens = []
+    skip = 0
     for token, _ in zip(
-        generate(prompt, model, args.temp, tokens, args.repetition_penalty),
+        generate(prompt, model, args.temp),
         range(args.max_tokens),
     ):
-        tokens.append(token)
+        if token == tokenizer.eos_token_id:
+            break
+        tokens.append(token.item())
+        s = tokenizer.decode(tokens)
+        print(s[skip:], end="", flush=True)
+        skip = len(s)
 
-        if (len(tokens) % 10) == 0:
-            mx.eval(tokens)
-            eos_index = next(
-                (i for i, t in enumerate(tokens) if t.item() == tokenizer.eos_token_id),
-                None,
-            )
-
-            if eos_index is not None:
-                tokens = tokens[:eos_index]
-
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s, end="", flush=True)
-            tokens = []
-            if eos_index is not None:
-                break
-
-    mx.eval(tokens)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s, flush=True)
+    print(tokenizer.decode(tokens)[skip:], flush=True)
