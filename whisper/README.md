@@ -19,14 +19,15 @@ Install [`ffmpeg`](https://ffmpeg.org/):
 brew install ffmpeg
 ```
 
-Next, download the Whisper PyTorch checkpoint and convert the weights to MLX format:
+Next, download the Whisper PyTorch checkpoint and convert the weights to the MLX format. For example, to convert the `tiny` model use:
 
 ```
-# Take the "tiny" model as an example. Note that you can also convert a local PyTorch checkpoint in OpenAI's format.
 python convert.py --torch-name-or-path tiny --mlx-path mlx_models/tiny
 ```
 
-To generate a 4-bit quantized model, use ``-q`` for a full list of options:
+Note you can also convert a local PyTorch checkpoint which is in the original OpenAI format.
+
+To generate a 4-bit quantized model, use `-q`. For a full list of options:
 
 ```
 python convert.py --help

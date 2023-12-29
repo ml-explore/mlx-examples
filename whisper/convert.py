@@ -113,7 +113,7 @@ def load_torch_model(
     Parameters
     ----------
     name_or_path : str
-        one of the official model names listed by `whisper.available_models()` or a local Pytorch checkpoint in OpenAI's format
+        one of the official model names listed by `whisper.available_models()` or a local Pytorch checkpoint which is in the original OpenAI format
     download_root: str
         path to download the model files; by default, it uses "~/.cache/whisper"
 
