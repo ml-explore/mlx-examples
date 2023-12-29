@@ -11,7 +11,7 @@ from stable_diffusion import StableDiffusion
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate images from a textual prompt using stable diffusion"
+        description="Generate images from an image and a textual prompt using stable diffusion"
     )
     parser.add_argument("image")
     parser.add_argument("prompt")
