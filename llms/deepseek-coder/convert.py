@@ -152,4 +152,4 @@ if __name__ == "__main__":
     tokenizer.save_pretrained(mlx_path)
     with open(mlx_path / "config.json", "w") as f:
         config["model_type"] = "deepseek_coder"
-        json.dump(config, f, indent=4)% 
+        json.dump(config, f, indent=4)
