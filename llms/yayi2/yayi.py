@@ -41,7 +41,6 @@ class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.num_attention_heads: int = args.num_attention_heads
-        self.num_key_value_heads: int = args.num_key_value_heads
         self.hidden_size = args.hidden_size
         self.head_dim = args.hidden_size // args.num_attention_heads
 
