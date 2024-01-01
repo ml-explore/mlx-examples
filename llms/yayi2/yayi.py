@@ -1,6 +1,7 @@
 import argparse
 import json
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -21,6 +22,21 @@ class ModelArgs:
     rope_theta: float = 100000
     vocab_size: int = 81920
     rope_traditional: bool = False
+
+
+class KVLinear(nn.Module):
+    def __init__(self, input_dims: int, output_dims: int):
+        super().__init__()
+        scale = math.sqrt(1 / input_dims)
+        self.weight = mx.random.uniform(
+            low=-scale,
+            high=scale,
+            shape=(output_dims, input_dims),
+        )
+
+    def __call__(self, x):
+        k, v = mx.split(x @ self.weight.T, 2, axis=-1)
+        return k, v
 
 
 class RMSNorm(nn.Module):
@@ -49,8 +65,8 @@ class Attention(nn.Module):
         self.wq = nn.Linear(
             args.hidden_size, args.num_attention_heads * self.head_dim, bias=False
         )
-        self.wk = nn.Linear(args.hidden_size, int(self.head_dim), bias=False)
-        self.wv = nn.Linear(args.hidden_size, int(self.head_dim), bias=False)
+        self.wkwv = KVLinear(args.hidden_size, int(self.head_dim) * 2)
+
         self.wo = nn.Linear(
             args.num_attention_heads * self.head_dim, args.hidden_size, bias=False
         )
@@ -66,7 +82,8 @@ class Attention(nn.Module):
     ) -> mx.array:
         B, L, _ = x.shape
 
-        q, k, v = self.wq(x), self.wk(x), self.wv(x)
+        q = self.wq(x)
+        k, v = self.wkwv(x)
 
         q = q.reshape(B, L, self.num_attention_heads, self.head_dim).transpose(
             0, 2, 1, 3
@@ -189,7 +206,9 @@ def load_model(model_path: str):
     weights = mx.load(str(model_path / "weights.npz"))
     if quantization is not None:
         nn.QuantizedLinear.quantize_module(model, **quantization)
-    model.update(tree_unflatten(list(weights.items())))
+    parameteres = tree_unflatten(list(weights.items()))
+
+    model.update(parameteres)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     return model, tokenizer
@@ -206,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--prompt",
         help="The message to be processed by the model",
-        default="The winter in Beijing is",
+        default="The winter in Beijing is ",
     )
     parser.add_argument(
         "--max-tokens",

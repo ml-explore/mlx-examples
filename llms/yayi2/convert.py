@@ -84,6 +84,23 @@ def convert(args):
     state_dict = {k.replace("v_proj", "wv"): v for k, v in state_dict.items()}
     state_dict = {k.replace("o_proj", "wo"): v for k, v in state_dict.items()}
 
+    # quantization workaround for kv proj
+    keys_to_delete =[]
+    new_state_dict ={}
+    for k, v in state_dict.items():
+        if k.endswith('wk.weight'):
+            prefix = k[:-len('wk.weight')]
+            wv = prefix +"wv.weight"
+            if wv in state_dict:
+                wkwv = torch.cat([v, state_dict[wv]],dim=0)
+                new_key = prefix + "wkwv.weight"
+                new_state_dict[new_key] = wkwv
+                keys_to_delete.extend([k,wv])
+
+    for key in keys_to_delete:
+        del state_dict[key]
+
+    state_dict.update(new_state_dict)
     weights = {k: v.numpy() for k, v in state_dict.items()}
 
     keep_keys = set(
@@ -152,3 +169,4 @@ if __name__ == "__main__":
     with open(mlx_path / "config.json", "w") as f:
         config["model_type"] = "yayi"
         json.dump(config, f, indent=4)
+
