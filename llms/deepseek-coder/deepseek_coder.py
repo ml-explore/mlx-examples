@@ -248,7 +248,7 @@ def load_model(model_path: str):
         nn.QuantizedLinear.quantize_module(model, **quantization)
     model.update(tree_unflatten(list(weights.items())))
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     return model, tokenizer
 
 
