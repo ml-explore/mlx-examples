@@ -299,7 +299,7 @@ if __name__ == "__main__":
         default="In the beginning the Universe was created.",
     )
     parser.add_argument(
-        "--max_tokens",
+        "--max-tokens",
         "-m",
         type=int,
         default=100,
