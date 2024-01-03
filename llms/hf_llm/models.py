@@ -1,17 +1,17 @@
 # Copyright © 2023 Apple Inc.
 
-from dataclasses import dataclass
 import glob
 import inspect
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+from huggingface_hub import snapshot_download
 from mlx.utils import tree_unflatten
 from transformers import AutoTokenizer
-from huggingface_hub import snapshot_download
 
 
 @dataclass
@@ -33,10 +33,14 @@ class ModelArgs:
 
     @classmethod
     def from_dict(cls, params):
-        return cls(**{
-            k: v for k, v in params.items()
-            if k in inspect.signature(cls).parameters
-        })
+        return cls(
+            **{
+                k: v
+                for k, v in params.items()
+                if k in inspect.signature(cls).parameters
+            }
+        )
+
 
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
@@ -56,7 +60,6 @@ class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
 
-
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
@@ -64,13 +67,15 @@ class Attention(nn.Module):
         self.repeats = n_heads // n_kv_heads
 
         head_dim = args.hidden_size // n_heads
-        self.scale =  head_dim**-0.5
+        self.scale = head_dim**-0.5
 
         self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=False)
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
-        self.rope = nn.RoPE(head_dim, traditional=args.rope_traditional, base=args.rope_theta)
+        self.rope = nn.RoPE(
+            head_dim, traditional=args.rope_traditional, base=args.rope_theta
+        )
 
     def __call__(
         self,
@@ -155,7 +160,9 @@ class LlamaModel(nn.Module):
         self.num_hidden_layers = args.num_hidden_layers
         assert self.vocab_size > 0
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
-        self.layers = [TransformerBlock(args=args) for _ in range(args.num_hidden_layers)]
+        self.layers = [
+            TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
+        ]
         self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
@@ -201,7 +208,8 @@ def load(path_or_hf_repo: str):
     if not model_path.exists():
         model_path = snapshot_download(
             repo_id=path_or_hf_repo,
-            allow_patterns=["*.json", "*.safetesnors", "tokenizer.model"])
+            allow_patterns=["*.json", "*.safetesnors", "tokenizer.model"],
+        )
 
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())

@@ -1,11 +1,12 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-import mlx.core as mx
 import time
 
+import mlx.core as mx
 import models
 import transformers
+
 
 def generate(
     model: models.Model,
@@ -14,11 +15,9 @@ def generate(
     max_tokens: int,
     temp: float = 0.0,
 ):
-    prompt = tokenizer(
-            args.prompt,
-            return_tensors="np",
-            return_attention_mask=False,
-        )["input_ids"][0]
+    prompt = tokenizer(args.prompt, return_tensors="np", return_attention_mask=False,)[
+        "input_ids"
+    ][0]
     prompt = mx.array(prompt)
 
     tic = time.time()
@@ -36,13 +35,13 @@ def generate(
             tic = time.time()
 
         tokens.append(token.item())
-        #if (n + 1) % 10 == 0:
+        # if (n + 1) % 10 == 0:
         s = tokenizer.decode(tokens)
         print(s[skip:], end="", flush=True)
         skip = len(s)
     print(tokenizer.decode(tokens)[skip:], flush=True)
     gen_time = time.time() - tic
-    print("="*10)
+    print("=" * 10)
     prompt_tps = prompt.size / prompt_time
     gen_tps = (len(tokens) - 1) / gen_time
     print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")

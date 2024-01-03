@@ -7,24 +7,24 @@ import glob
 import json
 import shutil
 from pathlib import Path
-import transformers
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 import torch
+import transformers
+from mlx.utils import tree_flatten, tree_map
 from models import Model, ModelArgs
-from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 
 def fetch_from_hub(hf_path: str, dtype: str):
     model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_path,
-            torch_dtype=getattr(torch, dtype),
-            ).state_dict()
+        hf_path,
+        torch_dtype=getattr(torch, dtype),
+    ).state_dict()
     config = transformers.AutoConfig.from_pretrained(hf_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_path,
+        hf_path,
     )
     for k, v in model.items():
         model[k] = mx.array(v.numpy())
@@ -35,7 +35,7 @@ def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
     # Load the model:
-    model = Model(ModelArgs(**config))
+    model = Model(ModelArgs.from_dict(config))
     weights = tree_map(mx.array, weights)
     model.load_weights(list(weights.items()))
 
@@ -69,7 +69,8 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Convert Hugging Face model to MLX format")
+        description="Convert Hugging Face model to MLX format"
+    )
     parser.add_argument(
         "--hf-path",
         type=str,

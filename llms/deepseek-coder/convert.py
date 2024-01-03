@@ -44,7 +44,9 @@ def convert(args):
     config = model.config.to_dict()
 
     state_dict = model.state_dict()
-    tokenizer = AutoTokenizer.from_pretrained(str(hf_path), trust_remote_code=True, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(hf_path), trust_remote_code=True, use_fast=False
+    )
 
     # things to change
     # 1. there's no "model." in the weight names
@@ -84,7 +86,9 @@ def convert(args):
 
     weights = {k: v.numpy() for k, v in state_dict.items()}
 
-    config["rope_scaling_factor"] = config["rope_scaling"]["factor"] if config["rope_scaling"] is not None else 1.0
+    config["rope_scaling_factor"] = (
+        config["rope_scaling"]["factor"] if config["rope_scaling"] is not None else 1.0
+    )
     keep_keys = set(
         [
             "vocab_size",
@@ -96,7 +100,7 @@ def convert(args):
             "rms_norm_eps",
             "intermediate_size",
             "rope_scaling_factor",
-            "rope_theta"
+            "rope_theta",
         ]
     )
     for k in list(config.keys()):
