@@ -27,7 +27,11 @@ class Tokenizer:
 
     def encode(self, s: str) -> mx.array:
         return mx.array(
-            self._tokenizer(s, return_tensors="np", return_attention_mask=False,)[
+            self._tokenizer(
+                s,
+                return_tensors="np",
+                return_attention_mask=False,
+            )[
                 "input_ids"
             ].squeeze(0)
         )
