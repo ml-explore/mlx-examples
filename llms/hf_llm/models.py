@@ -220,7 +220,7 @@ def load(path_or_hf_repo: str):
 
     weight_files = glob.glob(str(model_path / "*.safetensors"))
     if len(weight_files) == 0:
-        raise FileNotFoundError("No weights found in {}".format(model_path))
+        raise FileNotFoundError("No safetensors found in {}".format(model_path))
 
     weights = {}
     for wf in weight_files:

@@ -1,17 +1,13 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-import collections
 import copy
 import glob
 import json
-import shutil
 from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
-import torch
 import transformers
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_map
@@ -25,7 +21,7 @@ def fetch_from_hub(hf_path: str):
     )
     weight_files = glob.glob(f"{model_path}/*.safetensors")
     if len(weight_files) == 0:
-        raise FileNotFoundError("No weights found in {}".format(model_path))
+        raise FileNotFoundError("No safetensors found in {}".format(model_path))
 
     weights = {}
     for wf in weight_files:

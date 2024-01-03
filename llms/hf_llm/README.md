@@ -1,6 +1,7 @@
 ## Generate Text in MLX
 
-This an example of Llama style large language model text generation.
+This an example of Llama style large language model text generation that can
+pull models from the Hugging Face Hub.
 
 ### Setup
 
@@ -16,10 +17,10 @@ pip install -r requirements.txt
 python generate.py --model <model_path> --prompt "hello"
 ```
 
-The `<model_path>` should be either a path to a local directory with an MLX
-formatted model, or a Hugging Face repo. If the latter, then the model will
-be downloaded and cached the first time you use it. See the [#Models] section
-for a full list of supported models.
+The `<model_path>` should be either a path to a local directory or a Hugging
+Face repo with weights stored in `safetensors` format. If you use a repo from
+the Hugging Face hub, then the model will be downloaded and cached the first
+time you run it. See the [#Models] section for a full list of supported models.
 
 Run `python generate.py --help` to see all the options.
 
