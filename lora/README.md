@@ -143,7 +143,7 @@ Note other keys will be ignored by the loader.
 Fine-tuning a large model with LoRA requires a machine with a decent amount
 of memory. Here are some tips to reduce memory use should you need to do so:
 
-1. Tye quantization (QLoRA). You can use QLoRA by generating a quantized model
+1. Try quantization (QLoRA). You can use QLoRA by generating a quantized model
    with `convert.py` and the `-q` flag. See the [Setup](#setup) section for
    more details. 
 
