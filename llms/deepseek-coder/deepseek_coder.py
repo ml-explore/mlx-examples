@@ -285,7 +285,11 @@ if __name__ == "__main__":
 
     model, tokenizer = load_model(args.model_path)
 
-    prompt = tokenizer(args.prompt, return_tensors="np", return_attention_mask=False,)[
+    prompt = tokenizer(
+        args.prompt,
+        return_tensors="np",
+        return_attention_mask=False,
+    )[
         "input_ids"
     ][0]
 
