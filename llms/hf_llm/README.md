@@ -1,7 +1,7 @@
 ## Generate Text with MLX and :hugs: Hugging Face
 
-This an example of Llama style large language model text generation that can
-pull models from the Hugging Face Hub.
+This an example large language model text generation that can pull models from
+the Hugging Face Hub.
 
 ### Setup
 
@@ -28,7 +28,7 @@ will download the Mistral 7B model and generate text using the given prompt.
 The `<model_path>` should be either a path to a local directory or a Hugging
 Face repo with weights stored in `safetensors` format. If you use a repo from
 the Hugging Face hub, then the model will be downloaded and cached the first
-time you run it. See the [#Models] section for a full list of supported models.
+time you run it. See the [Models](#models) section for a full list of supported models.
 
 Run `python generate.py --help` to see all the options.
 
