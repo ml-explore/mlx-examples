@@ -43,8 +43,8 @@ Convert the model with:
 
 ```
 python convert.py \
-    --torch-model <path_to_torch_model> \
-    --mlx-model <path_to_mlx_model>
+    --torch-path <path_to_torch_model> \
+    --mlx-path <path_to_mlx_model>
 ```
 
 If you wish to use QLoRA, then convert the model with 4-bit quantization using
@@ -143,16 +143,20 @@ Note other keys will be ignored by the loader.
 Fine-tuning a large model with LoRA requires a machine with a decent amount
 of memory. Here are some tips to reduce memory use should you need to do so:
 
-1. Try using a smaller batch size with `--batch-size`. The default is `4` so
+1. Tye quantization (QLoRA). You can use QLoRA by generating a quantized model
+   with `convert.py` and the `-q` flag. See the [Setup](#setup) section for
+   more details. 
+
+2. Try using a smaller batch size with `--batch-size`. The default is `4` so
    setting this to `2` or `1` will reduce memory consumption. This may slow
    things down a little, but will also reduce the memory use.
 
-2. Reduce the number of layers to fine-tune with `--lora-layers`. The default
+3. Reduce the number of layers to fine-tune with `--lora-layers`. The default
    is `16`, so you can try `8` or `4`. This reduces the amount of memory
    needed for back propagation. It may also reduce the quality of the
    fine-tuned model if you are fine-tuning with a lot of data.
 
-3. Longer examples require more memory. If it makes sense for your data, one thing
+4. Longer examples require more memory. If it makes sense for your data, one thing
    you can do is break your examples into smaller
    sequences when making the `{train, valid, test}.jsonl` files.
 
