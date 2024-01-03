@@ -26,11 +26,17 @@ Run `python generate.py --help` to see all the options.
 
 ### Models
 
-The following models (and variants) are supported:
+The example supports Hugging Face format Llama-style models.  If the
+model you want to convert is not supported, file an
+[issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
+submit a pull request.
 
-Hugging Face Repo | Model Size |
------------------ | ---------- |
-N/A | N/A 
+Here is a list of a few Hugging Face models which work with this example:
+
+- meta-llama/Llama-2-7b-hf
+- mistralai/Mistral-7B-v0.1
+- TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+
 
 ### Convert new models 
 
@@ -50,14 +56,8 @@ To make a 4-bit quantized model, use `-q`. For more options run:
 python convert.py
 ```
 
-The conversion script supports Hugging Face format Llama-style models.  If the
-model you want to convert is not supported, file an
-[issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
-submit a pull request.
+You can upload new models to the [Hugging Face MLX
+Community](https://huggingface.co/mlx-community) by specifying
+`--upload-name`` to `convert.py`.
 
-This is a list of Hugging Face models which have been tested with the
-conversion script:
 
-- meta-llama/Llama-2-7b-hf
-- mistralai/Mistral-7B-v0.1
-- TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T

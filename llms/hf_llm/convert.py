@@ -74,6 +74,22 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
     return shards
 
 
+def upload_to_hub(path: str, name: str):
+    from huggingface_hub import HfApi, logging
+
+    logging.set_verbosity_info()
+
+    api = HfApi()
+
+    api.upload_folder(
+        folder_path=path,
+        repo_id=f"mlx-community/{name}",
+        repo_type="model",
+        multi_commits=True,
+        multi_commits_verbose=True,
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Convert Hugging Face model to MLX format"
@@ -114,6 +130,12 @@ if __name__ == "__main__":
         choices=["float16", "bfloat16", "float32"],
         default="float16",
     )
+    parser.add_argument(
+        "--upload-name",
+        help="The name of model to upload to Hugging Face MLX Community",
+        type=str,
+        default=None,
+    )
 
     args = parser.parse_args()
 
@@ -134,3 +156,6 @@ if __name__ == "__main__":
     tokenizer.save_pretrained(mlx_path)
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
+
+    if args.upload_name is not None:
+        upload_to_hub(mlx_path, args.upload_name)
