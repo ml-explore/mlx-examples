@@ -13,22 +13,29 @@ import mlx.nn as nn
 import numpy as np
 import torch
 import transformers
+from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_map
 from models import Model, ModelArgs
 
 
-def fetch_from_hub(hf_path: str, dtype: str):
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        hf_path,
-        torch_dtype=getattr(torch, dtype),
-    ).state_dict()
+def fetch_from_hub(hf_path: str):
+    model_path = snapshot_download(
+        repo_id=hf_path,
+        allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+    )
+    weight_files = glob.glob(f"{model_path}/*.safetensors")
+    if len(weight_files) == 0:
+        raise FileNotFoundError("No weights found in {}".format(model_path))
+
+    weights = {}
+    for wf in weight_files:
+        weights.update(mx.load(wf).items())
+
     config = transformers.AutoConfig.from_pretrained(hf_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         hf_path,
     )
-    for k, v in model.items():
-        model[k] = mx.array(v.numpy())
-    return model, config.to_dict(), tokenizer
+    return weights, config.to_dict(), tokenizer
 
 
 def quantize(weights, config, args):
@@ -111,10 +118,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("[INFO] Loading")
-    weights, config, tokenizer = fetch_from_hub(args.hf_path, args.dtype)
+    weights, config, tokenizer = fetch_from_hub(args.hf_path)
     if args.quantize:
         print("[INFO] Quantizing")
         weights, config = quantize(weights, config, args)
+    if not args.quantize:
+        dtype = getattr(mx, args.dtype)
+        weights = {k: v.astype(dtype) for k, v in weights.items()}
 
     mlx_path = Path(args.mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)

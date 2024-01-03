@@ -206,9 +206,11 @@ def load(path_or_hf_repo: str):
     # otherwise download and cache from the hf_repo and cache
     model_path = Path(path_or_hf_repo)
     if not model_path.exists():
-        model_path = snapshot_download(
-            repo_id=path_or_hf_repo,
-            allow_patterns=["*.json", "*.safetesnors", "tokenizer.model"],
+        model_path = Path(
+            snapshot_download(
+                repo_id=path_or_hf_repo,
+                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+            )
         )
 
     with open(model_path / "config.json", "r") as f:
@@ -216,7 +218,7 @@ def load(path_or_hf_repo: str):
         quantization = config.get("quantization", None)
         model_args = ModelArgs.from_dict(config)
 
-    weight_files = glob.glob(str(model_path / "weights.*.safetensors"))
+    weight_files = glob.glob(str(model_path / "*.safetensors"))
     if len(weight_files) == 0:
         raise FileNotFoundError("No weights found in {}".format(model_path))
 
