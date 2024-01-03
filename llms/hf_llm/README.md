@@ -1,4 +1,4 @@
-## Generate Text with MLX and Hugging Face
+## Generate Text with MLX and :hugs: Hugging Face
 
 This an example of Llama style large language model text generation that can
 pull models from the Hugging Face Hub.
