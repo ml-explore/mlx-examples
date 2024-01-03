@@ -5,27 +5,7 @@ from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 from mlx.utils import tree_map, tree_unflatten
-
-
-# TODO remove this for v0.0.7
-def patch_ql(self, x):
-    x = mx.quantized_matmul(
-        x.astype(mx.float16),
-        self.weight.T,
-        scales=self.scales,
-        biases=self.biases,
-        group_size=self.group_size,
-        bits=self.bits,
-    )
-    x = mx.stop_gradient(x)
-    if "bias" in self:
-        x = x + self.bias
-    return x
-
-
-nn.QuantizedLinear.__call__ = patch_ql
 
 
 @dataclass
@@ -73,8 +53,7 @@ class LoRALinear(nn.Module):
         else:
             y = self.linear(x.astype(self.linear.weight.dtype))
         z = (x @ self.lora_a) @ self.lora_b
-        out = y + 2.0 * z
-        return out
+        return y + 2.0 * z
 
 
 class RMSNorm(nn.Module):

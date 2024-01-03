@@ -17,9 +17,7 @@ from sentencepiece import SentencePieceProcessor
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
-        description="LoRA finetuning with Llama or Mistral"
-    )
+    parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
     parser.add_argument(
         "--model",
         default="mlx_model",
@@ -366,8 +364,6 @@ if __name__ == "__main__":
     for l in model.layers[-args.lora_layers :]:
         l.attention.wq = LoRALinear.from_linear(l.attention.wq)
         l.attention.wv = LoRALinear.from_linear(l.attention.wv)
-        # TODO, don't need this if we get rid of stop grad in quantized linear
-        l.attention.wo = LoRALinear.from_linear(l.attention.wo)
 
     p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
     print(f"Total parameters {p:.3f}M")

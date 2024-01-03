@@ -1,8 +1,8 @@
-# LoRA
+# Fine-Tuning with LoRA or QLoRA
 
 This is an example of using MLX to fine-tune either a Llama 7B[^llama] or a
 Mistral 7B[^mistral] model with low rank adaptation (LoRA)[^lora] for a target
-task. The example alsos upport quantized LoRA (QLoRA).[^qlora]
+task. The example also supports quantized LoRA (QLoRA).[^qlora]
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
 generate SQL queries from natural language. However, the example is intended to

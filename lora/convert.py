@@ -65,13 +65,13 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--q_group_size",
+        "--q-group-size",
         help="Group size for quantization.",
         type=int,
         default=64,
     )
     parser.add_argument(
-        "--q_bits",
+        "--q-bits",
         help="Bits per weight for quantization.",
         type=int,
         default=4,
@@ -95,9 +95,9 @@ if __name__ == "__main__":
     )
 
     # Load the torch model weights to numpy:
-    state = torch.load(str(torch_path / "consolidated.00.pth"))
-    weights = {k: v.to(torch.float16).numpy() for k, v in state.items()}
-    del state
+    weights = torch.load(str(torch_path / "consolidated.00.pth"))
+    for k, v in weights.items():
+        weights[k] = v.to(torch.float16).numpy()
 
     # Standardize the params
     with open(torch_path / "params.json", "r") as f:
