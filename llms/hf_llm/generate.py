@@ -15,7 +15,11 @@ def generate(
     max_tokens: int,
     temp: float = 0.0,
 ):
-    prompt = tokenizer(args.prompt, return_tensors="np", return_attention_mask=False,)[
+    prompt = tokenizer(
+        args.prompt,
+        return_tensors="np",
+        return_attention_mask=False,
+    )[
         "input_ids"
     ][0]
     prompt = mx.array(prompt)
