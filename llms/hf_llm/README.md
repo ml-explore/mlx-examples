@@ -58,7 +58,7 @@ You can convert (change the data type or quantize) models using the
 `convert.py` script. This script takes a Hugging Face repo as input and outputs
 a model directory (which you can optionally also upload to Hugging Face).
 
-For example to 4-bit quantize a model, run:
+For example, to make 4-bit quantized a model, run:
 
 ```
 python convert.py --hf-model <hf_repo> -q
