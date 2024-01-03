@@ -77,9 +77,11 @@ def upload_to_hub(path: str, name: str):
 
     api = HfApi()
 
+    repo_id = f"mlx-community/{name}"
+    api.create_repo(repo_id=repo_id, exist_ok=True)
     api.upload_folder(
         folder_path=path,
-        repo_id=f"mlx-community/{name}",
+        repo_id=repo_id,
         repo_type="model",
         multi_commits=True,
         multi_commits_verbose=True,
