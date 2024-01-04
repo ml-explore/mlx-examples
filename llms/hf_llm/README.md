@@ -61,7 +61,7 @@ a model directory (which you can optionally also upload to Hugging Face).
 For example, to make 4-bit quantized a model, run:
 
 ```
-python convert.py --hf-model <hf_repo> -q
+python convert.py --hf-path <hf_repo> -q
 ```
 
 For more options run:
