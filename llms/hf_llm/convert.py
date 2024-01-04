@@ -69,7 +69,7 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
     return shards
 
 
-def upload_to_hub(path: str, name: str):
+def upload_to_hub(path: str, name: str, hf_path: str):
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
@@ -171,4 +171,4 @@ if __name__ == "__main__":
         json.dump(config, fid, indent=4)
 
     if args.upload_name is not None:
-        upload_to_hub(mlx_path, args.upload_name)
+        upload_to_hub(mlx_path, args.upload_name, args.hf_path)
