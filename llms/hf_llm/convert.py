@@ -165,7 +165,7 @@ if __name__ == "__main__":
     mlx_path.mkdir(parents=True, exist_ok=True)
     shards = make_shards(weights)
     for i, shard in enumerate(shards):
-        mx.save_safetensors(str(mlx_path / f"model.{i:02d}.safetensors"), shard)
+        mx.save_safetensors(str(mlx_path / f"weights.{i:02d}.safetensors"), shard)
     tokenizer.save_pretrained(mlx_path)
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
