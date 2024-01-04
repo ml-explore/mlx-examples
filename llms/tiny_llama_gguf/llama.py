@@ -384,7 +384,7 @@ def load_model(model_path):
     print(str(gguf_path))
     print("[INFO] Loading model from {}.".format(gguf_path))
     weights = mx.load(str(gguf_path))
-    weights = {translate_weight_names(k): v.T for k, v in weights.items()}
+    weights = {translate_weight_names(k): v for k, v in weights.items()}
 
     # TODO: should load from gguf metadata
     with open(model_path / "config.json", "r") as f:
