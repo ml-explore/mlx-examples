@@ -16,7 +16,7 @@ def generate(
     temp: float = 0.0,
 ):
     prompt = tokenizer(
-        args.prompt,
+        prompt,
         return_tensors="np",
         return_attention_mask=False,
     )[
