@@ -394,7 +394,7 @@ if __name__ == "__main__":
             f"Adapter file {args.adapter_file} missing. "
             "Use --train to learn and save the adapters.npz."
         )
-    model.load_weights(args.adapter_file)
+    model.load_weights(args.adapter_file, strict=False)
 
     if args.test:
         print("Testing")
