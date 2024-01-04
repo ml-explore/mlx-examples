@@ -357,12 +357,6 @@ def translate_weight_names(name):
     name = name.replace("output_norm", "norm")
     return name
 
-def should_transpose(name):
-    for pattern in [".wk.", ".wv.", ".feed_forward.", "output.", "tok_embeddings"]:
-        if pattern in name:
-            return True
-    return False
-
 def validate_weights(weights, model):
     current_weights = tree_flatten(model.parameters())
     weights_to_load = list(weights.items())
@@ -370,12 +364,14 @@ def validate_weights(weights, model):
     current_weights_keys = set(current_weights_dict.keys())
     weights_to_load_dict = dict(weights_to_load)
     weights_to_load_keys = set(weights_to_load_dict.keys())
-    if current_weights_keys - weights_to_load_keys:
-        print("Missing weights: ", sorted(current_weights_keys - weights_to_load_keys))
-        print()
-    if weights_to_load_keys - current_weights_keys:
-        print("Weights ignored: ", sorted(weights_to_load_keys - current_weights_keys))
-    for key in sorted(current_weights_keys & weights_to_load_keys):
+    missing = current_weights_keys - weights_to_load_keys
+    if missing:
+        print("Missing weights: ", sorted(missing))
+    ignored = weights_to_load_keys - current_weights_keys
+    if ignored:
+        print("Weights ignored: ", sorted(ignored))
+    shared = current_weights_keys & weights_to_load_keys
+    for key in sorted(shared):
         if weights_to_load_dict[key].shape != current_weights_dict[key].shape:
             print("Shape mismatch for key: ", key)
             print("Expected shape: ", current_weights_dict[key].shape)
@@ -388,8 +384,7 @@ def load_model(model_path):
     print(str(gguf_path))
     print("[INFO] Loading model from {}.".format(gguf_path))
     weights = mx.load(str(gguf_path))
-    weights = {translate_weight_names(k): v for k, v in weights.items()}
-    weights = {k: v.T if should_transpose(k) else v for k, v in weights.items()}
+    weights = {translate_weight_names(k): v.T for k, v in weights.items()}
 
     # TODO: should load from gguf metadata
     with open(model_path / "config.json", "r") as f:
