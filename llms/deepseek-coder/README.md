@@ -32,6 +32,10 @@ page](https://huggingface.co/deepseek-ai) to see a list of available models.
 By default, the conversion script will save the converted `weights.npz`,
 tokenizer, and `config.json` in the `mlx_model` directory.
 
+> [!TIP] Alternatively, you can also download a few converted checkpoints from
+> the [MLX Community](https://huggingface.co/mlx-community) organization on
+> Hugging Face and skip the conversion step.
+
 ### Run
 
 Once you've converted the weights, you can interact with the Deepseek coder
