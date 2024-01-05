@@ -27,20 +27,20 @@ import argparse
 import json
 import math
 import time
-from pathlib import Path
-from typing import List, Iterator
-from tqdm import tqdm
-from types import SimpleNamespace
-import yaml
 from abc import ABC
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Iterator, List
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
+import yaml
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 from models import LoRALinear, Model, ModelArgs
 from sentencepiece import SentencePieceProcessor
+from tqdm import tqdm
 
 
 class TrainingRecordHandler(ABC):
@@ -48,6 +48,7 @@ class TrainingRecordHandler(ABC):
     Provides two methods for extracting the inputs and outputs (labels) from a supervised training dataset dictionary
 
     """
+
     def get_input(self, record) -> str:
         pass
 
@@ -75,24 +76,24 @@ class Dataset:
 
 
 CONFIG_DEFAULTS = {
-    'num_tokens': 100,
-    'write_every': 1,
-    'prompt': None,
-    'train': False,
-    'data': 'data/',
-    'lora_layers': 16,
-    'batch_size': 4,
-    'iters': -1,
-    'epochs': -1,
-    'val_batches': 25,
-    'learning_rate': 1e-5,
-    'steps_per_report': 10,
-    'steps_per_eval': 200,
-    'resume_adapter_file': None,
-    'adapter_file': 'adapters.npz',
-    'test': False,
-    'test_batches': 500,
-    'seed': 0,
+    "num_tokens": 100,
+    "write_every": 1,
+    "prompt": None,
+    "train": False,
+    "data": "data/",
+    "lora_layers": 16,
+    "batch_size": 4,
+    "iters": -1,
+    "epochs": -1,
+    "val_batches": 25,
+    "learning_rate": 1e-5,
+    "steps_per_report": 10,
+    "steps_per_eval": 200,
+    "resume_adapter_file": None,
+    "adapter_file": "adapters.npz",
+    "test": False,
+    "test_batches": 500,
+    "seed": 0,
 }
 
 
@@ -100,11 +101,11 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description="LoRA supervised finetuning with Mistral"
     )
-    parser.add_argument('filename', help="The YAML confguration file")
-    with open(parser.parse_args().filename, 'r') as file:
+    parser.add_argument("filename", help="The YAML confguration file")
+    with open(parser.parse_args().filename, "r") as file:
         config = yaml.safe_load(file)
         param_dict = config["parameters"]
-        if 'model' not in param_dict:
+        if "model" not in param_dict:
             raise SyntaxError('Missing required "model" parameter')
         for key, default in CONFIG_DEFAULTS.items():
             if key not in param_dict:
@@ -121,7 +122,11 @@ class Tokenizer:
         assert self._model.vocab_size() == self._model.get_piece_size()
 
     def encode(self, s: str, bos: bool = True, eos: bool = False) -> List[int]:
-        toks = [self._model.bos_id(), *self._model.encode(s)] if bos else [*self._model.encode(s)]
+        toks = (
+            [self._model.bos_id(), *self._model.encode(s)]
+            if bos
+            else [*self._model.encode(s)]
+        )
         if eos:
             toks.append(self.eos_id)
         return toks
@@ -174,11 +179,13 @@ def loss(model: Model, inputs: mx.array, targets: mx.array, output_lengths):
     return ce, ntoks
 
 
-def iterate_batches(dset: Dataset,
-                    tokenizer:Tokenizer,
-                    batch_size: int,
-                    handler: TrainingRecordHandler,
-                    train: bool = True) -> Iterator[tuple[mx.array, mx.array, mx.array]]:
+def iterate_batches(
+    dset: Dataset,
+    tokenizer: Tokenizer,
+    batch_size: int,
+    handler: TrainingRecordHandler,
+    train: bool = True,
+) -> Iterator[tuple[mx.array, mx.array, mx.array]]:
     """
     Continuously generate a tuple of 2 batch_size x N matrices (each an mx.array) and a vector (also an mx.array)
     of size batch_size.
@@ -199,37 +206,43 @@ def iterate_batches(dset: Dataset,
     while True:
         indices = np.arange(len(dset))
         if train:
-            #Shuffle order of batches pulled from dataset
+            # Shuffle order of batches pulled from dataset
             indices = np.random.permutation(indices)
         # Collect batches of size batch_size from dataset either in original order or (if train is False)
         # shuffled
         for i in range(0, len(indices) - batch_size + 1, batch_size):
             # Extract Mistral prompt and output (labels) from the training data batch
-            input_batch = [handler.get_input(dset[indices[i+j]]) for j in range(batch_size)]
-            output_batch = [handler.get_output(dset[indices[i+j]]) for j in range(batch_size)]
+            input_batch = [
+                handler.get_input(dset[indices[i + j]]) for j in range(batch_size)
+            ]
+            output_batch = [
+                handler.get_output(dset[indices[i + j]]) for j in range(batch_size)
+            ]
 
-            #Tokenize the input and output separately, with BOS only for input and EOS only for output
+            # Tokenize the input and output separately, with BOS only for input and EOS only for output
             input_batch = [tokenizer.encode(record) for record in input_batch]
-            output_batch = [tokenizer.encode(record, bos=False, eos=True) for record in output_batch]
+            output_batch = [
+                tokenizer.encode(record, bos=False, eos=True) for record in output_batch
+            ]
 
-            #Collect the token lengths for use in adding zero padding for input and output.  The latter is used
-            #For the mask used when calculating the loss
+            # Collect the token lengths for use in adding zero padding for input and output.  The latter is used
+            # For the mask used when calculating the loss
             input_lengths = [len(x) for x in input_batch]
             output_lengths = [len(x) for x in output_batch]
 
-            #Calculate maximum token sequence width from both input and output to use as the same width for
-            #input and output batch array
+            # Calculate maximum token sequence width from both input and output to use as the same width for
+            # input and output batch array
             max_width = max(max(input_lengths), max(output_lengths))
 
             batch_input_arr = np.zeros((batch_size, max_width), np.int32)
             for j in range(batch_size):
                 batch_input_arr[j, : input_lengths[j]] = input_batch[j]
             input_batch = mx.array(batch_input_arr)
-            #input_batch is now an MLX array where each row corresponds to a record from the batch
-            #and each item comprises the tokenization of the input zero padded up to the length
-            #of the longest input token sequence
+            # input_batch is now an MLX array where each row corresponds to a record from the batch
+            # and each item comprises the tokenization of the input zero padded up to the length
+            # of the longest input token sequence
 
-            #The same is done for the output
+            # The same is done for the output
             batch_output_arr = np.zeros((batch_size, max_width), np.int32)
             for j in range(batch_size):
                 batch_output_arr[j, : output_lengths[j]] = output_batch[j]
@@ -265,7 +278,7 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args, handler):
     # Main training loop
     start = time.perf_counter()
 
-    #The number of steps for 1 epoch
+    # The number of steps for 1 epoch
     epoch_num_steps = (len(train_set) + args.batch_size - 1) // args.batch_size
 
     if args.epochs == -1:
@@ -274,8 +287,10 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args, handler):
         num_iterations = epoch_num_steps * args.epochs
 
     pbar = tqdm(total=epoch_num_steps)
-    print(f"{num_iterations:,} iterations at {epoch_num_steps:,} iterations per epoch on a dataset of "
-          f"{len(train_set):,} records, {args.batch_size} at a time.")
+    print(
+        f"{num_iterations:,} iterations at {epoch_num_steps:,} iterations per epoch on a dataset of "
+        f"{len(train_set):,} records, {args.batch_size} at a time."
+    )
     for it, batch in zip(
         range(num_iterations),
         iterate_batches(train_set, tokenizer, args.batch_size, handler, train=True),
@@ -309,7 +324,13 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args, handler):
         if it == 0 or (it + 1) % args.steps_per_eval == 0:
             stop = time.perf_counter()
             val_loss = evaluate(
-                model, val_set, loss, tokenizer, args.batch_size, args.val_batches, handler
+                model,
+                val_set,
+                loss,
+                tokenizer,
+                args.batch_size,
+                args.val_batches,
+                handler,
             )
             print(
                 f"Iter {it + 1}: "
@@ -382,12 +403,12 @@ def main(handler: TrainingRecordHandler):
     model, tokenizer = load_model(args.model)
     # Freeze all layers other than LORA linears
     model.freeze()
-    for l in model.layers[-args.lora_layers:]:
+    for l in model.layers[-args.lora_layers :]:
         l.attention.wq = LoRALinear.from_linear(l.attention.wq)
         l.attention.wv = LoRALinear.from_linear(l.attention.wv)
-    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10 ** 6
+    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
     print(f"Total parameters {p:.3f}M")
-    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10 ** 6
+    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
     print(f"Trainable parameters {p:.3f}M")
     print("Loading datasets")
     train_set, valid_set, test_set = load(args)
@@ -416,7 +437,7 @@ def main(handler: TrainingRecordHandler):
             tokenizer,
             args.batch_size,
             args.test_batches,
-            handler
+            handler,
         )
         test_ppl = math.exp(test_loss)
 
@@ -424,4 +445,3 @@ def main(handler: TrainingRecordHandler):
     if args.prompt is not None:
         print("Generating")
         generate(model, args.prompt, tokenizer, args)
-
