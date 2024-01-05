@@ -376,7 +376,7 @@ if __name__ == "__main__":
     # Resume training the given adapters.
     if args.resume_adapter_file is not None:
         print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file)
+        model.load_weights(args.resume_adapter_file, strict=False)
 
     if args.train:
         print("Training")
