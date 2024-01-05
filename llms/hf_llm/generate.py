@@ -43,12 +43,12 @@ def generate(
         s = tokenizer.decode(tokens)
         print(s[skip:], end="", flush=True)
         skip = len(s)
-    if len(tokens) == 0:
-        print("No tokens generated for this prompt")
-        return
     print(tokenizer.decode(tokens)[skip:], flush=True)
     gen_time = time.time() - tic
     print("=" * 10)
+    if len(tokens) == 0:
+        print("No tokens generated for this prompt")
+        return
     prompt_tps = prompt.size / prompt_time
     gen_tps = (len(tokens) - 1) / gen_time
     print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
