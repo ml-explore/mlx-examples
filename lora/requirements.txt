@@ -1,3 +1,4 @@
 mlx>=0.0.7
 sentencepiece
 torch
+numpy
