@@ -2,6 +2,15 @@
 Based on lora and performs supervised instruction finetuning
 However, it but breaks out parameters into a YAML file and allows arbitrary training data (and prompt) formats
 
+The configuration .yaml file is expected to be in the following format:
+
+parameters:
+    model: "..."
+    num_tokens: 100
+    [..]
+
+Where each entry under parameters is the argparse version of the argumens originally provided to lora.py plus new ones
+
 A module for a particular prompt syntax or training dataset format just needs to overide TrainingRecordHandler,
 provide an instance of it to main, and run the script with a single argument which is a path to a YAML file with the
 configuration parameters that were originally command-line arguments in lora.py
