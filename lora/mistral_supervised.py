@@ -9,7 +9,7 @@ Assumes records are of the form:
 And renders the input using the MISTRAL prompt format
 
 """
-from .supervised_lora import TrainingRecordHandler, main
+from supervised_lora import TrainingRecordHandler, main
 
 MISTRAL_INSTRUCTION_PROMPT = "[INST] {prompt_input}[/INST] "
 
