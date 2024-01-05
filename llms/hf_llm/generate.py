@@ -43,6 +43,9 @@ def generate(
         s = tokenizer.decode(tokens)
         print(s[skip:], end="", flush=True)
         skip = len(s)
+    if (len(tokens) == 0):
+        print("No tokens generated for this prompt")
+        return
     print(tokenizer.decode(tokens)[skip:], flush=True)
     gen_time = time.time() - tic
     print("=" * 10)
