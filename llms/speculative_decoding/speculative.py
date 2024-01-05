@@ -1,11 +1,7 @@
 import argparse
-import glob
-import json
 import time
-from pathlib import Path
 
 import mlx.core as mx
-import mlx.nn as nn
 from decoder import SpeculativeDecoder
 from mlx.utils import tree_unflatten
 from model import Model
@@ -59,12 +55,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-name",
         help="Name of the model.",
-        default="t5-small",
+        default="t5-base",
     )
     parser.add_argument(
         "--draft-model-name",
         help="Name of the draft model.",
-        default="t5-small",
+        default="t5-base",
     )
     parser.add_argument(
         "--seed",
@@ -81,7 +77,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--prompt",
-        default="translate English to French: Let's go to the store and buy some groceries including eggs, avocadoes, and bread.",
+        default="Translate the following from English to English: Let's go to the store and buy some groceries including eggs, avocadoes, and bread.",
         help="The prompt processed by the model.",
     )
     parser.add_argument(
