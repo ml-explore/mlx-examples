@@ -84,8 +84,7 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
         rope_scale = (
             1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None
-            and args.rope_scaling["type"] == "linear"
+            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
             else 1
         )
         self.rope = nn.RoPE(
