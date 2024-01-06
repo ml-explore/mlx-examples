@@ -72,7 +72,6 @@ class MultiHeadAttention(nn.Module):
         else:
             k, v = kv_cache
 
-        # todo: a flag to decide return qk or None ?
         wv, qk = self.qkv_attention(q, k, v, mask)
         return self.out(wv), (k, v), qk
 
@@ -222,15 +221,9 @@ class Whisper(nn.Module):
         )
         # use the last half among the decoder layers for time alignment by default;
         # to use a specific set of heads, see `set_alignment_heads()` below.
-        # todo: to mlx ops
         all_heads = np.zeros((self.dims.n_text_layer, self.dims.n_text_head), dtype=bool)
         all_heads[self.dims.n_text_layer // 2 :] = True
         self.alignment_heads = mx.array(np.asarray(all_heads.nonzero()).T)
-        # all_heads = mx.array(
-        #     np.zeros((self.dims.n_text_layer, self.dims.n_text_head), dtype=bool)
-        # )
-        # all_heads[self.dims.n_text_layer // 2 :] = True
-        # self.register_buffer("alignment_heads", all_heads.to_sparse(), persistent=False)
 
     def set_alignment_heads(self, dump: Union[bytes, np.ndarray]):
         # todo: do we need this ?
@@ -243,7 +236,10 @@ class Whisper(nn.Module):
             mask = array.reshape(self.dims.n_text_layer, self.dims.n_text_head)
             self.alignment_heads = mx.array(np.asarray(mask.nonzero()).T)
         else:
-            raise ValueError(f"Invalid type for `dump`: {type(dump)}. Expected a np.ndarray or dump")
+            raise ValueError(
+                f"Invalid type for `dump`: {type(dump)}. Expected a np.ndarray or base85-encoded bytes containing"
+                " alignment_head information"
+            )
 
     def embed_audio(self, mel):
         return self.encoder(mel)
@@ -251,9 +247,12 @@ class Whisper(nn.Module):
     def logits(self, tokens, audio_features):
         return self.decoder(tokens, audio_features)[0]
 
+    def forward_with_cross_qk(self, mel, tokens):
+        logits, _, cross_qk = self.decoder(tokens, self.encoder(mel))
+        return logits, cross_qk
+
     def __call__(self, mel, tokens):
-        # todo: check if affect others, or create another function like forward_with_kv
-        return self.decoder(tokens, self.encoder(mel))
+        return self.decoder(tokens, self.encoder(mel))[0]
 
     @property
     def is_multilingual(self):

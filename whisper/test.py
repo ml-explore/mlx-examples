@@ -74,7 +74,6 @@ def forward_mlx(model, mels, tokens):
     mels = mx.array(mels.transpose(0, 2, 1))
     tokens = mx.array(tokens, mx.int32)
     logits = model(mels, tokens)
-    # todo: fix this
     return np.array(logits)
 
 
@@ -106,7 +105,6 @@ class TestWhisper(unittest.TestCase):
         dims = mlx_model.dims
         mels = mx.array(np.random.randn(1, 3_000, dims.n_mels), mx.float16)
         tokens = mx.array(np.random.randint(0, dims.n_vocab, (1, 20)), mx.int32)
-        # todo: fix this
         logits = mlx_model(mels, tokens)
         self.assertEqual(logits.dtype, mx.float16)
 
