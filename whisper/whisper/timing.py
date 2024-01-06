@@ -139,7 +139,7 @@ def find_alignment(
     # heads * tokens * frames
     weights = mx.stack([cross_qk[_l.item()][0, _h.item()] for _l, _h in model.alignment_heads])
     weights = weights[:, :, : num_frames // 2]
-    weights = mx.softmax((weights * qk_scale).astype(mx.float32), axis=-1).astype(weights.dtype)
+    weights = mx.softmax(weights * qk_scale, axis=-1)
     mean = mx.mean(weights, axis=-2, keepdims=True)
     std = mx.var(weights, axis=-2, keepdims=True, ddof=0).sqrt()
     weights = (weights - mean) / std
