@@ -1,4 +1,0 @@
-torch
-mlx
-numpy
-transformers>=4.35
