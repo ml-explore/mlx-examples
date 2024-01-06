@@ -34,7 +34,7 @@ def main(args):
 
     tic = time.time()
     print(args.prompt)
-    
+
     stats = lookup_decoder.prompt_lookup(args.prompt, max_tokens=args.max_tokens)
     print("=" * 10)
     print(f"Accepted {stats['n_accepted']} / {stats['n_draft']}.")
@@ -44,9 +44,10 @@ def main(args):
     print("=" * 10)
     print(f"Full generation time {toc - tic:.3f}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prompt Lookup Decoding")
-    
+
     parser.add_argument(
         "--n-draft",
         type=int,
@@ -89,17 +90,9 @@ if __name__ == "__main__":
         type=float,
         default=0.0,
     )
+    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="The PRNG seed"
-    )
-    parser.add_argument(
-        "--color", 
-        type=bool, 
-        default=False, 
-        help="Color the accepted draft tokens"
+        "--color", type=bool, default=True, help="Color the accepted draft tokens"
     )
 
     args = parser.parse_args()

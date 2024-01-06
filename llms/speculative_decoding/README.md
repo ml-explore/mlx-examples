@@ -66,7 +66,7 @@ Decoding](https://arxiv.org/abs/2211.17192)
    or the [Hugging Face page](https://huggingface.co/docs/transformers/model_doc/t5).
 
 ## Prompt Lookup Decoding
-When speculative decoding works, it can speed up inference manifold, but finding a suitable draft model can be cumbersome. Prompt lookup decoding[^3] is a modified speculative decoding technique where the draft model is replaced with a simple sliding window search over the prompt. This simple variation removes the need to decide on a draft model and can provide the same benefits as speculative decoding on specific tasks. Specifically, prompt lookup decoding works exceptionally well on *input-grounded* tasks such as summarization, document Q/A, code editing etc. where there is a high overlap between input and output.
+When speculative decoding works, it significantly accelerates inference. However, selecting an appropriate draft model can be challenging. Prompt lookup decoding[^3] modifies speculative decoding by substituting the draft model with a straightforward sliding window search across the prompt. This alteration eliminates the need for a draft model while offering comparable speed enhancements as speculative decoding, particularly when applied to the right task. Prompt lookup decoding excels in *input-grounded* tasks like summarization, document Q/A, and code editing, where there's substantial overlap between input and output.
 
 ## Run
 [Setup](#setup) is the same as for Speculative Decoding. You can the run with default arguments:
