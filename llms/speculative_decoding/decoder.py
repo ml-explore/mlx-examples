@@ -188,7 +188,7 @@ class SpeculativeDecoder:
             draft_inputs = new_tokens[max(new_tokens.size - 2, 0) :]
             inputs = draft_inputs[-1:]
 
-        print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
+        # print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
         print()
 
         self.model.reset_cache()
@@ -220,46 +220,31 @@ class PromptLookupDecoder:
         self.seed = seed
         self.color = color
 
-    def _generate(
-        self,
-        x: mx.array,
-        temp: float = 0.0,
-    ):
-        def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
+    def generate_draft(self, input_ids):
+        ngram = input_ids[-self.ngram_max :]
 
-        logits, cache = self.model(x[None])
-        y = sample(logits[:, -1, :])
-        yield y
+        largest_match = 0
+        draft = mx.array([], dtype=mx.uint32)
 
-        while True:
-            logits, cache = self.model(x[None, :], cache, next_token_only=True)
-            x = sample(logits)
-            yield x
+        # Sliding window search
+        for i in range(1, input_ids.size - self.ngram_max):
+            matches = input_ids[max(0, i - self.ngram_max) : i] == ngram[-i:]
 
-    # Normal decoding w/o prompt lookup (for testing)
-    def generate(
-        self,
-        prompt,
-        max_tokens: int = 100,
-        temp: float = 0.0,
-    ):
-        print("[INFO] Starting generation...")
-        print(prompt, end="", flush=True)
-        x = mx.array(self.tokenizer.encode(prompt), mx.uint32)
+            # reverse through the matches array
+            match_length = 0
+            for j in range(matches.size - 1, -1, -1):
+                if matches[j]:
+                    match_length += 1
+                else:
+                    break
 
-        start = time.time()
-        for token, n in zip(self._generate(x, temp), range(max_tokens)):
-            token = token.item()
-            if token == self.tokenizer.eos_id:
-                break
-            print(self.tokenizer.decode([token]), end="", flush=True)
-        run_time = time.time() - start
-        print()
-        print(f"=== GENERATED {n + 1} TOKENS IN {run_time} SECONDS ===")
+            if match_length >= self.ngram_min and match_length > largest_match:
+                largest_match = match_length
+                start_idx = i
+                end_idx = start_idx + self.n_draft
+                draft = input_ids[start_idx:end_idx]
+
+        return draft
 
     def prompt_lookup(
         self,
@@ -275,42 +260,21 @@ class PromptLookupDecoder:
         prompt = mx.array(self.tokenizer.encode(prompt), mx.uint32)[None]
         memory = self.model.encode(prompt)
 
-        history = prompt.squeeze(0)[:-1]  # remove eos token
+        history = prompt.squeeze(0)[
+            :-1
+        ]  # remove eos token from prompt lookup search space
 
         n_steps = 0
         n_generated = 0
         n_accepted = 0
         n_drafted = 0
 
+        outputs = []
+        skip = 0
         inputs = mx.array([self.tokenizer.decoder_start_id])
         while True:
             # For each decoding step: generate n_draft tokens by searching the prompt
-            def find_draft(input_ids):
-                ngram = input_ids[-self.ngram_max:]
-
-                largest_match = 0
-                candidate = mx.array([], dtype=mx.uint32)
-
-                for i in range(input_ids.size - (self.ngram_max * 2)):
-                    matches = input_ids[i : i + self.ngram_max] == ngram
-
-                    # reverse through the matches array
-                    match_length = 0
-                    for j in range(matches.size - 1, -1, -1):
-                        if matches[j]:
-                            match_length += 1
-                        else:
-                            break
-
-                    if match_length >= self.ngram_min and match_length > largest_match:
-                        largest_match = match_length
-                        start_idx = i + self.ngram_max
-                        end_idx = start_idx + self.n_draft
-                        candidate = input_ids[start_idx:end_idx]
-
-                return candidate
-
-            draft_tokens = find_draft(history)
+            draft_tokens = self.generate_draft(history)
 
             # Verify draft tokens with the last verified token
             verify_tokens = mx.concatenate([inputs, draft_tokens])
@@ -334,28 +298,24 @@ class PromptLookupDecoder:
 
             n_steps += 1
 
-            # Check stop decodig criteria and print accepted draft tokens.
-            for t in new_tokens.tolist()[:-1]:
-                if t == self.tokenizer.eos_id:
+            for t in new_tokens.tolist():
+                if t == self.tokenizer.eos_id or n_generated >= max_tokens:
                     break
+                outputs.append(t)
+                n_generated += 1
 
-                if self.color:
-                    print(
-                        "\033[34m" + self.tokenizer.decode([t]) + "\033[30m",
-                        end="",
-                        flush=True,
-                    )
-                else:
-                    print(self.tokenizer.decode([t]), end="", flush=True)
+            str_output = self.tokenizer.decode(outputs)
+            print(str_output[skip:], end="", flush=True)
+            skip = len(str_output)
 
-            print(self.tokenizer.decode(new_tokens[-1:].tolist()), end="", flush=True)
-
-            n_generated += new_tokens.size
             if n_generated >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
                 break
 
             history = mx.concatenate([history, new_tokens])
             inputs = history[-1:]
+
+        print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
+        print()
 
         self.model.reset_cache()
 
