@@ -226,7 +226,6 @@ class Whisper(nn.Module):
         self.alignment_heads = mx.array(np.asarray(all_heads.nonzero()).T)
 
     def set_alignment_heads(self, dump: Union[bytes, np.ndarray]):
-        # todo: do we need this ?
         if isinstance(dump, np.ndarray):
             self.alignment_heads = mx.array(dump)
         elif isinstance(dump, bytes):
