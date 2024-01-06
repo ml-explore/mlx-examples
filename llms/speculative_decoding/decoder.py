@@ -188,7 +188,7 @@ class SpeculativeDecoder:
             draft_inputs = new_tokens[max(new_tokens.size - 2, 0) :]
             inputs = draft_inputs[-1:]
 
-        # print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
+        print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
         print()
 
         self.model.reset_cache()
