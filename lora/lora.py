@@ -5,13 +5,13 @@ import json
 import math
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
-from mlx.utils import tree_flatten, tree_map, tree_unflatten
+from mlx.utils import tree_flatten, tree_unflatten
 from models import LoRALinear, Model, ModelArgs
 from sentencepiece import SentencePieceProcessor
 
