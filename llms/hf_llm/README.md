@@ -73,5 +73,5 @@ python convert.py --help
 ```
 
 You can upload new models to the [Hugging Face MLX
-Community](https://huggingface.co/mlx-community) by specifying `--upload-name``
+Community](https://huggingface.co/mlx-community) by specifying `--upload-name`
 to `convert.py`.

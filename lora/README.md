@@ -45,8 +45,8 @@ To make a 4-bit quantized model, run:
 python convert.py --hf-path <hf_repo> -q
 ```
 
-For example the following will make a 4-bit quantized Mistral 7B and by default
-store it in `mlx_model` 
+For example, the following will make a 4-bit quantized Mistral 7B and by default
+store it in `mlx_model`:
 
 ```
 python convert.py --hf-path mistralai/Mistral-7B-v0.1 -q
@@ -59,12 +59,12 @@ python convert.py --help
 ```
 
 You can upload new models to the [Hugging Face MLX
-Community](https://huggingface.co/mlx-community) by specifying `--upload-name``
+Community](https://huggingface.co/mlx-community) by specifying `--upload-name`
 to `convert.py`.
 
 ## Run
 
-The main script is `lora.py`. To see a full list of options run
+The main script is `lora.py`. To see a full list of options run:
 
 ```
 python lora.py --help
@@ -94,7 +94,7 @@ You can resume fine-tuning with an existing adapter with `--resume-adapter-file
 
 ### Evaluate
 
-To compute test set perplexity use
+To compute test set perplexity use:
 
 ```
 python lora.py --model <path_to_model> \
@@ -104,7 +104,7 @@ python lora.py --model <path_to_model> \
 
 ### Generate
 
-For generation use
+For generation use:
 
 ```
 python lora.py --model <path_to_model> \
@@ -176,7 +176,7 @@ For example, for a machine with 32 GB the following should run reasonably fast:
 
 ```
 python lora.py \
-   --model <path_to_model> \
+   --model mistralai/Mistral-7B-v0.1 \
    --train \
    --batch-size 1 \
    --lora-layers 4
