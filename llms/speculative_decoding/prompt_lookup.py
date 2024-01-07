@@ -92,7 +92,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
     parser.add_argument(
-        "--color", type=bool, default=True, help="Color the accepted draft tokens"
+        "--color", type=bool, default=False, help="Color the accepted draft tokens"
     )
 
     args = parser.parse_args()

@@ -46,14 +46,16 @@ class SpeculativeDecoder:
         model: Model,
         draft_model: Model,
         tokenizer: str,
+        color: bool,
         num_draft: int = 5,
-        delta: float = 0.0,
+        delta: float = 0.0
     ):
         self.tokenizer = Tokenizer(tokenizer)
         self.model = model
         self.draft_model = draft_model
         self.num_draft = num_draft
         self.delta = delta
+        self.color = color
 
     def _generate(
         self,
@@ -182,7 +184,7 @@ class SpeculativeDecoder:
                 n_generated += 1
 
             str_output = self.tokenizer.decode(outputs)
-            self.color = True
+
             if self.color and not truncated:
                 model_token = len(self.tokenizer.decode(outputs[-1]))
                 print(
@@ -202,7 +204,7 @@ class SpeculativeDecoder:
                 )
             else:
                 print(str_output[skip:], end="", flush=True)
-            #print(str_output[skip:], end="", flush=True)
+
             skip = len(str_output)
 
             if n_generated >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
@@ -329,8 +331,6 @@ class PromptLookupDecoder:
                 n_generated += 1
 
             str_output = self.tokenizer.decode(outputs)
-            #print(str_output[skip:], end="", flush=True)
-
 
             if self.color and not truncated:
                 model_token = len(self.tokenizer.decode(outputs[-1]))
@@ -351,6 +351,7 @@ class PromptLookupDecoder:
                 )
             else:
                 print(str_output[skip:], end="", flush=True)
+
             skip = len(str_output)
 
             if n_generated >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:

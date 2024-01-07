@@ -25,6 +25,7 @@ def main(args):
         model=load_model(args.model_name),
         draft_model=load_model(args.draft_model_name),
         tokenizer=args.model_name,
+        color=args.color,
         delta=args.delta,
         num_draft=args.num_draft,
     )
@@ -85,6 +86,12 @@ if __name__ == "__main__":
         type=float,
         default=0.1,
         help="Lenience for accepting the proposal tokens.",
+    )
+    parser.add_argument(
+        "--color",
+        type=bool,
+        default=False,
+        help="Color the accepted draft tokens"
     )
     parser.add_argument(
         "--regular-decode",
