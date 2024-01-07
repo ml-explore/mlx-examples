@@ -9,9 +9,9 @@ from pathlib import Path
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
+import models
 import numpy as np
 from mlx.utils import tree_flatten, tree_unflatten
-from models import LoRALinear
 
 
 def build_parser():
@@ -295,13 +295,13 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model, tokenizer = load_model(args.model)
+    model, tokenizer = models.load(args.model)
 
     # Freeze all layers other than LORA linears
     model.freeze()
-    for l in model.layers[-args.lora_layers :]:
-        l.attention.wq = LoRALinear.from_linear(l.attention.wq)
-        l.attention.wv = LoRALinear.from_linear(l.attention.wv)
+    for l in model.model.layers[-args.lora_layers :]:
+        l.self_attn.q_proj = models.LoRALinear.from_linear(l.self_attn.q_proj)
+        l.self_attn.v_proj = models.LoRALinear.from_linear(l.self_attn.v_proj)
 
     p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
     print(f"Total parameters {p:.3f}M")

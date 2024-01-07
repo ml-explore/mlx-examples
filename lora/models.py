@@ -6,10 +6,11 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
@@ -54,27 +55,24 @@ class ModelArgs:
 class Tokenizer:
     def __init__(self, model_path: str):
         self._tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self._eos = self._tokenizer.eos_token_id
+        self._bos = self._tokenizer.bos_token_id
 
     def encode(self, s: str, eos: bool = False) -> mx.array:
-        import pdb
-
-        pdb.set_trace()
-        # MAKE SURE THERE IS AN eos/bos HERE
-        s = tokenizer(
+        toks = self._tokenizer(
             s,
             return_tensors="np",
             return_attention_mask=False,
         )[
             "input_ids"
         ][0]
-        toks = [self._model.bos_id(), *self._model.encode(s)]
         if eos:
-            toks.append(self.eos_id)
+            toks = np.concatenate([toks, [self._eos]])
         return mx.array(toks)
 
     @property
     def eos_id(self) -> int:
-        return self._model.eos_id()
+        return self._eos
 
     def decode(self, t: List[int]) -> str:
         return self._tokenizer.decode(t)
@@ -317,10 +315,7 @@ def load(path_or_hf_repo: str):
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-    )
-    return model, tokenizer
+    return model, Tokenizer(model_path)
 
 
 def generate(prompt: mx.array, model: Model, temp: float = 0.0):
