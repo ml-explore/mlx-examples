@@ -45,7 +45,7 @@ To make a 4-bit quantized model, run:
 python convert.py --hf-path <hf_repo> -q
 ```
 
-For exampe the following will make a 4-bit quantized Mistral 7B and by default
+For example the following will make a 4-bit quantized Mistral 7B and by default
 store it in `mlx_model` 
 
 ```
@@ -70,7 +70,7 @@ The main script is `lora.py`. To see a full list of options run
 python lora.py --help
 ```
 
-Note, in the following the `--model` argument can be any compatable Hugging
+Note, in the following the `--model` argument can be any compatible Hugging
 Face repo or a local path to a converted mdoel. 
 
 ### Fine-tune
@@ -85,8 +85,6 @@ python lora.py --model <path_to_model> \
 
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
-
-## TODO what should model be
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
 the output location with `--adapter-file`.
