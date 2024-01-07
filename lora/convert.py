@@ -87,7 +87,7 @@ if __name__ == "__main__":
     # Copy the tokenizer
     tokenizer_path = torch_path / "tokenizer.model"
     if not tokenizer_path.exists():
-        print(f"Make sure there is a file tokenizer.model in {args.torch-path}")
+        print(f"Make sure there is a file tokenizer.model in {args.torch_path}")
         exit(0)
     shutil.copyfile(
         str(tokenizer_path),
