@@ -41,7 +41,7 @@ models](https://github.com/ml-explore/mlx-examples/issues/155).
 
 We are grateful for all of [our
 contributors](ACKNOWLEDGMENTS.md#Individual-Contributors). If you contribute
-to MLX Examples and wish to be acknowledged, please add your name to to the list in your
+to MLX Examples and wish to be acknowledged, please add your name to the list in your
 pull request.
 
 ## Citing MLX Examples
