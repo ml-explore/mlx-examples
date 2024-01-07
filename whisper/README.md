@@ -2,7 +2,7 @@
 
 Speech recognition with Whisper in MLX. Whisper is a set of open source speech
 recognition models from OpenAI, ranging from 39 million to 1.5 billion
-parameters[^1].
+parameters.[^1]
 
 ### Setup
 
