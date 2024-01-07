@@ -116,7 +116,9 @@ class ResidualAttentionBlock(nn.Module):
         x += y
         cross_qk = None
         if self.cross_attn:
-            y, cross_kv, cross_qk = self.cross_attn(self.cross_attn_ln(x), xa, kv_cache=cross_kv)
+            y, cross_kv, cross_qk = self.cross_attn(
+                self.cross_attn_ln(x), xa, kv_cache=cross_kv
+            )
             x += y
         x = x + self.mlp2(nn.gelu(self.mlp1(self.mlp_ln(x))).astype(x.dtype))
         return x, (kv, cross_kv), cross_qk
@@ -194,7 +196,9 @@ class TextDecoder(nn.Module):
             kv_cache = [None] * len(self.blocks)
         cross_qk = [None] * len(self.blocks)
         for e, block in enumerate(self.blocks):
-            x, kv_cache[e], cross_qk[e] = block(x, xa, mask=self._mask, kv_cache=kv_cache[e])
+            x, kv_cache[e], cross_qk[e] = block(
+                x, xa, mask=self._mask, kv_cache=kv_cache[e]
+            )
 
         x = self.ln(x)
         return x @ self.token_embedding.weight.T, kv_cache, cross_qk
@@ -222,7 +226,9 @@ class Whisper(nn.Module):
         )
         # use the last half among the decoder layers for time alignment by default;
         # to use a specific set of heads, see `set_alignment_heads()` below.
-        all_heads = np.zeros((self.dims.n_text_layer, self.dims.n_text_head), dtype=bool)
+        all_heads = np.zeros(
+            (self.dims.n_text_layer, self.dims.n_text_head), dtype=bool
+        )
         all_heads[self.dims.n_text_layer // 2 :] = True
         self.alignment_heads = mx.array(np.asarray(all_heads.nonzero()).T)
 

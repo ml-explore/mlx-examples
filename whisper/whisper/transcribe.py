@@ -296,7 +296,7 @@ def transcribe(
             time_offset = float(seek * HOP_LENGTH / SAMPLE_RATE)
             window_end_time = float((seek + N_FRAMES) * HOP_LENGTH / SAMPLE_RATE)
             segment_size = min(N_FRAMES, content_frames - seek, seek_clip_end - seek)
-            mel_segment = mel[seek: seek + segment_size]
+            mel_segment = mel[seek : seek + segment_size]
             segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE
             mel_segment = pad_or_trim(mel_segment, N_FRAMES, axis=-2).astype(dtype)
 

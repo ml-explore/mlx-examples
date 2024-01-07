@@ -34,7 +34,9 @@ def median_filter(x: np.ndarray, filter_width: int):
     x = np.pad(x, ((0, 0), (0, 0), (pad_width, pad_width)), mode="reflect")
 
     # todo: more efficient version in mlx
-    result = signal.medfilt(x.astype(np.float32), kernel_size=(1, 1, filter_width))[..., pad_width: -pad_width]
+    result = signal.medfilt(x.astype(np.float32), kernel_size=(1, 1, filter_width))[
+        ..., pad_width:-pad_width
+    ]
 
     if ndim <= 2:
         result = result[0, 0]
@@ -132,12 +134,18 @@ def find_alignment(
     logits, cross_qk = model.forward_with_cross_qk(mel[None, :], tokens[None, :])
     # consider only the logits associated with predicting text
     sampled_logits = logits[0][len(tokenizer.sot_sequence) : -2, : tokenizer.eot]
-    token_probs = mx.softmax(sampled_logits.astype(mx.float32), axis=-1).astype(sampled_logits.dtype)
-    text_token_probs = mx.take_along_axis(token_probs, mx.array(text_tokens)[:, None], axis=1).squeeze(1)
+    token_probs = mx.softmax(sampled_logits.astype(mx.float32), axis=-1).astype(
+        sampled_logits.dtype
+    )
+    text_token_probs = mx.take_along_axis(
+        token_probs, mx.array(text_tokens)[:, None], axis=1
+    ).squeeze(1)
     text_token_probs = np.array(text_token_probs)
 
     # heads * tokens * frames
-    weights = mx.stack([cross_qk[_l.item()][0, _h.item()] for _l, _h in model.alignment_heads])
+    weights = mx.stack(
+        [cross_qk[_l.item()][0, _h.item()] for _l, _h in model.alignment_heads]
+    )
     weights = weights[:, :, : num_frames // 2]
     weights = mx.softmax(weights * qk_scale, axis=-1)
     mean = mx.mean(weights, axis=-2, keepdims=True)
