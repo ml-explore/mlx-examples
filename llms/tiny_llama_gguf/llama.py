@@ -1,14 +1,15 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
+import numpy as np
 import mlx.core as mx
 import mlx.nn as nn
+from gguf.gguf_reader import GGUFReader
 from mlx.utils import tree_flatten, tree_unflatten
 from sentencepiece import SentencePieceProcessor
 
@@ -309,39 +310,39 @@ def few_shot_generate(args):
         print()
 
 
-def sanitize_config(config, weights):
-    output = {}
-    output["dim"] = config.get("hidden_size", config.get("llama.embedding_length"))
-    output["n_layers"] = config.get("num_hidden_layers", config.get("llama.n_layers"))
-    output["n_heads"] = config.get("n_heads", config.get("num_attention_heads"))
-    output["head_dim"] = config.get("head_dim", output["dim"] // output["n_heads"])
-    output["hidden_dim"] = config.get(
-        "intermediate_size", weights["layers.0.feed_forward.w1.weight"].shape[0]
-    )
-    output["n_kv_heads"] = config.get(
-        "num_key_value_heads", config.get("llama.attention.head_count_kv")
-    )
-    output["norm_eps"] = config.get(
-        "rms_norm_eps", 1e-05
-    )
-    output["vocab_size"] = config.get(
-        "vocab_size",
-        weights["output.weight"].shape[-1]
-    )
-    output["rope_theta"] = config.get("rope_theta", 10000)
-    output["rope_traditional"] = config.get("rope_traditional", True)
+def get_field(gguf_reader: GGUFReader, key: str):
+    f = gguf_reader.get_field(key)
+    if f is None:
+        return 0
+    if len(f.data) != 1:
+        raise NotImplementedError(f"multiple data is not supported")
+    part = f.parts[f.data[0]]
+    if len(part) != 1:
+        raise NotImplementedError(f"multiple parts are not supported")
+    value = part[0]
+    if isinstance(value, np.float32):
+        return float(value)
+    elif isinstance(value, np.uint32):
+        return int(value)
+    return value
 
-    # TODO: read gguf params
-    # llama.context_length: [uint32] 2048
-    # llama.embedding_length: [uint32] 2048
-    # llama.block_count: [uint32] 22
-    # llama.feed_forward_length: [uint32] 5632
-    # llama.rope.dimension_count: [uint32] 64
-    # llama.attention.head_count: [uint32] 32
-    # llama.attention.head_count_kv: [uint32] 4
-    # llama.attention.layer_norm_rms_epsilon: [float32] 0.000010
-    # llama.rope.freq_base: [float32] 10000.000000
+
+def get_config(gguf_reader: GGUFReader, weights: dict[str, mx.array]):
+    output = {}
+    output["dim"] = get_field(gguf_reader, "llama.embedding_length")
+    output["n_layers"] = get_field(gguf_reader, "llama.block_count")
+    output["n_heads"] = get_field(gguf_reader, "llama.attention.head_count")
+    output["head_dim"] = output["dim"] // output["n_heads"]
+    output["hidden_dim"] = get_field(gguf_reader, "llama.feed_forward_length")
+    output["n_kv_heads"] = get_field(gguf_reader, "llama.attention.head_count_kv")
+    output["norm_eps"] = get_field(
+        gguf_reader, "llama.attention.layer_norm_rms_epsilon"
+    )
+    output["vocab_size"] = weights["output.weight"].shape[0]
+    output["rope_theta"] = get_field(gguf_reader, "llama.rope.freq_base")
+    output["rope_traditional"] = True
     return output
+
 
 def translate_weight_names(name):
     name = name.replace("blk.", "layers.")
@@ -356,6 +357,7 @@ def translate_weight_names(name):
     name = name.replace("token_embd", "tok_embeddings")
     name = name.replace("output_norm", "norm")
     return name
+
 
 def validate_weights(weights, model):
     current_weights = tree_flatten(model.parameters())
@@ -378,24 +380,35 @@ def validate_weights(weights, model):
             print("Loading shape: ", weights_to_load_dict[key].shape)
 
 
+def get_tokenizer(tokenizer_path):
+    # TODO: should load from gguf metadata
+    # tokenizer.ggml.tokens: [array] [<unk>, <s>, </s>, <0x00>, <0x01>, ...
+    # tokenizer.ggml.scores: [array] [0.000000, 0.000000, 0.000000, ..
+    # tokenizer.ggml.token_type: [array] [2, 3, 3, 6, ...
+    # tokenizer.ggml.merges: [array] [▁ t, e r, i n, ▁ a, e n, o n, ▁t h, ...
+    # tokenizer.ggml.bos_token_id: [uint32] 1
+    # tokenizer.ggml.eos_token_id: [uint32] 2
+    # tokenizer.ggml.unknown_token_id: [uint32] 0
+    # tokenizer.ggml.padding_token_id: [uint32] 2
+    tokenizer = SentencePieceProcessor(model_file=tokenizer_path)
+    return tokenizer
+
+
 def load_model(model_path):
     model_path = Path(model_path)
     gguf_path = model_path / "model.gguf"
-    print(str(gguf_path))
     print("[INFO] Loading model from {}.".format(gguf_path))
     weights = mx.load(str(gguf_path))
     weights = {translate_weight_names(k): v for k, v in weights.items()}
 
-    # TODO: should load from gguf metadata
-    with open(model_path / "config.json", "r") as f:
-        config = sanitize_config(json.loads(f.read()), weights)
+    reader = GGUFReader(str(gguf_path))
+    config = get_config(reader, weights)
     model = Llama(ModelArgs(**config))
 
     validate_weights(weights, model)
     model.update(tree_unflatten(list(weights.items())))
 
-    # TODO: should load from gguf metadata
-    tokenizer = SentencePieceProcessor(model_file=str(model_path / "tokenizer.model"))
+    tokenizer = get_tokenizer(str(model_path / "tokenizer.model"))
     return model, tokenizer
 
 
