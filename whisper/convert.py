@@ -199,6 +199,10 @@ def torch_to_mlx(
     mlx_model = Whisper(torch_model.dims, dtype)
     params = tree_map(lambda p: p.astype(dtype), params)
     mlx_model.update(params)
+
+    if (alignment_heads := getattr(torch_model, "alignment_heads", None)) is not None:
+        mlx_model.set_alignment_heads(alignment_heads.indices().T.numpy())
+
     return mlx_model
 
 
