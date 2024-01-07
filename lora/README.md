@@ -1,8 +1,9 @@
 # Fine-Tuning with LoRA or QLoRA
 
-This is an example of using MLX to fine-tune either a Llama 7B[^llama] or a
-Mistral 7B[^mistral] model with low rank adaptation (LoRA)[^lora] for a target
-task. The example also supports quantized LoRA (QLoRA).[^qlora]
+This is an example of using MLX to fine-tune an LLM with low rank adaptation
+(LoRA) for a target task.[^lora] The example also supports quantized LoRA
+(QLoRA).[^qlora] The example works with Llama and Mistral style
+models available on Hugging Face.
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
 generate SQL queries from natural language. However, the example is intended to
@@ -11,6 +12,7 @@ be general should you wish to use a custom dataset.
 ## Contents
 
 * [Setup](#Setup)
+  * [Convert](#convert)
 * [Run](#Run)
   * [Fine-tune](#Fine-tune)
   * [Evaluate](#Evaluate)
@@ -28,27 +30,37 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Next, download and convert the model. The Mistral weights can be downloaded with:
+### Convert
+
+This step is optional if you want to quantize (for QLoRA) or change the default data type
+of a pre-existing model.
+
+You convert models using the `convert.py` script. This script takes a Hugging
+Face repo as input and outputs a model directory (which you can optionally also
+upload to Hugging Face).
+
+To make a 4-bit quantized model, run:
 
 ```
-curl -O https://files.mistral-7b-v0-1.mistral.ai/mistral-7B-v0.1.tar
-tar -xf mistral-7B-v0.1.tar
+python convert.py --hf-path <hf_repo> -q
 ```
 
-If you do not have access to the Llama weights you will need to [request
-access](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
-from Meta.
-
-Convert the model with:
+For exampe the following will make a 4-bit quantized Mistral 7B and by default
+store it in `mlx_model` 
 
 ```
-python convert.py \
-    --torch-path <path_to_torch_model> \
-    --mlx-path <path_to_mlx_model>
+python convert.py --hf-path mistralai/Mistral-7B-v0.1 -q
 ```
 
-If you wish to use QLoRA, then convert the model with 4-bit quantization using
-the `-q` option.
+For more options run:
+
+```
+python convert.py --help
+```
+
+You can upload new models to the [Hugging Face MLX
+Community](https://huggingface.co/mlx-community) by specifying `--upload-name``
+to `convert.py`.
 
 ## Run
 
@@ -57,6 +69,9 @@ The main script is `lora.py`. To see a full list of options run
 ```
 python lora.py --help
 ```
+
+Note, in the following the `--model` argument can be any compatable Hugging
+Face repo or a local path to a converted mdoel. 
 
 ### Fine-tune
 
@@ -71,8 +86,7 @@ python lora.py --model <path_to_model> \
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
-Note, the model path should have the MLX weights, the tokenizer, and the
-`config.json` which will all be output by the `convert.py` script.
+## TODO what should model be
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
 the output location with `--adapter-file`.
@@ -175,6 +189,4 @@ The above command on an M1 Max with 32 GB runs at about 250 tokens-per-second.
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
-[^llama]: Refer to the [arXiv paper](https://arxiv.org/abs/2302.13971) and [blog post](https://ai.meta.com/blog/large-language-model-llama-meta-ai/) for more details.
-[^mistral]: Refer to the [blog post](https://mistral.ai/news/announcing-mistral-7b/) and [github repository](https://github.com/mistralai/mistral-src) for more details.
 [^wikisql]: Refer to the [GitHub repo](https://github.com/salesforce/WikiSQL/tree/master) for more information about WikiSQL.
