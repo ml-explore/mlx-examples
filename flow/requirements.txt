@@ -1,0 +1,5 @@
+mlx
+numpy
+tqdm
+scikit-learn
+matplotlib
