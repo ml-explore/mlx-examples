@@ -156,11 +156,10 @@ python fuse.py --help
 ```
 
 To upload a fused model, supply the `--upload-name` and `--hf-path` arguments
-to `fuse.py`. The latter is the repo name of the original model which is
+to `fuse.py`. The latter is the repo name of the original model, which is
 useful for the sake of attribution and model versioning.
 
-For example to fuse and upload a model derived from Mistral-7B-v0.1, you can
-run:
+For example, to fuse and upload a model derived from Mistral-7B-v0.1, run: 
 
 ```
 python fuse.py --upload My-4-bit-model --hf-repo mistralai/Mistral-7B-v0.1
