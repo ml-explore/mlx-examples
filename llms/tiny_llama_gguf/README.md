@@ -13,18 +13,15 @@ pip install -r requirements.txt
 Next, download the model.
 
 ```bash
-mkdir -p models/tiny_llama
+mkdir -p models/
 wget https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q6_K.gguf \
-  -O models/tiny_llama/model.gguf
-# TODO: gguf should be sufficient
-wget https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0/resolve/main/tokenizer.model \
-  -O models/tiny_llama/tokenizer.model
+  -P models/
 ```
 
 ### Run
 
 ```bash
-python llama.py --prompt "hello"
+python llama.py --model models/tinyllama-1.1b-chat-v1.0.Q6_K.gguf --prompt "hello"
 ```
 
 Run `python llama.py --help` for more details.

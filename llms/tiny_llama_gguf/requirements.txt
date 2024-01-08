@@ -2,4 +2,4 @@
 # mlx>=0.0.6
 gguf
 numpy
-sentencepiece
+tokenizers
