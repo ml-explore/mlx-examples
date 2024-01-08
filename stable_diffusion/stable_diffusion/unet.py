@@ -308,7 +308,8 @@ class UNetModel(nn.Module):
                 resnet_groups=config.norm_num_groups,
                 add_downsample=(i < len(config.block_out_channels) - 1),
                 add_upsample=False,
-                add_cross_attention=(i < len(config.block_out_channels) - 1),
+                add_cross_attention=config.down_block_types[i]
+                == "CrossAttnDownBlock2D",
             )
             for i, (in_channels, out_channels) in enumerate(
                 zip(block_channels, block_channels[1:])
@@ -357,7 +358,9 @@ class UNetModel(nn.Module):
                 resnet_groups=config.norm_num_groups,
                 add_downsample=False,
                 add_upsample=(i > 0),
-                add_cross_attention=(i < len(config.block_out_channels) - 1),
+                # add_cross_attention=(i < len(config.block_out_channels) - 1),
+                add_cross_attention=list(reversed(config.up_block_types))[i]
+                == "CrossAttnUpBlock2D",
             )
             for i, (in_channels, out_channels, prev_out_channels) in reversed(
                 list(

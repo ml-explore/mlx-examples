@@ -6,7 +6,7 @@ import mlx.core as mx
 from PIL import Image
 from tqdm import tqdm
 
-from stable_diffusion import StableDiffusion
+from stable_diffusion import StableDiffusion, StableDiffusionXL
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -22,7 +22,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="out.png")
     args = parser.parse_args()
 
-    sd = StableDiffusion()
+    sd = StableDiffusionXL("stabilityai/stable-diffusion-xl-base-1.0")
+    # sd = StableDiffusion()
 
     # Generate the latent vectors using diffusion
     latents = sd.generate_latents(
