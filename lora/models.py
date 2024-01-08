@@ -90,13 +90,57 @@ class LoRALinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
+    def to_linear(self):
+        linear = self.linear
+        bias = "bias" in linear
+        weight = linear.weight
+        is_quantized = isinstance(linear, nn.QuantizedLinear)
+
+        # Use the same type as the linear weight if not quantized
+        dtype = weight.dtype
+
+        if is_quantized:
+            dtype = mx.float16
+            weight = mx.dequantize(
+                weight,
+                linear.scales,
+                linear.biases,
+                linear.group_size,
+                linear.bits,
+            )
+        output_dims, input_dims = weight.shape
+        fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
+
+        lora_b = (self.scale * self.lora_b.T).astype(dtype)
+        lora_a = self.lora_a.T.astype(dtype)
+        fused_linear.weight = weight + lora_b @ lora_a
+        if bias:
+            fused_linear.bias = linear.bias
+
+        if is_quantized:
+            fused_linear = nn.QuantizedLinear.from_linear(
+                fused_linear,
+                linear.group_size,
+                linear.bits,
+            )
+
+        return fused_linear
+
     def __init__(
-        self, input_dims: int, output_dims: int, lora_rank: int = 8, bias: bool = False
+        self,
+        input_dims: int,
+        output_dims: int,
+        lora_rank: int = 8,
+        bias: bool = False,
+        scale: float = 20.0,
     ):
         super().__init__()
 
         # Regular linear layer weights
         self.linear = nn.Linear(input_dims, output_dims, bias=bias)
+
+        # Scale for low-rank update
+        self.scale = scale
 
         # Low rank lora weights
         scale = 1 / math.sqrt(input_dims)
@@ -113,7 +157,7 @@ class LoRALinear(nn.Module):
             dtype = self.linear.scales.dtype
         y = self.linear(x.astype(dtype))
         z = (x @ self.lora_a) @ self.lora_b
-        return y + 2.0 * z
+        return y + self.scale * z
 
 
 class RMSNorm(nn.Module):
@@ -315,7 +359,7 @@ def load(path_or_hf_repo: str):
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    return model, Tokenizer(model_path)
+    return model, Tokenizer(model_path), config
 
 
 def generate(prompt: mx.array, model: Model, temp: float = 0.0):

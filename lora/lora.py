@@ -295,11 +295,11 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model, tokenizer = models.load(args.model)
+    model, tokenizer, _ = models.load(args.model)
 
     # Freeze all layers other than LORA linears
     model.freeze()
-    for l in model.model.layers[-args.lora_layers :]:
+    for l in model.model.layers[len(model.model.layers) - args.lora_layers :]:
         l.self_attn.q_proj = models.LoRALinear.from_linear(l.self_attn.q_proj)
         l.self_attn.v_proj = models.LoRALinear.from_linear(l.self_attn.v_proj)
 

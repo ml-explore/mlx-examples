@@ -18,6 +18,7 @@ be general should you wish to use a custom dataset.
   * [Evaluate](#Evaluate)
   * [Generate](#Generate)
 * [Results](#Results)
+* [Fuse and Upload](#Fuse-and-Upload)
 * [Custom Data](#Custom-Data)
 * [Memory Issues](#Memory-Issues)
 
@@ -132,6 +133,38 @@ training and validation loss at a few points over the course of training.
 | 1000      |    1.070   |      1.230      |
 
 The model trains at around 475 tokens per second on an M2 Ultra.
+
+## Fuse and Upload
+
+You can generate a fused model with the low-rank adapters included using the
+`fuse.py` script. This script also optionally allows you to upload the fused
+model to the [Hugging Face MLX
+Community](https://huggingface.co/mlx-community).
+
+To generate the fused model run:
+
+```
+python fuse.py
+```
+
+This will by default load the base model from `mlx_model/`, the adapters from
+`adapters.npz`,  and save the fused model in the path `lora_fused_model/`. All
+of these are configurable. You can see the list of options with:
+
+```
+python fuse.py --help
+```
+
+To upload a fused model, supply the `--upload-name` and `--hf-path` arguments
+to `fuse.py`. The latter is the repo name of the original model which is
+useful for the sake of attribution and model versioning.
+
+For example to fuse and upload a model derived from Mistral-7B-v0.1, you can
+run:
+
+```
+python fuse.py --upload My-4-bit-model --hf-repo mistralai/Mistral-7B-v0.1
+```
 
 ## Custom Data
 
