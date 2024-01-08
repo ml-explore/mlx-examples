@@ -28,8 +28,6 @@ def quantize(weights, config, args):
         model,
         args.q_group_size,
         args.q_bits,
-        linear_class_predicate=lambda m: isinstance(m, nn.Linear)
-        and m.weight.shape[0] != config["vocab_size"],
     )
 
     # Update the config:

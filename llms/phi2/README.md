@@ -7,62 +7,51 @@ GPT-4 outputs and clean web text.
 Phi-2 efficiently runs on Apple silicon devices with 8GB of memory in 16-bit
 precision.
 
-## Setup
+### Setup
 
-Download and convert the model:
-
-```sh
-python convert.py
-```
-
-To generate a 4-bit quantized model use the `-q` flag:
+Install the dependencies:
 
 ```
-python convert.py -q
+pip install -r requirements.txt
 ```
 
-By default, the conversion script will make the directory `mlx_model` and save
-the converted `weights.npz`, and `config.json` there.
-
-> [!TIP] Alternatively, you can also download a few converted checkpoints from
-> the [MLX Community](https://huggingface.co/mlx-community) organization on
-> Hugging Face and skip the conversion step.
-
-
-## Generate
-
-To generate text with the default prompt:
-
-```sh
-python phi2.py
+### Run
 ```
-
-Should give the output:
+python generate.py --model <model_path> --prompt "hello"
+```
+For example:
 
 ```
-Answer: Mathematics is like a lighthouse that guides us through the darkness of
-uncertainty. Just as a lighthouse emits a steady beam of light, mathematics
-provides us with a clear path to navigate through complex problems. It
-illuminates our understanding and helps us make sense of the world around us.
+python generate.py --model microsoft/phi-2 --prompt "hello"
+```
+The `<model_path>` should be either a path to a local directory or a Hugging
+Face repo with weights stored in `safetensors` format. If you use a repo from
+the Hugging Face Hub, then the model will be downloaded and cached the first
+time you run it. 
 
-Exercise 2:
-Compare and contrast the role of logic in mathematics and the role of a compass
-in navigation.
+Run `python generate.py --help` to see all the options.
 
-Answer: Logic in mathematics is like a compass in navigation. It helps
+### Convert new models 
+
+You can convert (change the data type or quantize) models using the
+`convert.py` script. This script takes a Hugging Face repo as input and outputs
+a model directory (which you can optionally also upload to Hugging Face).
+
+For example, to make 4-bit quantized a model, run:
+
+```
+python convert.py --hf-path <hf_repo> -q
 ```
 
-To use your own prompt:
+For more options run:
 
-```sh
-python phi2.py --prompt <your prompt here> --max-tokens <max_tokens_to_generate>
+```
+python convert.py --help
 ```
 
-To see a list of options run:
-
-```sh
-python phi2.py --help
-```
+You can upload new models to the [Hugging Face MLX
+Community](https://huggingface.co/mlx-community) by specifying `--upload-name``
+to `convert.py`.
 
 [^1]: For more details on the model see the [blog post](
 https://www.microsoft.com/en-us/research/blog/phi-2-the-surprising-power-of-small-language-models/)

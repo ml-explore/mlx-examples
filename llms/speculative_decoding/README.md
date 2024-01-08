@@ -51,12 +51,12 @@ are trained on similar data.
 One way to increase the chance of accepting a draft token is with the parameter
 `--delta`. This parameter can be in the range $[0, 1]$. If it is $1$ then all
 the draft tokens will be accepted by the model. If it is $0$, then only draft
-tokens which match the original acceptance criterion are kept.[^1] Values
+tokens that match the original acceptance criterion are kept.[^1] Values
 closer to $1$ increase the chance that a draft token is accepted.
 
 Conversely, the fewer draft tokens accepted by the main model, the more
 expensive speculative decoding is. You can use `--num-draft` to tune the number
-of draft tokens per model evaluation in order to reduce the number of discarded
+of draft tokens per model evaluation to reduce the number of discarded
 draft tokens. Decreasing `--num-draft` will decrease the number of discarded
 draft tokens at the expense of more large model evaluations.
 
