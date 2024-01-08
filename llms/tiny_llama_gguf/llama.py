@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
+
 import numpy as np
 import mlx.core as mx
 import mlx.nn as nn
 from gguf.gguf_reader import GGUFReader
 from mlx.utils import tree_flatten, tree_unflatten
-from sentencepiece import SentencePieceProcessor
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
 
 
 @dataclass
@@ -254,62 +256,6 @@ def generate(args):
     print(full_gen)
 
 
-def few_shot_generate(args):
-    def possible_end(s):
-        word = "[Instruction]"
-        for i in range(len(word) - 1, 0, -1):
-            if s[-i:] == word[:i]:
-                return 0
-        if s[-len(word) :] == word:
-            return 1
-        return -1
-
-    def generate(question):
-        x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(question)])
-        skip = 0
-        prompt_processing = None
-        tokens = []
-        start = tic()
-        for token in model.generate(x, args.temp):
-            tokens.append(token)
-
-            if len(tokens) == 1:
-                # Actually perform the computation to measure the prompt processing time
-                mx.eval(token)
-                prompt_processing = toc("Prompt processing", start)
-
-            if len(tokens) >= args.max_tokens:
-                break
-
-            mx.eval(tokens)
-            token_list = [t.item() for t in tokens]
-            s = tokenizer.decode(token_list)
-
-            end = possible_end(s)
-            if end == 0:
-                continue
-            if end == 1:
-                skip = len(s)
-                break
-
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
-            if token_list[-1] == tokenizer.eos_id():
-                break
-
-        mx.eval(tokens)
-        full_gen = toc("Full generation", start)
-        s = tokenizer.decode([t.item() for t in tokens])
-        print(s[skip:], end="", flush=True)
-
-    print("[INFO] Loading few-shot examples from: {}".format(args.few_shot))
-    prompt = open(args.few_shot).read().strip()
-    while True:
-        question = input("Ask a question: ")
-        generate(prompt.replace("{}", question))
-        print()
-
-
 def get_field(gguf_reader: GGUFReader, key: str):
     f = gguf_reader.get_field(key)
     if f is None:
@@ -327,6 +273,11 @@ def get_field(gguf_reader: GGUFReader, key: str):
     return value
 
 
+def get_string_array_field(gguf_reader: GGUFReader, key: str):
+    f = gguf_reader.get_field(key)
+    return [bytes(f.parts[d]).decode("utf-8") for d in f.data]
+
+
 def get_config(gguf_reader: GGUFReader, weights: dict[str, mx.array]):
     output = {}
     output["dim"] = get_field(gguf_reader, "llama.embedding_length")
@@ -342,6 +293,38 @@ def get_config(gguf_reader: GGUFReader, weights: dict[str, mx.array]):
     output["rope_theta"] = get_field(gguf_reader, "llama.rope.freq_base")
     output["rope_traditional"] = True
     return output
+
+
+class GGUFTokenizer:
+    @staticmethod
+    def parse_token(token):
+        if len(token) == 6 and token.startswith("<0x") and token.endswith(">"):
+            return chr(int(token[3:5], 16))
+        return token
+
+    def __init__(self, gguf_reader):
+        # TODO: do we need scores and token type?
+        # tokenizer.ggml.scores: [array] [0.000000, 0.000000, 0.000000, ..
+        # tokenizer.ggml.token_type: [array] [2, 3, 3, 6, ...
+        tokens = get_string_array_field(gguf_reader, "tokenizer.ggml.tokens")
+        vocab = {GGUFTokenizer.parse_token(t): i for i, t in enumerate(tokens)}
+        merges = get_string_array_field(gguf_reader, "tokenizer.ggml.merges")
+        merges = [tuple(m.split(" ")) for m in merges]
+        model = BPE(vocab, merges, byte_fallback=True)
+        self._tokenizer = Tokenizer(model)
+        self._bos_token_id = get_field(gguf_reader, "bos_token_id")
+        self._eos_token_id = get_field(gguf_reader, "eos_token_id")
+        self._unknown_token_id = get_field(gguf_reader, "unknown_token_id")
+        self._padding_token_id = get_field(gguf_reader, "padding_token_id")
+
+    def bos_id(self):
+        return self._bos_token_id
+
+    def encode(self, input):
+        return self._tokenizer.encode("▁" + input.replace(" ", "▁")).ids
+
+    def decode(self, input):
+        return self._tokenizer.decode(input).replace(" ", "").replace("▁", " ")
 
 
 def translate_weight_names(name):
@@ -380,23 +363,7 @@ def validate_weights(weights, model):
             print("Loading shape: ", weights_to_load_dict[key].shape)
 
 
-def get_tokenizer(tokenizer_path):
-    # TODO: should load from gguf metadata
-    # tokenizer.ggml.tokens: [array] [<unk>, <s>, </s>, <0x00>, <0x01>, ...
-    # tokenizer.ggml.scores: [array] [0.000000, 0.000000, 0.000000, ..
-    # tokenizer.ggml.token_type: [array] [2, 3, 3, 6, ...
-    # tokenizer.ggml.merges: [array] [▁ t, e r, i n, ▁ a, e n, o n, ▁t h, ...
-    # tokenizer.ggml.bos_token_id: [uint32] 1
-    # tokenizer.ggml.eos_token_id: [uint32] 2
-    # tokenizer.ggml.unknown_token_id: [uint32] 0
-    # tokenizer.ggml.padding_token_id: [uint32] 2
-    tokenizer = SentencePieceProcessor(model_file=tokenizer_path)
-    return tokenizer
-
-
-def load_model(model_path):
-    model_path = Path(model_path)
-    gguf_path = model_path / "model.gguf"
+def load_model(gguf_path):
     print("[INFO] Loading model from {}.".format(gguf_path))
     weights = mx.load(str(gguf_path))
     weights = {translate_weight_names(k): v for k, v in weights.items()}
@@ -404,11 +371,10 @@ def load_model(model_path):
     reader = GGUFReader(str(gguf_path))
     config = get_config(reader, weights)
     model = Llama(ModelArgs(**config))
-
     validate_weights(weights, model)
     model.update(tree_unflatten(list(weights.items())))
 
-    tokenizer = get_tokenizer(str(model_path / "tokenizer.model"))
+    tokenizer = GGUFTokenizer(reader)
     return model, tokenizer
 
 
@@ -416,17 +382,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Llama inference script")
     parser.add_argument(
         "--model-path",
-        help="Path to the model weights and tokenizer",
-        default="models/tiny_llama",
+        help="Path to the gguf file",
     )
     parser.add_argument(
         "--prompt",
         help="The message to be processed by the model. Ignored when --few-shot is provided.",
-        default="In the beginning the Universe was created.",
-    )
-    parser.add_argument(
-        "--few-shot",
-        help="Read a few shot prompt from a file (as in `sample_prompt.txt`).",
+        default="""<|system|>
+You are a helpful assistant</s>
+<|user|>
+Can you describe the taste of an Apple?</s>
+<|assistant|>""",
     )
     parser.add_argument(
         "--max-tokens", "-m", type=int, default=100, help="How many tokens to generate"
@@ -444,7 +409,4 @@ if __name__ == "__main__":
     mx.random.seed(args.seed)
 
     model, tokenizer = load_model(args.model_path)
-    if args.few_shot:
-        few_shot_generate(args)
-    else:
-        generate(args)
+    generate(args)
