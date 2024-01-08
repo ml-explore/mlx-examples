@@ -142,6 +142,7 @@ class Embd(nn.Module):
 
 class OutputHead(nn.Module):
     def __init__(self, config: ModelArgs) -> None:
+        super().__init__()
         self.ln = LayerNorm(config.model_dim)
         self.linear = nn.Linear(config.model_dim, config.num_vocab)
 
@@ -151,6 +152,7 @@ class OutputHead(nn.Module):
 
 class Model(nn.Module):
     def __init__(self, config: ModelArgs):
+        super().__init__()
         self.transformer = TransformerDecoder(config)
         self.lm_head = OutputHead(config)
 
