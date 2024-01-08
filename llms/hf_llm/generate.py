@@ -39,7 +39,6 @@ def generate(
             tic = time.time()
 
         tokens.append(token.item())
-        # if (n + 1) % 10 == 0:
         s = tokenizer.decode(tokens)
         print(s[skip:], end="", flush=True)
         skip = len(s)

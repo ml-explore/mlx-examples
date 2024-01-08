@@ -10,7 +10,6 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_unflatten
 from transformers import AutoTokenizer
 
 
@@ -250,9 +249,7 @@ def load(path_or_hf_repo: str):
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     return model, tokenizer
 
 
