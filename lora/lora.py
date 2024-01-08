@@ -5,13 +5,13 @@ import json
 import math
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
-from mlx.utils import tree_flatten, tree_map, tree_unflatten
+from mlx.utils import tree_flatten, tree_unflatten
 from models import LoRALinear, Model, ModelArgs
 from sentencepiece import SentencePieceProcessor
 
@@ -339,9 +339,6 @@ def load_model(folder: str):
         model_args = ModelArgs(**config)
     model = Model(model_args)
     if quantization is not None:
-        quantization["linear_class_predicate"] = lambda m: isinstance(
-            m, nn.Linear
-        ) and (m.weight.shape[0] != model_args.vocab_size)
         nn.QuantizedLinear.quantize_module(model, **quantization)
 
     weights = mx.load(str(model_path / "weights.npz"))

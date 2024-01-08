@@ -1,15 +1,13 @@
 # Copyright © 2023 Apple Inc.
 
 import itertools
-import subprocess
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
+import mlx.core as mx
 import numba
 import numpy as np
-import torch
-import torch.nn.functional as F
+from scipy import signal
 
 from .audio import HOP_LENGTH, SAMPLE_RATE, TOKENS_PER_SECOND
 from .tokenizer import Tokenizer
@@ -18,7 +16,7 @@ if TYPE_CHECKING:
     from .model import Whisper
 
 
-def median_filter(x: torch.Tensor, filter_width: int):
+def median_filter(x: np.ndarray, filter_width: int):
     """Apply a median filter of width `filter_width` along the last dimension of `x`"""
     pad_width = filter_width // 2
     if x.shape[-1] <= pad_width:
@@ -33,22 +31,12 @@ def median_filter(x: torch.Tensor, filter_width: int):
         filter_width > 0 and filter_width % 2 == 1
     ), "`filter_width` should be an odd number"
 
-    result = None
-    x = F.pad(x, (filter_width // 2, filter_width // 2, 0, 0), mode="reflect")
-    if x.is_cuda:
-        try:
-            from .triton_ops import median_filter_cuda
+    x = np.pad(x, ((0, 0), (0, 0), (pad_width, pad_width)), mode="reflect")
 
-            result = median_filter_cuda(x, filter_width)
-        except (RuntimeError, subprocess.CalledProcessError):
-            warnings.warn(
-                "Failed to launch Triton kernels, likely due to missing CUDA toolkit; "
-                "falling back to a slower median kernel implementation..."
-            )
-
-    if result is None:
-        # sort() is faster than torch.median (https://github.com/pytorch/pytorch/issues/51450)
-        result = x.unfold(-1, filter_width, 1).sort()[0][..., filter_width // 2]
+    # todo: more efficient version in mlx
+    result = signal.medfilt(x.astype(np.float32), kernel_size=(1, 1, filter_width))[
+        ..., pad_width:-pad_width
+    ]
 
     if ndim <= 2:
         result = result[0, 0]
@@ -107,50 +95,9 @@ def dtw_cpu(x: np.ndarray):
     return backtrace(trace)
 
 
-def dtw_cuda(x, BLOCK_SIZE=1024):
-    from .triton_ops import dtw_kernel
-
-    M, N = x.shape
-    assert M < BLOCK_SIZE, f"M should be smaller than {BLOCK_SIZE=}"
-
-    x_skew = (
-        F.pad(x, (0, M + 1), value=np.inf).flatten()[: M * (N + M)].reshape(M, N + M)
-    )
-    x_skew = x_skew.T.contiguous()
-    cost = torch.ones(N + M + 2, M + 2) * np.inf
-    cost[0, 0] = 0
-    cost = cost.cuda()
-    trace = torch.zeros_like(cost, dtype=torch.int32)
-
-    dtw_kernel[(1,)](
-        cost,
-        trace,
-        x_skew,
-        x_skew.stride(0),
-        cost.stride(0),
-        trace.stride(0),
-        N,
-        M,
-        BLOCK_SIZE=BLOCK_SIZE,
-    )
-
-    trace = trace.T.flatten()[: (M + 1) * (M + N + 3)].reshape(M + 1, M + N + 3)[
-        :, : N + 1
-    ]
-    return backtrace(trace.cpu().numpy())
-
-
-def dtw(x: torch.Tensor) -> np.ndarray:
-    if x.is_cuda:
-        try:
-            return dtw_cuda(x)
-        except (RuntimeError, subprocess.CalledProcessError):
-            warnings.warn(
-                "Failed to launch Triton kernels, likely due to missing CUDA toolkit; "
-                "falling back to a slower DTW implementation..."
-            )
-
-    return dtw_cpu(x.double().cpu().numpy())
+def dtw(x: np.ndarray) -> np.ndarray:
+    # todo: more efficient version in mlx
+    return dtw_cpu(x)
 
 
 @dataclass
@@ -166,7 +113,7 @@ def find_alignment(
     model: "Whisper",
     tokenizer: Tokenizer,
     text_tokens: List[int],
-    mel: torch.Tensor,
+    mel: mx.array,
     num_frames: int,
     *,
     medfilt_width: int = 7,
@@ -175,41 +122,36 @@ def find_alignment(
     if len(text_tokens) == 0:
         return []
 
-    tokens = torch.tensor(
+    tokens = mx.array(
         [
             *tokenizer.sot_sequence,
             tokenizer.no_timestamps,
             *text_tokens,
             tokenizer.eot,
         ]
-    ).to(model.device)
+    )
 
-    # install hooks on the cross attention layers to retrieve the attention weights
-    QKs = [None] * model.dims.n_text_layer
-    hooks = [
-        block.cross_attn.register_forward_hook(
-            lambda _, ins, outs, index=i: QKs.__setitem__(index, outs[-1][0])
-        )
-        for i, block in enumerate(model.decoder.blocks)
-    ]
-
-    with torch.no_grad():
-        logits = model(mel.unsqueeze(0), tokens.unsqueeze(0))[0]
-        sampled_logits = logits[len(tokenizer.sot_sequence) :, : tokenizer.eot]
-        token_probs = sampled_logits.softmax(dim=-1)
-        text_token_probs = token_probs[np.arange(len(text_tokens)), text_tokens]
-        text_token_probs = text_token_probs.tolist()
-
-    for hook in hooks:
-        hook.remove()
+    logits, cross_qk = model.forward_with_cross_qk(mel[None, :], tokens[None, :])
+    # consider only the logits associated with predicting text
+    sampled_logits = logits[0][len(tokenizer.sot_sequence) : -2, : tokenizer.eot]
+    token_probs = mx.softmax(sampled_logits.astype(mx.float32), axis=-1).astype(
+        sampled_logits.dtype
+    )
+    text_token_probs = mx.take_along_axis(
+        token_probs, mx.array(text_tokens)[:, None], axis=1
+    ).squeeze(1)
+    text_token_probs = np.array(text_token_probs)
 
     # heads * tokens * frames
-    weights = torch.stack([QKs[_l][_h] for _l, _h in model.alignment_heads.indices().T])
+    weights = mx.stack(
+        [cross_qk[_l.item()][0, _h.item()] for _l, _h in model.alignment_heads]
+    )
     weights = weights[:, :, : num_frames // 2]
-    weights = (weights * qk_scale).softmax(dim=-1)
-    std, mean = torch.std_mean(weights, dim=-2, keepdim=True, unbiased=False)
+    weights = mx.softmax(weights * qk_scale, axis=-1)
+    mean = mx.mean(weights, axis=-2, keepdims=True)
+    std = mx.var(weights, axis=-2, keepdims=True, ddof=0).sqrt()
     weights = (weights - mean) / std
-    weights = median_filter(weights, medfilt_width)
+    weights = median_filter(np.array(weights), medfilt_width)
 
     matrix = weights.mean(axis=0)
     matrix = matrix[len(tokenizer.sot_sequence) : -1]
@@ -281,7 +223,7 @@ def add_word_timestamps(
     segments: List[dict],
     model: "Whisper",
     tokenizer: Tokenizer,
-    mel: torch.Tensor,
+    mel: mx.array,
     num_frames: int,
     prepend_punctuations: str = "\"'“¿([{-",
     append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
@@ -301,6 +243,7 @@ def add_word_timestamps(
     word_durations = np.array([t.end - t.start for t in alignment])
     word_durations = word_durations[word_durations.nonzero()]
     median_duration = np.median(word_durations) if len(word_durations) > 0 else 0.0
+    median_duration = min(0.7, float(median_duration))
     max_duration = median_duration * 2
 
     # hack: truncate long words at sentence boundaries.

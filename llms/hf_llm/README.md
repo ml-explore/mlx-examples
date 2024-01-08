@@ -1,6 +1,6 @@
 ## Generate Text with MLX and :hugs: Hugging Face
 
-This an example large language model text generation that can pull models from
+This an example of large language model text generation that can pull models from
 the Hugging Face Hub.
 
 ### Setup
@@ -40,11 +40,13 @@ model you want to run is not supported, file an
 [issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
 submit a pull request.
 
-Here are a few examples of Hugging Face models which work with this example:
+Here are a few examples of Hugging Face models that work with this example:
 
 - [mistralai/Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 - [meta-llama/Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf)
 - [TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T](https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T)
+- [deepseek-ai/deepseek-coder-6.7b-instruct](https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct)
+- [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending)

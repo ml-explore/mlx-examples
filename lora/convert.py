@@ -28,8 +28,6 @@ def quantize(weights, config, args):
         model,
         args.q_group_size,
         args.q_bits,
-        linear_class_predicate=lambda m: isinstance(m, nn.Linear)
-        and m.weight.shape[0] != config["vocab_size"],
     )
 
     # Update the config:
@@ -87,7 +85,7 @@ if __name__ == "__main__":
     # Copy the tokenizer
     tokenizer_path = torch_path / "tokenizer.model"
     if not tokenizer_path.exists():
-        print(f"Make sure there is a file tokenizer.model in {args.torch-path}")
+        print(f"Make sure there is a file tokenizer.model in {args.torch_path}")
         exit(0)
     shutil.copyfile(
         str(tokenizer_path),
