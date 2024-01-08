@@ -206,7 +206,7 @@ def torch_to_mlx(
     return mlx_model
 
 
-def upload_to_hub(path: str, name: str):
+def upload_to_hub(path: str, name: str, torch_name_or_path: str):
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
@@ -218,8 +218,8 @@ library_name: mlx
 ---
 
 # {name}
-This model was converted to MLX format from [`{hf_path}`]().
-Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+This model was converted to MLX format from [`{torch_name_or_path}`]().
+
 ## Use with mlx
 ```bash
 git clone https://github.com/ml-explore/mlx-examples.git
@@ -339,4 +339,4 @@ if __name__ == "__main__":
         json.dump(config, f, indent=4)
 
     if args.upload_name is not None:
-        upload_to_hub(mlx_path, args.upload_name,)
+        upload_to_hub(mlx_path, args.upload_name, args.torch_name_or_path)
