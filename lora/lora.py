@@ -339,9 +339,6 @@ def load_model(folder: str):
         model_args = ModelArgs(**config)
     model = Model(model_args)
     if quantization is not None:
-        quantization["linear_class_predicate"] = lambda m: isinstance(
-            m, nn.Linear
-        ) and (m.weight.shape[0] != model_args.vocab_size)
         nn.QuantizedLinear.quantize_module(model, **quantization)
 
     weights = mx.load(str(model_path / "weights.npz"))
