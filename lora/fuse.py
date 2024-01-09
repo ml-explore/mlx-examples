@@ -66,6 +66,10 @@ if __name__ == "__main__":
 
     model.update_modules(tree_unflatten(fused_linears))
     weights = dict(tree_flatten(model.parameters()))
+
+    if quantization := config.get("quantization", None):
+        config.pop("quantization")
+
     utils.save_model(args.save_path, weights, tokenizer._tokenizer, config)
 
     if args.upload_name is not None:
