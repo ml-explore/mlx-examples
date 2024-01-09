@@ -33,8 +33,8 @@ pip install -r requirements.txt
 
 ### Convert
 
-This step is optional if you want to quantize (for QLoRA) or change the default data type
-of a pre-existing model.
+This step is optional if you want to quantize (for QLoRA) or change the default
+data type of a pre-existing model.
 
 You convert models using the `convert.py` script. This script takes a Hugging
 Face repo as input and outputs a model directory (which you can optionally also

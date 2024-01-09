@@ -90,4 +90,4 @@ if __name__ == "__main__":
 
     utils.save_model(args.mlx_path, weights, tokenizer, config)
     if args.upload_name is not None:
-        utils.upload_to_hub(mlx_path, args.upload_name, args.hf_path)
+        utils.upload_to_hub(args.mlx_path, args.upload_name, args.hf_path)

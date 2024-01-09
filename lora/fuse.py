@@ -1,6 +1,7 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
+from pathlib import Path
 
 import mlx.core as mx
 import models
@@ -12,7 +13,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         default="mlx_model",
-        help="The path to the local model directory.",
+        help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
         "--save-path",
@@ -23,11 +24,14 @@ if __name__ == "__main__":
         "--adapter-file",
         type=str,
         default="adapters.npz",
-        help="Save/load path for the trained adapter weights.",
+        help="Path to the trained adapter weights (npz or safetensors).",
     )
     parser.add_argument(
         "--hf-path",
-        help="Path to the original Hugging Face model (required for upload).",
+        help=(
+            "Path to the original Hugging Face model. This is "
+            "required for upload if --model is a local directory."
+        ),
         type=str,
         default=None,
     )
@@ -63,7 +67,14 @@ if __name__ == "__main__":
     model.update_modules(tree_unflatten(fused_linears))
     weights = dict(tree_flatten(model.parameters()))
     utils.save_model(args.save_path, weights, tokenizer._tokenizer, config)
+
     if args.upload_name is not None:
-        if args.hf_path is None:
-            raise ValueError("Must provide original Hugging Face repo to upload model")
-        utils.upload_model(args.save_path, args.upload_name, args.hf_path)
+        hf_path = args.hf_path
+        if not Path(args.model).exists():
+            # If the model path doesn't exist, assume it's an HF repo
+            hf_path = args.model
+        elif hf_path is None:
+            raise ValueError(
+                "Must provide original Hugging Face repo to upload local model."
+            )
+        utils.upload_to_hub(args.save_path, args.upload_name, hf_path)
