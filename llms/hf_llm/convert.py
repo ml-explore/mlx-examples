@@ -33,6 +33,22 @@ def fetch_from_hub(hf_path: str):
     )
     return weights, config.to_dict(), tokenizer
 
+def fetch_from_local(local_path):
+    weight_files = glob.glob(f"{local_path}/*.safetensors") + glob.glob(f"{local_path}/*.bin")
+    if len(weight_files) == 0:
+        raise FileNotFoundError("No safetensors or bin files found in {}".format(local_path))
+
+    weights = {}
+    for wf in weight_files:
+        if wf.endswith(".safetensors"):
+            weights.update(mx.load(wf).items())
+        else:
+            weights[Path(wf).name] = mx.ndarray.load(wf)
+
+    config = transformers.AutoConfig.from_pretrained(local_path)  
+    tokenizer = transformers.AutoTokenizer.from_pretrained(local_path)
+
+    return weights, config.to_dict(), tokenizer
 
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
@@ -148,12 +164,24 @@ if __name__ == "__main__":
         help="The name of model to upload to Hugging Face MLX Community",
         type=str,
         default=None,
+    )    
+    parser.add_argument(
+    "-l",
+    "--local",
+    action="store_true",
+    help="Whether the hf-path points to a local filesystem.",
+    default=False
     )
 
     args = parser.parse_args()
 
     print("[INFO] Loading")
-    weights, config, tokenizer = fetch_from_hub(args.hf_path)
+    if args.local:
+        weights, config, tokenizer = fetch_from_local(args.hf_path)  
+    else:
+        weights, config, tokenizer = fetch_from_hub(args.hf_path)
+
+
 
     dtype = mx.float16 if args.quantize else getattr(mx, args.dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
@@ -170,5 +198,5 @@ if __name__ == "__main__":
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
-    if args.upload_name is not None:
+    if args.upload_name is not None and args.local is not False:
         upload_to_hub(mlx_path, args.upload_name, args.hf_path)
