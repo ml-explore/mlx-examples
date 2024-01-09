@@ -28,7 +28,7 @@ def mnist(batch_size, img_size, root=None):
         .batch(batch_size)
     )
 
-    # iterator over training set
+    # iterator over test set
     test_iter = (
         test.to_stream()
         .image_resize("image", h=img_size[0], w=img_size[1])
