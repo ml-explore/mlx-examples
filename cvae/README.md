@@ -56,7 +56,7 @@ usage: train.py [-h] [--cpu] [--seed SEED] [--batchsize BATCHSIZE] [--max_filter
 
 options:
   -h, --help            show this help message and exit
-  --cpu                 Use CPU instead of GPU (cuda/mps) acceleration
+  --cpu                 Use CPU instead of GPU acceleration
   --seed SEED           Random seed
   --batchsize BATCHSIZE
                         Batch size for training
@@ -101,7 +101,7 @@ usage: reconstruct.py [-h] [--cpu] --model MODEL [--rec_testdata] --latent_dims 
 
 options:
   -h, --help            show this help message and exit
-  --cpu                 Use CPU instead of GPU (cuda/mps) acceleration
+  --cpu                 Use CPU instead of GPU acceleration
   --model MODEL         Model filename *.pth
   --rec_testdata        Reconstruct test split instead of training split
   --latent_dims LATENT_DIMS
@@ -134,7 +134,7 @@ usage: generate.py [-h] [--cpu] [--seed SEED] --model MODEL --latent_dims LATENT
 
 options:
   -h, --help            show this help message and exit
-  --cpu                 Use CPU instead of GPU (cuda/mps) acceleration
+  --cpu                 Use CPU instead of GPU acceleration
   --seed SEED           Random seed
   --model MODEL         Model filename *.pth
   --latent_dims LATENT_DIMS
