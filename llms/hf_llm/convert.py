@@ -183,5 +183,5 @@ if __name__ == "__main__":
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
-    if args.upload_name is not None and args.local is not False:
+    if args.upload_name is not None and not args.local:
         upload_to_hub(mlx_path, args.upload_name, args.hf_path)
