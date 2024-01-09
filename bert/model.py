@@ -112,7 +112,7 @@ class Bert(nn.Module):
             dims=config.intermediate_size,
             num_heads=config.num_attention_heads,
         )
-        self.pooler = nn.Linear(config.intermediate_size, config.vocab_size)
+        self.pooler = nn.Linear(config.intermediate_size, config.intermediate_size)
 
     def __call__(
         self,
