@@ -14,7 +14,7 @@ Some more useful examples are listed below.
   [Mistral](llms/mistral), [Phi-2](llms/phi2), and more in the [LLMs](llms)
   directory.
 - A mixture-of-experts (MoE) language model with [Mixtral 8x7B](llms/mixtral).
-- Parameter efficient fine-tuning with [LoRA](lora).
+- Parameter efficient fine-tuning with [LoRA or QLoRA](lora).
 - Text-to-text multi-task Transformers with [T5](t5).
 - Bidirectional language understanding with [BERT](bert).
 
@@ -41,7 +41,7 @@ models](https://github.com/ml-explore/mlx-examples/issues/155).
 
 We are grateful for all of [our
 contributors](ACKNOWLEDGMENTS.md#Individual-Contributors). If you contribute
-to MLX Examples and wish to be acknowledged, please add your name to to the list in your
+to MLX Examples and wish to be acknowledged, please add your name to the list in your
 pull request.
 
 ## Citing MLX Examples

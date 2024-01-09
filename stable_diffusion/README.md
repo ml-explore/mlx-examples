@@ -61,6 +61,24 @@ script in the root of the repository. You can use the script as follows:
 
     python txt2image.py "A photo of an astronaut riding a horse on Mars." --n_images 4 --n_rows 2
 
+Image 2 Image
+-------------
+
+There is also the option of generating images based on another image using the
+example script `image2image.py`. To do that an image is first encoded using the
+autoencoder to get its latent representation and then noise is added according
+to the forward diffusion process and the `strength` parameter. A `stregnth` of
+0.0 means no noise and a `strength` of 1.0 means starting from completely
+random noise.
+
+![image2image](im2im.png)    
+*Generations with varying strength using the original image and the prompt 'A lit fireplace'.*
+
+The command to generate the above images is:
+
+    python image2image.py --strength 0.5 original.png 'A lit fireplace'
+
+
 Performance
 -----------
 

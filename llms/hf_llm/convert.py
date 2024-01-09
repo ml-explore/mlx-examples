@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 import argparse
 import copy
 import glob
@@ -9,7 +11,7 @@ import mlx.nn as nn
 import transformers
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
-from phi2 import Model, ModelArgs
+from models import Model, ModelArgs
 
 
 def fetch_from_hub(hf_path: str):
@@ -25,7 +27,7 @@ def fetch_from_hub(hf_path: str):
     for wf in weight_files:
         weights.update(mx.load(wf).items())
 
-    config = transformers.AutoConfig.from_pretrained(hf_path, trust_remote_code=True)
+    config = transformers.AutoConfig.from_pretrained(hf_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         hf_path,
     )

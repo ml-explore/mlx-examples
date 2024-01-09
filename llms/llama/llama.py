@@ -1,9 +1,9 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
+import glob
 import json
 import time
-import glob
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple

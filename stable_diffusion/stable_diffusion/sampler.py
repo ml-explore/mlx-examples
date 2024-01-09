@@ -49,17 +49,28 @@ class SimpleEulerSampler:
             [mx.zeros(1), ((1 - alphas_cumprod) / alphas_cumprod).sqrt()]
         )
 
+    @property
+    def max_time(self):
+        return len(self._sigmas) - 1
+
     def sample_prior(self, shape, dtype=mx.float32, key=None):
         noise = mx.random.normal(shape, key=key)
         return (
             noise * self._sigmas[-1] * (self._sigmas[-1].square() + 1).rsqrt()
         ).astype(dtype)
 
+    def add_noise(self, x, t, key=None):
+        noise = mx.random.normal(x.shape, key=key)
+        s = self.sigmas(t)
+        return (x + noise * s) * (s.square() + 1).rsqrt()
+
     def sigmas(self, t):
         return _interp(self._sigmas, t)
 
-    def timesteps(self, num_steps: int, dtype=mx.float32):
-        steps = _linspace(len(self._sigmas) - 1, 0, num_steps + 1).astype(dtype)
+    def timesteps(self, num_steps: int, start_time=None, dtype=mx.float32):
+        start_time = start_time or (len(self._sigmas) - 1)
+        assert 0 < start_time <= (len(self._sigmas) - 1)
+        steps = _linspace(start_time, 0, num_steps + 1).astype(dtype)
         return list(zip(steps, steps[1:]))
 
     def step(self, eps_pred, x_t, t, t_prev):
