@@ -14,15 +14,20 @@ from mlx.utils import tree_flatten
 from models import Model, ModelArgs
 
 
-def fetch_from_hub(hf_path: str):
-    model_path = snapshot_download(
-        repo_id=hf_path,
-        allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
-    )
+def fetch_from_hub(hf_path: str,local:bool):
+    
+    if not local:
+        model_path = snapshot_download(
+            repo_id=hf_path,
+            allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+        )
+    else: 
+        model_path = hf_path
+
     weight_files = glob.glob(f"{model_path}/*.safetensors")
     if len(weight_files) == 0:
         raise FileNotFoundError("No safetensors found in {}".format(model_path))
-
+    
     weights = {}
     for wf in weight_files:
         weights.update(mx.load(wf).items())
@@ -31,23 +36,6 @@ def fetch_from_hub(hf_path: str):
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         hf_path,
     )
-    return weights, config.to_dict(), tokenizer
-
-def fetch_from_local(local_path):
-    weight_files = glob.glob(f"{local_path}/*.safetensors") + glob.glob(f"{local_path}/*.bin")
-    if len(weight_files) == 0:
-        raise FileNotFoundError("No safetensors or bin files found in {}".format(local_path))
-
-    weights = {}
-    for wf in weight_files:
-        if wf.endswith(".safetensors"):
-            weights.update(mx.load(wf).items())
-        else:
-            weights[Path(wf).name] = mx.ndarray.load(wf)
-
-    config = transformers.AutoConfig.from_pretrained(local_path)  
-    tokenizer = transformers.AutoTokenizer.from_pretrained(local_path)
-
     return weights, config.to_dict(), tokenizer
 
 def quantize(weights, config, args):
@@ -176,10 +164,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("[INFO] Loading")
-    if args.local:
-        weights, config, tokenizer = fetch_from_local(args.hf_path)  
-    else:
-        weights, config, tokenizer = fetch_from_hub(args.hf_path)
+    weights, config, tokenizer = fetch_from_hub(args.hf_path,args.local)
 
 
 
