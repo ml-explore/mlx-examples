@@ -141,7 +141,7 @@ class Inference:
             # only need to use the last token except in the first forward pass
             tokens = tokens[:, -1:]
 
-        logits, self.kv_cache = self.model.decoder(
+        logits, self.kv_cache, _ = self.model.decoder(
             tokens, audio_features, kv_cache=self.kv_cache
         )
         return logits.astype(mx.float32)

@@ -1,20 +1,65 @@
 # Copyright © 2023 Apple Inc.
 
+import json
 import os
 import subprocess
 import unittest
+from dataclasses import asdict
+from pathlib import Path
 
 import mlx.core as mx
 import numpy as np
 import torch
+from convert import load_torch_model, quantize, torch_to_mlx
+from mlx.utils import tree_flatten
 
 import whisper
 import whisper.audio as audio
 import whisper.decoding as decoding
 import whisper.load_models as load_models
-import whisper.torch_whisper as torch_whisper
 
+MODEL_NAME = "tiny"
+MLX_FP32_MODEL_PATH = "mlx_models/tiny_fp32"
+MLX_FP16_MODEL_PATH = "mlx_models/tiny_fp16"
+MLX_4BITS_MODEL_PATH = "mlx_models/tiny_quantized_4bits"
 TEST_AUDIO = "whisper/assets/ls_test.flac"
+
+
+def _save_model(save_dir, weights, config):
+    mlx_path = Path(save_dir)
+    mlx_path.mkdir(parents=True, exist_ok=True)
+
+    # Save weights
+    np.savez(str(mlx_path / "weights.npz"), **weights)
+
+    # Save config.json with model_type
+    with open(str(mlx_path / "config.json"), "w") as f:
+        config["model_type"] = "whisper"
+        json.dump(config, f, indent=4)
+
+    config.pop("model_type", None)
+
+
+def load_torch_and_mlx():
+    torch_model = load_torch_model(MODEL_NAME)
+
+    fp32_model = torch_to_mlx(torch_model, dtype=mx.float32)
+    config = asdict(fp32_model.dims)
+    weights = dict(tree_flatten(fp32_model.parameters()))
+    _save_model(MLX_FP32_MODEL_PATH, weights, config)
+
+    fp16_model = torch_to_mlx(torch_model, dtype=mx.float16)
+    config = asdict(fp16_model.dims)
+    weights = dict(tree_flatten(fp16_model.parameters()))
+    _save_model(MLX_FP16_MODEL_PATH, weights, config)
+
+    args = type("", (), {})()
+    args.q_group_size = 64
+    args.q_bits = 4
+    weights, config = quantize(weights, config, args)
+    _save_model(MLX_4BITS_MODEL_PATH, weights, config)
+
+    return torch_model, fp32_model, fp16_model
 
 
 def forward_torch(model, mels, tokens):
@@ -35,7 +80,7 @@ def forward_mlx(model, mels, tokens):
 class TestWhisper(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = load_models.load_model("tiny", dtype=mx.float32)
+        _, cls.model, _ = load_torch_and_mlx()
         data = audio.load_audio(TEST_AUDIO)
         data = audio.pad_or_trim(data)
         cls.mels = audio.log_mel_spectrogram(data)
@@ -43,7 +88,7 @@ class TestWhisper(unittest.TestCase):
     def test_torch_mlx(self):
         np.random.seed(10)
 
-        torch_model = load_models.load_torch_model("tiny")
+        torch_model = load_torch_model(MODEL_NAME)
         dims = torch_model.dims
 
         mels = np.random.randn(1, dims.n_mels, 3_000)
@@ -51,17 +96,25 @@ class TestWhisper(unittest.TestCase):
 
         torch_logits = forward_torch(torch_model, mels, tokens)
 
-        mlx_model = load_models.torch_to_mlx(torch_model, mx.float32)
-        mlx_logits = forward_mlx(mlx_model, mels, tokens)
+        mlx_logits = forward_mlx(self.model, mels, tokens)
 
         self.assertTrue(np.allclose(torch_logits, mlx_logits, atol=1e-2, rtol=1e-2))
 
     def test_fp16(self):
-        mlx_model = load_models.load_model("tiny", dtype=mx.float16)
+        mlx_model = load_models.load_model(MLX_FP16_MODEL_PATH, mx.float16)
         dims = mlx_model.dims
         mels = mx.array(np.random.randn(1, 3_000, dims.n_mels), mx.float16)
         tokens = mx.array(np.random.randint(0, dims.n_vocab, (1, 20)), mx.int32)
         logits = mlx_model(mels, tokens)
+        self.assertEqual(logits.dtype, mx.float16)
+
+    def test_quantized_4bits(self):
+        mlx_model = load_models.load_model(MLX_4BITS_MODEL_PATH, mx.float16)
+        dims = mlx_model.dims
+        mels = mx.array(np.random.randn(1, 3_000, dims.n_mels), mx.float16)
+        tokens = mx.array(np.random.randint(0, dims.n_vocab, (1, 20)), mx.int32)
+        logits = mlx_model(mels, tokens)
+        # Here, we just test if 4-bit models can forward, as the quantized tiny models struggle with accurate transcription
         self.assertEqual(logits.dtype, mx.float16)
 
     def test_decode_lang(self):
@@ -135,7 +188,9 @@ class TestWhisper(unittest.TestCase):
         self.assertAlmostEqual(result.compression_ratio, 1.2359550561797752)
 
     def test_transcribe(self):
-        result = whisper.transcribe(TEST_AUDIO, fp16=False)
+        result = whisper.transcribe(
+            TEST_AUDIO, model_path=MLX_FP32_MODEL_PATH, fp16=False
+        )
         self.assertEqual(
             result["text"],
             (
@@ -154,7 +209,9 @@ class TestWhisper(unittest.TestCase):
             print("bash path_to_whisper_repo/whisper/assets/download_alice.sh")
             return
 
-        result = whisper.transcribe(audio_file, fp16=False)
+        result = whisper.transcribe(
+            audio_file, model_path=MLX_FP32_MODEL_PATH, fp16=False
+        )
         self.assertEqual(len(result["text"]), 10920)
         self.assertEqual(result["language"], "en")
         self.assertEqual(len(result["segments"]), 77)
@@ -253,6 +310,137 @@ class TestWhisper(unittest.TestCase):
         # Randomly check a couple of segments
         check_segment(result["segments"][5], expected_5)
         check_segment(result["segments"][73], expected_73)
+
+    def test_transcribe_word_level_timestamps_confidence_scores(self):
+        result = whisper.transcribe(
+            # TEST_AUDIO, model_path=MLX_FP32_MODEL_PATH, word_timestamps=True, fp16=False
+            TEST_AUDIO,
+            model_path=MLX_FP16_MODEL_PATH,
+            word_timestamps=True,
+        )
+
+        # result predicted with openai-whisper
+        expected_0 = [
+            {
+                "word": " Then",
+                "start": 0.0,
+                "end": 0.94,
+                "probability": 0.855542778968811,
+            },
+            {
+                "word": " the",
+                "start": 0.94,
+                "end": 1.12,
+                "probability": 0.6500106453895569,
+            },
+            {
+                "word": " good",
+                "start": 1.12,
+                "end": 1.32,
+                "probability": 0.5503873825073242,
+            },
+            {
+                "word": " soul",
+                "start": 1.32,
+                "end": 1.56,
+                "probability": 0.46757155656814575,
+            },
+            {
+                "word": " openly",
+                "start": 1.56,
+                "end": 2.0,
+                "probability": 0.9840946793556213,
+            },
+            {
+                "word": " sorted",
+                "start": 2.0,
+                "end": 2.38,
+                "probability": 0.24167272448539734,
+            },
+            {
+                "word": " the",
+                "start": 2.38,
+                "end": 2.58,
+                "probability": 0.9875414967536926,
+            },
+            {
+                "word": " boat",
+                "start": 2.58,
+                "end": 2.8,
+                "probability": 0.5856029391288757,
+            },
+            {
+                "word": " and",
+                "start": 2.8,
+                "end": 2.98,
+                "probability": 0.913351833820343,
+            },
+            {
+                "word": " she",
+                "start": 2.98,
+                "end": 3.1,
+                "probability": 0.9913808703422546,
+            },
+            {
+                "word": " had",
+                "start": 3.1,
+                "end": 3.32,
+                "probability": 0.9952940344810486,
+            },
+            {
+                "word": " buoyed",
+                "start": 3.32,
+                "end": 3.58,
+                "probability": 0.6411589980125427,
+            },
+            {
+                "word": " so",
+                "start": 3.58,
+                "end": 3.8,
+                "probability": 0.9682658314704895,
+            },
+            {
+                "word": " long",
+                "start": 3.8,
+                "end": 4.06,
+                "probability": 0.9953522682189941,
+            },
+            {
+                "word": " in",
+                "start": 4.06,
+                "end": 4.26,
+                "probability": 0.6745936870574951,
+            },
+            {
+                "word": " secret",
+                "start": 4.26,
+                "end": 4.56,
+                "probability": 0.9905064702033997,
+            },
+            {
+                "word": " and",
+                "start": 4.56,
+                "end": 4.9,
+                "probability": 0.856008768081665,
+            },
+            {
+                "word": " bravely",
+                "start": 4.9,
+                "end": 5.28,
+                "probability": 0.8477402329444885,
+            },
+        ]
+
+        def check_words(words, expected_words):
+            for word, expected_word in zip(words, expected_words):
+                for k, v in expected_word.items():
+                    if isinstance(v, float):
+                        self.assertAlmostEqual(word[k], v, places=1)
+                    else:
+                        self.assertEqual(word[k], v)
+
+        # Randomly check a couple of segments
+        check_words(result["segments"][0]["words"], expected_0)
 
 
 class TestAudio(unittest.TestCase):

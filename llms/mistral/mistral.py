@@ -254,7 +254,7 @@ if __name__ == "__main__":
         default=0.0,
     )
     parser.add_argument(
-        "--tokens_per_eval",
+        "--tokens-per-eval",
         help="The batch size of tokens to generate.",
         type=int,
         default=10,

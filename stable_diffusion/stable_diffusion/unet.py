@@ -381,7 +381,6 @@ class UNetModel(nn.Module):
         )
 
     def __call__(self, x, timestep, encoder_x, attn_mask=None, encoder_attn_mask=None):
-
         # Compute the time embeddings
         temb = self.timesteps(timestep).astype(x.dtype)
         temb = self.time_embedding(temb)
