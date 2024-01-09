@@ -1,4 +1,3 @@
-import argparse
 import glob
 import inspect
 import json
