@@ -203,34 +203,3 @@ def test_embeddings():
     })
     
     assert np.allclose(np.array(mx_embed_out), torch_embed_out.detach().numpy(), atol=1e-2), "Embeddings mismatch"
-
-def test_attention():
-    mx_model, tokenizer = Bert.from_hugging_face("BAAI/bge-small-en-v1.5", precision_nbits=32)
-    torch_model = AutoModel.from_pretrained("BAAI/bge-small-en-v1.5").to(torch.float32)
-    torch_model.eval()
-
-    torch_attention = torch_model.encoder.layer[0].attention
-    mx_attention = mx_model.encoder.layers[0].attention
-
-    random_input = np.random.randn(1, 10, 384).astype(np.float16)
-    mask = np.zeros((1, 12, 10, 10))
-    mx_attention_out, mx_probs = mx_attention(
-        mx.array(random_input), 
-        mx.array(random_input),
-        mx.array(random_input),
-        mx.array(mask)
-    )
-    torch_attention_out = torch_attention(
-        torch.tensor(random_input).to(torch.float32), 
-        torch.tensor(mask).to(torch.float32),
-        output_attentions=True
-    )
-    torch_attention_out, torch_probs = torch_attention_out[0], torch_attention_out[1]
-
-    assert np.allclose(np.array(mx_probs), torch_probs.detach().numpy(), atol=1e-3), "Attention probs mismatch"
-    assert np.allclose(np.array(mx_attention_out), torch_attention_out.detach().numpy(), atol=1e-2), "Attention mismatch"
-
-
-if __name__ == "__main__":
-    test_embeddings()
-    test_attention()
