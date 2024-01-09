@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--text",
         type=str,
-        default="This is an example of BERT working on MLX",
+        default="This is an example of BERT working in MLX",
         help="The text to generate embeddings for.",
     )
     args = parser.parse_args()
