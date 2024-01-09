@@ -81,7 +81,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cpu",
         action="store_true",
-        help="Use CPU instead of GPU (cuda/mps) acceleration",
+        help="Use CPU instead of GPU acceleration",
     )
     parser.add_argument("--model", type=str, required=True, help="Model filename *.pth")
     parser.add_argument(

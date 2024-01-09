@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cpu",
         action="store_true",
-        help="Use CPU instead of GPU (cuda/mps) acceleration",
+        help="Use CPU instead of GPU acceleration",
     )
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument(
