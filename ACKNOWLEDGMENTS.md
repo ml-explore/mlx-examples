@@ -9,4 +9,4 @@ MLX Examples was developed with contributions from the following individuals:
 
 - Juarez Bochi: Added support for T5 models.
 - Sarthak Yadav: Added the `cifar` and `speechcommands` examples.
-- Markus Enzweiler: Added the `cvae` examples.
+- Markus Enzweiler: Added the `cvae` example.
