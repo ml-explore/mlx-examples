@@ -118,7 +118,6 @@ class Encoder(nn.Module):
         # with mean mu and standard deviation sigma. Backpropagation is possible
         # because the gradients of the random values are just 1 and the gradients
         # of the linear transformation are just the weights of the linear transformation.
-
         z = eps * sigma + mu
 
         # compute KL divergence
