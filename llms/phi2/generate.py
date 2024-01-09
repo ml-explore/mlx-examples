@@ -16,7 +16,7 @@ def generate(
     temp: float = 0.0,
 ):
     print("[INFO] Generating with Phi-2...", flush=True)
-    print(args.prompt, end="", flush=True)
+    print(prompt, end="", flush=True)
     prompt = tokenizer(
         prompt,
         return_tensors="np",
@@ -30,8 +30,8 @@ def generate(
     tokens = []
     skip = 0
     for token, n in zip(
-        phi2.generate(prompt, model, args.temp),
-        range(args.max_tokens),
+        phi2.generate(prompt, model, temp),
+        range(max_tokens),
     ):
         if token == tokenizer.eos_token_id:
             break
