@@ -5,6 +5,7 @@ import argparse
 import mlx.core as mx
 from PIL import Image
 from tqdm import tqdm
+import numpy as np
 
 from stable_diffusion import StableDiffusion
 
