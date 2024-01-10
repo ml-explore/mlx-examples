@@ -67,7 +67,7 @@ Image 2 Image
 There is also the option of generating images based on another image using the
 example script `image2image.py`. To do that an image is first encoded using the
 autoencoder to get its latent representation and then noise is added according
-to the forward diffusion process and the `strength` parameter. A `stregnth` of
+to the forward diffusion process and the `strength` parameter. A `strength` of
 0.0 means no noise and a `strength` of 1.0 means starting from completely
 random noise.
 
@@ -78,6 +78,7 @@ The command to generate the above images is:
 
     python image2image.py --strength 0.5 original.png 'A lit fireplace'
 
+*Note: `image2image.py` will automatically downsample your input image to guarantee that its dimensions are divisible by 64. If you want full control of this process, resize your image prior to using the script.*
 
 Performance
 -----------
