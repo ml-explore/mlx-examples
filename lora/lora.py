@@ -23,10 +23,11 @@ def build_parser():
     )
     # Generation args
     parser.add_argument(
-        "--num-tokens", "-n", type=int, default=100, help="How many tokens to generate"
-    )
-    parser.add_argument(
-        "--write-every", type=int, default=1, help="After how many tokens to detokenize"
+        "--max-tokens",
+        "-m",
+        type=int,
+        default=100,
+        help="The maximum number of tokens to generate",
     )
     parser.add_argument(
         "--temp", type=float, default=0.8, help="The sampling temperature"
