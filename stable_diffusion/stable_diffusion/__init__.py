@@ -154,7 +154,9 @@ class StableDiffusion:
 
         # Make sure image shape is divisible by 64
         W, H = (dim - dim % 64 for dim in (image.shape[0], image.shape[1]))
-        image = _downsample_nearest(image, W, H)
+        if W != image.shape[0] or H != image.shape[1]:
+            print(f"Warning: image shape is not divisible by 64, downsampling to {W}x{H}")
+            image = _downsample_nearest(image, W, H)
 
         # Get the latents from the input image and add noise according to the
         # start time.
