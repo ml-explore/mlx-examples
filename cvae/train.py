@@ -57,8 +57,8 @@ def train_epoch(model, tr_iter, loss_and_grad_fn, optimizer, epoch):
                 " | ".join(
                     [
                         f"Epoch {epoch:4d}",
-                        f"Loss {loss.item():10.2f}",
-                        f"Throughput {throughput:8.2f} im/s",
+                        f"Loss {(loss_acc.item() / batch_count):10.2f}",
+                        f"Throughput {(throughput_acc.item() / batch_count):8.2f} im/s",
                         f"Batch {batch_count:5d}",
                     ]
                 ),
