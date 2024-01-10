@@ -226,4 +226,4 @@ class CVAE(nn.Module):
         self.save_weights(fname)
 
     def load(self, fname):
-        self.load_weights(fname, strict=False)
+        self.load_weights(fname)
