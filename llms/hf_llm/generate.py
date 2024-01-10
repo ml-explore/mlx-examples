@@ -28,8 +28,8 @@ def generate(
     tokens = []
     skip = 0
     for token, n in zip(
-        models.generate(prompt, model, args.temp),
-        range(args.max_tokens),
+        models.generate(prompt, model, temp),
+        range(max_tokens),
     ):
         if token == tokenizer.eos_token_id:
             break
@@ -39,7 +39,6 @@ def generate(
             tic = time.time()
 
         tokens.append(token.item())
-        # if (n + 1) % 10 == 0:
         s = tokenizer.decode(tokens)
         print(s[skip:], end="", flush=True)
         skip = len(s)

@@ -3,3 +3,5 @@ sentencepiece
 torch
 pyyaml
 numpy
+transformers
+numpy
