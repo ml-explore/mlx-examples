@@ -52,32 +52,6 @@ class ModelArgs:
         )
 
 
-class Tokenizer:
-    def __init__(self, model_path: str):
-        self._tokenizer = AutoTokenizer.from_pretrained(model_path)
-        self._eos = self._tokenizer.eos_token_id
-        self._bos = self._tokenizer.bos_token_id
-
-    def encode(self, s: str, eos: bool = False) -> mx.array:
-        toks = self._tokenizer(
-            s,
-            return_tensors="np",
-            return_attention_mask=False,
-        )[
-            "input_ids"
-        ][0]
-        if eos:
-            toks = np.concatenate([toks, [self._eos]])
-        return mx.array(toks)
-
-    @property
-    def eos_id(self) -> int:
-        return self._eos
-
-    def decode(self, t: List[int]) -> str:
-        return self._tokenizer.decode(t)
-
-
 class LoRALinear(nn.Module):
     @staticmethod
     def from_linear(linear: nn.Linear, rank: int = 8):
@@ -359,7 +333,8 @@ def load(path_or_hf_repo: str):
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    return model, Tokenizer(model_path), config
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    return model, tokenizer, config
 
 
 def generate(prompt: mx.array, model: Model, temp: float = 0.0):
