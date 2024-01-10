@@ -186,7 +186,7 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
                 )
 
             # Pad to the max length
-            batch_arr = np.zeros((batch_size, max(lengths)), np.int64)
+            batch_arr = np.zeros((batch_size, max(lengths)), np.int32)
             for j in range(batch_size):
                 batch_arr[j, : lengths[j]] = np.array(batch[j])
             batch = mx.array(batch_arr)
