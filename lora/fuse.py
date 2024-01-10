@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     model.update_modules(tree_unflatten(fused_linears))
     weights = dict(tree_flatten(model.parameters()))
-    utils.save_model(args.save_path, weights, tokenizer._tokenizer, config)
+    utils.save_model(args.save_path, weights, tokenizer, config)
 
     if args.upload_name is not None:
         hf_path = args.hf_path
