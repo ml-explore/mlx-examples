@@ -29,19 +29,17 @@ import math
 import time
 from abc import ABC
 from pathlib import Path
+from pprint import pprint
 from types import SimpleNamespace
-from typing import Iterator, List
-
+from typing import Iterator, Type
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import yaml
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
-from models import LoRALinear, Model, ModelArgs
-from sentencepiece import SentencePieceProcessor
+from models import LoRALinear
 from tqdm import tqdm
-
 
 class TrainingRecordHandler(ABC):
     """
@@ -81,6 +79,7 @@ CONFIG_DEFAULTS = {
     "prompt": None,
     "train": False,
     "data": "data/",
+    "temp": 0.8,
     "lora_layers": 16,
     "batch_size": 4,
     "iters": -1,
@@ -93,58 +92,32 @@ CONFIG_DEFAULTS = {
     "adapter_file": "adapters.npz",
     "test": False,
     "test_batches": 500,
+    "hf_llm_model": False,
     "seed": 0,
+    "max_tokens": 100,
+    "tokens_per_eval": 10
 }
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
-        description="LoRA supervised finetuning with Mistral"
-    )
+    parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
     parser.add_argument("filename", help="The YAML confguration file")
-    with open(parser.parse_args().filename, "r") as file:
+    parser.add_argument("--dataset-summary",
+                        action="store_true",
+                        default=False,
+                        help="Just summarize training data")
+    args = parser.parse_args()
+    with open(args.filename, "r") as file:
         config = yaml.safe_load(file)
-        param_dict = config["parameters"]
+        param_dict = {k: v for k, v in config["parameters"].items()}
         if "model" not in param_dict:
             raise SyntaxError('Missing required "model" parameter')
         for key, default in CONFIG_DEFAULTS.items():
             if key not in param_dict:
                 param_dict[key] = default
-    print("Configuration:", param_dict)
-    return SimpleNamespace(**param_dict)
-
-
-class Tokenizer:
-    def __init__(self, model_path: str):
-        assert Path(model_path).exists(), model_path
-        self._model = SentencePieceProcessor(model_file=model_path)
-        self._sep = "▁"
-        assert self._model.vocab_size() == self._model.get_piece_size()
-
-    def encode(self, s: str, bos: bool = True, eos: bool = False) -> List[int]:
-        toks = (
-            [self._model.bos_id(), *self._model.encode(s)]
-            if bos
-            else [*self._model.encode(s)]
-        )
-        if eos:
-            toks.append(self.eos_id)
-        return toks
-
-    @property
-    def eos_id(self) -> int:
-        return self._model.eos_id()
-
-    def decode(self, t: List[int]) -> str:
-        out = self._model.decode(t)
-        if t and self._model.id_to_piece(t[0])[0] == self._sep:
-            return " " + out
-        return out
-
-    @property
-    def vocab_size(self) -> int:
-        return self._model.vocab_size()
-
+        param_dict["dataset_summary"] = args.dataset_summary
+        pprint(param_dict)
+        return SimpleNamespace(**param_dict)
 
 def load(args):
     names = ("train", "valid", "test")
@@ -164,7 +137,7 @@ def load(args):
     return train, valid, test
 
 
-def loss(model: Model, inputs: mx.array, targets: mx.array, output_lengths):
+def loss(model, inputs, targets, output_lengths):
     # Run model on inputs
     logits, _ = model(inputs)
     logits = logits.astype(mx.float32)
@@ -181,7 +154,7 @@ def loss(model: Model, inputs: mx.array, targets: mx.array, output_lengths):
 
 def iterate_batches(
     dset: Dataset,
-    tokenizer: Tokenizer,
+    tokenizer: Type,
     batch_size: int,
     handler: TrainingRecordHandler,
     train: bool = True,
@@ -222,7 +195,7 @@ def iterate_batches(
             # Tokenize the input and output separately, with BOS only for input and EOS only for output
             input_batch = [tokenizer.encode(record) for record in input_batch]
             output_batch = [
-                tokenizer.encode(record, bos=False, eos=True) for record in output_batch
+                tokenizer.encode(record) for record in output_batch
             ]
 
             # Collect the token lengths for use in adding zero padding for input and output.  The latter is used
@@ -232,7 +205,12 @@ def iterate_batches(
 
             # Calculate maximum token sequence width from both input and output to use as the same width for
             # input and output batch array
-            max_width = max(max(input_lengths), max(output_lengths))
+            max_width = max(input_lengths + output_lengths)
+            if max_width > 2048:
+                print(
+                    "[WARNING] Some sequences are longer than 2048 tokens. "
+                    "Consider pre-splitting your data to save memory."
+                )
 
             batch_input_arr = np.zeros((batch_size, max_width), np.int32)
             for j in range(batch_size):
@@ -286,7 +264,7 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args, handler):
     else:
         num_iterations = epoch_num_steps * args.epochs
 
-    pbar = tqdm(total=epoch_num_steps)
+    pbar = tqdm(total=num_iterations)
     print(
         f"{num_iterations:,} iterations at {epoch_num_steps:,} iterations per epoch on a dataset of "
         f"{len(train_set):,} records, {args.batch_size} at a time."
@@ -342,106 +320,78 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args, handler):
         pbar.update(1)
 
 
-def generate(model, prompt, tokenizer, args):
-    print(args.prompt, end="", flush=True)
-    prompt = mx.array(tokenizer.encode(args.prompt))
-
-    def generate_step():
-        temp = args.temp
-
-        def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
-
-        logits, cache = model(prompt[None])
-        y = sample(logits[:, -1, :])
-        yield y
-
-        while True:
-            logits, cache = model(y[:, None], cache)
-            y = sample(logits.squeeze(1))
-            yield y
-
-    tokens = []
-    for token, _ in zip(generate_step(), range(args.num_tokens)):
-        tokens.append(token)
-
-        if (len(tokens) % 10) == 0:
-            mx.eval(tokens)
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s, end="", flush=True)
-            tokens = []
-
-    mx.eval(tokens)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s, flush=True)
-
-
-def load_model(folder: str, dtype=mx.float16):
-    model_path = Path(folder)
-    tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
-    with open(model_path / "params.json", "r") as f:
-        config = json.loads(f.read())
-        if config.get("vocab_size", -1) < 0:
-            config["vocab_size"] = tokenizer.vocab_size
-        model_args = ModelArgs(**config)
-    weights = mx.load(str(model_path / "weights.npz"))
-    weights = tree_unflatten(list(weights.items()))
-    weights = tree_map(lambda p: p.astype(dtype), weights)
-    model = Model(model_args)
-    model.update(weights)
-    return model, tokenizer
-
-
-def main(handler: TrainingRecordHandler):
-    global args, model, l
+def main(handler: TrainingRecordHandler, load_model_and_tokenizer, generate):
     args = build_parser()
-    np.random.seed(args.seed)
-    print("Loading pretrained model")
-    model, tokenizer = load_model(args.model)
-    # Freeze all layers other than LORA linears
-    model.freeze()
-    for l in model.layers[-args.lora_layers :]:
-        l.attention.wq = LoRALinear.from_linear(l.attention.wq)
-        l.attention.wv = LoRALinear.from_linear(l.attention.wv)
-    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
-    print(f"Total parameters {p:.3f}M")
-    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
-    print(f"Trainable parameters {p:.3f}M")
     print("Loading datasets")
     train_set, valid_set, test_set = load(args)
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file)
-    if args.train:
-        print("Training")
-        opt = optim.Adam(learning_rate=args.learning_rate)
 
-        # Train model
-        train(model, train_set, valid_set, opt, loss, tokenizer, args, handler)
+    if args.dataset_summary:
+        # The number of steps for 1 epoch
+        epoch_num_steps = (len(train_set) + args.batch_size - 1) // args.batch_size
+        total_val_batch_num = (len(valid_set) + args.batch_size - 1) // args.batch_size
 
-        # Save adapter weights
-        mx.savez(args.adapter_file, **dict(tree_flatten(model.trainable_parameters())))
-    # Load the LoRA adapter weights which we assume should exist by this point
-    model.load_weights(args.adapter_file)
-    if args.test:
-        print("Testing")
+        if args.epochs == -1:
+            num_iterations = epoch_num_steps if args.iters == -1 else args.iters
+        else:
+            num_iterations = epoch_num_steps * args.epochs
 
-        test_loss = evaluate(
-            model,
-            test_set,
-            loss,
-            tokenizer,
-            args.batch_size,
-            args.test_batches,
-            handler,
+        print(
+            f"{num_iterations:,} iterations at {epoch_num_steps:,} iterations per epoch on a dataset of "
+            f"{len(train_set):,} records, {args.batch_size} at a time."
         )
-        test_ppl = math.exp(test_loss)
+        print(f"{total_val_batch_num:,} total validation batches (for {len(valid_set):,} validations)")
+    else:
+        np.random.seed(args.seed)
+        print("Loading pretrained model")
 
-        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
-    if args.prompt is not None:
-        print("Generating")
-        generate(model, args.prompt, tokenizer, args)
+        model, tokenizer = load_model_and_tokenizer(args.model)
+        # Freeze all layers other than LORA linears
+        model.freeze()
+        for l in model.model.layers[len(model.model.layers) - args.lora_layers:]:
+            l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
+            l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
+        p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10 ** 6
+        print(f"Total parameters {p:.3f}M")
+        p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10 ** 6
+        print(f"Trainable parameters {p:.3f}M")
+
+        # Resume training the given adapters.
+        if args.resume_adapter_file is not None:
+            print(f"Loading pretrained adapters from {args.resume_adapter_file}")
+            model.load_weights(args.resume_adapter_file, strict=False)
+        if args.train:
+            print("Training")
+            opt = optim.Adam(learning_rate=args.learning_rate)
+
+            # Train model
+            train(model, train_set, valid_set, opt, loss, tokenizer, args, handler)
+
+            # Save adapter weights
+            mx.savez(args.adapter_file, **dict(tree_flatten(model.trainable_parameters())))
+
+        # Load the LoRA adapter weights which we assume should exist by this point
+        if not Path(args.adapter_file).is_file():
+            raise ValueError(
+                f"Adapter file {args.adapter_file} missing. "
+                "Use --train to learn and save the adapters.npz."
+            )
+        model.load_weights(args.adapter_file, strict=False)
+
+        if args.test:
+            print("Testing")
+
+            test_loss = evaluate(
+                model,
+                test_set,
+                loss,
+                tokenizer,
+                args.batch_size,
+                args.test_batches,
+                handler,
+            )
+            test_ppl = math.exp(test_loss)
+
+            print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
+        if args.prompt is not None:
+            print("Generating")
+            generate(model, args.prompt, tokenizer, args.max_tokens, args.tokens_per_eval, args.temp)
