@@ -1,16 +1,14 @@
 # Copyright © 2023 Apple Inc.
 
-import argparse
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
-
-import numpy as np
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 from gguf.gguf_reader import GGUFReader
+from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_unflatten
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -139,7 +137,7 @@ class TransformerBlock(nn.Module):
         return out, cache
 
 
-class Llama(nn.Module):
+class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -149,111 +147,25 @@ class Llama(nn.Module):
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.output = nn.Linear(args.dim, args.vocab_size, bias=False)
 
-    def __call__(self, x):
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-        mask = mask.astype(self.tok_embeddings.weight.dtype)
+    def __call__(
+        self,
+        inputs: mx.array,
+        cache=None,
+    ):
+        h = self.tok_embeddings(inputs)
 
-        x = self.tok_embeddings(x)
-        for l in self.layers:
-            x, _ = l(x, mask)
-        x = self.norm(x)
-        return self.output(x)
+        mask = None
+        if h.shape[1] > 1:
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
+            mask = mask.astype(h.dtype)
 
-    def generate(self, x, temp=1.0):
-        def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
+        if cache is None:
+            cache = [None] * len(self.layers)
 
-        cache = []
+        for e, layer in enumerate(self.layers):
+            h, cache[e] = layer(h, mask, cache[e])
 
-        # Make an additive causal mask. We will need that to process the prompt.
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-        mask = mask.astype(self.tok_embeddings.weight.dtype)
-
-        # First we process the prompt x the same was as in __call__ but
-        # save the caches in cache
-        x = self.tok_embeddings(x)
-        for l in self.layers:
-            x, c = l(x, mask=mask)
-            # We store the per layer cache in a simple python list
-            cache.append(c)
-        x = self.norm(x)
-        # We only care about the last logits that generate the next token
-        y = self.output(x[:, -1])
-        y = sample(y)
-
-        # y now has size [1]
-        # Since MLX is lazily evaluated nothing is computed yet.
-        # Calling y.item() would force the computation to happen at
-        # this point but we can also choose not to do that and let the
-        # user choose when to start the computation.
-        yield y
-
-        # Now we parsed the prompt and generated the first token we
-        # need to feed it back into the model and loop to generate the
-        # rest.
-        while True:
-            # Unsqueezing the last dimension to add a sequence length
-            # dimension of 1
-            x = y[:, None]
-
-            x = self.tok_embeddings(x)
-            for i in range(len(cache)):
-                # We are overwriting the arrays in the cache list. When
-                # the computation will happen, MLX will be discarding the
-                # old cache the moment it is not needed anymore.
-                x, cache[i] = self.layers[i](x, mask=None, cache=cache[i])
-            x = self.norm(x)
-            y = sample(self.output(x[:, -1]))
-
-            yield y
-
-
-def tic():
-    return time.time()
-
-
-def toc(msg, start):
-    end = time.time()
-    return f"[INFO] {msg}: {end - start:.3f} s"
-
-
-def generate(args):
-    input("Press enter to start generation")
-    print("------")
-    print(args.prompt)
-    x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(args.prompt)])
-    skip = 0
-    prompt_processing = None
-    tokens = []
-    start = tic()
-    for token in model.generate(x, args.temp):
-        tokens.append(token)
-
-        if len(tokens) == 1:
-            # Actually perform the computation to measure the prompt processing time
-            mx.eval(token)
-            prompt_processing = toc("Prompt processing", start)
-
-        if len(tokens) >= args.max_tokens:
-            break
-
-        elif (len(tokens) % args.write_every) == 0:
-            # It is perfectly ok to eval things we have already eval-ed.
-            mx.eval(tokens)
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
-
-    mx.eval(tokens)
-    full_gen = toc("Full generation", start)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s[skip:], flush=True)
-    print("------")
-    print(prompt_processing)
-    print(full_gen)
+        return self.output(self.norm(h)), cache
 
 
 def get_field(gguf_reader: GGUFReader, key: str):
@@ -296,35 +208,35 @@ def get_config(gguf_reader: GGUFReader, weights: dict[str, mx.array]):
 
 
 class GGUFTokenizer:
-    @staticmethod
-    def parse_token(token):
-        if len(token) == 6 and token.startswith("<0x") and token.endswith(">"):
-            return chr(int(token[3:5], 16))
-        return token
-
     def __init__(self, gguf_reader):
+        def parse_token(token):
+            if len(token) == 6 and token.startswith("<0x") and token.endswith(">"):
+                return chr(int(token[3:5], 16))
+            return token
+
         # TODO: do we need scores and token type?
         # tokenizer.ggml.scores: [array] [0.000000, 0.000000, 0.000000, ..
         # tokenizer.ggml.token_type: [array] [2, 3, 3, 6, ...
         tokens = get_string_array_field(gguf_reader, "tokenizer.ggml.tokens")
-        vocab = {GGUFTokenizer.parse_token(t): i for i, t in enumerate(tokens)}
+        vocab = {parse_token(t): i for i, t in enumerate(tokens)}
         merges = get_string_array_field(gguf_reader, "tokenizer.ggml.merges")
         merges = [tuple(m.split(" ")) for m in merges]
         model = BPE(vocab, merges, byte_fallback=True)
         self._tokenizer = Tokenizer(model)
         self._bos_token_id = get_field(gguf_reader, "bos_token_id")
         self._eos_token_id = get_field(gguf_reader, "eos_token_id")
-        self._unknown_token_id = get_field(gguf_reader, "unknown_token_id")
-        self._padding_token_id = get_field(gguf_reader, "padding_token_id")
 
-    def bos_id(self):
-        return self._bos_token_id
+    def encode(self, s: str) -> mx.array:
+        return mx.array(
+            [self._bos_token_id] + self._tokenizer.encode("▁" + s.replace(" ", "▁")).ids
+        )
 
-    def encode(self, input):
-        return self._tokenizer.encode("▁" + input.replace(" ", "▁")).ids
+    @property
+    def eos_token_id(self):
+        return self._eos_token_id
 
-    def decode(self, input):
-        return self._tokenizer.decode(input).replace(" ", "").replace("▁", " ")
+    def decode(self, toks: List[int]) -> str:
+        return self._tokenizer.decode(toks).replace(" ", "").replace("▁", " ")
 
 
 def translate_weight_names(name):
@@ -342,71 +254,46 @@ def translate_weight_names(name):
     return name
 
 
-def validate_weights(weights, model):
-    current_weights = tree_flatten(model.parameters())
-    weights_to_load = list(weights.items())
-    current_weights_dict = dict(current_weights)
-    current_weights_keys = set(current_weights_dict.keys())
-    weights_to_load_dict = dict(weights_to_load)
-    weights_to_load_keys = set(weights_to_load_dict.keys())
-    missing = current_weights_keys - weights_to_load_keys
-    if missing:
-        print("Missing weights: ", sorted(missing))
-    ignored = weights_to_load_keys - current_weights_keys
-    if ignored:
-        print("Weights ignored: ", sorted(ignored))
-    shared = current_weights_keys & weights_to_load_keys
-    for key in sorted(shared):
-        if weights_to_load_dict[key].shape != current_weights_dict[key].shape:
-            print("Shape mismatch for key: ", key)
-            print("Expected shape: ", current_weights_dict[key].shape)
-            print("Loading shape: ", weights_to_load_dict[key].shape)
+def load(gguf_file: str, repo: str = None):
+    # If the gguf_file exists, try to load model from it.
+    # Otherwise try to download and cache from the HF repo
+    if not Path(gguf_file).exists():
+        if repo is None:
+            raise ValueError(
+                f"Could not find file {gguf_file}, and no Hugging Face"
+                " repo provided for download."
+            )
+        model_path = snapshot_download(
+            repo_id=repo,
+            allow_patterns=[gguf_file],
+        )
+        gguf_file = str(Path(model_path) / gguf_file)
 
+    print(f"[INFO] Loading model from {gguf_file}")
+    weights = mx.load(gguf_file)
+    import pdb
 
-def load_model(gguf_path):
-    print("[INFO] Loading model from {}.".format(gguf_path))
-    weights = mx.load(str(gguf_path))
+    pdb.set_trace()
     weights = {translate_weight_names(k): v for k, v in weights.items()}
 
-    reader = GGUFReader(str(gguf_path))
+    reader = GGUFReader(gguf_file)
     config = get_config(reader, weights)
-    model = Llama(ModelArgs(**config))
-    validate_weights(weights, model)
-    model.update(tree_unflatten(list(weights.items())))
-
-    tokenizer = GGUFTokenizer(reader)
-    return model, tokenizer
+    model = Model(ModelArgs(**config))
+    model.load_weights(list(weights.items()))
+    return model, GGUFTokenizer(reader)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Llama inference script")
-    parser.add_argument(
-        "--model-path",
-        help="Path to the gguf file",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="The message to be processed by the model. Ignored when --few-shot is provided.",
-        default="""<|system|>
-You are a helpful assistant</s>
-<|user|>
-Can you describe the taste of an Apple?</s>
-<|assistant|>""",
-    )
-    parser.add_argument(
-        "--max-tokens", "-m", type=int, default=100, help="How many tokens to generate"
-    )
-    parser.add_argument(
-        "--write-every", type=int, default=1, help="After how many tokens to detokenize"
-    )
-    parser.add_argument(
-        "--temp", type=float, default=0.0, help="The sampling temperature"
-    )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+def generate(prompt: mx.array, model: Model, temp: float = 0.0):
+    def sample(logits):
+        if temp == 0:
+            return mx.argmax(logits, axis=-1)
+        else:
+            return mx.random.categorical(logits * (1 / temp))
 
-    args = parser.parse_args()
-
-    mx.random.seed(args.seed)
-
-    model, tokenizer = load_model(args.model_path)
-    generate(args)
+    y = prompt
+    cache = None
+    while True:
+        logits, cache = model(y[None], cache=cache)
+        logits = logits[:, -1, :]
+        y = sample(logits)
+        yield y
