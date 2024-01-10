@@ -1,9 +1,8 @@
 import argparse
 
 import mlx.core as mx
-import numpy as np
-
 import model
+import numpy as np
 import utils
 
 

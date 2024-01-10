@@ -1,15 +1,13 @@
 import argparse
-import math
 import time
-
-import mlx.core as mx
-import mlx.nn as nn
-import mlx.optimizers as optim
-import numpy as np
 
 import dataset
 import loss
+import mlx.core as mx
+import mlx.nn as nn
+import mlx.optimizers as optim
 import model
+import numpy as np
 import utils
 
 

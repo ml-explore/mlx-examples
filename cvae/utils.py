@@ -1,7 +1,6 @@
 import math
 import os
 
-import mlx.core as mx
 import numpy as np
 from PIL import Image
 

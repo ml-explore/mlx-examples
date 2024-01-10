@@ -1,9 +1,8 @@
 import os
 import tempfile
 
-from mlx.data.datasets import load_mnist
-
 import utils
+from mlx.data.datasets import load_mnist
 
 
 def mnist(batch_size, img_size, root=None):
