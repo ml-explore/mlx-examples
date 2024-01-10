@@ -1,6 +1,6 @@
 import glob
 from pathlib import Path
-from typing import Any, List, NamedTuple, Optional, Tuple
+from typing import Any, List, NamedTuple, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -40,8 +40,6 @@ class PlamoConfig(PretrainedConfig):  # type: ignore
         num_attention_heads: int = 32,
         num_key_value_heads: Optional[int] = None,
         max_position_embeddings: int = 2048,
-        rope_theta: float = 10000,
-        rope_traditional: bool = False,
         initializer_range: float = 0.02,
         rms_norm_eps: float = 1e-6,
         use_cache: bool = True,
@@ -55,8 +53,6 @@ class PlamoConfig(PretrainedConfig):  # type: ignore
     ) -> None:
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
-        self.rope_theta = rope_theta
-        self.rope_traditional = rope_traditional
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
@@ -83,6 +79,56 @@ class PlamoConfig(PretrainedConfig):  # type: ignore
         )
 
 
+class RotaryEmbedding(nn.Module):
+    def __init__(self, dim: int, max_position_embeddings: int = 2048, base: int = 10000) -> None:
+        super().__init__()
+
+        self.dim = dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+        self.inv_freq = 1.0 / mx.power(self.base, mx.arange(0, self.dim, 2, dtype=mx.float32) / self.dim)
+
+        # Build here to make `torch.jit.trace` work.
+        self._set_cos_sin_cache(max_position_embeddings)
+
+    def _set_cos_sin_cache(self, seq_len: int) -> None:
+        self.max_seq_len_cached = seq_len
+        t = mx.arange(self.max_seq_len_cached)  # type: ignore
+
+        freqs = mx.outer(t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        emb = mx.concatenate((freqs, freqs), axis=-1)
+        self.cos_cached = emb.cos()[None, None, :, :]
+        self.sin_cached = emb.sin()[None, None, :, :]
+
+    def __call__(self, x: mx.array, seq_len: int) -> Tuple[mx.array, mx.array]:
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        if seq_len > self.max_seq_len_cached:
+            self._set_cos_sin_cache(seq_len)
+
+        return (
+            self.cos_cached[:, :, :seq_len, ...].astype(x.dtype),  # type: ignore
+            self.sin_cached[:, :, :seq_len, ...].astype(x.dtype),  # type: ignore
+        )
+
+
+def _rotate_half(x: mx.array) -> mx.array:
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return mx.concatenate((-x2, x1), axis=-1)
+
+
+def _rotary_pos_emb(x: mx.array, cos: mx.array, sin: mx.array, position_ids: mx.array) -> mx.array:
+    # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
+    cos = mx.squeeze(cos, (0, 1))  # [seq_len, dim]
+    sin = mx.squeeze(sin, (0, 1))  # [seq_len, dim]
+    cos = cos[position_ids][:, None]  # [bs, 1, seq_len, dim]
+    sin = sin[position_ids][:, None]  # [bs, 1, seq_len, dim]
+    x_embed = (x * cos) + (_rotate_half(x) * sin)
+    return x_embed
+
+
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
         super().__init__()
@@ -104,35 +150,24 @@ class Attention(nn.Module):
         self.hidden_size = config.hidden_size
         head_dim = self.hidden_size // config.num_attention_heads
         self.max_position_embeddings = config.max_position_embeddings
-        self.rope_theta = config.rope_theta
-        self.rope_traditional = config.rope_traditional
 
         self.q_num_heads = config.num_attention_heads
         self.qk_dim = self.v_dim = head_dim
-        self.k_num_heads = self.v_num_heads = int(
-            np.ceil(self.q_num_heads / config.n_shared_head)
-        )
+        self.k_num_heads = self.v_num_heads = int(np.ceil(self.q_num_heads / config.n_shared_head))
 
         self.scale = head_dim**-0.5
 
-        self.q_proj = nn.Linear(
-            self.hidden_size, self.q_num_heads * self.qk_dim, bias=False
-        )
-        self.k_proj = nn.Linear(
-            self.hidden_size, self.k_num_heads * self.qk_dim, bias=False
-        )
-        self.v_proj = nn.Linear(
-            self.hidden_size, self.v_num_heads * self.v_dim, bias=False
-        )
-        self.o_proj = nn.Linear(
-            self.q_num_heads * self.v_dim, self.hidden_size, bias=False
-        )
-        self.rotary_emb = nn.RoPE(self.qk_dim, self.rope_traditional, self.rope_theta)
+        self.q_proj = nn.Linear(self.hidden_size, self.q_num_heads * self.qk_dim, bias=False)
+        self.k_proj = nn.Linear(self.hidden_size, self.k_num_heads * self.qk_dim, bias=False)
+        self.v_proj = nn.Linear(self.hidden_size, self.v_num_heads * self.v_dim, bias=False)
+        self.o_proj = nn.Linear(self.q_num_heads * self.v_dim, self.hidden_size, bias=False)
+        self.rotary_emb = RotaryEmbedding(self.qk_dim, max_position_embeddings=self.max_position_embeddings)
 
     def __call__(
         self,
         hidden_states: mx.array,
         attention_mask: Optional[mx.array] = None,
+        position_ids: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
         bsz, q_len, _ = hidden_states.shape
@@ -142,35 +177,31 @@ class Attention(nn.Module):
         value_states = self.v_proj(hidden_states)
 
         # Prepare the queries, keys and values for the attention computation
-        query_states = query_states.reshape(
-            bsz, q_len, self.q_num_heads, self.qk_dim
-        ).transpose(0, 2, 1, 3)
-        key_states = key_states.reshape(
-            bsz, q_len, self.k_num_heads, self.qk_dim
-        ).transpose(0, 2, 1, 3)
-        value_states = value_states.reshape(
-            bsz, q_len, self.v_num_heads, self.v_dim
-        ).transpose(0, 2, 1, 3)
+        query_states = query_states.reshape(bsz, q_len, self.q_num_heads, self.qk_dim).transpose(0, 2, 1, 3)
+        key_states = key_states.reshape(bsz, q_len, self.k_num_heads, self.qk_dim).transpose(0, 2, 1, 3)
+        value_states = value_states.reshape(bsz, q_len, self.v_num_heads, self.v_dim).transpose(0, 2, 1, 3)
 
-        def _expand_kv(a):
-            a = mx.concatenate(
-                [mx.expand_dims(a, 2)] * self.config.n_shared_head, axis=2
-            )
+        def _expand_kv(a: mx.array) -> mx.array:
+            a = mx.concatenate([mx.expand_dims(a, 1)] * self.config.n_shared_head, axis=1)
             return a.reshape([bsz, self.q_num_heads, q_len, -1])
 
         # expand shared kv
         assert self.k_num_heads == self.v_num_heads
-        key_states, value_states = map(_expand_kv, (key_states, value_states))
+        key_states = _expand_kv(key_states)
+        value_states = _expand_kv(value_states)
+
+        kv_seq_len = key_states.shape[-2]
+        if cache is not None:
+            kv_seq_len += cache[0].shape[-2]
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        assert position_ids is not None
+        query_states = _rotary_pos_emb(query_states, cos, sin, position_ids)
+        key_states = _rotary_pos_emb(key_states, cos, sin, position_ids)
 
         if cache is not None:
-            key_cache, value_cache = cache
-            query_states = self.rotary_emb(query_states, offset=key_cache.shape[2])
-            key_states = self.rotary_emb(key_states, offset=key_cache.shape[2])
-            key_states = mx.concatenate([key_cache, key_states], axis=2)
-            value_states = mx.concatenate([value_cache, value_states], axis=2)
-        else:
-            query_states = self.rotary_emb(query_states)
-            key_states = self.rotary_emb(key_states)
+            # reuse k, v, self_attention
+            key_states = mx.concatenate([cache[0], key_states], axis=2)
+            value_states = mx.concatenate([cache[1], value_states], axis=2)
 
         scores = (query_states * self.scale) @ key_states.transpose(0, 1, 3, 2)
         if attention_mask is not None:
@@ -209,6 +240,7 @@ class PlamoDecoderLayer(nn.Module):
         self,
         hidden_states: mx.array,
         attention_mask: Optional[mx.array] = None,
+        position_ids: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> Tuple[Any, ...]:
         # from LlamaDecoder
@@ -220,6 +252,7 @@ class PlamoDecoderLayer(nn.Module):
         hidden_states_sa, cache = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
+            position_ids=position_ids,
             cache=cache,
         )
 
@@ -236,9 +269,7 @@ class PlamoDecoderLayer(nn.Module):
 class PlamoDecoder(nn.Module):
     def __init__(self, config: PlamoConfig) -> None:
         super().__init__()
-        self.layers = [
-            PlamoDecoderLayer(config) for _ in range(config.num_hidden_layers)
-        ]
+        self.layers = [PlamoDecoderLayer(config) for _ in range(config.num_hidden_layers)]
 
 
 class PlamoPreTrainedModel(nn.Module):  # type: ignore
@@ -265,9 +296,7 @@ class PlamoPreTrainedModel(nn.Module):  # type: ignore
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
 
-    def _set_gradient_checkpointing(
-        self, module: nn.Module, value: bool = False
-    ) -> None:
+    def _set_gradient_checkpointing(self, module: nn.Module, value: bool = False) -> None:
         module.gradient_checkpointing = value  # type: ignore
 
 
@@ -291,15 +320,34 @@ class PlamoForCausalLM(PlamoPreTrainedModel):
         super().__init__(config)
         self.model = PlamoModel(config)
 
-        self.lm_head: nn.Module = nn.Linear(
-            config.hidden_size, config.vocab_size, bias=False
-        )
+        self.lm_head: nn.Module = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         # Initialize weights and apply final processing
         # self.post_init()
 
-    def __call__(self, x: mx.array) -> mx.array:
-        pass
+    def _create_position_ids(self, x: mx.array, cache: Optional[List[Tuple[mx.array, mx.array]]] = None) -> mx.array:
+        # create position_ids on the fly for batch generation
+        _, seq_length = x.shape
+        past_key_values_length = 0
+        if cache is not None:
+            past_key_values_length = cache[0][0].shape[2]
+        position_ids = mx.arange(past_key_values_length, seq_length + past_key_values_length, dtype=mx.int64)
+        position_ids = position_ids[None, ...].reshape(-1, seq_length)
+
+        return position_ids
+
+    def __call__(
+        self,
+        x: mx.array,
+    ) -> mx.array:
+        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
+        mask = mask.astype(self.model.embed_tokens.weight.dtype)
+
+        x = self.model.embed_tokens(x)
+        for layer in self.model.layers.layers:
+            x, _ = layer(x, mask)
+        x = self.model.norm(x)
+        return self.lm_head(x)
 
     def generate(self, x: mx.array, temp=1.0) -> mx.array:
         def sample(logits):
@@ -308,7 +356,8 @@ class PlamoForCausalLM(PlamoPreTrainedModel):
             else:
                 return mx.random.categorical(logits * (1 / temp))
 
-        cache = []
+        position_ids = self._create_position_ids(x)
+        cache: List[Tuple[mx.array, mx.array]] = []
 
         # Make an additive causal mask. We will need that to process the prompt.
         mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
@@ -318,7 +367,7 @@ class PlamoForCausalLM(PlamoPreTrainedModel):
         # save the caches in cache
         x = self.model.embed_tokens(x)
         for layer in self.model.layers.layers:
-            x, c = layer(x, mask)
+            x, c = layer(x, mask, position_ids)
             # We store the per layer cache in a simple python list
             cache.append(c)
         x = self.model.norm(x)
@@ -341,12 +390,14 @@ class PlamoForCausalLM(PlamoPreTrainedModel):
             # dimension of 1
             x = y[:, None]
 
+            position_ids = self._create_position_ids(x, cache)
+
             x = self.model.embed_tokens(x)
             for i in range(len(cache)):
                 # We are overwriting the arrays in the cache list. When
                 # the computation will happen, MLX will be discarding the
                 # old cache the moment it is not needed anymore.
-                x, cache[i] = self.model.layers.layers[i](x, None, cache=cache[i])
+                x, cache[i] = self.model.layers.layers[i](x, None, position_ids, cache=cache[i])
             x = self.model.norm(x)
             y = sample(self.lm_head(x[:, -1]))
 
@@ -375,8 +426,11 @@ def load_model(
             weights.update(mx.load(wf).items())
 
     config = PlamoConfig.from_json_file(model_path / "config.json")
+    print(config)
+
     model = PlamoForCausalLM(config)
     model.update(tree_unflatten(list(weights.items())))
+
     tokenizer = SentencePieceProcessor(model_file=str(model_path / "tokenizer.model"))
 
     return model, tokenizer

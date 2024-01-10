@@ -30,9 +30,7 @@ def fetch_from_hub(hf_path: str):
         weights.update(mx.load(wf).items())
 
     config = transformers.AutoConfig.from_pretrained(hf_path)
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        hf_path, trust_remote_code=True
-    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(hf_path, trust_remote_code=True)
     return weights, config.to_dict(), tokenizer
 
 
@@ -106,9 +104,7 @@ python generate.py --model {repo_id} --prompt "My name is"
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Convert Hugging Face model to MLX format"
-    )
+    parser = argparse.ArgumentParser(description="Convert Hugging Face model to MLX format")
     parser.add_argument(
         "--hf-path",
         type=str,
@@ -167,7 +163,7 @@ if __name__ == "__main__":
     mlx_path.mkdir(parents=True, exist_ok=True)
     shards = make_shards(weights)
     if len(shards) == 1:
-        mx.savez(str(mlx_path / f"weights.npz"), **shards[0])
+        mx.savez(str(mlx_path / "weights.npz"), **shards[0])
     else:
         for i, shard in enumerate(shards):
             mx.savez(str(mlx_path / f"weights.{i:02d}.npz"), **shard)
@@ -176,4 +172,4 @@ if __name__ == "__main__":
         json.dump(config, fid, indent=4)
 
     if args.upload_name is not None:
-        upload_to_hub(mlx_path, args.upload_name, args.hf_path)
+        upload_to_hub(str(mlx_path), args.upload_name, args.hf_path)

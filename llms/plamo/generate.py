@@ -29,7 +29,8 @@ def generate(
     # input("Press enter to start generation")
     print("------")
     print(prompt)
-    x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(prompt)])
+    x = mx.array([tokenizer.encode(prompt) + [tokenizer.eos_id()]])
+    print(x)
     skip = 0
     prompt_processing = None
     tokens = []
@@ -82,9 +83,7 @@ if __name__ == "__main__":
         default=100,
         help="Maximum number of tokens to generate",
     )
-    parser.add_argument(
-        "--write-every", type=int, default=1, help="After how many tokens to detokenize"
-    )
+    parser.add_argument("--write-every", type=int, default=1, help="After how many tokens to detokenize")
     parser.add_argument(
         "--temp",
         help="The sampling temperature.",
@@ -97,6 +96,5 @@ if __name__ == "__main__":
     mx.random.seed(args.seed)
 
     model, tokenizer = load_model(args.model)
-    generate(
-        model, tokenizer, args.prompt, args.max_tokens, args.write_every, args.temp
-    )
+
+    generate(model, tokenizer, args.prompt, args.max_tokens, args.write_every, args.temp)
