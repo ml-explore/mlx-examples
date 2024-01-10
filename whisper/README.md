@@ -19,8 +19,9 @@ Install [`ffmpeg`](https://ffmpeg.org/):
 brew install ffmpeg
 ```
 
-> [!TIP] Skip the conversion step by using pre-converted checkpoints from the
-> Hugging Face Hub. There are a few available in the [MLX
+> [!TIP]
+> Skip the conversion step by using pre-converted checkpoints from the Hugging
+> Face Hub. There are a few available in the [MLX
 > Community](https://huggingface.co/mlx-community) organization.
 
 To convert a model, first download the Whisper PyTorch checkpoint and convert
