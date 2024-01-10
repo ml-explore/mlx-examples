@@ -29,8 +29,7 @@ def generate(
     # input("Press enter to start generation")
     print("------")
     print(prompt)
-    x = mx.array([tokenizer.encode(prompt) + [tokenizer.eos_id()]])
-    print(x)
+    x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(prompt)])
     skip = 0
     prompt_processing = None
     tokens = []
