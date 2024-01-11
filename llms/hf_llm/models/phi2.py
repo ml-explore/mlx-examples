@@ -9,11 +9,11 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    max_sequence_length: int = 2048
-    num_vocab: int = 51200
-    model_dim: int = 2560
-    num_heads: int = 32
-    num_layers: int = 32
+    n_positions: int = 2048
+    vocab_size: int = 51200
+    n_embd: int = 2560
+    n_head: int = 32
+    n_layer: int = 32
     rotary_dim: int = 32
 
 
@@ -23,10 +23,10 @@ class LayerNorm(nn.LayerNorm):
 
 
 class RoPEAttention(nn.Module):
-    def __init__(self, dims: int, num_heads: int, rotary_dim: int):
+    def __init__(self, dims: int, n_head: int, rotary_dim: int):
         super().__init__()
 
-        self.num_heads = num_heads
+        self.n_head = n_head
 
         self.rope = nn.RoPE(rotary_dim, traditional=False)
         self.Wqkv = nn.Linear(dims, 3 * dims)
@@ -37,13 +37,13 @@ class RoPEAttention(nn.Module):
         queries, keys, values = mx.split(qkv, 3, axis=-1)
 
         # Extract some shapes
-        num_heads = self.num_heads
+        n_head = self.n_head
         B, L, D = queries.shape
 
         # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
+        queries = queries.reshape(B, L, n_head, -1).transpose(0, 2, 1, 3)
+        keys = keys.reshape(B, L, n_head, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, n_head, -1).transpose(0, 2, 1, 3)
 
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
@@ -85,9 +85,9 @@ class MLP(nn.Module):
 class ParallelBlock(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
-        dims = config.model_dim
+        dims = config.n_embd
         mlp_dims = dims * 4
-        self.mixer = RoPEAttention(dims, config.num_heads, config.rotary_dim)
+        self.mixer = RoPEAttention(dims, config.n_head, config.rotary_dim)
         self.ln = LayerNorm(dims)
         self.mlp = MLP(dims, mlp_dims)
 
@@ -102,7 +102,7 @@ class TransformerDecoder(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.embd = Embd(config)
-        self.h = [ParallelBlock(config) for i in range(config.num_layers)]
+        self.h = [ParallelBlock(config) for i in range(config.n_layer)]
 
     def __call__(self, x, mask, cache):
         x = self.embd(x)
@@ -117,7 +117,7 @@ class TransformerDecoder(nn.Module):
 class Embd(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
-        self.wte = nn.Embedding(config.num_vocab, config.model_dim)
+        self.wte = nn.Embedding(config.vocab_size, config.n_embd)
 
     def __call__(self, x):
         return self.wte(x)
@@ -126,8 +126,8 @@ class Embd(nn.Module):
 class OutputHead(nn.Module):
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()
-        self.ln = LayerNorm(config.model_dim)
-        self.linear = nn.Linear(config.model_dim, config.num_vocab)
+        self.ln = LayerNorm(config.n_embd)
+        self.linear = nn.Linear(config.n_embd, config.vocab_size)
 
     def __call__(self, inputs):
         return self.linear(self.ln(inputs))
