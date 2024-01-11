@@ -178,11 +178,10 @@ def iterate_batches(dset, tokenizer, batch_size, train=False, append_eos_token=F
         # Collect batches from dataset
         for i in range(0, len(indices) - batch_size + 1, batch_size):
             # Encode batch
-            if train and append_eos_token:
-                batch = [tokenizer.encode(dset[indices[i + j]] + tokenizer.eos_token) 
-                         for j in range(batch_size)]
-            else:
-                batch = [tokenizer.encode(dset[indices[i + j]]) for j in range(batch_size)]
+            optional_eos_token = tokenizer.eos_token if train and append_eos_token else ''
+            batch = [tokenizer.encode(dset[indices[i + j]] + optional_eos_token) 
+                     for j in range(batch_size)]
+
             lengths = [len(x) for x in batch]
 
             # Check if any sequence is longer than 2048 tokens

@@ -93,7 +93,7 @@ the output location with `--adapter-file`.
 You can resume fine-tuning with an existing adapter with `--resume-adapter-file
 <path_to_adapters.npz>`. 
 
-An optional end-of-sentence (EOS) token can be appended to each training sample 
+Optionally, an EOS token can be appended to the end of each training sample 
 if desired with `--append-eos-token`.
 
 ### Evaluate
