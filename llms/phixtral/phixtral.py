@@ -12,6 +12,7 @@ from huggingface_hub import snapshot_download
 from mlx.utils import tree_unflatten
 from transformers import AutoTokenizer
 
+
 @dataclass
 class ModelArgs:
     max_sequence_length: int = 2048
@@ -21,7 +22,7 @@ class ModelArgs:
     num_layers: int = 32
     rotary_dim: int = 32
     num_experts_per_tok: int = 2
-    num_local_experts:  int = 4
+    num_local_experts: int = 4
 
     @classmethod
     def from_dict(cls, params):
@@ -32,6 +33,7 @@ class ModelArgs:
                 if k in inspect.signature(cls).parameters
             }
         )
+
 
 class LayerNorm(nn.LayerNorm):
     def __call__(self, x: mx.array) -> mx.array:
@@ -97,6 +99,7 @@ class MLP(nn.Module):
     def __call__(self, x) -> mx.array:
         return self.fc2(self.act(self.fc1(x)))
 
+
 class MOE(nn.Module):
     def __init__(self, args: ModelArgs, dim: int, hidden_dim: int):
         super().__init__()
@@ -114,12 +117,9 @@ class MOE(nn.Module):
 
         gates = self.gate(x)
         if ne < self.num_experts:
-            # print(gates)
             inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
         else:
-            # print("none")
             inds = mx.broadcast_to(mx.arange(ne), gates.shape)
-        print(inds)
 
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
@@ -240,7 +240,6 @@ def load(path_or_hf_repo: str):
         config = json.loads(f.read())
         quantization = config.get("quantization", None)
         model_args = ModelArgs.from_dict(config)
-        print(model_args)
 
     weight_files = glob.glob(str(model_path / "*.safetensors"))
     if len(weight_files) == 0:
@@ -261,39 +260,3 @@ def load(path_or_hf_repo: str):
         model_path,
     )
     return model, tokenizer
-
-# debugging
-if __name__ == "__main__":
-    path_or_hf_repo = "mlabonne/phixtral-4x2_8"
-    model_path = Path(path_or_hf_repo)
-    if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
-            )
-        )
-
-    with open(model_path / "config.json", "r") as f:
-        config = json.loads(f.read())
-        quantization = config.get("quantization", None)
-        model_args = ModelArgs.from_dict(config)
-
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
-    if len(weight_files) == 0:
-        raise FileNotFoundError("No safetensors found in {}".format(model_path))
-
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf).items())
-
-    model = Model(model_args)
-    if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
-
-    model.load_weights(list(weights.items()))
-
-    mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-    )
