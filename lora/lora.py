@@ -72,6 +72,11 @@ def build_parser():
         "--learning-rate", type=float, default=1e-5, help="Adam learning rate."
     )
     parser.add_argument(
+        "--append-eos-token",
+        action="store_true",
+        help="Append eos token to the end of each training sample.",
+    )
+    parser.add_argument(
         "--steps-per-report",
         type=int,
         default=10,
@@ -163,7 +168,7 @@ def loss(model, inputs, targets, lengths):
     return ce, ntoks
 
 
-def iterate_batches(dset, tokenizer, batch_size, train=False):
+def iterate_batches(dset, tokenizer, batch_size, train=False, append_eos_token=False):
     # Shuffle indices
     while True:
         indices = np.arange(len(dset))
@@ -173,7 +178,11 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
         # Collect batches from dataset
         for i in range(0, len(indices) - batch_size + 1, batch_size):
             # Encode batch
-            batch = [tokenizer.encode(dset[indices[i + j]]) for j in range(batch_size)]
+            if train and append_eos_token:
+                batch = [tokenizer.encode(dset[indices[i + j]] + tokenizer.eos_token) 
+                         for j in range(batch_size)]
+            else:
+                batch = [tokenizer.encode(dset[indices[i + j]]) for j in range(batch_size)]
             lengths = [len(x) for x in batch]
 
             # Check if any sequence is longer than 2048 tokens
@@ -218,10 +227,14 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
 
     # Main training loop
     start = time.perf_counter()
-    for it, batch in zip(
-        range(args.iters),
-        iterate_batches(train_set, tokenizer, args.batch_size, train=True),
-    ):
+    batches = iterate_batches(
+        train_set, 
+        tokenizer, 
+        args.batch_size, 
+        train=True, 
+        append_eos_token=args.append_eos_token
+    )
+    for it, batch in zip(range(args.iters), batches):
         # Forward and backward pass
         (lvalue, toks), grad = loss_value_and_grad(model, *batch)
 
