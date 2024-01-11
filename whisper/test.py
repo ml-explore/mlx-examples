@@ -189,7 +189,7 @@ class TestWhisper(unittest.TestCase):
 
     def test_transcribe(self):
         result = whisper.transcribe(
-            TEST_AUDIO, model_path=MLX_FP32_MODEL_PATH, fp16=False
+            TEST_AUDIO, path_or_hf_repo=MLX_FP32_MODEL_PATH, fp16=False
         )
         self.assertEqual(
             result["text"],
@@ -210,7 +210,7 @@ class TestWhisper(unittest.TestCase):
             return
 
         result = whisper.transcribe(
-            audio_file, model_path=MLX_FP32_MODEL_PATH, fp16=False
+            audio_file, path_or_hf_repo=MLX_FP32_MODEL_PATH, fp16=False
         )
         self.assertEqual(len(result["text"]), 10920)
         self.assertEqual(result["language"], "en")
@@ -313,9 +313,8 @@ class TestWhisper(unittest.TestCase):
 
     def test_transcribe_word_level_timestamps_confidence_scores(self):
         result = whisper.transcribe(
-            # TEST_AUDIO, model_path=MLX_FP32_MODEL_PATH, word_timestamps=True, fp16=False
             TEST_AUDIO,
-            model_path=MLX_FP16_MODEL_PATH,
+            path_or_hf_repo=MLX_FP16_MODEL_PATH,
             word_timestamps=True,
         )
 
