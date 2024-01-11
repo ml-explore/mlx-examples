@@ -347,7 +347,7 @@ def main(handler: TrainingRecordHandler, load_model_and_tokenizer, generate):
         model, tokenizer = load_model_and_tokenizer(args.model)
         # Freeze all layers other than LORA linears
         model.freeze()
-        for l in model.layers[len(model.model.layers) - args.lora_layers:]:
+        for l in model.layers[len(model.layers) - args.lora_layers:]:
             l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
             l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
         p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10 ** 6
