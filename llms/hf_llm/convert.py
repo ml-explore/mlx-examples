@@ -29,9 +29,9 @@ def fetch_from_hub(model_path: str, local: bool):
     for wf in weight_files:
         weights.update(mx.load(wf).items())
 
-    config = transformers.AutoConfig.from_pretrained(hf_path)
+    config = transformers.AutoConfig.from_pretrained(model_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        hf_path,
+        model_path,
     )
     return weights, config.to_dict(), tokenizer
 
