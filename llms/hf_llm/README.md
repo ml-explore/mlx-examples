@@ -52,7 +52,7 @@ Here are a few examples of Hugging Face models that work with this example:
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
 [Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending),
-and,
+and
 [Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending)
 style models should work out of the box.
 
@@ -75,8 +75,8 @@ python convert.py --help
 ```
 
 You can upload new models to Hugging Face by specifying `--upload-repo` to
-`convert.py`. For example, to upload a quantized Mistral-7B model the [MLX
-Hugging Face community](https://huggingface.co/mlx-community) you can do:
+`convert.py`. For example, to upload a quantized Mistral-7B model to the 
+[MLX Hugging Face community](https://huggingface.co/mlx-community) you can do:
 
 ```
 python convert.py \
