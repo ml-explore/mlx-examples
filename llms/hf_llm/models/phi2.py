@@ -1,36 +1,20 @@
-import glob
-import inspect
-import json
 import math
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-from huggingface_hub import snapshot_download
-from mlx.utils import tree_unflatten
-from transformers import AutoTokenizer
+
+from .base import BaseModelArgs
 
 
 @dataclass
-class ModelArgs:
+class ModelArgs(BaseModelArgs):
     max_sequence_length: int = 2048
     num_vocab: int = 51200
     model_dim: int = 2560
     num_heads: int = 32
     num_layers: int = 32
     rotary_dim: int = 32
-
-    @classmethod
-    def from_dict(cls, params):
-        return cls(
-            **{
-                k: v
-                for k, v in params.items()
-                if k in inspect.signature(cls).parameters
-            }
-        )
 
 
 class LayerNorm(nn.LayerNorm):
@@ -168,57 +152,3 @@ class Model(nn.Module):
 
         y, cache = self.transformer(x, mask, cache)
         return self.lm_head(y), cache
-
-
-def generate(prompt: mx.array, model: Model, temp: float = 0.0):
-    def sample(logits):
-        if temp == 0:
-            return mx.argmax(logits, axis=-1)
-        else:
-            return mx.random.categorical(logits * (1 / temp))
-
-    y = prompt
-    cache = None
-    while True:
-        logits, cache = model(y[None], cache=cache)
-        logits = logits[:, -1, :]
-        y = sample(logits)
-        yield y
-
-
-def load(path_or_hf_repo: str):
-    # If the path exists, it will try to load model form it
-    # otherwise download and cache from the hf_repo and cache
-    model_path = Path(path_or_hf_repo)
-    if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
-            )
-        )
-
-    with open(model_path / "config.json", "r") as f:
-        config = json.loads(f.read())
-        quantization = config.get("quantization", None)
-        model_args = ModelArgs.from_dict(config)
-
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
-    if len(weight_files) == 0:
-        raise FileNotFoundError("No safetensors found in {}".format(model_path))
-
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf).items())
-
-    model = Model(model_args)
-    if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
-
-    model.load_weights(list(weights.items()))
-
-    mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-    )
-    return model, tokenizer
