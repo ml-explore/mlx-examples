@@ -4,9 +4,8 @@ import argparse
 import time
 
 import mlx.core as mx
+from mlx_plamo.plamo import PlamoForCausalLM, load_model
 from sentencepiece import SentencePieceProcessor
-
-from modeling_plamo import PlamoForCausalLM, load_model
 
 
 def tic():
@@ -25,11 +24,10 @@ def generate(
     max_tokens: int,
     write_every: int,
     temp: float = 0.0,
-):
+) -> str:
     # input("Press enter to start generation")
     print("------")
-    print(prompt)
-    x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(prompt)])
+    x = mx.array([tokenizer.encode(prompt)], dtype=mx.int64)
     skip = 0
     prompt_processing = None
     tokens = []
@@ -60,6 +58,21 @@ def generate(
     print("------")
     print(prompt_processing)
     print(full_gen)
+    return s
+
+
+# From: https://huggingface.co/pfnet/plamo-13b-instruct
+def generate_prompt(messages: list) -> str:
+    sep = "\n\n### "
+    prompt = [
+        "以下はタスクを説明する指示で、文脈を説明した入力とペアになっています。",
+        "要求を適切に補完するよう応答を書いてください。",
+    ]
+    roles = {"instruction": "指示", "response": "応答", "input": "入力"}
+    for msg in messages:
+        prompt.append(sep + roles[msg["role"]] + ":\n" + msg["content"])
+    prompt.append(sep + roles["response"] + ":\n")
+    return "".join(prompt)
 
 
 if __name__ == "__main__":
@@ -79,7 +92,7 @@ if __name__ == "__main__":
         "--max-tokens",
         "-m",
         type=int,
-        default=100,
+        default=128,
         help="Maximum number of tokens to generate",
     )
     parser.add_argument("--write-every", type=int, default=1, help="After how many tokens to detokenize")
@@ -87,13 +100,38 @@ if __name__ == "__main__":
         "--temp",
         help="The sampling temperature.",
         type=float,
-        default=0.0,
+        default=0.7,
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+    parser.add_argument("--instruct", "-i", action="store_true", help="Use the instruct prompt")
 
     args = parser.parse_args()
     mx.random.seed(args.seed)
 
     model, tokenizer = load_model(args.model)
 
-    generate(model, tokenizer, args.prompt, args.max_tokens, args.write_every, args.temp)
+    instruction_base = [
+        {
+            "role": "instruction",
+            "content": args.prompt,
+        },
+    ]
+    if args.instruct:
+        prompt = generate_prompt(instruction_base)
+    else:
+        prompt = args.prompt
+
+    answer = generate(model, tokenizer, prompt, args.max_tokens, args.write_every, args.temp)
+
+    while True:
+        new_input = input("Input more text to continue generation:")
+        if new_input == "":
+            break
+        instruction_base.append(
+            {
+                "role": "input",
+                "content": new_input,
+            },
+        )
+        prompt = generate_prompt(instruction_base)
+        answer = generate(model, tokenizer, prompt, args.max_tokens, args.write_every, args.temp)
