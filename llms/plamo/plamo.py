@@ -401,6 +401,8 @@ class PlamoForCausalLM(PlamoPreTrainedModel):
             x = self.model.norm(x)
             logits = self.lm_head(x[:, -1])
             y = sample(logits)
+            if y == self.config.eos_token_id:
+                return y
 
             yield y
 
@@ -427,7 +429,6 @@ def load_model(
             weights.update(mx.load(wf).items())
 
     config = PlamoConfig.from_json_file(model_path / "config.json")
-    print(config)
 
     model = PlamoForCausalLM(config)
     model.update(tree_unflatten(list(weights.items())))
