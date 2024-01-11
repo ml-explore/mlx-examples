@@ -11,8 +11,7 @@ import transformers
 from mlx.utils import tree_flatten
 from utils import get_model_path, load
 
-MAX_FILE_SIZE_GIBIBYTE_DEFAULT = 15
-REPO_PREFIX = "mlx-community"
+MAX_FILE_SIZE_GB = 15
 
 
 def configure_parser() -> argparse.ArgumentParser:
@@ -101,20 +100,18 @@ def quantize(weights: dict, config: dict, args: argparse.Namespace) -> tuple:
     return quantized_weights, quantized_config
 
 
-def make_shards(
-    weights: dict, max_file_size_gibibyte: int = MAX_FILE_SIZE_GIBIBYTE_DEFAULT
-) -> list:
+def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
     """
     Splits the weights into smaller shards.
 
     Args:
         weights (dict): Model weights.
-        max_file_size_gibibyte (int): Maximum size of each shard in GiB.
+        max_file_size_gb (int): Maximum size of each shard in gigabytes.
 
     Returns:
         list: List of weight shards.
     """
-    max_file_size_bytes = max_file_size_gibibyte << 30
+    max_file_size_bytes = max_file_size_gb << 30
     shards = []
     shard, shard_size = {}, 0
     for k, v in weights.items():

@@ -6,38 +6,40 @@ from typing import Generator, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+
+# Local imports
 import models.llama as llama
 import models.phi2 as phi2
 from huggingface_hub import snapshot_download
-
-# Local imports
 from models.base import BaseModelArgs
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Constants
 MODEL_MAPPING = {
-    "LlamaForCausalLM": llama,
-    "MistralForCausalLM": llama,  # mistral is compatible with llama
-    "PhiForCausalLM": phi2,
+    "llama": llama,
+    "mistral": llama,  # mistral is compatible with llama
+    "phi": phi2,
 }
 
 
-def _get_classes(config: BaseModelArgs):
+def _get_classes(config: dict):
     """
     Retrieve the model and model args classes based on the configuration.
 
     Args:
-        config (ModelArgs): The model configuration.
+        config (dict): The model configuration.
 
     Returns:
-        A tuple containing the Model class and the ModelArgs class, or None if not found.
+        A tuple containing the Model class and the ModelArgs class.
     """
-    architectures = config.get("architectures", [])
+    model_type = config["model_type"]
+    if model_type not in MODEL_MAPPING:
+        msg = f"Model type {model_type} not supported."
+        logging.error(msg)
+        raise ValueError(msg)
 
-    for arch in architectures:
-        if arch in MODEL_MAPPING:
-            return MODEL_MAPPING[arch].Model, MODEL_MAPPING[arch].ModelArgs
-    return None
+    arch = MODEL_MAPPING[model_type]
+    return arch.Model, arch.ModelArgs
 
 
 def get_model_path(path_or_hf_repo: str) -> Path:
@@ -116,22 +118,15 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     except FileNotFoundError:
         logging.error(f"Config file not found in {model_path}")
         raise
-
     weight_files = glob.glob(str(model_path / "*.safetensors"))
     if not weight_files:
         logging.error(f"No safetensors found in {model_path}")
         raise FileNotFoundError(f"No safetensors found in {model_path}")
-
     weights = {}
     for wf in weight_files:
         weights.update(mx.load(wf))
 
     model_class, model_args_class = _get_classes(config=config)
-    if not model_class or not model_args_class:
-        logging.error("Model class or args class not found for the given architecture.")
-        raise ValueError(
-            "Model class or args class not found for the given architecture."
-        )
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)

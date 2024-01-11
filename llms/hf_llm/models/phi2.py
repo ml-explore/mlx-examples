@@ -28,13 +28,15 @@ class RoPEAttention(nn.Module):
 
         self.n_head = n_head
 
+        self.q_proj = nn.Linear(dims, dims)
+        self.k_proj = nn.Linear(dims, dims)
+        self.v_proj = nn.Linear(dims, dims)
+        self.dense = nn.Linear(dims, dims)
+
         self.rope = nn.RoPE(rotary_dim, traditional=False)
-        self.Wqkv = nn.Linear(dims, 3 * dims)
-        self.out_proj = nn.Linear(dims, dims)
 
     def __call__(self, x, mask=None, cache=None):
-        qkv = self.Wqkv(x)
-        queries, keys, values = mx.split(qkv, 3, axis=-1)
+        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Extract some shapes
         n_head = self.n_head
@@ -68,7 +70,7 @@ class RoPEAttention(nn.Module):
         scores = mx.softmax(scores, axis=-1).astype(values.dtype)
         values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
 
-        return self.out_proj(values_hat), (keys, values)
+        return self.dense(values_hat), (keys, values)
 
 
 class MLP(nn.Module):
@@ -87,57 +89,39 @@ class ParallelBlock(nn.Module):
         super().__init__()
         dims = config.n_embd
         mlp_dims = dims * 4
-        self.mixer = RoPEAttention(dims, config.n_head, config.rotary_dim)
-        self.ln = LayerNorm(dims)
+        self.self_attn = RoPEAttention(dims, config.n_head, config.rotary_dim)
+        self.input_layernorm = LayerNorm(dims)
         self.mlp = MLP(dims, mlp_dims)
 
     def __call__(self, x, mask, cache):
-        h = self.ln(x)
-        attn_h, cache = self.mixer(h, mask, cache)
+        h = self.input_layernorm(x)
+        attn_h, cache = self.self_attn(h, mask, cache)
         ff_h = self.mlp(h)
         return attn_h + ff_h + x, cache
 
 
-class TransformerDecoder(nn.Module):
+class Transformer(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
-        self.embd = Embd(config)
-        self.h = [ParallelBlock(config) for i in range(config.n_layer)]
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.n_embd)
+        self.layers = [ParallelBlock(config) for i in range(config.n_layer)]
+        self.final_layernorm = LayerNorm(config.n_embd)
 
     def __call__(self, x, mask, cache):
-        x = self.embd(x)
+        x = self.embed_tokens(x)
         if cache is None:
-            cache = [None] * len(self.h)
+            cache = [None] * len(self.layers)
 
-        for e, layer in enumerate(self.h):
+        for e, layer in enumerate(self.layers):
             x, cache[e] = layer(x, mask, cache[e])
-        return x, cache
-
-
-class Embd(nn.Module):
-    def __init__(self, config: ModelArgs):
-        super().__init__()
-        self.wte = nn.Embedding(config.vocab_size, config.n_embd)
-
-    def __call__(self, x):
-        return self.wte(x)
-
-
-class OutputHead(nn.Module):
-    def __init__(self, config: ModelArgs) -> None:
-        super().__init__()
-        self.ln = LayerNorm(config.n_embd)
-        self.linear = nn.Linear(config.n_embd, config.vocab_size)
-
-    def __call__(self, inputs):
-        return self.linear(self.ln(inputs))
+        return self.final_layernorm(x), cache
 
 
 class Model(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
-        self.transformer = TransformerDecoder(config)
-        self.lm_head = OutputHead(config)
+        self.model = Transformer(config)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size)
 
     def __call__(
         self,
@@ -150,5 +134,5 @@ class Model(nn.Module):
             mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
             mask = mask.astype(x.dtype)
 
-        y, cache = self.transformer(x, mask, cache)
+        y, cache = self.model(x, mask, cache)
         return self.lm_head(y), cache

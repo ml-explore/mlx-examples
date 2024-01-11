@@ -35,7 +35,7 @@ Run `python generate.py --help` to see all the options.
 
 ### Models
 
-The example supports Hugging Face format Mistral and Llama-style models.  If the
+The example supports Hugging Face format Mistral, Llama, and Phi-2 style models.  If the
 model you want to run is not supported, file an
 [issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
 submit a pull request.
@@ -50,9 +50,10 @@ Here are a few examples of Hugging Face models that work with this example:
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
 
 Most
-[Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending)
-and
-[Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending)
+[Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
+[Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending),
+and,
+[Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending)
 style models should work out of the box.
 
 ### Convert new models 
