@@ -71,6 +71,7 @@ def fetch_from_hub(
 
     config = transformers.AutoConfig.from_pretrained(model_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
+
     return weights, config.to_dict(), tokenizer
 
 
