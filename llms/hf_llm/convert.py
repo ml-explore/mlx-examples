@@ -14,20 +14,17 @@ from mlx.utils import tree_flatten
 from models import Model, ModelArgs
 
 
-def fetch_from_hub(hf_path: str,local:bool):
-    
+def fetch_from_hub(model_path: str, local: bool):
     if not local:
         model_path = snapshot_download(
-            repo_id=hf_path,
+            repo_id=model_path,
             allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
         )
-    else: 
-        model_path = hf_path
 
     weight_files = glob.glob(f"{model_path}/*.safetensors")
     if len(weight_files) == 0:
         raise FileNotFoundError("No safetensors found in {}".format(model_path))
-    
+
     weights = {}
     for wf in weight_files:
         weights.update(mx.load(wf).items())
@@ -37,6 +34,7 @@ def fetch_from_hub(hf_path: str,local:bool):
         hf_path,
     )
     return weights, config.to_dict(), tokenizer
+
 
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
@@ -152,21 +150,19 @@ if __name__ == "__main__":
         help="The name of model to upload to Hugging Face MLX Community",
         type=str,
         default=None,
-    )    
+    )
     parser.add_argument(
-    "-l",
-    "--local",
-    action="store_true",
-    help="Whether the hf-path points to a local filesystem.",
-    default=False
+        "-l",
+        "--local",
+        action="store_true",
+        help="Whether the hf-path points to a local filesystem.",
+        default=False,
     )
 
     args = parser.parse_args()
 
     print("[INFO] Loading")
-    weights, config, tokenizer = fetch_from_hub(args.hf_path,args.local)
-
-
+    weights, config, tokenizer = fetch_from_hub(args.hf_path, args.local)
 
     dtype = mx.float16 if args.quantize else getattr(mx, args.dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
