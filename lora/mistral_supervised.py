@@ -74,10 +74,10 @@ class Attention(nn.Module):
 
         self.scale = self.args.head_dim**-0.5
 
-        self.wq = nn.Linear(args.dim, args.n_heads * args.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
+        self.q_proj = nn.Linear(args.dim, args.n_heads * args.head_dim, bias=False)
+        self.k_proj = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
+        self.v_proj = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
+        self.o_proj = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
         self.rope = nn.RoPE(args.head_dim, traditional=True, base=args.rope_theta)
 
     def __call__(
@@ -88,7 +88,7 @@ class Attention(nn.Module):
     ) -> mx.array:
         B, L, D = x.shape
 
-        queries, keys, values = self.wq(x), self.wk(x), self.wv(x)
+        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
@@ -116,7 +116,7 @@ class Attention(nn.Module):
             scores += mask
         scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.wo(output), (keys, values)
+        return self.o_proj(output), (keys, values)
 
 
 class TransformerBlock(nn.Module):
@@ -124,7 +124,7 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.n_heads = args.n_heads
         self.dim = args.dim
-        self.attention = Attention(args)
+        self.self_attn = Attention(args)
         self.feed_forward = FeedForward(args=args)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
@@ -136,7 +136,7 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attention(self.attention_norm(x), mask, cache)
+        r, cache = self.self_attn(self.attention_norm(x), mask, cache)
         h = x + r
         r = self.feed_forward(self.ffn_norm(h))
         out = h + r
