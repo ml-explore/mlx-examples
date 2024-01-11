@@ -2,15 +2,12 @@ import argparse
 import copy
 import glob
 import json
-import logging
-import os
 from pathlib import Path
 from typing import Dict, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import transformers
-from huggingface_hub import HfApi, ModelCard, snapshot_download
 from mlx.utils import tree_flatten
 from utils import get_model_path, load
 
@@ -194,5 +191,5 @@ if __name__ == "__main__":
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
-    if args.upload_name is not None and not args.local:
+    if args.upload_name is not None:
         upload_to_hub(mlx_path, args.upload_name, args.hf_path)
