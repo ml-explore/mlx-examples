@@ -110,7 +110,7 @@ For generation use:
 ```
 python lora.py --model <path_to_model> \
                --adapter-file <path_to_adapters.npz> \
-               --num-tokens 50 \
+               --max-tokens 50 \
                --prompt "table: 1-10015132-16
 columns: Player, No., Nationality, Position, Years in Toronto, School/Club Team
 Q: What is terrence ross' nationality
