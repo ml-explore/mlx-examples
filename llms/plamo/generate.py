@@ -4,7 +4,7 @@ import argparse
 import time
 
 import mlx.core as mx
-from mlx_plamo.plamo import PlamoForCausalLM, load_model
+from plamo import PlamoForCausalLM, load_model
 from sentencepiece import SentencePieceProcessor
 
 

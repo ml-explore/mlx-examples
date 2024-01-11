@@ -399,7 +399,8 @@ class PlamoForCausalLM(PlamoPreTrainedModel):
                 # old cache the moment it is not needed anymore.
                 x, cache[i] = self.model.layers.layers[i](x, None, position_ids, cache=cache[i])
             x = self.model.norm(x)
-            y = sample(self.lm_head(x[:, -1]))
+            logits = self.lm_head(x[:, -1])
+            y = sample(logits)
 
             yield y
 

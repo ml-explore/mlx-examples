@@ -11,7 +11,7 @@ import mlx.nn as nn
 import transformers
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
-from mlx_plamo.plamo import PlamoConfig, PlamoForCausalLM
+from plamo import PlamoConfig, PlamoForCausalLM
 
 
 def fetch_from_hub(hf_path: str):
