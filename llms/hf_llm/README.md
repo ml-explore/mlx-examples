@@ -74,6 +74,13 @@ For more options run:
 python convert.py --help
 ```
 
-You can upload new models to the [Hugging Face MLX
-Community](https://huggingface.co/mlx-community) by specifying `--upload-name`
-to `convert.py`.
+You can upload new models to Hugging Face by specifying `--upload-repo` to
+`convert.py`. For example, to upload a quantized Mistral-7B model the [MLX
+Hugging Face community](https://huggingface.co/mlx-community) you can do:
+
+```
+python convert.py \
+    --hf-path mistralai/Mistral-7B-v0.1 \
+    -q \
+    --upload mlx-community/my-4bit-mistral \
+```

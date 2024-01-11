@@ -46,12 +46,11 @@ def configure_parser() -> argparse.ArgumentParser:
         default="float16",
     )
     parser.add_argument(
-        "--upload-name",
-        help="The name of model to upload to Hugging Face MLX Community",
+        "--upload-repo",
+        help="The Hugging Face repo to upload the model to.",
         type=str,
         default=None,
     )
-
     return parser
 
 
@@ -125,25 +124,23 @@ def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list
     return shards
 
 
-def upload_to_hub(path: str, name: str, hf_path: str):
+def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     """
     Uploads the model to Hugging Face hub.
 
     Args:
         path (str): Local path to the model.
-        name (str): Name of the model for uploading.
-        hf_path (str): Path to the Hugging Face model.
+        upload_repo (str): Name of the HF repo to upload to.
+        hf_path (str): Path to the original Hugging Face model.
     """
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
 
-    repo_id = f"mlx-community/{name}"
-
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
     card.text = f"""
-# {name}
+# {upload_repo}
 This model was converted to MLX format from [`{hf_path}`]().
 Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
 ## Use with mlx
@@ -159,10 +156,10 @@ python generate.py --model {repo_id} --prompt "My name is"
     logging.set_verbosity_info()
 
     api = HfApi()
-    api.create_repo(repo_id=repo_id, exist_ok=True)
+    api.create_repo(repo_id=upload_repo, exist_ok=True)
     api.upload_folder(
         folder_path=path,
-        repo_id=repo_id,
+        repo_id=upload_repo,
         repo_type="model",
     )
 
@@ -189,5 +186,5 @@ if __name__ == "__main__":
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
-    if args.upload_name is not None:
-        upload_to_hub(mlx_path, args.upload_name, args.hf_path)
+    if args.upload_repo is not None:
+        upload_to_hub(mlx_path, args.upload_repo, args.hf_path)
