@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -16,16 +16,39 @@ from tokenizers.models import BPE
 
 @dataclass
 class ModelArgs:
-    dim: int
-    n_layers: int
-    head_dim: int
-    hidden_dim: int
-    n_heads: int
-    n_kv_heads: int
-    norm_eps: float
+    hidden_size: int
+    num_hidden_layers: int
+    intermediate_size: int
+    num_attention_heads: int
+    rms_norm_eps: float
     vocab_size: int
-    rope_theta: float
-    rope_traditional: bool = True
+    num_key_value_heads: int = None
+    rope_theta: float = 10000
+    rope_traditional: bool = False
+    model_type: str = None
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+
+    def __post_init__(self):
+        if self.num_key_value_heads is None:
+            self.num_key_value_heads = self.num_attention_heads
+
+        if self.rope_scaling:
+            required_keys = {"factor", "type"}
+            if not all(key in self.rope_scaling for key in required_keys):
+                raise ValueError(f"rope_scaling must contain keys {required_keys}")
+
+            if self.rope_scaling["type"] != "linear":
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
+
+    @classmethod
+    def from_dict(cls, params):
+        return cls(
+            **{
+                k: v
+                for k, v in params.items()
+                if k in inspect.signature(cls).parameters
+            }
+        )
 
 
 class RMSNorm(nn.Module):
@@ -45,21 +68,30 @@ class RMSNorm(nn.Module):
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.args = args
 
-        self.n_heads: int = args.n_heads
-        self.n_kv_heads: int = args.n_kv_heads
+        dim = args.hidden_size
+        self.n_heads = n_heads = args.num_attention_heads
+        self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        self.repeats = self.n_heads // self.n_kv_heads
+        self.repeats = n_heads // n_kv_heads
 
-        self.scale = self.args.head_dim**-0.5
+        head_dim = args.hidden_size // n_heads
+        self.scale = head_dim**-0.5
 
-        self.wq = nn.Linear(args.dim, args.n_heads * args.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=False)
+        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
+        rope_scale = (
+            1 / args.rope_scaling["factor"]
+            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
+            else 1
+        )
         self.rope = nn.RoPE(
-            args.head_dim, traditional=args.rope_traditional, base=args.rope_theta
+            head_dim,
+            traditional=args.rope_traditional,
+            base=args.rope_theta,
+            scale=rope_scale,
         )
 
     def __call__(
@@ -67,10 +99,10 @@ class Attention(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
+    ) -> mx.array:
         B, L, D = x.shape
 
-        queries, keys, values = self.wq(x), self.wk(x), self.wv(x)
+        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
@@ -81,7 +113,8 @@ class Attention(nn.Module):
             a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
             return a.reshape([B, self.n_heads, L, -1])
 
-        keys, values = map(repeat, (keys, values))
+        if self.repeats > 1:
+            keys, values = map(repeat, (keys, values))
 
         if cache is not None:
             key_cache, value_cache = cache
@@ -98,30 +131,29 @@ class Attention(nn.Module):
             scores += mask
         scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.wo(output), (keys, values)
+        return self.o_proj(output), (keys, values)
 
 
-class FeedForward(nn.Module):
-    def __init__(self, args: ModelArgs):
+class MLP(nn.Module):
+    def __init__(self, dim, hidden_dim):
         super().__init__()
-
-        self.w1 = nn.Linear(args.dim, args.hidden_dim, bias=False)
-        self.w2 = nn.Linear(args.hidden_dim, args.dim, bias=False)
-        self.w3 = nn.Linear(args.dim, args.hidden_dim, bias=False)
+        self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
+        self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
 
     def __call__(self, x) -> mx.array:
-        return self.w2(nn.silu(self.w1(x)) * self.w3(x))
+        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
 class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.n_heads = args.n_heads
-        self.dim = args.dim
-        self.attention = Attention(args)
-        self.feed_forward = FeedForward(args=args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.num_attention_heads = args.num_attention_heads
+        self.hidden_size = args.hidden_size
+        self.self_attn = Attention(args)
+        self.mlp = MLP(args.hidden_size, args.intermediate_size)
+        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.args = args
 
     def __call__(
@@ -130,29 +162,32 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attention(self.attention_norm(x), mask, cache)
+        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
-        r = self.feed_forward(self.ffn_norm(h))
+        r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
         return out, cache
 
 
-class Model(nn.Module):
+class LlamaModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
-        self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
-        self.layers = [TransformerBlock(args=args) for _ in range(args.n_layers)]
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.output = nn.Linear(args.dim, args.vocab_size, bias=False)
+        self.num_hidden_layers = args.num_hidden_layers
+        assert self.vocab_size > 0
+        self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
+        self.layers = [
+            TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
+        ]
+        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
         self,
         inputs: mx.array,
         cache=None,
     ):
-        h = self.tok_embeddings(inputs)
+        h = self.embed_tokens(inputs)
 
         mask = None
         if h.shape[1] > 1:
@@ -165,7 +200,22 @@ class Model(nn.Module):
         for e, layer in enumerate(self.layers):
             h, cache[e] = layer(h, mask, cache[e])
 
-        return self.output(self.norm(h)), cache
+        return self.norm(h), cache
+
+
+class Model(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.model = LlamaModel(args)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+
+    def __call__(
+        self,
+        inputs: mx.array,
+        cache=None,
+    ):
+        out, cache = self.model(inputs, cache)
+        return self.lm_head(out), cache
 
 
 def get_field(gguf_reader: GGUFReader, key: str):
@@ -187,21 +237,24 @@ def get_field(gguf_reader: GGUFReader, key: str):
 
 def get_string_array_field(gguf_reader: GGUFReader, key: str):
     f = gguf_reader.get_field(key)
+    if f is None:
+        return []
     return [bytes(f.parts[d]).decode("utf-8") for d in f.data]
 
 
 def get_config(gguf_reader: GGUFReader, weights: dict[str, mx.array]):
     output = {}
-    output["dim"] = get_field(gguf_reader, "llama.embedding_length")
-    output["n_layers"] = get_field(gguf_reader, "llama.block_count")
-    output["n_heads"] = get_field(gguf_reader, "llama.attention.head_count")
-    output["head_dim"] = output["dim"] // output["n_heads"]
-    output["hidden_dim"] = get_field(gguf_reader, "llama.feed_forward_length")
-    output["n_kv_heads"] = get_field(gguf_reader, "llama.attention.head_count_kv")
-    output["norm_eps"] = get_field(
+    output["hidden_size"] = get_field(gguf_reader, "llama.embedding_length")
+    output["num_hidden_layers"] = get_field(gguf_reader, "llama.block_count")
+    output["num_attention_heads"] = get_field(gguf_reader, "llama.attention.head_count")
+    output["intermediate_size"] = get_field(gguf_reader, "llama.feed_forward_length")
+    output["num_key_value_heads"] = get_field(
+        gguf_reader, "llama.attention.head_count_kv"
+    )
+    output["rms_norm_eps"] = get_field(
         gguf_reader, "llama.attention.layer_norm_rms_epsilon"
     )
-    output["vocab_size"] = weights["output.weight"].shape[0]
+    output["vocab_size"] = weights["lm_head.weight"].shape[0]
     output["rope_theta"] = get_field(gguf_reader, "llama.rope.freq_base")
     output["rope_traditional"] = True
     return output
@@ -217,6 +270,9 @@ class GGUFTokenizer:
         # TODO: do we need scores and token type?
         # tokenizer.ggml.scores: [array] [0.000000, 0.000000, 0.000000, ..
         # tokenizer.ggml.token_type: [array] [2, 3, 3, 6, ...
+        scores = gguf_reader.get_field("tokenizer.ggml.scores")
+        scores = [scores.parts[d].item() for d in scores.data]
+
         tokens = get_string_array_field(gguf_reader, "tokenizer.ggml.tokens")
         vocab = {parse_token(t): i for i, t in enumerate(tokens)}
         merges = get_string_array_field(gguf_reader, "tokenizer.ggml.merges")
@@ -240,17 +296,19 @@ class GGUFTokenizer:
 
 
 def translate_weight_names(name):
-    name = name.replace("blk.", "layers.")
-    name = name.replace("ffn_gate", "feed_forward.w1")
-    name = name.replace("ffn_down", "feed_forward.w2")
-    name = name.replace("ffn_up", "feed_forward.w3")
-    name = name.replace("attn_q", "attention.wq")
-    name = name.replace("attn_k", "attention.wk")
-    name = name.replace("attn_v", "attention.wv")
-    name = name.replace("attn_norm", "attention_norm")
-    name = name.replace("attn_output", "attention.wo")
-    name = name.replace("token_embd", "tok_embeddings")
-    name = name.replace("output_norm", "norm")
+    name = name.replace("blk.", "model.layers.")
+    name = name.replace("ffn_gate", "mlp.gate_proj")
+    name = name.replace("ffn_down", "mlp.down_proj")
+    name = name.replace("ffn_up", "mlp.up_proj")
+    name = name.replace("attn_q", "self_attn.q_proj")
+    name = name.replace("attn_k", "self_attn.k_proj")
+    name = name.replace("attn_v", "self_attn.v_proj")
+    name = name.replace("attn_output", "self_attn.o_proj")
+    name = name.replace("attn_norm", "input_layernorm")
+    name = name.replace("ffn_norm", "post_attention_layernorm")
+    name = name.replace("token_embd", "model.embed_tokens")
+    name = name.replace("output_norm", "model.norm")
+    name = name.replace("output", "lm_head")
     return name
 
 
@@ -270,17 +328,14 @@ def load(gguf_file: str, repo: str = None):
         gguf_file = str(Path(model_path) / gguf_file)
 
     print(f"[INFO] Loading model from {gguf_file}")
-    weights = mx.load(gguf_file)
-    import pdb
-
-    pdb.set_trace()
-    weights = {translate_weight_names(k): v for k, v in weights.items()}
-
     reader = GGUFReader(gguf_file)
+    tokenizer = GGUFTokenizer(reader)
+    weights = mx.load(gguf_file)
+    weights = {translate_weight_names(k): v for k, v in weights.items()}
     config = get_config(reader, weights)
     model = Model(ModelArgs(**config))
     model.load_weights(list(weights.items()))
-    return model, GGUFTokenizer(reader)
+    return model, tokenizer
 
 
 def generate(prompt: mx.array, model: Model, temp: float = 0.0):
