@@ -1,11 +1,9 @@
-# Copyright © 2023 Apple Inc.
-
 import argparse
 import copy
 import glob
 import json
 import os
-import sys
+import shutil
 from pathlib import Path
 
 import mlx.core as mx
@@ -13,6 +11,7 @@ import mlx.nn as nn
 import transformers
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
+from mlx_plamo.plamo import PlamoConfig, PlamoForCausalLM
 
 
 def fetch_from_hub(hf_path: str):
@@ -29,16 +28,16 @@ def fetch_from_hub(hf_path: str):
     for wf in weight_files:
         weights.update(mx.load(wf).items())
 
-    config = transformers.AutoConfig.from_pretrained(hf_path)
-    tokenizer = transformers.AutoTokenizer.from_pretrained(hf_path, trust_remote_code=True)
-    return weights, config.to_dict(), tokenizer
+    config = transformers.AutoConfig.from_pretrained(hf_path, trust_remote_code=True)
+
+    return weights, config.to_dict(), os.path.join(model_path, "tokenizer.model")
 
 
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
     # Load the model:
-    model = Model(ModelArgs.from_dict(config))
+    model = PlamoForCausalLM(PlamoConfig.from_dict(config))
     model.load_weights(list(weights.items()))
 
     # Quantize the model:
@@ -139,7 +138,7 @@ if __name__ == "__main__":
         help="Type to save the parameters, ignored if -q is given.",
         type=str,
         choices=["float16", "bfloat16", "float32"],
-        default="float16",
+        default="bfloat16",
     )
     parser.add_argument(
         "--upload-name",
@@ -151,7 +150,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("[INFO] Loading")
-    weights, config, tokenizer = fetch_from_hub(args.hf_path)
+    weights, config, tokenizer_path = fetch_from_hub(args.hf_path)
     if args.quantize:
         print("[INFO] Quantizing")
         weights, config = quantize(weights, config, args)
@@ -167,6 +166,8 @@ if __name__ == "__main__":
     else:
         for i, shard in enumerate(shards):
             mx.savez(str(mlx_path / f"weights.{i:02d}.npz"), **shard)
+
+    shutil.copy(tokenizer_path, mlx_path / "tokenizer.model")
 
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
