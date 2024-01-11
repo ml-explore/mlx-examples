@@ -35,7 +35,7 @@ Run `python generate.py --help` to see all the options.
 
 ### Models
 
-The example supports Hugging Face format Mistral and Llama-style models.  If the
+The example supports Hugging Face format Mistral, Llama, and Phi-2 style models.  If the
 model you want to run is not supported, file an
 [issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
 submit a pull request.
@@ -47,11 +47,13 @@ Here are a few examples of Hugging Face models that work with this example:
 - [TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T](https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T)
 - [deepseek-ai/deepseek-coder-6.7b-instruct](https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct)
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
+- [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
 
 Most
-[Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending)
+[Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
+[Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending),
 and
-[Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending)
+[Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending)
 style models should work out of the box.
 
 ### Convert new models 
@@ -72,6 +74,13 @@ For more options run:
 python convert.py --help
 ```
 
-You can upload new models to the [Hugging Face MLX
-Community](https://huggingface.co/mlx-community) by specifying `--upload-name`
-to `convert.py`.
+You can upload new models to Hugging Face by specifying `--upload-repo` to
+`convert.py`. For example, to upload a quantized Mistral-7B model to the 
+[MLX Hugging Face community](https://huggingface.co/mlx-community) you can do:
+
+```
+python convert.py \
+    --hf-path mistralai/Mistral-7B-v0.1 \
+    -q \
+    --upload mlx-community/my-4bit-mistral \
+```
