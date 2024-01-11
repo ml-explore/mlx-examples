@@ -10,7 +10,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import transformers
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten
+from mlx.utils import tree_flatten, tree_map, tree_unflatten
 from plamo import PlamoConfig, PlamoForCausalLM
 
 
@@ -38,7 +38,8 @@ def quantize(weights, config, args):
 
     # Load the model:
     model = PlamoForCausalLM(PlamoConfig.from_dict(config))
-    model.load_weights(list(weights.items()))
+    weights = tree_map(mx.array, weights)
+    model.update(tree_unflatten(list(weights.items())))
 
     # Quantize the model:
     nn.QuantizedLinear.quantize_module(model, args.q_group_size, args.q_bits)

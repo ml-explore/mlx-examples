@@ -20,9 +20,14 @@ Convert the weights with:
 python convert.py --hf-path pfnet/plamo-13b-instruct-nc
 ```
 
+To generate a 4-bit quantized model use the `-q` flag:
+
+```
+python convert.py --torch-path <path_to_torch_model> -q
+```
+
 By default, the conversion script will make the directory `mlx_model` and save
 the converted `weights.npz`, `tokenizer.model`, and `config.json` there.
-
 
 ### Run
 

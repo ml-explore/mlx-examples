@@ -429,8 +429,11 @@ def load_model(
             weights.update(mx.load(wf).items())
 
     config = PlamoConfig.from_json_file(model_path / "config.json")
-
     model = PlamoForCausalLM(config)
+    quantization = config.to_dict().pop("quantization", None)
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(model, **quantization)
+    model.update(tree_unflatten(list(weights.items())))
     model.update(tree_unflatten(list(weights.items())))
 
     tokenizer = SentencePieceProcessor(model_file=str(model_path / "tokenizer.model"))
