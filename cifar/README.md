@@ -36,16 +36,15 @@ python main.py --help
 
 ## Results
 
-After training with the default `resnet20` architecture for 100 epochs, you
+After training with the default `resnet20` architecture for 30 epochs, you
 should see the following results:
 
 ```
-Epoch: 99 | avg. Train loss 0.320 | avg. Train acc 0.888 | Throughput: 416.77 images/sec
-Epoch: 99 | Test acc 0.807
+Epoch: 29 | avg. Train loss 0.294 | avg. Train acc 0.897 | Throughput: 270.81 images/sec
+Epoch: 29 | Test acc 0.841
 ```
 
 Note this was run on an M1 Macbook Pro with 16GB RAM.
 
-At the time of writing, `mlx` doesn't have built-in learning rate schedules,
-or a `BatchNorm` layer. We intend to update this example once these features
-are added.
+At the time of writing, `mlx` doesn't have built-in learning rate schedules.
+We intend to update this example once these features are added.
