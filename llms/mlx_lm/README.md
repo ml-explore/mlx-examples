@@ -4,4 +4,4 @@ This an example of large language model text generation that can pull models fro
 the Hugging Face Hub.
 
 For more information on this example, see the
-[README](mlx-examples/llms/README.md) in the parent directory.
+[README](../README.md) in the parent directory.
