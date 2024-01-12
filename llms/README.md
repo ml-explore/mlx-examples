@@ -24,7 +24,7 @@ To see a description of all the arguments you can do:
 >>> help(generate)
 ```
 
-The `mlx-lm` package also comes with functionality to quantize and optionaly
+The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
 
 You can convert models in the Python API with:
@@ -37,7 +37,7 @@ upload_name = "mlx_community/My-Mistral-7B-v0.1-4bit"
 convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_name=upload_name)
 ```
 
-This will generate it a 4-bit quantized Mistral-7B and upload it to the
+This will generate a 4-bit quantized Mistral-7B and upload it to the
 repo `mlx_community/My-Mistral-7B-v0.1-4bit`. It will also save the
 converted model in the path `mlx_model` by default.
 
@@ -98,7 +98,6 @@ Here are a few examples of Hugging Face models that work with this example:
 
 - [mistralai/Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 - [meta-llama/Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf)
-- [TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T](https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T)
 - [deepseek-ai/deepseek-coder-6.7b-instruct](https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct)
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)

@@ -44,7 +44,6 @@ Here are a few examples of Hugging Face models that work with this example:
 
 - [mistralai/Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 - [meta-llama/Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf)
-- [TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T](https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T)
 - [deepseek-ai/deepseek-coder-6.7b-instruct](https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct)
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
