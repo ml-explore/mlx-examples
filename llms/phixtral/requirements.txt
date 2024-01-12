@@ -1,5 +1,7 @@
 einops
+hf_transfer
+huggingface_hub
 mlx
 numpy
-transformers>=4.35
 torch
+transformers>=4.35
