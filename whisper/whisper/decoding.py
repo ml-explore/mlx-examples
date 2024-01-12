@@ -115,9 +115,6 @@ class DecodingOptions:
     # implementation details
     fp16: bool = True  # use fp16 for most of the calculation
 
-    # local path to the model weights
-    model_path: Optional[str] = None
-
 
 @dataclass(frozen=True)
 class DecodingResult:
