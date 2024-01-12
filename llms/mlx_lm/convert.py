@@ -149,11 +149,16 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 This model was converted to MLX format from [`{hf_path}`]().
 Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
 ## Use with mlx
+
 ```bash
-pip install mlx
-git clone https://github.com/ml-explore/mlx-examples.git
-cd mlx-examples/llms/hf_llm
-python generate.py --model {upload_repo} --prompt "My name is"
+pip install mlx-lm
+```
+
+```python
+from mlx_lm import load, generate
+
+model, tokenizer = load("{upload_repo}")
+response = generate(model, tokenizer, prompt="hello", verbose=True)
 ```
 """
     card.save(os.path.join(path, "README.md"))
