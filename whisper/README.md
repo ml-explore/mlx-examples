@@ -52,13 +52,13 @@ import whisper
 text = whisper.transcribe(speech_file)["text"]
 ```
 
-Choose the model by setting `hf_path_or_repo`. For example:
+Choose the model by setting `path_or_hf_repo`. For example:
 
 ```python
-result = whisper.transcribe(speech_file, hf_path_or_repo="models/large")
+result = whisper.transcribe(speech_file, path_or_hf_repo="models/large")
 ```
 
-This will load the model contained in `models/large`. The `hf_path_or_repo`
+This will load the model contained in `models/large`. The `path_or_hf_repo`
 can also point to an MLX-style Whisper model on the Hugging Face Hub. In this
 case, the model will be automatically downloaded.
 
