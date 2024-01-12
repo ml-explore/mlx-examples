@@ -64,7 +64,7 @@ class Dataset:
             self._data = None
         else:
             with open(path, "r") as f:
-                self._data = json.load(f)
+                self._data = [json.loads(l) for l in f]
 
     def __getitem__(self, idx: int):
         return self._data[idx]
@@ -328,7 +328,8 @@ def main(handler: TrainingRecordHandler, load_model_and_tokenizer, generate):
     if args.dataset_summary:
         # The number of steps for 1 epoch
         epoch_num_steps = (len(train_set) + args.batch_size - 1) // args.batch_size
-        total_val_batch_num = (len(valid_set) + args.batch_size - 1) // args.batch_size
+        num_validations = len(valid_set)
+        total_val_batch_num = (num_validations + args.batch_size - 1) // args.batch_size
 
         if args.epochs == -1:
             num_iterations = epoch_num_steps if args.iters == -1 else args.iters
@@ -339,7 +340,11 @@ def main(handler: TrainingRecordHandler, load_model_and_tokenizer, generate):
             f"{num_iterations:,} iterations at {epoch_num_steps:,} iterations per epoch on a dataset of "
             f"{len(train_set):,} records, {args.batch_size} at a time."
         )
-        print(f"{total_val_batch_num:,} total validation batches (for {len(valid_set):,} validations)")
+        print(f"{total_val_batch_num:,} total validation batches (for {num_validations :,} validations)")
+
+        print(f"Scaled val_batches: {(num_validations/args.batch_size)*12:,}.\n"
+              f"Scaled steps_per_eval: {num_iterations * .2:,}.\n"
+              f"Scaled steps_per_report: {num_iterations * .01:,}")
     else:
         np.random.seed(args.seed)
         print("Loading pretrained model")
