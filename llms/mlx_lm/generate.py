@@ -2,7 +2,8 @@ import argparse
 import time
 
 import mlx.core as mx
-from utils import generate, load
+
+from .utils import generate_step, load
 
 DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
@@ -47,7 +48,9 @@ def main(args):
     tic = time.time()
     tokens = []
     skip = 0
-    for token, n in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
+    for token, n in zip(
+        generate_step(prompt, model, args.temp), range(args.max_tokens)
+    ):
         if token == tokenizer.eos_token_id:
             break
         if n == 0:
