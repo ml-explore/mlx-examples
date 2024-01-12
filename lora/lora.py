@@ -9,10 +9,10 @@ from pathlib import Path
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
-from models.lora import LoRALinear
 import numpy as np
-from mlx.utils import tree_flatten, tree_unflatten
 import utils as lora_utils
+from mlx.utils import tree_flatten, tree_unflatten
+from models.lora import LoRALinear
 
 
 def build_parser():

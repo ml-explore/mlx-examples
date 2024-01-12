@@ -5,9 +5,8 @@ import copy
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_flatten
-
 import utils
+from mlx.utils import tree_flatten
 
 
 def quantize(weights, config, args):

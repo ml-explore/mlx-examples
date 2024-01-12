@@ -4,11 +4,9 @@ import argparse
 from pathlib import Path
 
 import mlx.core as mx
-from mlx.utils import tree_flatten, tree_unflatten
-
 import utils
+from mlx.utils import tree_flatten, tree_unflatten
 from models.lora import LoRALinear
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")

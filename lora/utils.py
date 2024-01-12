@@ -8,12 +8,10 @@ from typing import Generator
 
 import mlx.core as mx
 import mlx.nn as nn
-import transformers
-from huggingface_hub import snapshot_download
-
 import models.llama as llama
 import models.phi2 as phi2
-
+import transformers
+from huggingface_hub import snapshot_download
 
 # Constants
 MODEL_MAPPING = {
