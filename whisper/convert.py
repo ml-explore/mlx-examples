@@ -71,7 +71,9 @@ def _download(url: str, root: str) -> str:
         if hashlib.sha256(model_bytes).hexdigest() == expected_sha256:
             return download_target
         else:
-            warnings.warn(f"{download_target} exists, but the SHA256 checksum does not match; re-downloading the file")
+            warnings.warn(
+                f"{download_target} exists, but the SHA256 checksum does not match; re-downloading the file"
+            )
 
     with urllib.request.urlopen(url) as source, open(download_target, "wb") as output:
         with tqdm(
@@ -132,7 +134,9 @@ def load_torch_model(
         alignment_heads = _ALIGNMENT_HEADS[name_or_path]
         name_or_path = _download(_MODELS[name_or_path], download_root)
     elif not Path(name_or_path).is_file():
-        raise RuntimeError(f"Model {name_or_path} is neither found in {available_models()} nor as a local path")
+        raise RuntimeError(
+            f"Model {name_or_path} is neither found in {available_models()} nor as a local path"
+        )
 
     with open(name_or_path, "rb") as fp:
         checkpoint = torch.load(fp)
@@ -195,7 +199,49 @@ def torch_to_mlx(
     mlx_model = Whisper(torch_model.dims, dtype)
     params = tree_map(lambda p: p.astype(dtype), params)
     mlx_model.update(params)
+
+    if (alignment_heads := getattr(torch_model, "alignment_heads", None)) is not None:
+        mlx_model.set_alignment_heads(alignment_heads.indices().T.numpy())
+
     return mlx_model
+
+
+def upload_to_hub(path: str, name: str, torch_name_or_path: str):
+    import os
+
+    from huggingface_hub import HfApi, ModelCard, logging
+
+    repo_id = f"mlx-community/{name}"
+    text = f"""
+---
+library_name: mlx
+---
+
+# {name}
+This model was converted to MLX format from [`{torch_name_or_path}`]().
+
+## Use with mlx
+```bash
+git clone https://github.com/ml-explore/mlx-examples.git
+cd mlx-examples/whisper/
+pip install -r requirements.txt
+
+>> import whisper
+>> whisper.transcribe("FILE_NAME")
+```
+"""
+    card = ModelCard(text)
+    card.save(os.path.join(path, "README.md"))
+
+    logging.set_verbosity_info()
+
+    api = HfApi()
+    api.create_repo(repo_id=repo_id, exist_ok=True)
+    api.upload_folder(
+        folder_path=path,
+        repo_id=repo_id,
+        repo_type="model",
+    )
 
 
 def quantize(weights, config, args):
@@ -230,7 +276,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mlx-path",
         type=str,
-        default="mlx_models/tiny",
+        default="mlx_models",
         help="The path to save the MLX model.",
     )
     parser.add_argument(
@@ -257,9 +303,18 @@ if __name__ == "__main__":
         type=int,
         default=4,
     )
+    parser.add_argument(
+        "--upload-name",
+        help="The name of model to upload to Hugging Face MLX Community",
+        type=str,
+        default=None,
+    )
+
     args = parser.parse_args()
 
-    assert args.dtype in _VALID_DTYPES, f"dtype {args.dtype} not found in {_VALID_DTYPES}"
+    assert (
+        args.dtype in _VALID_DTYPES
+    ), f"dtype {args.dtype} not found in {_VALID_DTYPES}"
     dtype = getattr(mx, args.dtype)
 
     print("[INFO] Loading")
@@ -282,3 +337,6 @@ if __name__ == "__main__":
     with open(str(mlx_path / "config.json"), "w") as f:
         config["model_type"] = "whisper"
         json.dump(config, f, indent=4)
+
+    if args.upload_name is not None:
+        upload_to_hub(mlx_path, args.upload_name, args.torch_name_or_path)

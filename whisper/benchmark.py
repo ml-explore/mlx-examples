@@ -86,8 +86,13 @@ if __name__ == "__main__":
     for model_name in models:
         model_path = f"{args.mlx_dir}/{model_name}"
         if not os.path.exists(model_path):
-            print(f"\nDidn't find the MLX-format {model_name} model in the folder {args.mlx_dir}. Lauching conversion")
-            subprocess.run(f"python convert.py --torch-name-or-path {model_name} --mlx-path {model_path}", shell=True)
+            print(
+                f"\nDidn't find the MLX-format {model_name} model in the folder {args.mlx_dir}. Lauching conversion"
+            )
+            subprocess.run(
+                f"python convert.py --torch-name-or-path {model_name} --mlx-path {model_path}",
+                shell=True,
+            )
 
         print(f"\nModel: {model_name.upper()}")
         tokens = mx.array(
