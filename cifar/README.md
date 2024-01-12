@@ -40,8 +40,8 @@ After training with the default `resnet20` architecture for 30 epochs, you
 should see the following results:
 
 ```
-Epoch: 29 | avg. Train loss 0.290 | avg. Train acc 0.899 | Throughput: 279.91 images/sec
-Epoch: 29 | Test acc 0.833
+Epoch: 29 | avg. Train loss 0.294 | avg. Train acc 0.897 | Throughput: 270.81 images/sec
+Epoch: 29 | Test acc 0.841
 ```
 
 Note this was run on an M1 Macbook Pro with 16GB RAM.
