@@ -1,3 +1,4 @@
-mlx>0.0.7
+mlx>=0.0.9
+transformers==4.32.0
 sentencepiece
 torch
