@@ -4,7 +4,7 @@ Phixtral is a Mixture of Experts (MoE) architecture inspired by
 [Mixtral](../mixtral/README.md) but based on the architecture of the
 2.7B parameter model Phi-2 by Microsoft.[^1]
 It was first introduced by combining finetuned versions of Phi-2 by Maxime
-Labone [mlabonne/phixtral-4x2](https://huggingface.co/mlabonne/phixtral-4x2_8)
+Labone [mlabonne/phixtral-4x2_8](https://huggingface.co/mlabonne/phixtral-4x2_8).
 
 ### Setup
 
