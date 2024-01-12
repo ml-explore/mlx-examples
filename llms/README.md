@@ -32,13 +32,13 @@ You can convert models in the Python API with:
 ```python
 from mlx_lm import convert 
 
-upload_name = "mlx_community/My-Mistral-7B-v0.1-4bit"
+upload_repo = "mlx-community/My-Mistral-7B-v0.1-4bit"
 
-convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_name=upload_name)
+convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_repo=upload_repo)
 ```
 
 This will generate a 4-bit quantized Mistral-7B and upload it to the
-repo `mlx_community/My-Mistral-7B-v0.1-4bit`. It will also save the
+repo `mlx-community/My-Mistral-7B-v0.1-4bit`. It will also save the
 converted model in the path `mlx_model` by default.
 
 To see a description of all the arguments you can do:
@@ -84,7 +84,7 @@ You can upload new models to Hugging Face by specifying `--upload-repo` to
 python -m mlx_lm.convert \
     --hf-path mistralai/Mistral-7B-v0.1 \
     -q \
-    --upload mlx-community/my-4bit-mistral \
+    --upload-repo mlx-community/my-4bit-mistral \
 ```
 
 ### Supported Models

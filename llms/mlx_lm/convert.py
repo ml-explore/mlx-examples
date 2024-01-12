@@ -153,7 +153,7 @@ Refer to the [original model card](https://huggingface.co/{hf_path}) for more de
 pip install mlx
 git clone https://github.com/ml-explore/mlx-examples.git
 cd mlx-examples/llms/hf_llm
-python generate.py --model {repo_id} --prompt "My name is"
+python generate.py --model {upload_repo} --prompt "My name is"
 ```
 """
     card.save(os.path.join(path, "README.md"))
