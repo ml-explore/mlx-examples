@@ -53,7 +53,9 @@ def main(args):
         axs[n_transforms].hist2d(x_samples[:, 0], x_samples[:, 1], bins=bins, cmap=cmap)
         axs[n_transforms].set_xlim(-2, 2)
         axs[n_transforms].set_ylim(-2, 2)
-        axs[n_transforms].set_title(f"{n_transforms} transforms" if n_transforms > 0 else "Base distribution")
+        axs[n_transforms].set_title(
+            f"{n_transforms} transforms" if n_transforms > 0 else "Base distribution"
+        )
         axs[n_transforms].set_xticklabels([])
         axs[n_transforms].set_yticklabels([])
 
@@ -73,14 +75,34 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_steps", type=int, default=5_000, help="Number of steps to train")
+    parser.add_argument(
+        "--n_steps", type=int, default=5_000, help="Number of steps to train"
+    )
     parser.add_argument("--n_batch", type=int, default=64, help="Batch size")
-    parser.add_argument("--n_transforms", type=int, default=6, help="Number of flow transforms")
-    parser.add_argument("--d_params", type=int, default=2, help="Dimensionality of modeled distribution")
-    parser.add_argument("--d_hidden", type=int, default=128, help="Hidden dimensionality of coupling conditioner")
-    parser.add_argument("--n_layers", type=int, default=4, help="Number of layers in coupling conditioner")
-    parser.add_argument("--learning_rate", type=float, default=3e-4, help="Learning rate")
-    parser.add_argument("--noise", type=float, default=0.06, help="Noise level in two moons dataset")
+    parser.add_argument(
+        "--n_transforms", type=int, default=6, help="Number of flow transforms"
+    )
+    parser.add_argument(
+        "--d_params", type=int, default=2, help="Dimensionality of modeled distribution"
+    )
+    parser.add_argument(
+        "--d_hidden",
+        type=int,
+        default=128,
+        help="Hidden dimensionality of coupling conditioner",
+    )
+    parser.add_argument(
+        "--n_layers",
+        type=int,
+        default=4,
+        help="Number of layers in coupling conditioner",
+    )
+    parser.add_argument(
+        "--learning_rate", type=float, default=3e-4, help="Learning rate"
+    )
+    parser.add_argument(
+        "--noise", type=float, default=0.06, help="Noise level in two moons dataset"
+    )
     parser.add_argument("--cpu", action="store_true")
 
     args = parser.parse_args()
