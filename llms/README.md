@@ -110,5 +110,5 @@ Most
 style models should work out of the box.
 For [Qwen](https://huggingface.co/models?library=transformers,safetensors&other=qwen&sort=trending) style models, it is required to enable the `trust_remote_code` option and specify the `eos_token`. This ensures proper functioning of the tokenizer with Qwen models. You can do this by passing `--trust-remote-code` and `--eos-token "<|endoftext|>"` in the command line, or by setting these options in the Python API:
 ```python
-model, tokenizer = load("qwen/Qwen-7B", tokenizer_config={"eos_token": "<eos_token>", "trust_remote_code": True})
+model, tokenizer = load("qwen/Qwen-7B", tokenizer_config={"eos_token": "<|endoftext|>", "trust_remote_code": True})
 ```
