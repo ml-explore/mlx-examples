@@ -37,8 +37,9 @@ class CLIPTextModel(nn.Module):
 
         self.token_embedding = nn.Embedding(
             config.vocab_size, config.hidden_size)
-        self.position_embedding = nn.Embedding(
-            config.max_position_embeddings, config.hidden_size)
+        self.position_embedding = mx.zeros(
+            (config.max_position_embeddings, config.hidden_size)
+        )
         self.layers = [
             CLIPEncoderLayer(
                 config.hidden_size,
@@ -55,7 +56,7 @@ class CLIPTextModel(nn.Module):
 
         # Compute the embeddings
         x = self.token_embedding(x)
-        x = x + self.position_embedding.weight[:N]
+        x = x + self.position_embedding[:N]
 
         # Compute the features from the transformer
         mask = nn.MultiHeadAttention.create_additive_causal_mask(N, x.dtype)
@@ -64,14 +65,3 @@ class CLIPTextModel(nn.Module):
 
         # Apply the final layernorm and return
         return self.final_layer_norm(x)
-
-
-class CLIPVisionModel(nn.Module):
-    """Implements the vision encoder transformer from CLIP."""
-
-    def __init__(self, config: CLIPVisionConfig):
-        super().__init__()
-        pass
-
-    def __call__(self, x):
-        pass

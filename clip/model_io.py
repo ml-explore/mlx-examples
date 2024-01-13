@@ -56,7 +56,8 @@ def map_clip_text_encoder_weights(key, value):
         key = key.replace("mlp.fc1", "linear1")
     if "mlp.fc2" in key:
         key = key.replace("mlp.fc2", "linear2")
-
+    if key == "position_embedding.weight":
+        key = "position_embedding"
     return [(key, _from_numpy(value))]
 
 
