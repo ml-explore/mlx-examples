@@ -10,14 +10,14 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, phi2
-from .models.base import BaseModelArgs
+from .models import llama, phi2, qwen
 
 # Constants
 MODEL_MAPPING = {
     "llama": llama,
     "mistral": llama,  # mistral is compatible with llama
     "phi": phi2,
+    "qwen": qwen,
 }
 
 
@@ -57,7 +57,13 @@ def get_model_path(path_or_hf_repo: str) -> Path:
         model_path = Path(
             snapshot_download(
                 repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "*.py", "tokenizer.model"],
+                allow_patterns=[
+                    "*.json",
+                    "*.safetensors",
+                    "*.py",
+                    "tokenizer.model",
+                    "*.tiktoken",
+                ],
             )
         )
     return model_path
@@ -134,12 +140,14 @@ def generate(
     return tokens
 
 
-def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
+def load(path_or_hf_repo: str, **kwargs) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     Load the model from a given path or a huggingface repository.
 
     Args:
         path_or_hf_repo (str): The path or the huggingface repository to load the model from.
+        **kwargs: Additional keyword arguments. Currently, only 'tokenizer_config' is supported,
+                  which should be a dictionary containing tokenizer-specific configurations.
 
     Returns:
         Tuple[nn.Module, PreTrainedTokenizer]: The loaded model and tokenizer.
@@ -176,5 +184,7 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer_config = kwargs.get("tokenizer_config", {})
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
     return model, tokenizer
