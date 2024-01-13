@@ -81,7 +81,7 @@ To fine-tune a model use:
 ```
 python lora.py --model <path_to_model> \
                --train \
-               --iters 600 \
+               --iters 600
 ```
 
 If `--model` points to a quantized model, then the training will use QLoRA,
@@ -100,7 +100,7 @@ To compute test set perplexity use:
 ```
 python lora.py --model <path_to_model> \
                --adapter-file <path_to_adapters.npz> \
-               --test \
+               --test
 ```
 
 ### Generate
@@ -114,7 +114,7 @@ python lora.py --model <path_to_model> \
                --prompt "table: 1-10015132-16
 columns: Player, No., Nationality, Position, Years in Toronto, School/Club Team
 Q: What is terrence ross' nationality
-A: " \
+A: "
 ```
 
 ## Results
@@ -211,7 +211,7 @@ python lora.py \
    --model mistralai/Mistral-7B-v0.1 \
    --train \
    --batch-size 1 \
-   --lora-layers 4 \
+   --lora-layers 4
 ```
 
 The above command on an M1 Max with 32 GB runs at about 250 tokens-per-second.
