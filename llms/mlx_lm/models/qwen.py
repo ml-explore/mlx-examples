@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -169,6 +170,6 @@ class Model(nn.Module):
         x: mx.array,
         mask: mx.array = None,
         cache: mx.array = None,
-    ) -> tuple[mx.array, mx.array]:
+    ) -> Tuple[mx.array, mx.array]:
         y, cache = self.transformer(x, mask, cache)
         return self.lm_head(y), cache
