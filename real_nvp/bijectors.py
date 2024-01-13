@@ -39,20 +39,23 @@ class MaskedCoupling(Bijector):
         self.conditioner = conditioner
         self.bijector = bijector
 
-    def forward_and_log_det(self, x: mx.array):
-        """Transforms masked indices of `x` conditioned on unmasked indices using bijector."""
-        x_cond = mx.where(self.mask, 0.0, x)
-        bijector_params = self.conditioner(x_cond)
-        y, log_det = self.bijector(bijector_params).forward_and_log_det(x)
+    def apply_mask(self, x: mx.array, func: callable):
+        """Transforms masked indices of `x` conditioned on unmasked indices using `func`."""
+        x_masked = mx.where(self.mask, 0.0, x)
+        bijector_params = self.conditioner(x_masked)
+        y, log_det = func(bijector_params)
         log_det = mx.where(self.mask, log_det, 0.0)
         y = mx.where(self.mask, y, x)
         return y, mx.sum(log_det, axis=-1)
 
+    def forward_and_log_det(self, x: mx.array):
+        """Transforms masked indices of `x` conditioned on unmasked indices using bijector."""
+        return self.apply_mask(
+            x, lambda params: self.bijector(params).forward_and_log_det(x)
+        )
+
     def inverse_and_log_det(self, y: mx.array):
         """Transforms masked indices of `y` conditioned on unmasked indices using bijector."""
-        y_cond = mx.where(self.mask, 0.0, y)
-        bijector_params = self.conditioner(y_cond)
-        x, log_det = self.bijector(bijector_params).inverse_and_log_det(y)
-        log_det = mx.where(self.mask, log_det, 0.0)
-        x = mx.where(self.mask, x, y)
-        return x, mx.sum(log_det, axis=-1)
+        return self.apply_mask(
+            y, lambda params: self.bijector(params).inverse_and_log_det(y)
+        )
