@@ -61,7 +61,7 @@ text using the given prompt.
 For a full list of options run:
 
 ```
-python -m mlx_lm generate --help
+python -m mlx_lm.generate --help
 ```
 
 To quantize a model from the command line run:
