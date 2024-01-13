@@ -28,7 +28,6 @@ class AffineBijector(Bijector):
         shift, log_scale = mx.split(self.shift_and_log_scale, 2, axis=-1)
         x = (y - shift) * mx.exp(-log_scale)
         log_det = -log_scale
-
         return x, log_det
 
 
