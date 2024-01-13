@@ -84,7 +84,7 @@ You can upload new models to Hugging Face by specifying `--upload-repo` to
 python -m mlx_lm.convert \
     --hf-path mistralai/Mistral-7B-v0.1 \
     -q \
-    --upload-repo mlx-community/my-4bit-mistral \
+    --upload-repo mlx-community/my-4bit-mistral
 ```
 
 ### Supported Models

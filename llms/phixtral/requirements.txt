@@ -1,0 +1,7 @@
+einops
+hf_transfer
+huggingface_hub
+mlx
+numpy
+torch
+transformers>=4.35
