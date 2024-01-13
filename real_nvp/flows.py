@@ -63,7 +63,7 @@ class RealNVP(nn.Module):
         """
         Sample from the primal Gaussian and flow towards the target distribution.
         """
-        x = self.bast_dist.sample(sample_shape, key=key)
+        x = self.base_dist.sample(sample_shape, key=key)
         for mask, conditioner in zip(
             self.mask_list[:n_transforms], self.conditioner_list[:n_transforms]
         ):
