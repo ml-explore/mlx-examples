@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     sd = StableDiffusion()
 
-    # Read the image    
+    # Read the image
     img = Image.open(args.image)
 
     # Make sure image shape is divisible by 64

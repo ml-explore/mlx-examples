@@ -30,6 +30,7 @@ def _repeat(x, n, axis):
 
     return x.reshape(s)
 
+
 class StableDiffusion:
     def __init__(self, model: str = _DEFAULT_MODEL, float16: bool = False):
         self.dtype = mx.float16 if float16 else mx.float32
