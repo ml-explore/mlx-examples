@@ -47,7 +47,10 @@ def map_clip_text_encoder_weights(key, value):
         key = key.replace("k_proj.", "key_proj.")
     if "v_proj." in key:
         key = key.replace("v_proj.", "value_proj.")
-
+    if "layer_norm1." in key:
+        key = key.replace("layer_norm1.", "ln1.")
+    if "layer_norm2." in key:
+        key = key.replace("layer_norm2.", "ln2.")
     # Map ffn layers
     if "mlp.fc1" in key:
         key = key.replace("mlp.fc1", "linear1")

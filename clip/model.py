@@ -12,37 +12,21 @@ def quick_gelu(x: mx.array) -> mx.array:
     return x * mx.sigmoid(1.702 * x)
 
 
-class CLIPEncoderLayer(nn.Module):
+class CLIPEncoderLayer(nn.TransformerEncoderLayer):
     """The transformer encoder layer from CLIP."""
 
     def __init__(self, hidden_dim: int, intermediate_dim: int, num_heads: int):
-        super().__init__()
-
-        self.layer_norm1 = nn.LayerNorm(hidden_dim)
-        self.layer_norm2 = nn.LayerNorm(hidden_dim)
-
-        self.attention = nn.MultiHeadAttention(hidden_dim, num_heads)
-        # Add biases to the attention projections to match CLIP
+        super().__init__(
+            dims=hidden_dim,
+            mlp_dims=intermediate_dim,
+            num_heads=num_heads,
+            activation=quick_gelu,
+            norm_first=True
+        )
         self.attention.query_proj.bias = mx.zeros(hidden_dim)
         self.attention.key_proj.bias = mx.zeros(hidden_dim)
         self.attention.value_proj.bias = mx.zeros(hidden_dim)
         self.attention.out_proj.bias = mx.zeros(hidden_dim)
-
-        self.linear1 = nn.Linear(hidden_dim, intermediate_dim)
-        self.linear2 = nn.Linear(intermediate_dim, hidden_dim)
-
-    def __call__(self, x, attn_mask=None):
-        y = self.layer_norm1(x)
-        y = self.attention(y, y, y, attn_mask)
-        x = y + x
-
-        y = self.layer_norm2(x)
-        y = self.linear1(y)
-        y = quick_gelu(y)
-        y = self.linear2(y)
-        x = y + x
-
-        return x
 
 
 class CLIPTextModel(nn.Module):
