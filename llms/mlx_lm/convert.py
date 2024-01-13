@@ -31,6 +31,17 @@ def configure_parser() -> argparse.ArgumentParser:
         "--mlx-path", type=str, default="mlx_model", help="Path to save the MLX model."
     )
     parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Enable trusting remote code for tokenizer",
+    )
+    parser.add_argument(
+        "--eos-token",
+        type=str,
+        default=None,
+        help="End of sequence token for tokenizer",
+    )
+    parser.add_argument(
         "-q", "--quantize", help="Generate a quantized model.", action="store_true"
     )
     parser.add_argument(
@@ -57,7 +68,18 @@ def configure_parser() -> argparse.ArgumentParser:
 
 def fetch_from_hub(
     model_path: str,
+    **kwargs,
 ) -> Tuple[Dict, dict, transformers.PreTrainedTokenizer]:
+    """
+    Fetches the model weights, configuration, and tokenizer from the Hugging Face Hub.
+
+    Args:
+        model_path (str): Path to the Hugging Face model directory.
+        **kwargs: Additional keyword arguments. Currently, only 'tokenizer_config' is supported,
+                  which should be a dictionary containing tokenizer-specific configurations.
+    Returns:
+        Tuple[Dict, dict, transformers.PreTrainedTokenizer]: A tuple containing the model weights, configuration dictionary, and the tokenizer.
+    """
     model_path = get_model_path(model_path)
 
     weight_files = glob.glob(f"{model_path}/*.safetensors")
@@ -69,13 +91,18 @@ def fetch_from_hub(
         weights.update(mx.load(wf).items())
 
     config = transformers.AutoConfig.from_pretrained(model_path)
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
+
+    tokenizer_config = kwargs.get("tokenizer_config", {})
+
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        model_path, **tokenizer_config
+    )
 
     return weights, config.to_dict(), tokenizer
 
 
 def quantize_model(
-    weights: dict, config: dict, hf_path: str, q_group_size: int, q_bits: int
+    weights: dict, config: dict, hf_path: str, q_group_size: int, q_bits: int, **kwargs
 ) -> tuple:
     """
     Applies quantization to the model weights.
@@ -86,12 +113,13 @@ def quantize_model(
         hf_path (str): HF model path..
         q_group_size (int): Group size for quantization.
         q_bits (int): Bits per weight for quantization.
+        **kwargs: Additional keyword arguments. This can be used to pass extra arguments required for model loading.
 
     Returns:
         tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-    model, _ = load(hf_path)
+    model, _ = load(hf_path, **kwargs)
     model.load_weights(list(weights.items()))
 
     nn.QuantizedLinear.quantize_module(model, q_group_size, q_bits)
@@ -182,14 +210,32 @@ def convert(
     q_bits: int = 4,
     dtype: str = "float16",
     upload_repo: str = None,
+    **kwargs,
 ):
+    """
+    Convert the Hugging Face model to MLX format. Supports quantization and uploading to Hugging Face hub.
+
+    Args:
+        hf_path (str): Path to the original Hugging Face model.
+        mlx_path (str): Path to save the converted MLX model.
+        quantize (bool): If True, quantizes the model.
+        q_group_size (int): Group size for quantization (effective if quantize=True).
+        q_bits (int): Number of bits per weight for quantization (effective if quantize=True).
+        dtype (str): Data type for the model parameters
+        upload_repo (str, optional): Repository name to upload the converted model to the Hugging Face hub.
+        **kwargs: Additional keyword arguments. Currently, only 'tokenizer_config' is supported,
+                  which should be a dictionary containing tokenizer-specific configurations.
+
+    """
     print("[INFO] Loading")
-    weights, config, tokenizer = fetch_from_hub(hf_path)
+    weights, config, tokenizer = fetch_from_hub(hf_path, **kwargs)
     dtype = mx.float16 if quantize else getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     if quantize:
         print("[INFO] Quantizing")
-        weights, config = quantize_model(weights, config, hf_path, q_group_size, q_bits)
+        weights, config = quantize_model(
+            weights, config, hf_path, q_group_size, q_bits, **kwargs
+        )
 
     mlx_path = Path(mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
@@ -207,4 +253,20 @@ def convert(
 if __name__ == "__main__":
     parser = configure_parser()
     args = parser.parse_args()
-    convert(**vars(args))
+    kwargs = vars(args)
+
+    trust_remote_code = kwargs.pop("trust_remote_code", False)
+    eos_token = kwargs.pop("eos_token", None)
+
+    tokenizer_config = {}
+
+    if trust_remote_code:
+        tokenizer_config["trust_remote_code"] = trust_remote_code
+
+    if eos_token is not None:
+        tokenizer_config["eos_token"] = eos_token
+
+    if tokenizer_config:
+        kwargs["tokenizer_config"] = tokenizer_config
+
+    convert(**kwargs)
