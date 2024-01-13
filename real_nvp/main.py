@@ -32,9 +32,6 @@ def main(args):
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
     optimizer = optim.Adam(learning_rate=args.learning_rate)
 
-    import pdb
-
-    pdb.set_trace()
     with trange(args.n_steps) as steps:
         for step in steps:
             idx = np.random.choice(x.shape[0], replace=False, size=args.n_batch)
