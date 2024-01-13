@@ -86,8 +86,8 @@ Refer to the [original model card](https://huggingface.co/{hf_path}) for more de
 ```bash
 pip install mlx
 git clone https://github.com/ml-explore/mlx-examples.git
-cd mlx-examples/llms/hf_llm
-python generate.py --model {repo_id} --prompt "My name is"
+cd mlx-examples/llms/plamo
+python generate.py --instruct --prompt "コンピュータ科学とは何ですか？"
 ```
 """
     card.save(os.path.join(path, "README.md"))
