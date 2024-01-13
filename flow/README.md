@@ -51,4 +51,5 @@ python main.py --help
 
 ![Samples](./samples.png)
 
-[1]: This example is from [Density estimation using Real NVP](https://arxiv.org/abs/1605.08803), Dinh et al. (2016)
+[^1]: This example is from [Density estimation using Real NVP](
+  https://arxiv.org/abs/1605.08803), Dinh et al. (2016)
