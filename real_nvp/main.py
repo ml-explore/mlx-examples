@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from tqdm import trange
 import numpy as np
 from sklearn import datasets, preprocessing
@@ -30,13 +32,16 @@ def main(args):
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
     optimizer = optim.Adam(learning_rate=args.learning_rate)
 
+    import pdb
+
+    pdb.set_trace()
     with trange(args.n_steps) as steps:
         for step in steps:
-            idx = np.random.permutation(x.shape[0])[: args.n_batch]
+            idx = np.random.choice(x.shape[0], replace=False, size=args.n_batch)
             loss, grads = loss_and_grad_fn(model, mx.array(x[idx]))
 
             optimizer.update(model, grads)
-            mx.eval(model.parameters(), optimizer.state)
+            mx.eval(model.parameters())
 
             steps.set_postfix(val=loss)
 
