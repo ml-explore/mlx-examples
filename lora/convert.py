@@ -7,14 +7,16 @@ import mlx.core as mx
 import mlx.nn as nn
 import utils
 from mlx.utils import tree_flatten
-from models import Model, ModelArgs
 
 
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
+    # Get model classes
+    model_class, model_args_class = utils._get_classes(config=config)
+
     # Load the model:
-    model = Model(ModelArgs.from_dict(config))
+    model = model_class(model_args_class.from_dict(config))
     model.load_weights(list(weights.items()))
 
     # Quantize the model:

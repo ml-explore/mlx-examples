@@ -6,13 +6,12 @@ from typing import Generator, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+from huggingface_hub import snapshot_download
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-import models.llama as llama
-import models.phi2 as phi2
-from huggingface_hub import snapshot_download
-from models.base import BaseModelArgs
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from .models import llama, phi2
+from .models.base import BaseModelArgs
 
 # Constants
 MODEL_MAPPING = {
@@ -64,11 +63,11 @@ def get_model_path(path_or_hf_repo: str) -> Path:
     return model_path
 
 
-def generate(
+def generate_step(
     prompt: mx.array, model: nn.Module, temp: float = 0.0
 ) -> Generator[mx.array, None, None]:
     """
-    Generate text based on the given prompt and model.
+    A generator producing text based on the given prompt from the model.
 
     Args:
         prompt (mx.array): The input prompt.
@@ -76,7 +75,7 @@ def generate(
         temp (float): The temperature for sampling. If temp is 0, use max sampling.
 
     Yields:
-        mx.array: The generated text.
+        Generator[mx.array]: A generator producing one token per call.
     """
 
     def sample(logits: mx.array) -> mx.array:
@@ -93,6 +92,46 @@ def generate(
         logits = logits[:, -1, :]
         y = sample(logits)
         yield y
+
+
+def generate(
+    model: nn.Module,
+    tokenizer: PreTrainedTokenizer,
+    prompt: str,
+    temp: float = 0.0,
+    max_tokens: int = 100,
+    verbose: bool = False,
+) -> str:
+    """
+    Generate text from the model.
+
+    Args:
+       model (nn.Module): The language model.
+       tokenizer (PreTrainedTokenizer): The tokenizer.
+       prompt (str): The string prompt.
+       temp (float): The temperature for sampling (default 0).
+       max_tokens (int): The maximum number of tokens (default 100).
+    """
+
+    prompt = mx.array(tokenizer.encode(prompt))
+
+    tokens = []
+    skip = 0
+    for token, _ in zip(generate_step(prompt, model, temp), range(max_tokens)):
+        if token == tokenizer.eos_token_id:
+            break
+
+        tokens.append(token.item())
+
+        if verbose:
+            s = tokenizer.decode(tokens)
+            print(s[skip:], end="", flush=True)
+            skip = len(s)
+
+    tokens = tokenizer.decode(tokens)[skip:]
+    if verbose:
+        print(tokens, flush=True)
+    return tokens
 
 
 def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
