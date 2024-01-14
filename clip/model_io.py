@@ -4,10 +4,10 @@ import json
 
 import mlx.core as mx
 import numpy as np
-from config import CLIPTextConfig, CLIPVisionConfig
+from config import CLIPConfig, CLIPTextConfig, CLIPVisionConfig
 from huggingface_hub import hf_hub_download
 from mlx.utils import tree_unflatten
-from model import CLIPTextModel, CLIPVisionModel
+from model import CLIPModel, CLIPTextModel, CLIPVisionModel
 from safetensors import safe_open as safetensor_open
 from tokenizer import Tokenizer
 
@@ -100,6 +100,38 @@ def map_clip_vision_weights(key, value):
     return [(key, _from_numpy(value))]
 
 
+def map_clip_weights(key, value):
+    key = key.replace("embeddings.", "")
+    key = key.replace("encoder.", "")
+    key = key.replace("position_embedding.weight", "position_embedding")
+
+    # Map attention layers
+    if "self_attn." in key:
+        key = key.replace("self_attn.", "attention.")
+    if "q_proj." in key:
+        key = key.replace("q_proj.", "query_proj.")
+    if "k_proj." in key:
+        key = key.replace("k_proj.", "key_proj.")
+    if "v_proj." in key:
+        key = key.replace("v_proj.", "value_proj.")
+    if "layer_norm1." in key:
+        key = key.replace("layer_norm1.", "ln1.")
+    if "layer_norm2." in key:
+        key = key.replace("layer_norm2.", "ln2.")
+    # Map ffn layers
+    if "mlp.fc1" in key:
+        key = key.replace("mlp.fc1", "linear1")
+    if "mlp.fc2" in key:
+        key = key.replace("mlp.fc2", "linear2")
+    if "pre_layrnorm" in key:
+        # Fix typo in weights :)
+        key = key.replace("pre_layrnorm", "pre_layernorm")
+    if "patch_embedding.weight" in key:
+        # initially, value: [out_channels, in_channels, kH, KW]
+        value = value.transpose(0, 2, 3, 1)
+    return [(key, _from_numpy(value))]
+
+
 def _flatten(params):
     return [(k, v) for p in params for (k, v) in p]
 
@@ -131,7 +163,6 @@ def load_text_encoder(key: str = _DEFAULT_MODEL):
             num_hidden_layers=text_config["num_hidden_layers"],
             hidden_size=text_config["hidden_size"],
             intermediate_size=text_config["intermediate_size"],
-            projection_dim=text_config["projection_dim"],
             num_attention_heads=text_config["num_attention_heads"],
             max_position_embeddings=text_config["max_position_embeddings"],
             vocab_size=text_config["vocab_size"],
@@ -155,7 +186,6 @@ def load_vision_encoder(key: str = _DEFAULT_MODEL):
             num_hidden_layers=vision_config["num_hidden_layers"],
             hidden_size=vision_config["hidden_size"],
             intermediate_size=vision_config["intermediate_size"],
-            projection_dim=vision_config["projection_dim"],
             num_attention_heads=vision_config["num_attention_heads"],
             num_channels=3,
             image_size=vision_config["image_size"],
@@ -166,6 +196,39 @@ def load_vision_encoder(key: str = _DEFAULT_MODEL):
     model_weights_path = hf_hub_download(key, _MODELS[key]["model"])
     _load_safetensor_weights(map_clip_vision_weights, model, model_weights_path)
 
+    return model
+
+
+def load_model(key: _DEFAULT_MODEL) -> CLIPModel:
+    config = _MODELS[key]["config"]
+    with open(hf_hub_download(key, config)) as f:
+        config = json.load(f)
+    text_config = CLIPTextConfig(
+        num_hidden_layers=config["text_config"]["num_hidden_layers"],
+        hidden_size=config["text_config"]["hidden_size"],
+        intermediate_size=config["text_config"]["intermediate_size"],
+        num_attention_heads=config["text_config"]["num_attention_heads"],
+        max_position_embeddings=config["text_config"]["max_position_embeddings"],
+        vocab_size=config["text_config"]["vocab_size"],
+    )
+    vision_config = CLIPVisionConfig(
+        num_hidden_layers=config["vision_config"]["num_hidden_layers"],
+        hidden_size=config["vision_config"]["hidden_size"],
+        intermediate_size=config["vision_config"]["intermediate_size"],
+        num_attention_heads=config["vision_config"]["num_attention_heads"],
+        num_channels=3,
+        image_size=config["vision_config"]["image_size"],
+        patch_size=config["vision_config"]["patch_size"],
+    )
+    config = CLIPConfig(
+        text_config=text_config,
+        vision_config=vision_config,
+        projection_dim=config["projection_dim"],
+    )
+    model = CLIPModel(config)
+    weights = hf_hub_download(key, _MODELS[key]["model"])
+    # Load weights
+    _load_safetensor_weights(map_clip_weights, model, weights)
     return model
 
 

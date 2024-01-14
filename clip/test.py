@@ -1,9 +1,15 @@
 import mlx.core as mx
 import numpy as np
 import torch
-from model_io import load_text_encoder, load_tokenizer, load_vision_encoder
+from model_io import load_model, load_text_encoder, load_tokenizer, load_vision_encoder
 from PIL import Image
-from transformers import AutoTokenizer, CLIPProcessor, CLIPTextModel, CLIPVisionModel
+from transformers import (
+    AutoTokenizer,
+    CLIPModel,
+    CLIPProcessor,
+    CLIPTextModel,
+    CLIPVisionModel,
+)
 
 TEST_CKPT: str = "openai/clip-vit-large-patch14"
 
@@ -66,6 +72,31 @@ def test_vision_encoder():
     assert np.allclose(out.pooler_output, expected_pooler_output, rtol=1e-4, atol=1e-3)
 
 
+def test_clip_model():
+    clip = load_model(TEST_CKPT)
+    hf_clip = CLIPModel.from_pretrained(TEST_CKPT)
+    hf_processor = CLIPProcessor.from_pretrained(TEST_CKPT)
+
+    clip_input = hf_processor(
+        text=["a photo of a cat", "a photo of a dog"],
+        images=[Image.open("cats.jpeg"), Image.open("dog.jpeg")],
+        return_tensors="pt",
+    )
+    with torch.inference_mode():
+        expected_out = hf_clip(**clip_input, return_loss=True)
+
+    out = clip(
+        input_ids=mx.array(clip_input.input_ids.numpy()),
+        pixel_values=mx.array(clip_input.pixel_values.numpy()).transpose((0, 2, 3, 1)),
+        return_loss=True,
+    )
+
+    assert np.allclose(out.text_embeds, expected_out.text_embeds, atol=1e-5)
+    assert np.allclose(out.image_embeds, expected_out.image_embeds, atol=1e-5)
+    assert np.allclose(out.loss, expected_out.loss, atol=1e-5)
+
+
 test_text_tokenizer()
 test_text_encoder()
 test_vision_encoder()
+test_clip_model()
