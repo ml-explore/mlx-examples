@@ -110,9 +110,6 @@ class CLIPTokenizer:
 
     @staticmethod
     def from_pretrained(path: Union[Path, str]):
-        # "tokenizer_config": "tokenizer_config.json",
-        # "tokenizer_vocab": "vocab.json",
-        # "tokenizer_merges": "merges.txt"
         if isinstance(path, str):
             vocab_file = hf_hub_download(path, "vocab.json")
             merges_file = hf_hub_download(path, "merges.txt")
