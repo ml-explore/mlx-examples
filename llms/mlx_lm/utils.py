@@ -203,7 +203,7 @@ def load(path_or_hf_repo: str, **kwargs) -> Tuple[nn.Module, PreTrainedTokenizer
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path, **kwargs)
+    model = load_model(model_path)
 
     tokenizer_config = kwargs.get("tokenizer_config", {})
 
