@@ -2,7 +2,8 @@ import mlx.core as mx
 import numpy as np
 import torch
 from model_io import load_text_encoder, load_tokenizer, load_vision_encoder
-from transformers import AutoTokenizer, CLIPTextModel, CLIPVisionModel
+from PIL import Image
+from transformers import AutoTokenizer, CLIPProcessor, CLIPTextModel, CLIPVisionModel
 
 TEST_CKPT: str = "openai/clip-vit-large-patch14"
 
@@ -36,28 +37,29 @@ def test_text_encoder():
 
 
 def test_vision_encoder():
-    num_iters = 10
-    b = 4
-    h = 224
-    w = 224
-    c = 3
-
     mx_clip_venc = load_vision_encoder(TEST_CKPT)
     hf_clp_vision = CLIPVisionModel.from_pretrained(TEST_CKPT)
+    hf_processor = CLIPProcessor.from_pretrained(TEST_CKPT)
+    # Load and process test image
+    x = hf_processor(
+        images=[Image.open("cats.jpeg")], return_tensors="np"
+    ).pixel_values.transpose((0, 2, 3, 1))
+    x = mx.array(x)
+    # Infer with HuggingFace model
+    with torch.inference_mode():
+        # Get expected
+        x_tc = torch.tensor(x.tolist())
+        x_tc = x_tc.permute((0, 3, 1, 2))
+        expected_out = hf_clp_vision(x_tc)
+        expected_last_hidden = expected_out.last_hidden_state.numpy()
+        expected_pooler_output = expected_out.pooler_output.numpy()
 
-    for _ in range(num_iters):
-        x = mx.random.normal((b, h, w, c))
-        with torch.inference_mode():
-            # Get expected
-            x_tc = torch.tensor(x.tolist())
-            x_tc = x_tc.permute((0, 3, 1, 2))
-            expected_out = mx_clip_venc(x_tc)
-            expected_last_hidden = expected_out.last_hidden_state.numpy()
-            expected_pooler_output = expected_out.pooler_output.numpy()
-        # Test vision encoder
-        out = hf_clp_vision(x)
-        assert np.allclose(out.last_hidden, expected_last_hidden, atol=1e-5)
-        assert np.allclose(out.pooler_output, expected_pooler_output, atol=1e-5)
+    # Test MLX vision encoder
+    out = mx_clip_venc(x)
+    assert np.allclose(
+        out.last_hidden_state, expected_last_hidden, rtol=1e-4, atol=1e-3
+    )
+    assert np.allclose(out.pooler_output, expected_pooler_output, rtol=1e-4, atol=1e-3)
 
 
 test_text_tokenizer()

@@ -5,3 +5,4 @@ transformers
 torch
 huggingface_hub
 safetensors
+Pillow
