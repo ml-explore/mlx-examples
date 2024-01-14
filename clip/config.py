@@ -11,6 +11,7 @@ class CLIPTextConfig:
     num_attention_heads: int = 12
     max_position_embeddings: int = 77
     vocab_size: int = 49408
+    initializer_factor: float = 1.0
 
 
 @dataclass
@@ -23,6 +24,8 @@ class CLIPVisionConfig:
     image_size: int = 224
     patch_size: int = 32
     attention_dropout = 0.0
+    initializer_range: float = 0.02
+    initializer_factor: float = 1.0
 
 
 @dataclass
@@ -30,3 +33,4 @@ class CLIPConfig:
     text_config: CLIPTextConfig
     vision_config: CLIPVisionConfig
     projection_dim: int
+    initializer_factor: float = 1.0

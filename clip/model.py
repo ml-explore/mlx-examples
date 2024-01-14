@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -24,6 +24,12 @@ def clip_loss(logits_per_text: mx.array, logits_per_image: mx.array) -> mx.array
     caption_loss = cross_entropy(logits_per_text, mx.arange(N), reduction="mean")
     image_loss = cross_entropy(logits_per_image, mx.arange(M), reduction="mean")
     return (caption_loss + image_loss) / 2.0
+
+
+def normal(shape: List[int], mean=0.0, std=1.0) -> mx.array:
+    # E_X[aX + b] = a E[X] + b
+    # Var_X[aX + b] = a**2 Var_X[X]
+    return mean + std * mx.random.normal(shape)
 
 
 @dataclass
@@ -63,6 +69,36 @@ class CLIPEncoderLayer(nn.TransformerEncoderLayer):
         self.attention.value_proj.bias = mx.zeros(hidden_dim)
         self.attention.out_proj.bias = mx.zeros(hidden_dim)
 
+    def init_weights(self, factor: float, num_hidden_layers: int):
+        [embed_dim, _] = self.linear2.weight.shape
+        # Compute std
+        in_proj_std = (embed_dim**-0.5) * ((2 * num_hidden_layers) ** -0.5) * factor
+        out_proj_std = (embed_dim**-0.5) * factor
+        # Initialize attention
+        self.attention.query_proj.weight = normal(
+            shape=self.attention.query_proj.weight.shape, std=in_proj_std
+        )
+        self.attention.key_proj.weight = normal(
+            shape=self.attention.key_proj.weight.shape, std=in_proj_std
+        )
+        self.attention.value_proj.weight = normal(
+            shape=self.attention.value_proj.weight.shape, std=in_proj_std
+        )
+        self.attention.out_proj.weight = normal(
+            shape=self.attention.out_proj.weight.shape, std=out_proj_std
+        )
+        # Initialize MLPs
+        fc_std = (2 * embed_dim) ** -0.5 * factor
+        self.linear1.weight = normal(shape=self.linear1.weight.shape, std=fc_std)
+        self.linear2.weight = normal(shape=self.linear2.weight.shape, std=in_proj_std)
+        self.linear1.bias = mx.zeros_like(self.linear1.bias)
+        self.linear2.bias = mx.zeros_like(self.linear2.bias)
+        # Initialize layer norms
+        self.ln1.bias = mx.zeros_like(self.ln1.bias)
+        self.ln1.weight = mx.ones_like(self.ln1.weight)
+        self.ln2.bias = mx.zeros_like(self.ln2.bias)
+        self.ln2.weight = mx.ones_like(self.ln2.weight)
+
 
 class CLIPTextModel(nn.Module):
     """Implements the text encoder transformer from CLIP."""
@@ -81,6 +117,7 @@ class CLIPTextModel(nn.Module):
             for _ in range(config.num_hidden_layers)
         ]
         self.final_layer_norm = nn.LayerNorm(config.hidden_size)
+        self.init_weights(config.initializer_factor)
 
     def _embed(self, x: mx.array) -> mx.array:
         # Extract some shapes
@@ -108,6 +145,18 @@ class CLIPTextModel(nn.Module):
             pooler_output=pooler_output, last_hidden_state=last_hidden_state
         )
 
+    def init_weights(self, factor: float):
+        self.token_embedding.weight = normal(
+            shape=self.token_embedding.weight.shape, std=factor * 0.02
+        )
+        self.position_embedding = normal(
+            shape=self.position_embedding.shape, std=factor * 0.02
+        )
+        for layer in self.layers:
+            layer.init_weights(factor, len(self.layers))
+        self.final_layer_norm.bias = mx.zeros_like(self.final_layer_norm.bias)
+        self.final_layer_norm.weight = mx.ones_like(self.final_layer_norm.weight)
+
 
 class CLIPVisionModel(nn.Module):
     """Implements the vision encoder transformer from CLIP."""
@@ -134,6 +183,7 @@ class CLIPVisionModel(nn.Module):
             for _ in range(config.num_hidden_layers)
         ]
         self.post_layernorm = nn.LayerNorm(config.hidden_size)
+        self.init_weights(config.initializer_range, config.initializer_factor)
 
     def _embed(self, x: mx.array) -> mx.array:
         [batch_size, _, _, _] = x.shape
@@ -164,6 +214,27 @@ class CLIPVisionModel(nn.Module):
         pooler_output = self.post_layernorm(x[:, 0, :])
         return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x)
 
+    def init_weights(self, initializer_range: float, factor: float):
+        [_, embed_dim] = self.position_embedding.shape
+        # Init embeddings
+        self.class_embedding = normal(
+            shape=self.class_embedding.shape, std=embed_dim**-0.5 * factor
+        )
+        self.position_embedding = normal(
+            shape=self.position_embedding.shape, std=initializer_range * factor
+        )
+        self.patch_embedding.weight = normal(
+            shape=self.patch_embedding.weight.shape, std=initializer_range * factor
+        )
+        # Init Transformer Layers
+        for layer in self.layers:
+            layer.init_weights(factor, len(self.layers))
+        # Init layer norms
+        self.pre_layernorm.bias = mx.zeros_like(self.pre_layernorm.bias)
+        self.pre_layernorm.weight = mx.ones_like(self.pre_layernorm.weight)
+        self.post_layernorm.bias = mx.zeros_like(self.post_layernorm.bias)
+        self.post_layernorm.weight = mx.ones_like(self.post_layernorm.weight)
+
 
 class CLIPModel(nn.Module):
     def __init__(self, config: CLIPConfig):
@@ -185,7 +256,14 @@ class CLIPModel(nn.Module):
 
         self.visual_projection = nn.Linear(vision_embed_dim, projection_dim, bias=False)
         self.text_projection = nn.Linear(text_embed_dim, projection_dim, bias=False)
-        self.logit_scale = mx.array([])
+        self.logit_scale = mx.ones([])
+
+        self.init_weights(
+            initializer_factor=config.initializer_factor,
+            text_initializer_factor=config.text_config.initializer_factor,
+            vision_initializer_factor=config.vision_config.initializer_factor,
+            vision_initializer_range=config.vision_config.initializer_range,
+        )
 
     def get_text_features(self, x: mx.array) -> mx.array:
         return self.text_projection(self.text_model(x).pooler_output)
@@ -229,3 +307,29 @@ class CLIPModel(nn.Module):
             vision_model_output=vision_model_output,
             text_model_output=text_model_output,
         )
+
+    def init_weights(
+        self,
+        initializer_factor: float,
+        text_initializer_factor: float,
+        vision_initializer_factor: float,
+        vision_initializer_range: float,
+    ):
+        # Initializer encoders
+        self.text_model.init_weights(text_initializer_factor)
+        self.vision_model.init_weights(
+            vision_initializer_range, vision_initializer_factor
+        )
+        # Initialize projections
+        [_, text_embed_dim] = self.text_projection.weight.shape
+        [_, vision_embed_dim] = self.visual_projection.weight.shape
+        self.text_projection.weight = normal(
+            shape=self.text_projection.weight.shape,
+            std=text_embed_dim**-0.5 * initializer_factor,
+        )
+        self.visual_projection.weight = normal(
+            shape=self.visual_projection.weight.shape,
+            std=vision_embed_dim**-0.5 * initializer_factor,
+        )
+        # Reset temperature
+        self.logit_scale = mx.ones([])

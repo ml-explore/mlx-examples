@@ -166,6 +166,7 @@ def load_text_encoder(key: str = _DEFAULT_MODEL):
             num_attention_heads=text_config["num_attention_heads"],
             max_position_embeddings=text_config["max_position_embeddings"],
             vocab_size=text_config["vocab_size"],
+            initializer_factor=text_config["initializer_factor"],
         )
     )
 
@@ -190,6 +191,8 @@ def load_vision_encoder(key: str = _DEFAULT_MODEL):
             num_channels=3,
             image_size=vision_config["image_size"],
             patch_size=vision_config["patch_size"],
+            initializer_factor=vision_config["initializer_factor"],
+            initializer_range=vision_config["initializer_range"],
         )
     )
 
@@ -224,6 +227,7 @@ def load_model(key: _DEFAULT_MODEL) -> CLIPModel:
         text_config=text_config,
         vision_config=vision_config,
         projection_dim=config["projection_dim"],
+        initializer_factor=config["initializer_factor"],
     )
     model = CLIPModel(config)
     weights = hf_hub_download(key, _MODELS[key]["model"])
