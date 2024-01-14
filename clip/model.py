@@ -324,9 +324,10 @@ class CLIPModel(nn.Module):
 
         self.visual_projection = nn.Linear(vision_embed_dim, projection_dim, bias=False)
         self.text_projection = nn.Linear(text_embed_dim, projection_dim, bias=False)
-        self.logit_scale = mx.ones([])
+        self.logit_scale = mx.array(config.logit_scale_init_value)
 
         self.init_weights(
+            logit_scale_init_value=config.logit_scale_init_value,
             initializer_factor=config.initializer_factor,
             text_initializer_factor=config.text_config.initializer_factor,
             vision_initializer_factor=config.vision_config.initializer_factor,
@@ -340,7 +341,10 @@ class CLIPModel(nn.Module):
         return self.visual_projection(self.vision_model(x).pooler_output)
 
     def __call__(
-        self, input_ids: mx.array, pixel_values: mx.array, return_loss=False
+        self,
+        input_ids: Optional[mx.array] = None,
+        pixel_values: Optional[mx.array] = None,
+        return_loss=False,
     ) -> Any:
         if input_ids is not None:
             text_model_output = self.text_model(input_ids)
@@ -378,6 +382,7 @@ class CLIPModel(nn.Module):
 
     def init_weights(
         self,
+        logit_scale_init_value: float,
         initializer_factor: float,
         text_initializer_factor: float,
         vision_initializer_factor: float,
@@ -400,7 +405,7 @@ class CLIPModel(nn.Module):
             std=vision_embed_dim**-0.5 * initializer_factor,
         )
         # Reset temperature
-        self.logit_scale = mx.ones([])
+        self.logit_scale = mx.array(logit_scale_init_value)
 
     @staticmethod
     def from_pretrained(path: Union[Path, str]):
