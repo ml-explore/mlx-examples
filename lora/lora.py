@@ -131,22 +131,48 @@ class Dataset:
         return len(self._data)
 
 
-def load(args):
+def load_datasets(data_path: str = "/data", train_mode: bool = False, test_mode: bool = False):
+    # NOTE: consider using HuggingFace Datasets instead of rolling own: https://huggingface.co/docs/datasets/index
     names = ("train", "valid", "test")
-    train, valid, test = (Dataset(Path(args.data) / f"{n}.jsonl") for n in names)
-    if args.train and len(train) == 0:
+    train, valid, test = (Dataset(Path(data_path) / f"{n}.jsonl") for n in names)
+    if train_mode and len(train) == 0:
         raise ValueError(
             "Training set not found or empty. Must provide training set for fine-tuning."
         )
-    if args.train and len(valid) == 0:
+    if train_mode and len(valid) == 0:
         raise ValueError(
             "Validation set not found or empty. Must provide validation set for fine-tuning."
         )
-    if args.test and len(test) == 0:
+    if test_mode and len(test) == 0:
         raise ValueError(
             "Test set not found or empty. Must provide test set for evaluation."
         )
     return train, valid, test
+
+
+def load_pretrained_model(model_path: str, lora_layers: int = 16, seed: int = 0, resume_adapter_file: str = None):
+
+    np.random.seed(seed)
+
+    model, tokenizer, config = lora_utils.load(model_path)
+
+    # Freeze all layers other than LORA linears
+    model.freeze()
+    for l in model.model.layers[len(model.model.layers) - lora_layers :]:
+        l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
+        l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
+
+    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
+    print(f"Total parameters {p:.3f}M")
+    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
+    print(f"Trainable parameters {p:.3f}M")
+
+    # Resume training the given adapters.
+    if resume_adapter_file is not None:
+        print(f"Loading pretrained adapters from {resume_adapter_file}")
+        model.load_weights(resume_adapter_file, strict=False)
+
+    return model, tokenizer, config
 
 
 def loss(model, inputs, targets, lengths):
@@ -196,7 +222,17 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
             break
 
 
-def evaluate(model, dataset, loss, tokenizer, batch_size, num_batches):
+def evaluate(model, dataset, tokenizer, batch_size: int = 4, num_batches: int = 500, 
+             loss: callable = loss, adapter_file: str = None):
+    if adapter_file:
+        if not Path(adapter_file).is_file():
+            raise ValueError(
+                f"Adapter file {adapter_file} missing. "
+                "Ensure your path to adapter file is correct, or use --train to learn and save the adapters.npz."
+            )
+        
+        model.load_weights(adapter_file, strict=False)
+
     all_losses = []
     ntokens = 0
     for it, batch in zip(
@@ -210,7 +246,14 @@ def evaluate(model, dataset, loss, tokenizer, batch_size, num_batches):
     return np.sum(all_losses) / ntokens
 
 
-def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
+def train(model, train_set, val_set, tokenizer,
+          iters: int = 1000, batch_size: int = 4, steps_per_report: int = 10, 
+          steps_per_eval: int = 200, val_batches: int = 25, learning_rate: float = 1e-5, 
+          optimizer=None, loss: callable = loss, adapter_file: str = 'adapters.npz'):
+
+    if optimizer is None:
+        optimizer = optim.Adam(learning_rate=learning_rate)
+
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
 
@@ -220,8 +263,8 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
     # Main training loop
     start = time.perf_counter()
     for it, batch in zip(
-        range(args.iters),
-        iterate_batches(train_set, tokenizer, args.batch_size, train=True),
+        range(iters),
+        iterate_batches(train_set, tokenizer, batch_size, train=True),
     ):
         # Forward and backward pass
         (lvalue, toks), grad = loss_value_and_grad(model, *batch)
@@ -235,13 +278,13 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
         n_tokens += toks.item()
 
         # Report training loss if needed
-        if (it + 1) % args.steps_per_report == 0:
+        if (it + 1) % steps_per_report == 0:
             train_loss = np.mean(losses)
 
             stop = time.perf_counter()
             print(
                 f"Iter {it + 1}: Train loss {train_loss:.3f}, "
-                f"It/sec {args.steps_per_report / (stop - start):.3f}, "
+                f"It/sec {steps_per_report / (stop - start):.3f}, "
                 f"Tokens/sec {float(n_tokens) / (stop - start):.3f}"
             )
             losses = []
@@ -249,10 +292,10 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
             start = time.perf_counter()
 
         # Report validation loss if needed
-        if it == 0 or (it + 1) % args.steps_per_eval == 0:
+        if it == 0 or (it + 1) % steps_per_eval == 0:
             stop = time.perf_counter()
             val_loss = evaluate(
-                model, val_set, loss, tokenizer, args.batch_size, args.val_batches
+                model, val_set, tokenizer, batch_size, val_batches, loss
             )
             print(
                 f"Iter {it + 1}: "
@@ -261,9 +304,22 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
             )
 
             start = time.perf_counter()
+    
+    # Save adapter weights
+    mx.savez(adapter_file, **dict(tree_flatten(model.trainable_parameters())))
 
 
-def generate(model, prompt, tokenizer, args):
+def generate(model, prompt, tokenizer, max_tokens: int = 100, 
+             temp: float = 0.8, adapter_file: str = "adapters.npz"):
+
+    if not Path(adapter_file).is_file():
+        raise ValueError(
+            f"Adapter file {adapter_file} missing. "
+            "Use --train to learn and save the adapters.npz."
+        )
+    
+    model.load_weights(adapter_file, strict=False)
+    
     print(prompt, end="", flush=True)
 
     prompt = mx.array(tokenizer.encode(prompt))
@@ -271,8 +327,8 @@ def generate(model, prompt, tokenizer, args):
     tokens = []
     skip = 0
     for token, n in zip(
-        lora_utils.generate(prompt, model, args.temp),
-        range(args.max_tokens),
+        lora_utils.generate(prompt, model, temp),
+        range(max_tokens),
     ):
         if token == tokenizer.eos_token_id:
             break
@@ -292,47 +348,21 @@ if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
 
-    np.random.seed(args.seed)
-
-    print("Loading pretrained model")
-    model, tokenizer, _ = lora_utils.load(args.model)
-
-    # Freeze all layers other than LORA linears
-    model.freeze()
-    for l in model.model.layers[len(model.model.layers) - args.lora_layers :]:
-        l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
-        l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
-
-    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
-    print(f"Total parameters {p:.3f}M")
-    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
-    print(f"Trainable parameters {p:.3f}M")
+    print("Loading pre-trained model")
+    model, tokenizer, config = load_pretrained_model(args.model, lora_layers=args.lora_layers, 
+                                             seed=args.seed, resume_adapter_file=args.resume_adapter_file)
 
     print("Loading datasets")
-    train_set, valid_set, test_set = load(args)
-
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file, strict=False)
+    train_set, valid_set, test_set = load_datasets(args.data, args.train, args.test)
 
     if args.train:
         print("Training")
-        opt = optim.Adam(learning_rate=args.learning_rate)
 
         # Train model
-        train(model, train_set, valid_set, opt, loss, tokenizer, args)
-
-        # Save adapter weights
-        mx.savez(args.adapter_file, **dict(tree_flatten(model.trainable_parameters())))
-
-    # Load the LoRA adapter weights which we assume should exist by this point
-    if not Path(args.adapter_file).is_file():
-        raise ValueError(
-            f"Adapter file {args.adapter_file} missing. "
-            "Use --train to learn and save the adapters.npz."
-        )
-    model.load_weights(args.adapter_file, strict=False)
+        train(model, train_set, valid_set, tokenizer, 
+            iters=args.iters, batch_size=args.batch_size, steps_per_report=args.steps_per_report, 
+            steps_per_eval=args.steps_per_eval, val_batches=args.val_batches, learning_rate=args.learning_rate, 
+            adapter_file=args.adapter_file)
 
     if args.test:
         print("Testing")
@@ -340,10 +370,10 @@ if __name__ == "__main__":
         test_loss = evaluate(
             model,
             test_set,
-            loss,
             tokenizer,
-            args.batch_size,
+            batch_size=args.batch_size,
             num_batches=args.test_batches,
+            adapter_file=args.adapter_file
         )
         test_ppl = math.exp(test_loss)
 
@@ -351,4 +381,6 @@ if __name__ == "__main__":
 
     if args.prompt is not None:
         print("Generating")
-        generate(model, args.prompt, tokenizer, args)
+        
+        generate(model, args.prompt, tokenizer, max_tokens=args.max_tokens, 
+                 temp=args.temp, adapter_file=args.adapter_file)
