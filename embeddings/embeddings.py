@@ -11,7 +11,7 @@ from mlx.utils import tree_unflatten, tree_flatten, tree_map
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-from transformers import BertTokenizer, BertConfig, AutoModel
+from transformers import AutoTokenizer, BertConfig, AutoModel
 
 def replace_key(key: str) -> str:
     key = key.replace(".self.key.", ".key_proj.")
@@ -153,7 +153,7 @@ class Bert(nn.Module):
         else:
             print(f"Quantizing to {precision_nbits} bits")
             nn.QuantizedLinear.quantize_module(mlx_model, bits=precision_nbits)
-        tokenizer = BertTokenizer.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
 
         return mlx_model, tokenizer
 
@@ -199,7 +199,7 @@ class EmbeddingModel:
             )
             hidden_states, pooler_output = self.model(
                 input_ids=mx.array(tokenized["input_ids"]),
-                token_type_ids=mx.array(tokenized["token_type_ids"]),
+                token_type_ids=mx.array(tokenized["token_type_ids"]) if "token_type_ids" in tokenized else None,
                 attention_mask=mx.array(tokenized["attention_mask"]),
             )
             hidden_states, pooler_output = np.array(hidden_states), np.array(pooler_output)
