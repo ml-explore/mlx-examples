@@ -31,9 +31,13 @@ def test_text_encoder():
     tokens_mx = mx_tokenizer(texts)
     # Get expected
     with torch.inference_mode():
-        expected_last_hidden = hf_clip(**tokens_hf).last_hidden_state.numpy()
+        expected_out = hf_clip(**tokens_hf)
+        expected_last_hidden = expected_out.last_hidden_state.numpy()
+        expected_pooler_output = expected_out.pooler_output.numpy()
+    out = mx_clip_tenc(tokens_mx)
     # Test text encoder
-    assert np.allclose(mx_clip_tenc(tokens_mx), expected_last_hidden, atol=1e-5)
+    assert np.allclose(out.last_hidden_state, expected_last_hidden, atol=1e-5)
+    assert np.allclose(out.pooler_output, expected_pooler_output, atol=1e-5)
 
 
 def test_vision_encoder():

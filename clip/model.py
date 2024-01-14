@@ -1,11 +1,11 @@
 # Copyright © 2023 Apple Inc.
 
 from dataclasses import dataclass
-from functools import partial, reduce
+from functools import reduce
 
 import mlx.core as mx
 import mlx.nn as nn
-from config import CLIPTextConfig, CLIPVisionConfig
+from config import CLIPConfig, CLIPTextConfig, CLIPVisionConfig
 
 
 def quick_gelu(x: mx.array) -> mx.array:
@@ -23,6 +23,7 @@ class CLIPVisionOutput:
 
 @dataclass
 class CLIPTextOutput:
+    pooler_output: mx.array
     last_hidden_state: mx.array
 
 
@@ -71,7 +72,8 @@ class CLIPTextModel(nn.Module):
 
     def __call__(self, x: mx.array) -> CLIPTextOutput:
         # Extract some shapes
-        _, N = x.shape
+        B, N = x.shape
+        eot_tokens = mx.argmax(x, axis=-1)
         # Look up embeddings
         x = self._embed(x)
         # Compute the causal mask
@@ -79,7 +81,12 @@ class CLIPTextModel(nn.Module):
         # Push through the transformer
         x = reduce(lambda x, l: l(x, mask), self.layers, x)
         # Apply the final layernorm
-        return self.final_layer_norm(x)
+        last_hidden_state = self.final_layer_norm(x)
+        pooler_output = last_hidden_state[mx.arange(B), eot_tokens]
+
+        return CLIPTextOutput(
+            pooler_output=pooler_output, last_hidden_state=last_hidden_state
+        )
 
 
 class CLIPVisionModel(nn.Module):
