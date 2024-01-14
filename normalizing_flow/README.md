@@ -1,11 +1,8 @@
 # Normalizing Flow
 
-Real NVP normalizing flow for density estimation and sampling implemented in
-MLX.[^1] 
-
-The example is written in a somewhat more object-oriented style than strictly
-necessary, with an eye towards extension to other use cases that could
-potentially benefit from the use of distributions and bijectors.
+An example of a normalizing flow for density estimation and sampling
+implemented in MLX. This example implements the real NVP (non-volume
+preserving) model.[^1] 
 
 ## Basic usage
 
@@ -37,7 +34,7 @@ The example can be run with:
 python main.py [--cpu]
 ```
 
-which trains the normalizing flow on the two moons dataset and plots the result
+This trains the normalizing flow on the two moons dataset and plots the result
 in `samples.png`. The optional `--cpu` flag can be used to run the example on
 the CPU, otherwise it will use the GPU by default.
 
