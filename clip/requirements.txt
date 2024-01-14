@@ -1,8 +1,6 @@
 mlx
-mlx-data
 numpy
 transformers
 torch
 huggingface_hub
-safetensors
 Pillow
