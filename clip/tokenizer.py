@@ -1,12 +1,15 @@
 # Copyright © 2023 Apple Inc.
 
-from typing import Any
+import json
+from pathlib import Path
+from typing import Any, Union
 
 import mlx.core as mx
 import regex
+from huggingface_hub import hf_hub_download
 
 
-class Tokenizer:
+class CLIPTokenizer:
     """A simple port of CLIPTokenizer from https://github.com/huggingface/transformers/ ."""
 
     def __init__(self, bpe_ranks, vocab):
@@ -51,8 +54,7 @@ class Tokenizer:
         # Ported from https://github.com/huggingface/transformers/blob/main/src/transformers/models/clip/tokenization_clip.py
         while unique_bigrams:
             bigram = min(
-                unique_bigrams, key=lambda pair: self.bpe_ranks.get(
-                    pair, float("inf"))
+                unique_bigrams, key=lambda pair: self.bpe_ranks.get(pair, float("inf"))
             )
             if bigram not in self.bpe_ranks:
                 break
@@ -105,3 +107,25 @@ class Tokenizer:
             tokens.append(self.eos_token)
 
         return mx.array(tokens)
+
+    @staticmethod
+    def from_pretrained(path: Union[Path, str]):
+        # "tokenizer_config": "tokenizer_config.json",
+        # "tokenizer_vocab": "vocab.json",
+        # "tokenizer_merges": "merges.txt"
+        if isinstance(path, str):
+            vocab_file = hf_hub_download(path, "vocab.json")
+            merges_file = hf_hub_download(path, "merges.txt")
+        else:
+            vocab_file = path / "vocab.json"
+            merges_file = path / "merges.txt"
+
+        with open(vocab_file, encoding="utf-8") as f:
+            vocab = json.load(f)
+        with open(merges_file, encoding="utf-8") as f:
+            bpe_merges = f.read().strip().split("\n")[1 : 49152 - 256 - 2 + 1]
+
+        bpe_merges = [tuple(m.split()) for m in bpe_merges]
+        bpe_ranks = dict(map(reversed, enumerate(bpe_merges)))
+
+        return CLIPTokenizer(bpe_ranks, vocab)

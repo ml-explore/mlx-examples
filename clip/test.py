@@ -1,22 +1,25 @@
+from pathlib import Path
+from typing import List
+
 import mlx.core as mx
+import model
 import numpy as np
 import torch
-from model_io import load_model, load_text_encoder, load_tokenizer, load_vision_encoder
+import transformers
 from PIL import Image
-from transformers import (
-    AutoTokenizer,
-    CLIPModel,
-    CLIPProcessor,
-    CLIPTextModel,
-    CLIPVisionModel,
-)
+from tokenizer import CLIPTokenizer
+from transformers import AutoTokenizer
 
-TEST_CKPT: str = "openai/clip-vit-large-patch14"
+CONVERTED_WEIGHTS_PATH = Path("weights/mlx")
+TEST_CKPTS: List[str] = [
+    "openai/clip-vit-base-patch32",
+    "openai/clip-vit-large-patch14",
+]
 
 
-def test_text_tokenizer():
+def test_text_tokenizer(TEST_CKPT: str):
     texts = ["a photo of a cat", "a photo of a dog"]
-    mx_tokenizer = load_tokenizer(TEST_CKPT)
+    mx_tokenizer = CLIPTokenizer.from_pretrained(TEST_CKPT)
     hf_tokenizer = AutoTokenizer.from_pretrained(TEST_CKPT)
 
     for txt in texts:
@@ -26,11 +29,13 @@ def test_text_tokenizer():
         )
 
 
-def test_text_encoder():
-    mx_tokenizer = load_tokenizer(TEST_CKPT)
-    mx_clip_tenc = load_text_encoder(TEST_CKPT)
-    hf_tokenizer = AutoTokenizer.from_pretrained(TEST_CKPT)
-    hf_clip = CLIPTextModel.from_pretrained(TEST_CKPT)
+def test_text_encoder(TEST_CKPT: str):
+    mx_tokenizer = CLIPTokenizer.from_pretrained(TEST_CKPT)
+    mx_clip_tenc = model.CLIPTextModel.from_pretrained(
+        CONVERTED_WEIGHTS_PATH / TEST_CKPT
+    )
+    hf_tokenizer = transformers.AutoTokenizer.from_pretrained(TEST_CKPT)
+    hf_clip = transformers.CLIPTextModel.from_pretrained(TEST_CKPT)
     texts = ["a photo of a cat", "a photo of a dog"]
     # Tokenize
     tokens_hf = hf_tokenizer(texts, return_tensors="pt")
@@ -46,10 +51,12 @@ def test_text_encoder():
     assert np.allclose(out.pooler_output, expected_pooler_output, atol=1e-5)
 
 
-def test_vision_encoder():
-    mx_clip_venc = load_vision_encoder(TEST_CKPT)
-    hf_clp_vision = CLIPVisionModel.from_pretrained(TEST_CKPT)
-    hf_processor = CLIPProcessor.from_pretrained(TEST_CKPT)
+def test_vision_encoder(TEST_CKPT: str):
+    mx_clip_venc = model.CLIPVisionModel.from_pretrained(
+        CONVERTED_WEIGHTS_PATH / TEST_CKPT
+    )
+    hf_clp_vision = transformers.CLIPVisionModel.from_pretrained(TEST_CKPT)
+    hf_processor = transformers.CLIPProcessor.from_pretrained(TEST_CKPT)
     # Load and process test image
     x = hf_processor(
         images=[Image.open("cats.jpeg")], return_tensors="np"
@@ -72,10 +79,10 @@ def test_vision_encoder():
     assert np.allclose(out.pooler_output, expected_pooler_output, rtol=1e-4, atol=1e-3)
 
 
-def test_clip_model():
-    clip = load_model(TEST_CKPT)
-    hf_clip = CLIPModel.from_pretrained(TEST_CKPT)
-    hf_processor = CLIPProcessor.from_pretrained(TEST_CKPT)
+def test_clip_model(TEST_CKPT: str):
+    clip = model.CLIPModel.from_pretrained(CONVERTED_WEIGHTS_PATH / TEST_CKPT)
+    hf_clip = transformers.CLIPModel.from_pretrained(TEST_CKPT)
+    hf_processor = transformers.CLIPProcessor.from_pretrained(TEST_CKPT)
 
     clip_input = hf_processor(
         text=["a photo of a cat", "a photo of a dog"],
@@ -96,7 +103,9 @@ def test_clip_model():
     assert np.allclose(out.loss, expected_out.loss, atol=1e-5)
 
 
-test_text_tokenizer()
-test_text_encoder()
-test_vision_encoder()
-test_clip_model()
+for TEST_CKPT in TEST_CKPTS:
+    print(f"[testing] {TEST_CKPT}")
+    test_text_tokenizer(TEST_CKPT)
+    test_text_encoder(TEST_CKPT)
+    test_vision_encoder(TEST_CKPT)
+    test_clip_model(TEST_CKPT)

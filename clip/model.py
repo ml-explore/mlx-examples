@@ -1,14 +1,18 @@
 # Copyright © 2023 Apple Inc.
 
+import json
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, List, Optional
+from pathlib import Path
+from typing import Any, List, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 from config import CLIPConfig, CLIPTextConfig, CLIPVisionConfig
+from huggingface_hub import hf_hub_download
 from mlx.core import linalg as LA
 from mlx.nn.losses import cross_entropy
+from mlx.utils import tree_flatten
 
 
 def quick_gelu(x: mx.array) -> mx.array:
@@ -27,8 +31,6 @@ def clip_loss(logits_per_text: mx.array, logits_per_image: mx.array) -> mx.array
 
 
 def normal(shape: List[int], mean=0.0, std=1.0) -> mx.array:
-    # E_X[aX + b] = a E[X] + b
-    # Var_X[aX + b] = a**2 Var_X[X]
     return mean + std * mx.random.normal(shape)
 
 
@@ -157,6 +159,39 @@ class CLIPTextModel(nn.Module):
         self.final_layer_norm.bias = mx.zeros_like(self.final_layer_norm.bias)
         self.final_layer_norm.weight = mx.ones_like(self.final_layer_norm.weight)
 
+    @staticmethod
+    def from_pretrained(path: Union[Path, str]):
+        if isinstance(path, str):
+            config_path = hf_hub_download(path, "config.json")
+            weights_path = hf_hub_download(path, "weights.npz")
+        else:
+            config_path = path / "config.json"
+            weights_path = path / "weights.npz"
+
+        with open(config_path, "r") as fs:
+            config = json.load(fs)
+
+        weights = mx.load(str(weights_path))
+        weights = {
+            k.replace("text_model.", ""): v
+            for (k, v) in weights.items()
+            if "text_model" in k
+        }
+
+        text_config = CLIPTextConfig(
+            num_hidden_layers=config["text_config"]["num_hidden_layers"],
+            hidden_size=config["text_config"]["hidden_size"],
+            intermediate_size=config["text_config"]["intermediate_size"],
+            num_attention_heads=config["text_config"]["num_attention_heads"],
+            max_position_embeddings=config["text_config"]["max_position_embeddings"],
+            vocab_size=config["text_config"]["vocab_size"],
+            initializer_factor=config["text_config"]["initializer_factor"],
+        )
+
+        model = CLIPTextModel(text_config)
+        model.load_weights(tree_flatten(weights), strict=True)
+        return model
+
 
 class CLIPVisionModel(nn.Module):
     """Implements the vision encoder transformer from CLIP."""
@@ -234,6 +269,39 @@ class CLIPVisionModel(nn.Module):
         self.pre_layernorm.weight = mx.ones_like(self.pre_layernorm.weight)
         self.post_layernorm.bias = mx.zeros_like(self.post_layernorm.bias)
         self.post_layernorm.weight = mx.ones_like(self.post_layernorm.weight)
+
+    @staticmethod
+    def from_pretrained(path: Union[Path, str]):
+        if isinstance(path, str):
+            config_path = hf_hub_download(path, "config.json")
+            weights_path = hf_hub_download(path, "weights.npz")
+        else:
+            config_path = path / "config.json"
+            weights_path = path / "weights.npz"
+
+        with open(config_path, "r") as fs:
+            config = json.load(fs)
+
+        weights = mx.load(str(weights_path))
+        weights = {
+            k.replace("vision_model.", ""): v
+            for (k, v) in weights.items()
+            if "vision_model" in k
+        }
+
+        vision_config = CLIPVisionConfig(
+            num_hidden_layers=config["vision_config"]["num_hidden_layers"],
+            hidden_size=config["vision_config"]["hidden_size"],
+            intermediate_size=config["vision_config"]["intermediate_size"],
+            num_attention_heads=config["vision_config"]["num_attention_heads"],
+            num_channels=3,
+            image_size=config["vision_config"]["image_size"],
+            patch_size=config["vision_config"]["patch_size"],
+        )
+
+        model = CLIPVisionModel(vision_config)
+        model.load_weights(tree_flatten(weights), strict=True)
+        return model
 
 
 class CLIPModel(nn.Module):
@@ -333,3 +401,42 @@ class CLIPModel(nn.Module):
         )
         # Reset temperature
         self.logit_scale = mx.ones([])
+
+    @staticmethod
+    def from_pretrained(path: Union[Path, str]):
+        if isinstance(path, str):
+            config_path = hf_hub_download(path, "config.json")
+            weights_path = hf_hub_download(path, "weights.npz")
+        else:
+            config_path = path / "config.json"
+            weights_path = path / "weights.npz"
+
+        with open(config_path, "r") as fs:
+            config = json.load(fs)
+
+        text_config = CLIPTextConfig(
+            num_hidden_layers=config["text_config"]["num_hidden_layers"],
+            hidden_size=config["text_config"]["hidden_size"],
+            intermediate_size=config["text_config"]["intermediate_size"],
+            num_attention_heads=config["text_config"]["num_attention_heads"],
+            max_position_embeddings=config["text_config"]["max_position_embeddings"],
+            vocab_size=config["text_config"]["vocab_size"],
+        )
+        vision_config = CLIPVisionConfig(
+            num_hidden_layers=config["vision_config"]["num_hidden_layers"],
+            hidden_size=config["vision_config"]["hidden_size"],
+            intermediate_size=config["vision_config"]["intermediate_size"],
+            num_attention_heads=config["vision_config"]["num_attention_heads"],
+            num_channels=3,
+            image_size=config["vision_config"]["image_size"],
+            patch_size=config["vision_config"]["patch_size"],
+        )
+        config = CLIPConfig(
+            text_config=text_config,
+            vision_config=vision_config,
+            projection_dim=config["projection_dim"],
+            initializer_factor=config["initializer_factor"],
+        )
+        model = CLIPModel(config)
+        model.load_weights(str(weights_path), strict=True)
+        return model
