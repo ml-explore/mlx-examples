@@ -61,13 +61,13 @@ def fetch_from_hub(
     model_path: Path,
 ) -> Tuple[Dict, dict]:
     """
-    Fetches the model weights, configuration, and tokenizer from the Hugging Face Hub.
+    Fetches the model weights and configuration from the Hugging Face Hub.
 
     Args:
         model_path (Path): Path to the Hugging Face model directory.
 
     Returns:
-        Tuple[Dict, dict, transformers.PreTrainedTokenizer]: A tuple containing the model weights, configuration dictionary, and the tokenizer.
+        Tuple[Dict, dict]: A tuple containing the model weights and configuration dictionary.
     """
     weight_files = glob.glob(f"{model_path}/*.safetensors")
     if not weight_files:
