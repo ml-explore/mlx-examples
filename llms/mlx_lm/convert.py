@@ -10,7 +10,7 @@ import mlx.nn as nn
 import transformers
 from mlx.utils import tree_flatten
 
-from .utils import get_model_path, load
+from .utils import get_model_path, load, load_model
 
 MAX_FILE_SIZE_GB = 15
 
@@ -102,7 +102,7 @@ def fetch_from_hub(
 
 
 def quantize_model(
-    weights: dict, config: dict, hf_path: str, q_group_size: int, q_bits: int, **kwargs
+    weights: dict, config: dict, hf_path: str, q_group_size: int, q_bits: int
 ) -> tuple:
     """
     Applies quantization to the model weights.
@@ -113,13 +113,13 @@ def quantize_model(
         hf_path (str): HF model path..
         q_group_size (int): Group size for quantization.
         q_bits (int): Bits per weight for quantization.
-        **kwargs: Additional keyword arguments. This can be used to pass extra arguments required for model loading.
 
     Returns:
         tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-    model, _ = load(hf_path, **kwargs)
+    model_path = get_model_path(hf_path)
+    model = load_model(model_path)
     model.load_weights(list(weights.items()))
 
     nn.QuantizedLinear.quantize_module(model, q_group_size, q_bits)
@@ -233,9 +233,7 @@ def convert(
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     if quantize:
         print("[INFO] Quantizing")
-        weights, config = quantize_model(
-            weights, config, hf_path, q_group_size, q_bits, **kwargs
-        )
+        weights, config = quantize_model(weights, config, hf_path, q_group_size, q_bits)
 
     mlx_path = Path(mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
