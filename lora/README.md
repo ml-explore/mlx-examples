@@ -2,7 +2,7 @@
 
 This is an example of using MLX to fine-tune an LLM with low rank adaptation
 (LoRA) for a target task.[^lora] The example also supports quantized LoRA
-(QLoRA).[^qlora] The example works with Llama and Mistral style
+(QLoRA).[^qlora] The example works with Llama, Mistral, and Phi-2 style
 models available on Hugging Face.
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
@@ -100,7 +100,7 @@ To compute test set perplexity use:
 ```
 python lora.py --model <path_to_model> \
                --adapter-file <path_to_adapters.npz> \
-               --test 
+               --test
 ```
 
 ### Generate
