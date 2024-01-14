@@ -5,7 +5,7 @@ import warnings
 import tempfile
 from typing import Union
 from dataclasses import dataclass
-from mlx_embeddings import MLXEmbeddingModel
+from embeddings import EmbeddingModel
 try:
     from mteb import MTEB
 except ImportError:
@@ -28,7 +28,7 @@ class Evaluator:
             tasks = [Task(**task) for task in tasks]
         self.tasks = tasks
 
-    def run(self, model: MLXEmbeddingModel):
+    def run(self, model: EmbeddingModel):
         results = {}
         for task in self.tasks:
             evaluation = MTEB(tasks=[task.mteb_task], task_langs=["en"])
@@ -44,7 +44,7 @@ class Evaluator:
             results[task.mteb_task] = result
         return results
     
-def main(precision_nbits: int = 16):
+def main(precision_nbits: int = 8):
     tasks = [
         Task(mteb_task="Banking77Classification", metric=["test", "accuracy"]),
         Task(mteb_task="STS12", metric=["test", "cos_sim", "spearman"])
@@ -52,7 +52,7 @@ def main(precision_nbits: int = 16):
     evaluator = Evaluator(tasks)
     
     # Run the evaluation
-    mx_model = MLXEmbeddingModel(
+    mx_model = EmbeddingModel(
         "BAAI/bge-small-en-v1.5", 
         pooling_strategy="cls",
         precision_nbits=precision_nbits,
@@ -69,7 +69,7 @@ def main(precision_nbits: int = 16):
     
 if __name__ == "__main__":
     import sys
-    precision_nbits = 16
+    precision_nbits = 8
     if len(sys.argv) > 1:
         precision_nbits = int(sys.argv[1])
     main(precision_nbits=precision_nbits)

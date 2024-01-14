@@ -3,7 +3,7 @@
 # and use it for batch inference for text embeddings.
 # It also implements the proper API to be evaluated in MTEB
 # and used like a sentence transformer model.
-import torch
+import tqdm
 from typing import Literal
 import mlx.core as mx
 import mlx.nn as nn
@@ -14,18 +14,34 @@ import numpy as np
 from transformers import BertTokenizer, BertConfig, AutoModel
 
 def replace_key(key: str) -> str:
-    key = key.replace(".layer.", ".layers.")
     key = key.replace(".self.key.", ".key_proj.")
     key = key.replace(".self.query.", ".query_proj.")
     key = key.replace(".self.value.", ".value_proj.")
     key = key.replace(".attention.output.dense.", ".attention.out_proj.")
-    key = key.replace(".attention.output.LayerNorm.", ".ln1.")
-    key = key.replace(".output.LayerNorm.", ".ln2.")
-    key = key.replace(".intermediate.dense.", ".linear1.")
-    key = key.replace(".output.dense.", ".linear2.")
-    key = key.replace(".LayerNorm.", ".norm.")
-    key = key.replace("pooler.dense.", "pooler.")
+    key = key.replace(".attention.output.LayerNorm.", ".attention_norm.")
     return key
+
+class BertIntermediate(nn.Module):
+    def __init__(self, config: BertConfig):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, config.intermediate_size, bias=True)
+        self.gelu = nn.GELU()
+
+    def __call__(self, x: mx.array) -> mx.array:
+        return self.gelu(self.dense(x))
+    
+class BertOutput(nn.Module):
+    def __init__(self, config: BertConfig):
+        super().__init__()
+        self.dense = nn.Linear(config.intermediate_size, config.hidden_size, bias=True)
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def __call__(self, hidden_states: mx.array, input_tensor: mx.array) -> mx.array:
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
 
 class TransformerEncoderLayer(nn.Module):
     """
@@ -34,35 +50,32 @@ class TransformerEncoderLayer(nn.Module):
 
     def __init__(self, config: BertConfig):
         super().__init__()
-        self.attention = nn.MultiHeadAttention(config.hidden_size, config.num_attention_heads, bias=True)
-        # self.attention = BertAttention(config)
-        self.ln1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.ln2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.linear1 = nn.Linear(config.hidden_size, config.intermediate_size)
-        self.linear2 = nn.Linear(config.intermediate_size, config.hidden_size)
-        self.gelu = nn.GELU()
+        self.attention = nn.MultiHeadAttention(
+            config.hidden_size, 
+            config.num_attention_heads, 
+            bias=True
+        )
+        self.attention_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
 
     def __call__(self, x, mask):
         attention_out = self.attention(x, x, x, mask)
-        add_and_norm = self.ln1(x + attention_out)
-
-        ff = self.linear1(add_and_norm)
-        ff_gelu = self.gelu(ff)
-        ff_out = self.linear2(ff_gelu)
-        x = self.ln2(ff_out + add_and_norm)
-
-        return x
+        attention_out = self.attention_norm(x + attention_out)
+        intermediate_out = self.intermediate(attention_out)
+        layer_out = self.output(intermediate_out, attention_out)
+        return layer_out
 
 class TransformerEncoder(nn.Module):
     def __init__(self, config: BertConfig):
         super().__init__()
-        self.layers = [
+        self.layer = [
             TransformerEncoderLayer(config)
             for i in range(config.num_hidden_layers)
         ]
 
     def __call__(self, x, mask):
-        for layer in self.layers:
+        for layer in self.layer:
             x = layer(x, mask)
         return x
 
@@ -73,7 +86,7 @@ class BertEmbeddings(nn.Module):
         self.position_embeddings = nn.Embedding(
             config.max_position_embeddings, config.hidden_size
         )
-        self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def __call__(self, input_ids: mx.array, token_type_ids: mx.array) -> mx.array:
         words = self.word_embeddings(input_ids)
@@ -83,14 +96,23 @@ class BertEmbeddings(nn.Module):
         token_types = self.token_type_embeddings(token_type_ids)
 
         embeddings = position + words + token_types
-        return self.norm(embeddings)
+        return self.LayerNorm(embeddings)
 
+class BertPooler(nn.Module):
+    def __init__(self, config: BertConfig):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size, bias=True)
+
+    def __call__(self, hidden_states: mx.array) -> mx.array:
+        first_token_tensor = hidden_states[:, 0]
+        pooled_output = self.dense(first_token_tensor)
+        return mx.tanh(pooled_output)
 
 class Bert(nn.Module):
     def __init__(self, config: BertConfig):
         self.embeddings = BertEmbeddings(config)
         self.encoder = TransformerEncoder(config)
-        self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
+        self.pooler = BertPooler(config)
 
     def __call__(
         self,
@@ -109,10 +131,10 @@ class Bert(nn.Module):
             attention_mask = mx.expand_dims(attention_mask, (1, 2))
 
         y = self.encoder(x, attention_mask) # shape: B, L, D
-        return y, mx.tanh(self.pooler(y[:, 0])) # shape: B, D
+        return y, self.pooler(y)
     
     @classmethod
-    def from_hugging_face(cls, model_path: str, precision_nbits: int = 8):
+    def from_pretrained(cls, model_path: str, precision_nbits: int = 8):
         if precision_nbits not in [2, 4, 8, 32]:
             raise ValueError("precision_nbits must be one of 2, 4, 8, 32")
         config = BertConfig.from_pretrained(model_path)
@@ -136,7 +158,7 @@ class Bert(nn.Module):
         return mlx_model, tokenizer
 
 
-class MLXEmbeddingModel:
+class EmbeddingModel:
     def __init__(
         self,
         model_path: str, # path to model on huggingface. must be BERT
@@ -146,12 +168,12 @@ class MLXEmbeddingModel:
         precision_nbits: int = 8
     ):
         super().__init__()
-        self.model, self.tokenizer = Bert.from_hugging_face(model_path, precision_nbits)
+        self.model, self.tokenizer = Bert.from_pretrained(model_path, precision_nbits)
         self.max_length = max_length
         self.pooling_strategy = pooling_strategy
         self.normalize = normalize
     
-    def encode(self, sentences, batch_size=32, **kwargs):
+    def encode(self, sentences, batch_size=32, show_progress=True, **kwargs):
         """
         Returns a list of embeddings for the given sentences.
         Args:
@@ -161,28 +183,43 @@ class MLXEmbeddingModel:
         Returns:
             `List[np.ndarray]` or `List[tensor]`: List of embeddings for the given sentences
         """
-        tokenized = self.tokenizer(
-            sentences,
-            padding="longest",
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="np",
-        )
-        hidden_states, pooler_output = self.model(
-            input_ids=mx.array(tokenized["input_ids"]),
-            token_type_ids=mx.array(tokenized["token_type_ids"]),
-            attention_mask=mx.array(tokenized["attention_mask"]),
-        )
-        hidden_states, pooler_output = np.array(hidden_states), np.array(pooler_output)
-        attn_mask = np.array(tokenized["attention_mask"])
-        if self.pooling_strategy == "mean":
-            pooled = np.sum(hidden_states * np.expand_dims(attn_mask, -1), axis=1) / np.sum(attn_mask, axis=1, keepdims=True)
+        result = None
+        if show_progress:
+            pbar = tqdm.tqdm(total=len(sentences))
         else:
-            pooled = pooler_output
-        if self.normalize:
-            pooled = pooled / np.linalg.norm(pooled, axis=1, keepdims=True)
-        return pooled
-    
+            pbar = None
+        for i in range(0, len(sentences), batch_size):
+            batch = sentences[i : i + batch_size]
+            tokenized = self.tokenizer(
+                batch,
+                padding="longest",
+                truncation=True,
+                max_length=self.max_length,
+                return_tensors="np",
+            )
+            hidden_states, pooler_output = self.model(
+                input_ids=mx.array(tokenized["input_ids"]),
+                token_type_ids=mx.array(tokenized["token_type_ids"]),
+                attention_mask=mx.array(tokenized["attention_mask"]),
+            )
+            hidden_states, pooler_output = np.array(hidden_states), np.array(pooler_output)
+            attn_mask = np.array(tokenized["attention_mask"])
+            if self.pooling_strategy == "mean":
+                pooled = np.sum(hidden_states * np.expand_dims(attn_mask, -1), axis=1) / np.sum(attn_mask, axis=1, keepdims=True)
+            else:
+                pooled = pooler_output
+            if self.normalize:
+                pooled = pooled / np.linalg.norm(pooled, axis=1, keepdims=True)
+
+            if result is None:
+                result = pooled
+            else:
+                result = np.concatenate([result, pooled], axis=0)
+            if pbar is not None:
+                pbar.update(len(batch))
+
+        return result
+
 def test_embeddings():
     mx_model, tokenizer = Bert.from_hugging_face("BAAI/bge-small-en-v1.5", precision_nbits=16)
     torch_model = AutoModel.from_pretrained("BAAI/bge-small-en-v1.5")
