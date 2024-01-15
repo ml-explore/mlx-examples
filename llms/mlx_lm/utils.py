@@ -130,10 +130,11 @@ def generate(
 
         if verbose:
             s = tokenizer.decode(tokens)
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
+            if '�' not in s:
+                print(s[skip:], end="", flush=True)
+                skip = len(s)
 
-    tokens = tokenizer.decode(tokens)[skip:]
+    tokens = tokenizer.decode(tokens)[skip:].replace('�', '')
     if verbose:
         print(tokens, flush=True)
     return tokens
