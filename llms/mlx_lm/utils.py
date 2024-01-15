@@ -133,9 +133,9 @@ def generate(
             print(s[skip:], end="", flush=True)
             skip = len(s)
 
-    tokens = tokenizer.decode(tokens)[skip:]
+    tokens = tokenizer.decode(tokens)
     if verbose:
-        print(tokens, flush=True)
+        print(tokens[skip:], flush=True)
     return tokens
 
 
