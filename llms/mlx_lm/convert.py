@@ -10,7 +10,7 @@ import mlx.nn as nn
 import transformers
 from mlx.utils import tree_flatten
 
-from .utils import get_model_path, load
+from .utils import get_model_path, linear_class_predicate, load
 
 MAX_FILE_SIZE_GB = 15
 
@@ -94,11 +94,10 @@ def quantize_model(
     model, _ = load(hf_path)
     model.load_weights(list(weights.items()))
 
-    nn.QuantizedLinear.quantize_module(model, q_group_size, q_bits)
-    quantized_config["quantization"] = {
-        "group_size": q_group_size,
-        "bits": q_bits,
-    }
+    nn.QuantizedLinear.quantize_module(
+        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
+    )
+    quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config

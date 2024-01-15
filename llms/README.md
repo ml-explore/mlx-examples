@@ -101,10 +101,12 @@ Here are a few examples of Hugging Face models that work with this example:
 - [deepseek-ai/deepseek-coder-6.7b-instruct](https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct)
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
+- [mistralai/Mixtral-8x7B-Instruct-v0.1](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1)
 
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
 [Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending),
-and
 [Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending)
+and
+[Mixtral](https://huggingface.co/models?library=transformers,safetensors&other=mixtral&sort=trending)
 style models should work out of the box.
