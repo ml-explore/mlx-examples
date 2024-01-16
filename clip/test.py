@@ -7,14 +7,31 @@ import numpy as np
 import torch
 import transformers
 from PIL import Image
-from tokenizer import CLIPTokenizer
+from preprocessing.image_processor import CLIPImageProcessor
+from preprocessing.tokenizer import CLIPTokenizer
 from transformers import AutoTokenizer
+from transformers.image_processing_utils import ChannelDimension
 
 CONVERTED_WEIGHTS_PATH = Path("weights/mlx")
 TEST_CKPTS: List[str] = [
     "openai/clip-vit-base-patch32",
     "openai/clip-vit-large-patch14",
 ]
+
+
+def test_image_processor(TEST_CKPT: str):
+    mx_image_proc = CLIPImageProcessor.from_pretrained(TEST_CKPT)
+    tf_image_proc = transformers.CLIPImageProcessor.from_pretrained(TEST_CKPT)
+    image = Image.open("cats.jpeg")
+
+    mx_data = mx_image_proc([image])
+    tf_data = mx.array(
+        np.array(
+            tf_image_proc([image], data_format=ChannelDimension.LAST)["pixel_values"]
+        )
+    )
+
+    assert mx.array_equal(mx_data, tf_data)
 
 
 def test_text_tokenizer(TEST_CKPT: str):
@@ -105,6 +122,7 @@ def test_clip_model(TEST_CKPT: str):
 
 for TEST_CKPT in TEST_CKPTS:
     print(f"[testing] {TEST_CKPT}")
+    test_image_processor(TEST_CKPT)
     test_text_tokenizer(TEST_CKPT)
     test_text_encoder(TEST_CKPT)
     test_vision_encoder(TEST_CKPT)

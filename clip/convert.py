@@ -1,3 +1,5 @@
+# Copyright © 2023 Apple Inc.
+
 import shutil
 from argparse import ArgumentParser
 from pathlib import Path
@@ -89,4 +91,8 @@ if __name__ == "__main__":
     shutil.copyfile(
         str(torch_path / "vocab.json"),
         str(mlx_path / "vocab.json"),
+    )
+    shutil.copyfile(
+        str(torch_path / "preprocessor_config.json"),
+        str(mlx_path / "preprocessor_config.json"),
     )

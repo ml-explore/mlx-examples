@@ -39,32 +39,27 @@ CLIP model to embed images and text.
 
 ```python
 from pathlib import Path
-import mlx.core as mx
-import model
-import transformers
+from model import CLIPModel
 from PIL import Image
+from preprocessing.tokenizer import CLIPTokenizer
+from preprocessing.image_processor import CLIPImageProcessor
 
 MODEL: str = "openai/clip-vit-base-patch32"
 CONVERTED_CKPT_PATH: str = f"weights/mlx/{MODEL}"
 
 # Load pretrained MLX CLIPModel
-mlx_clip = model.CLIPModel.from_pretrained(Path(CONVERTED_CKPT_PATH))
+mlx_clip = CLIPModel.from_pretrained(Path(CONVERTED_CKPT_PATH))
 # Load input tokenizer and transformers image (pre)processor
-tf_processor = transformers.CLIPProcessor.from_pretrained(MODEL)
-# Use transformers tokenizer and image (pre)processor
-clip_input = tf_processor(
-    text=["a photo of a cat", "a photo of a dog"],
-    images=[Image.open("cats.jpeg"), Image.open("dog.jpeg")],
-    return_tensors="np",
-)
-# Get tokenized text
-input_ids = mx.array(clip_input.input_ids)
-# Convert imgs to channels_last (e.g. (B, H, W, C))
-imgs = mx.array(clip_input.pixel_values).transpose((0, 2, 3, 1))
+tokenizer = CLIPTokenizer.from_pretrained(Path(CONVERTED_CKPT_PATH))
+img_processor = CLIPImageProcessor.from_pretrained(Path(CONVERTED_CKPT_PATH))
+# Preprocess the input
+clip_input = {
+    "input_ids": tokenizer(["a photo of a cat", "a photo of a dog"]),
+    "pixel_values": img_processor([Image.open("cats.jpeg"), Image.open("dog.jpeg")])
+}
 # Compute the output
 mlx_out = mlx_clip(
-    input_ids=input_ids,
-    pixel_values=imgs,
+    **clip_input,
     return_loss=True
 )
 # Print some embeddings and the CLIP loss
@@ -84,13 +79,16 @@ array([[-0.00978788, 0.0127698, -0.0274189, ..., 0.0802634, -0.00135005, 0.02373
        [0.017399, 0.0232256, -0.0505955, ..., 0.0478406, 0.0470153, 0.00132057]], dtype=float32)
 CLIP loss: array(0.00763702, dtype=float32)
 ```
-A similar example is also provided in `example.py`:
-```
-python example.py
-```
+
 It is also possible to embed only the images or only the text.
 Thus, both ``input_ids`` and ``pixel_values`` parameters are optional. 
 To embed only the text, simply provide only the `input_ids`. Similarly, to embed only the images, simply provide only the ``pixel_values``.
+
+It is also possible to use ``transformers`` preprocessing utilities.
+This is demonstrated in `example.py`:
+```
+python example.py
+```
 
 ### Remarks
 The conversion method and the correctness of the CLIP implementation were tested for:

@@ -51,7 +51,7 @@ class CLIPTokenizer:
         # In every iteration try to merge the two most likely bigrams. If none
         # was merged we are done.
         #
-        # Ported from https://github.com/huggingface/transformers/blob/main/src/transformers/models/clip/tokenization_clip.py
+        # Ported from https://github.com/huggingface/transformers/blob/main/src/transformers/models/clip/tokenization_py
         while unique_bigrams:
             bigram = min(
                 unique_bigrams, key=lambda pair: self.bpe_ranks.get(pair, float("inf"))
