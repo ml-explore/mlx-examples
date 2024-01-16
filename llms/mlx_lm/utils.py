@@ -134,9 +134,9 @@ def generate(
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
 
-    tokens = tokenizer.decode(tokens)[skip:].replace('�', '')
+    tokens = tokenizer.decode(tokens).replace('�', '')
     if verbose:
-        print(tokens, flush=True)
+        print(tokens[skip:], flush=True)
     return tokens
 
 
