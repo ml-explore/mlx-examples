@@ -122,6 +122,8 @@ def generate(
 
     tokens = []
     skip = 0
+    REPLACEMENT_CHAR = '\ufffd'
+
     for token, _ in zip(generate_step(prompt, model, temp), range(max_tokens)):
         if token == tokenizer.eos_token_id:
             break
@@ -130,10 +132,11 @@ def generate(
 
         if verbose:
             s = tokenizer.decode(tokens)
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
+            if REPLACEMENT_CHAR not in s:
+                print(s[skip:], end="", flush=True)
+                skip = len(s)
 
-    tokens = tokenizer.decode(tokens)
+    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, '')
     if verbose:
         print(tokens[skip:], flush=True)
     return tokens
