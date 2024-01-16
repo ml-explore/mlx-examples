@@ -127,11 +127,15 @@ if __name__ == "__main__":
         new_input = input("Input more text to continue generation:")
         if new_input == "":
             break
-        instruction_base.append(
-            {
-                "role": "input",
-                "content": new_input,
-            },
-        )
-        prompt = generate_prompt(instruction_base)
+        if args.instruct:
+            instruction_base.append(
+                {
+                    "role": "input",
+                    "content": new_input,
+                },
+            )
+            prompt = generate_prompt(instruction_base)
+        else:
+            prompt = new_input
+
         answer = generate(model, tokenizer, prompt, args.max_tokens, args.write_every, args.temp)
