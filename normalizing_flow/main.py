@@ -1,15 +1,13 @@
 # Copyright © 2023-2024 Apple Inc.
 
-from tqdm import trange
-import numpy as np
-from sklearn import datasets, preprocessing
 import matplotlib.pyplot as plt
-
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
-
+import numpy as np
 from flows import RealNVP
+from sklearn import datasets, preprocessing
+from tqdm import trange
 
 
 def get_moons_dataset(n_samples=100_000, noise=0.06):
