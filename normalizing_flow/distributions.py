@@ -1,7 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
-from typing import Tuple, Optional, Union
 import math
+from typing import Optional, Tuple, Union
 
 import mlx.core as mx
 

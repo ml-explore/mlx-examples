@@ -1,11 +1,10 @@
 # Copyright © 2023-2024 Apple Inc.
 
-from typing import Tuple, Optional, Union
+from typing import Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-
-from bijectors import MaskedCoupling, AffineBijector
+from bijectors import AffineBijector, MaskedCoupling
 from distributions import Normal
 
 
