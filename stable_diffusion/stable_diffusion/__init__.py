@@ -155,5 +155,5 @@ class StableDiffusion:
 
     def decode(self, x_t):
         x = self.autoencoder.decode(x_t)
-        x = mx.minimum(1, mx.maximum(0, x / 2 + 0.5))
+        x = mx.clip(x / 2 + 0.5, 0, 1)
         return x

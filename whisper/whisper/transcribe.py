@@ -62,7 +62,7 @@ class ModelHolder:
 def transcribe(
     audio: Union[str, np.ndarray, mx.array],
     *,
-    path_or_hf_repo: str = "mlx_models",
+    path_or_hf_repo: str = "mlx-community/whisper-tiny",
     verbose: Optional[bool] = None,
     temperature: Union[float, Tuple[float, ...]] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
     compression_ratio_threshold: Optional[float] = 2.4,
