@@ -8,6 +8,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers.dynamic_module_utils import resolve_trust_remote_code
 
 # Local imports
 from .models import llama, mixtral, phi2, plamo
@@ -189,5 +190,6 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    trust_remote_code = resolve_trust_remote_code(None, config["tokenizer_class"], False, True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     return model, tokenizer
