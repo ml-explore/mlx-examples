@@ -38,7 +38,6 @@ class PlamoConfig(PretrainedConfig):  # type: ignore
         intermediate_size: int = 13312,
         num_hidden_layers: int = 32,
         num_attention_heads: int = 32,
-        num_key_value_heads: Optional[int] = None,
         max_position_embeddings: int = 2048,
         initializer_range: float = 0.02,
         rms_norm_eps: float = 1e-6,
@@ -57,16 +56,9 @@ class PlamoConfig(PretrainedConfig):  # type: ignore
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
-
-        # for backward compatibility
-        if num_key_value_heads is None:
-            num_key_value_heads = num_attention_heads
-
-        self.num_key_value_heads = num_key_value_heads
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-
         self.n_shared_head = n_shared_head
 
         super().__init__(
