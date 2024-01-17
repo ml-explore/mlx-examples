@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Any, List, NamedTuple, Optional, Tuple
+from typing import Any, List, NamedTuple, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -76,8 +76,8 @@ class RotaryEmbedding:
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.inv_freq = 1.0 / mx.power(self.base, mx.arange(0, self.dim, 2, dtype=mx.float32) / self.dim)
-        self.cos_signed = None
-        self.sin_signed = None
+        self.cos_cached = mx.zeros((1, 1, max_position_embeddings, dim))
+        self.sin_cached = mx.zeros((1, 1, max_position_embeddings, dim))
         self._set_cos_sin_cache(max_position_embeddings)
 
     def _set_cos_sin_cache(self, seq_len: int) -> None:
@@ -279,26 +279,11 @@ class PlamoModel(nn.Module):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = PlamoDecoder(config)  # type: ignore
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
         self.gradient_checkpointing = False
-        # Initialize weights and apply final processing
-        # self.post_init()
 
-    def _init_weights(self, module: nn.Module) -> None:
-        std = self.config.initializer_range
-        if isinstance(module, nn.Linear):
-            module.weight.data.normal_(mean=0.0, std=std)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=std)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
-
-    def _set_gradient_checkpointing(self, module: nn.Module, value: bool = False) -> None:
-        module.gradient_checkpointing = value  # type: ignore
-
-    def __call__(self, inputs: mx.array, cache=None) -> Tuple[mx.array, List[mx.array]]:
+    def __call__(
+        self, inputs: mx.array, cache: Optional[List[Union[Tuple[mx.array, mx.array], None]]] = None
+    ) -> Tuple[mx.array, Optional[List[Union[Tuple[mx.array, mx.array], None]]]]:
         h = self.embed_tokens(inputs)
 
         mask = None
@@ -306,23 +291,26 @@ class PlamoModel(nn.Module):
             mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
             mask = mask.astype(self.embed_tokens.weight.dtype)
 
-        position_ids = _create_position_ids(h.shape[1])
-
         if cache is None:
-            cache = [None] * len(self.layers.layers)
+            past_key_values_length = 0
+            cache = [None for _ in range(len(self.layers.layers))]
+        else:
+            if cache[0] is not None:
+                past_key_values_length = cache[0][0].shape[2]
+        position_ids = _create_position_ids(h.shape[1], past_key_values_length)
 
         for e, layer in enumerate(self.layers.layers):
-            h, cache[e] = layer(h, mask, position_ids, cache[e])
+            h, c = layer(h, mask, position_ids, cache[e])
+            if cache is not None:
+                cache[e] = c
+            else:
+                cache.append(c)
 
         return self.norm(h), cache
 
 
-@lru_cache(maxsize=1)
-def _create_position_ids(seq_length: int, cache: Optional[List[Tuple[mx.array, mx.array]]] = None) -> mx.array:
+def _create_position_ids(seq_length: int, past_key_values_length: int = 0) -> mx.array:
     # create position_ids on the fly for batch generation
-    past_key_values_length = 0
-    if cache is not None:
-        past_key_values_length = cache[0][0].shape[2]
     position_ids = mx.arange(past_key_values_length, seq_length + past_key_values_length, dtype=mx.int64)
     position_ids = position_ids[None, ...].reshape(-1, seq_length)
 

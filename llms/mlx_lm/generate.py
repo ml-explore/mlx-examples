@@ -3,6 +3,7 @@ import time
 
 import mlx.core as mx
 
+from .models import plamo
 from .utils import generate_step, load
 
 DEFAULT_MODEL_PATH = "mlx_model"
@@ -43,7 +44,10 @@ def main(args):
     model, tokenizer = load(args.model)
     print("=" * 10)
     print("Prompt:", args.prompt)
-    prompt = tokenizer.encode(args.prompt)
+    if model.__class__ is plamo.Model:
+        prompt = tokenizer.encode(args.prompt, add_special_tokens=False)
+    else:
+        prompt = tokenizer.encode(args.prompt)
     prompt = mx.array(prompt)
     tic = time.time()
     tokens = []
