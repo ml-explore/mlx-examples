@@ -190,6 +190,9 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    trust_remote_code = resolve_trust_remote_code(None, config["tokenizer_class"], False, True)
+    if model.__class__ is plamo.Model:
+        trust_remote_code = resolve_trust_remote_code(None, config["tokenizer_class"], False, True)
+    else:
+        trust_remote_code = None
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     return model, tokenizer
