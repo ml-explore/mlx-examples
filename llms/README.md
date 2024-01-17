@@ -30,7 +30,7 @@ upload models to the Hugging Face Hub.
 You can convert models in the Python API with:
 
 ```python
-from mlx_lm import convert 
+from mlx_lm import convert
 
 upload_repo = "mlx-community/My-Mistral-7B-v0.1-4bit"
 
@@ -47,7 +47,7 @@ To see a description of all the arguments you can do:
 >>> help(convert)
 ```
 
-### Command Line 
+### Command Line
 
 You can also use `mlx-lm` from the command line with:
 
@@ -56,7 +56,7 @@ python -m mlx_lm.generate --model mistralai/Mistral-7B-v0.1 --prompt "hello"
 ```
 
 This will download a Mistral 7B model from the Hugging Face Hub and generate
-text using the given prompt. 
+text using the given prompt.
 
 For a full list of options run:
 
@@ -67,7 +67,7 @@ python -m mlx_lm.generate --help
 To quantize a model from the command line run:
 
 ```
-python -m mlx_lm.convert --hf-path mistralai/Mistral-7B-v0.1 -q 
+python -m mlx_lm.convert --hf-path mistralai/Mistral-7B-v0.1 -q
 ```
 
 For more options run:
@@ -77,7 +77,7 @@ python -m mlx_lm.convert --help
 ```
 
 You can upload new models to Hugging Face by specifying `--upload-repo` to
-`convert`. For example, to upload a quantized Mistral-7B model to the 
+`convert`. For example, to upload a quantized Mistral-7B model to the
 [MLX Hugging Face community](https://huggingface.co/mlx-community) you can do:
 
 ```
@@ -102,6 +102,10 @@ Here are a few examples of Hugging Face models that work with this example:
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
 - [mistralai/Mixtral-8x7B-Instruct-v0.1](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1)
+- [pfnet/plamo-13b](https://huggingface.co/pfnet/plamo-13b)
+- [pfnet/plamo-13b-instruct](https://huggingface.co/pfnet/plamo-13b-instruct)
+    - Please note that the prompt must be formatted according to the format written in the Usage section of the follwoing page: [Usage](https://huggingface.co/pfnet/plamo-13b-instruct#usage)
+    - [pfnet/plamo-13b-instruct-nc](https://huggingface.co/pfnet/plamo-13b-instruct-nc)
 
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
