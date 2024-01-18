@@ -234,9 +234,8 @@ def generate(args):
             # Actually perform the computation to measure the prompt processing time
             mx.eval(token)
             prompt_processing = toc("Prompt processing", start)
-        cur = tokenizer.decode([t.item() for t in tokens])
 
-        if len(tokens) >= args.max_tokens or cur.endswith(args.eos):
+        if len(tokens) >= args.max_tokens:
             break
 
         elif (len(tokens) % args.write_every) == 0:
@@ -385,7 +384,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--temp", type=float, default=0.0, help="The sampling temperature"
     )
-    parser.add_argument("--eos", type=str, default="\n\n\n", help="End of sequence")
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
 
     args = parser.parse_args()
