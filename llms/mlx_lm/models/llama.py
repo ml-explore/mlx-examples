@@ -200,3 +200,10 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         return self.lm_head(out), cache
+
+    @staticmethod
+    def sanitize(weights):
+        # Remove unused precomputed rotary freqs
+        return {
+            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
+        }

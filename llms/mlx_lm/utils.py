@@ -122,7 +122,7 @@ def generate(
 
     tokens = []
     skip = 0
-    REPLACEMENT_CHAR = '\ufffd'
+    REPLACEMENT_CHAR = "\ufffd"
 
     for token, _ in zip(generate_step(prompt, model, temp), range(max_tokens)):
         if token == tokenizer.eos_token_id:
@@ -136,7 +136,7 @@ def generate(
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
 
-    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, '')
+    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
     if verbose:
         print(tokens[skip:], flush=True)
     return tokens
@@ -174,6 +174,8 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
         weights.update(mx.load(wf))
 
     model_class, model_args_class = _get_classes(config=config)
+    if hasattr(model_class, "sanitize"):
+        weights = model_class.sanitize(weights)
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
