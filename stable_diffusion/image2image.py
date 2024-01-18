@@ -69,5 +69,5 @@ if __name__ == "__main__":
     x = (x * 255).astype(mx.uint8)
 
     # Save them to disc
-    im = Image.fromarray(x.__array__())
+    im = Image.fromarray(np.array(x))
     im.save(args.output)
