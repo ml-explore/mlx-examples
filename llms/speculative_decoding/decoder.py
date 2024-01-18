@@ -48,7 +48,7 @@ class SpeculativeDecoder:
         tokenizer: str,
         color: bool,
         num_draft: int = 5,
-        delta: float = 0.0
+        delta: float = 0.0,
     ):
         self.tokenizer = Tokenizer(tokenizer)
         self.model = model
@@ -188,20 +188,16 @@ class SpeculativeDecoder:
             if self.color and not truncated:
                 model_token = len(self.tokenizer.decode(outputs[-1]))
                 print(
-                    "\033[34m"
-                    + str_output[skip:-model_token]
-                    + "\033[30m",
+                    "\033[34m" + str_output[skip:-model_token] + "\033[30m",
                     end="",
                 )
                 print(str_output[-model_token:], end="", flush=True)
             elif self.color and truncated:
                 if truncated:
                     print(
-                    "\033[34m"
-                    + str_output[skip:]
-                    + "\033[30m",
-                    end="",
-                )
+                        "\033[34m" + str_output[skip:] + "\033[30m",
+                        end="",
+                    )
             else:
                 print(str_output[skip:], end="", flush=True)
 
@@ -335,20 +331,16 @@ class PromptLookupDecoder:
             if self.color and not truncated:
                 model_token = len(self.tokenizer.decode(outputs[-1]))
                 print(
-                    "\033[34m"
-                    + str_output[skip:-model_token]
-                    + "\033[30m",
+                    "\033[34m" + str_output[skip:-model_token] + "\033[30m",
                     end="",
                 )
                 print(str_output[-model_token:], end="", flush=True)
             elif self.color and truncated:
                 if truncated:
                     print(
-                    "\033[34m"
-                    + str_output[skip:]
-                    + "\033[30m",
-                    end="",
-                )
+                        "\033[34m" + str_output[skip:] + "\033[30m",
+                        end="",
+                    )
             else:
                 print(str_output[skip:], end="", flush=True)
 

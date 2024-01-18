@@ -4,7 +4,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from mlx.utils import tree_map, tree_unflatten
-from transformers import AutoTokenizer, T5Config
+from transformers import T5Config
 
 
 def _relative_position_bucket(
@@ -339,3 +339,13 @@ class Model(nn.Module):
         decoder_inputs: mx.array,
     ):
         return self.decode(decoder_inputs, self.encode(inputs))[0]
+
+
+def load_model(model_name: str):
+    config = T5Config.from_pretrained(model_name)
+    model = Model(config)
+    weights = mx.load(f"{model_name}.npz")
+    weights = tree_unflatten(list(weights.items()))
+    model.update(weights)
+    mx.eval(model.parameters())
+    return model

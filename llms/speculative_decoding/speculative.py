@@ -3,19 +3,7 @@ import time
 
 import mlx.core as mx
 from decoder import SpeculativeDecoder
-from mlx.utils import tree_unflatten
-from model import Model
-from transformers import T5Config
-
-
-def load_model(model_name: str):
-    config = T5Config.from_pretrained(model_name)
-    model = Model(config)
-    weights = mx.load(f"{model_name}.npz")
-    weights = tree_unflatten(list(weights.items()))
-    model.update(weights)
-    mx.eval(model.parameters())
-    return model
+from model import load_model
 
 
 def main(args):
@@ -56,12 +44,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-name",
         help="Name of the model.",
-        default="t5-base",
+        default="t5-large",
     )
     parser.add_argument(
         "--draft-model-name",
         help="Name of the draft model.",
-        default="t5-base",
+        default="t5-small",
     )
     parser.add_argument(
         "--seed",
@@ -78,7 +66,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--prompt",
-        default="Translate the following from English to English: Let's go to the store and buy some groceries including eggs, avocadoes, and bread.",
+        default="Translate the following from English to French: Let's go to the store and buy some groceries including eggs, avocadoes, and bread.",
         help="The prompt processed by the model.",
     )
     parser.add_argument(
@@ -88,10 +76,7 @@ if __name__ == "__main__":
         help="Lenience for accepting the proposal tokens.",
     )
     parser.add_argument(
-        "--color",
-        type=bool,
-        default=False,
-        help="Color the accepted draft tokens"
+        "--color", type=bool, default=False, help="Color the accepted draft tokens"
     )
     parser.add_argument(
         "--regular-decode",

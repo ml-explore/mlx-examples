@@ -3,19 +3,7 @@ import time
 
 import mlx.core as mx
 from decoder import PromptLookupDecoder
-from mlx.utils import tree_unflatten
-from model import Model
-from transformers import T5Config
-
-
-def load_model(model_name: str):
-    config = T5Config.from_pretrained(model_name)
-    model = Model(config)
-    weights = mx.load(f"{model_name}.npz")
-    weights = tree_unflatten(list(weights.items()))
-    model.update(weights)
-    mx.eval(model.parameters())
-    return model
+from model import load_model
 
 
 def main(args):
@@ -63,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--prompt",
         help="The prompt processed by the model.",
-        default="Translate the following from English to English: Let's go to the store and buy some groceries including eggs, avocadoes, and bread.",
+        default="Repeat the following sentence 5 times: 'The quick brown fox jumped over the fence.'",
     )
     parser.add_argument(
         "--max-tokens",
