@@ -109,7 +109,7 @@ Here are a few examples of Hugging Face models that work with this example:
     - An example usage of this instruction finetuned model is:
         ```
         python -m mlx_lm.generate \
-        --model plamo-13b-instruct-nc \
+        --model pfnet/plamo-13b-instruct \
         --prompt "以下はタスクを説明する指示で、文脈を説明した入力とペアになっています。要求を適切に補完するよう応答を書いてください。\n\n### 指示:\n日本の首都はどこですか？\n\n### 応答:\n"
         ```
     - In the above case, the input is `日本の首都はどこですか？` which means "Where is the capital city of Japan?" in English.
