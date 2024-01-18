@@ -2,33 +2,25 @@
 
 import argparse
 import copy
-import json
-import shutil
-from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
-import torch
-from mlx.utils import tree_flatten, tree_map, tree_unflatten
-
-from lora import Model, ModelArgs
+import utils
+from mlx.utils import tree_flatten
 
 
 def quantize(weights, config, args):
     quantized_config = copy.deepcopy(config)
 
+    # Get model classes
+    model_class, model_args_class = utils._get_classes(config=config)
+
     # Load the model:
-    model = Model(ModelArgs(**config))
-    weights = tree_map(mx.array, weights)
-    model.update(tree_unflatten(list(weights.items())))
+    model = model_class(model_args_class.from_dict(config))
+    model.load_weights(list(weights.items()))
 
     # Quantize the model:
-    nn.QuantizedLinear.quantize_module(
-        model,
-        args.q_group_size,
-        args.q_bits,
-    )
+    nn.QuantizedLinear.quantize_module(model, args.q_group_size, args.q_bits)
 
     # Update the config:
     quantized_config["quantization"] = {
@@ -42,19 +34,18 @@ def quantize(weights, config, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Convert Mistral or Llama models to MLX.",
+        description="Convert Hugging Face model to MLX format"
     )
     parser.add_argument(
-        "--torch-path",
+        "--hf-path",
         type=str,
-        default="mistral-7B-v0.1/",
-        help="Path to the torch model directory",
+        help="Path to the Hugging Face model.",
     )
     parser.add_argument(
         "--mlx-path",
         type=str,
-        default="mlx_model/",
-        help="The directory to store the mlx model",
+        default="mlx_model",
+        help="Path to save the MLX model.",
     )
     parser.add_argument(
         "-q",
@@ -74,50 +65,31 @@ if __name__ == "__main__":
         type=int,
         default=4,
     )
-    args = parser.parse_args()
-
-    args = parser.parse_args()
-
-    torch_path = Path(args.torch_path)
-    mlx_path = Path(args.mlx_path)
-    mlx_path.mkdir(parents=True, exist_ok=True)
-
-    # Copy the tokenizer
-    tokenizer_path = torch_path / "tokenizer.model"
-    if not tokenizer_path.exists():
-        print(f"Make sure there is a file tokenizer.model in {args.torch_path}")
-        exit(0)
-    shutil.copyfile(
-        str(tokenizer_path),
-        str(mlx_path / "tokenizer.model"),
+    parser.add_argument(
+        "--dtype",
+        help="Type to save the parameters, ignored if -q is given.",
+        type=str,
+        choices=["float16", "bfloat16", "float32"],
+        default="float16",
+    )
+    parser.add_argument(
+        "--upload-name",
+        help="The name of model to upload to Hugging Face MLX Community",
+        type=str,
+        default=None,
     )
 
-    # Load the torch model weights to numpy:
-    weights = torch.load(str(torch_path / "consolidated.00.pth"))
-    for k, v in weights.items():
-        weights[k] = v.to(torch.float16).numpy()
+    args = parser.parse_args()
 
-    # Standardize the params
-    with open(torch_path / "params.json", "r") as f:
-        config = json.loads(f.read())
-        unused = ["multiple_of", "sliding_window"]
-        for k in unused:
-            config.pop(k, None)
-        n_heads = config["n_heads"]
-        if "n_kv_heads" not in config:
-            config["n_kv_heads"] = n_heads
-        if "head_dim" not in config:
-            config["head_dim"] = config["dim"] // n_heads
-        if "hidden_dim" not in config:
-            config["hidden_dim"] = weights["layers.0.feed_forward.w1.weight"].shape[0]
-        if config.get("vocab_size", -1) < 0:
-            config["vocab_size"] = weights["output.weight"].shape[0]
+    print("[INFO] Loading")
+    weights, config, tokenizer = utils.fetch_from_hub(args.hf_path)
 
+    dtype = mx.float16 if args.quantize else getattr(mx, args.dtype)
+    weights = {k: v.astype(dtype) for k, v in weights.items()}
     if args.quantize:
         print("[INFO] Quantizing")
         weights, config = quantize(weights, config, args)
 
-    np.savez(str(mlx_path / "weights.npz"), **weights)
-
-    with open(mlx_path / "config.json", "w") as outfile:
-        json.dump(config, outfile, indent=4)
+    utils.save_model(args.mlx_path, weights, tokenizer, config)
+    if args.upload_name is not None:
+        utils.upload_to_hub(args.mlx_path, args.upload_name, args.hf_path)

@@ -1,12 +1,14 @@
-import argparse
+import glob
+import inspect
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
+from huggingface_hub import snapshot_download
 from mlx.utils import tree_unflatten
 from transformers import AutoTokenizer
 
@@ -19,6 +21,18 @@ class ModelArgs:
     num_heads: int = 32
     num_layers: int = 32
     rotary_dim: int = 32
+    num_experts_per_tok: int = 2
+    num_local_experts: int = 4
+
+    @classmethod
+    def from_dict(cls, params):
+        return cls(
+            **{
+                k: v
+                for k, v in params.items()
+                if k in inspect.signature(cls).parameters
+            }
+        )
 
 
 class LayerNorm(nn.LayerNorm):
@@ -75,6 +89,53 @@ class RoPEAttention(nn.Module):
         return self.out_proj(values_hat), (keys, values)
 
 
+class MLP(nn.Module):
+    def __init__(self, dim, hidden_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, dim)
+        self.act = nn.GELU(approx="precise")
+
+    def __call__(self, x) -> mx.array:
+        return self.fc2(self.act(self.fc1(x)))
+
+
+class MOE(nn.Module):
+    def __init__(self, args: ModelArgs, dim: int, hidden_dim: int):
+        super().__init__()
+        self.dim = dim
+        self.hidden_dim = hidden_dim
+        self.num_experts = args.num_local_experts
+        self.num_experts_per_tok = args.num_experts_per_tok
+        self.mlp = [MLP(self.dim, self.hidden_dim) for _ in range(self.num_experts)]
+        self.gate = nn.Linear(args.model_dim, self.num_experts, bias=False)
+
+    def __call__(self, x) -> mx.array:
+        ne = self.num_experts_per_tok
+        orig_shape = x.shape
+        x = x.reshape(-1, x.shape[-1])
+
+        gates = self.gate(x)
+        if ne < self.num_experts:
+            inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        else:
+            inds = mx.broadcast_to(mx.arange(ne), gates.shape)
+
+        scores = mx.softmax(
+            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
+            axis=-1,
+        ).astype(gates.dtype)
+
+        y = []
+        for xt, st, it in zip(x, scores, inds.tolist()):
+            yt = mx.concatenate([self.mlp[e](xt)[:, None] for e in it], axis=-1)
+            yt = (yt * st).sum(axis=-1)
+            y.append(yt[None, :])
+        yc = mx.concatenate(y)
+
+        return yc.reshape(orig_shape)
+
+
 class ParallelBlock(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
@@ -82,23 +143,23 @@ class ParallelBlock(nn.Module):
         mlp_dims = dims * 4
         self.mixer = RoPEAttention(dims, config.num_heads, config.rotary_dim)
         self.ln = LayerNorm(dims)
-        self.fc1 = nn.Linear(dims, mlp_dims)
-        self.fc2 = nn.Linear(mlp_dims, dims)
-        self.act = nn.GELU(approx="precise")
+        self.moe = MOE(config, dims, mlp_dims)
 
     def __call__(self, x, mask, cache):
         h = self.ln(x)
         attn_h, cache = self.mixer(h, mask, cache)
-        ff_h = self.fc2(self.act(self.fc1(h)))
+        ff_h = self.moe(h)
         return attn_h + ff_h + x, cache
 
 
 class TransformerDecoder(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
+        self.embd = Embd(config)
         self.h = [ParallelBlock(config) for i in range(config.num_layers)]
 
     def __call__(self, x, mask, cache):
+        x = self.embd(x)
         if cache is None:
             cache = [None] * len(self.h)
 
@@ -107,8 +168,18 @@ class TransformerDecoder(nn.Module):
         return x, cache
 
 
+class Embd(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+        self.wte = nn.Embedding(config.num_vocab, config.model_dim)
+
+    def __call__(self, x):
+        return self.wte(x)
+
+
 class OutputHead(nn.Module):
     def __init__(self, config: ModelArgs) -> None:
+        super().__init__()
         self.ln = LayerNorm(config.model_dim)
         self.linear = nn.Linear(config.model_dim, config.num_vocab)
 
@@ -116,20 +187,18 @@ class OutputHead(nn.Module):
         return self.linear(self.ln(inputs))
 
 
-class Phi2(nn.Module):
+class Model(nn.Module):
     def __init__(self, config: ModelArgs):
-        self.wte = nn.Embedding(config.num_vocab, config.model_dim)
+        super().__init__()
         self.transformer = TransformerDecoder(config)
         self.lm_head = OutputHead(config)
 
     def __call__(
         self,
-        inputs: mx.array,
+        x: mx.array,
         mask: mx.array = None,
         cache: mx.array = None,
     ) -> tuple[mx.array, mx.array]:
-        x = self.wte(inputs)
-
         mask = None
         if x.shape[1] > 1:
             mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
@@ -139,104 +208,55 @@ class Phi2(nn.Module):
         return self.lm_head(y), cache
 
 
-def generate(prompt: mx.array, model: Phi2, temp: Optional[float] = 0.0):
+def generate(prompt: mx.array, model: Model, temp: float = 0.0):
     def sample(logits):
         if temp == 0:
             return mx.argmax(logits, axis=-1)
         else:
             return mx.random.categorical(logits * (1 / temp))
 
-    logits, cache = model(prompt)
-    y = sample(logits[:, -1, :])
-    yield y
-
+    y = prompt
+    cache = None
     while True:
-        logits, cache = model(y[:, None], cache=cache)
-        y = sample(logits.squeeze(1))
+        logits, cache = model(y[None], cache=cache)
+        logits = logits[:, -1, :]
+        y = sample(logits)
         yield y
 
 
-def load_model(model_path: str):
-    model = Phi2(ModelArgs())
-    model_path = Path(model_path)
+def load(path_or_hf_repo: str):
+    # If the path exists, it will try to load model form it
+    # otherwise download and cache from the hf_repo and cache
+    model_path = Path(path_or_hf_repo)
+    if not model_path.exists():
+        model_path = Path(
+            snapshot_download(
+                repo_id=path_or_hf_repo,
+                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+            )
+        )
+
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
-        config.pop("model_type", None)
-        quantization = config.pop("quantization", None)
-    weights = mx.load(str(model_path / "weights.npz"))
-    weights = tree_unflatten(list(weights.items()))
+        quantization = config.get("quantization", None)
+        model_args = ModelArgs.from_dict(config)
+
+    weight_files = glob.glob(str(model_path / "*.safetensors"))
+    if len(weight_files) == 0:
+        raise FileNotFoundError("No safetensors found in {}".format(model_path))
+
+    weights = {}
+    for wf in weight_files:
+        weights.update(mx.load(wf).items())
+
+    model = Model(model_args)
     if quantization is not None:
         nn.QuantizedLinear.quantize_module(model, **quantization)
-    model.update(weights)
 
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
+    model.load_weights(list(weights.items()))
+
+    mx.eval(model.parameters())
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_path,
+    )
     return model, tokenizer
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Phi-2 inference script")
-    parser.add_argument(
-        "--model-path",
-        type=str,
-        default="mlx_model",
-        help="The path to the model weights",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="The message to be processed by the model",
-        default="Write a detailed analogy between mathematics and a lighthouse.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        "-m",
-        type=int,
-        default=100,
-        help="Maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--temp",
-        help="The sampling temperature.",
-        type=float,
-        default=0.0,
-    )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-    args = parser.parse_args()
-
-    mx.random.seed(args.seed)
-
-    model, tokenizer = load_model(args.model_path)
-
-    prompt = tokenizer(
-        args.prompt,
-        return_tensors="np",
-        return_attention_mask=False,
-    )["input_ids"]
-
-    prompt = mx.array(prompt)
-
-    print("[INFO] Generating with Phi-2...", flush=True)
-    print(args.prompt, end="", flush=True)
-
-    tokens = []
-    for token, _ in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
-        tokens.append(token)
-
-        if (len(tokens) % 10) == 0:
-            mx.eval(tokens)
-            eos_index = next(
-                (i for i, t in enumerate(tokens) if t.item() == tokenizer.eos_token_id),
-                None,
-            )
-
-            if eos_index is not None:
-                tokens = tokens[:eos_index]
-
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s, end="", flush=True)
-            tokens = []
-            if eos_index is not None:
-                break
-
-    mx.eval(tokens)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s, flush=True)

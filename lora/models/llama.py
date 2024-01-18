@@ -1,21 +1,14 @@
-# Copyright © 2023 Apple Inc.
-
-import glob
-import inspect
-import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-from huggingface_hub import snapshot_download
-from mlx.utils import tree_unflatten
-from transformers import AutoTokenizer
+
+from .base import BaseModelArgs
 
 
 @dataclass
-class ModelArgs:
+class ModelArgs(BaseModelArgs):
     hidden_size: int
     num_hidden_layers: int
     intermediate_size: int
@@ -39,16 +32,6 @@ class ModelArgs:
 
             if self.rope_scaling["type"] != "linear":
                 raise ValueError("rope_scaling 'type' currently only supports 'linear'")
-
-    @classmethod
-    def from_dict(cls, params):
-        return cls(
-            **{
-                k: v
-                for k, v in params.items()
-                if k in inspect.signature(cls).parameters
-            }
-        )
 
 
 class RMSNorm(nn.Module):
@@ -82,6 +65,7 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
+
         rope_scale = (
             1 / args.rope_scaling["factor"]
             if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
@@ -216,57 +200,3 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         return self.lm_head(out), cache
-
-
-def load(path_or_hf_repo: str):
-    # If the path exists, it will try to load model form it
-    # otherwise download and cache from the hf_repo and cache
-    model_path = Path(path_or_hf_repo)
-    if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
-            )
-        )
-
-    with open(model_path / "config.json", "r") as f:
-        config = json.loads(f.read())
-        quantization = config.get("quantization", None)
-        model_args = ModelArgs.from_dict(config)
-
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
-    if len(weight_files) == 0:
-        raise FileNotFoundError("No safetensors found in {}".format(model_path))
-
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf).items())
-
-    model = Model(model_args)
-    if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
-
-    model.load_weights(list(weights.items()))
-
-    mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-    )
-    return model, tokenizer
-
-
-def generate(prompt: mx.array, model: Model, temp: float = 0.0):
-    def sample(logits):
-        if temp == 0:
-            return mx.argmax(logits, axis=-1)
-        else:
-            return mx.random.categorical(logits * (1 / temp))
-
-    y = prompt
-    cache = None
-    while True:
-        logits, cache = model(y[None], cache=cache)
-        logits = logits[:, -1, :]
-        y = sample(logits)
-        yield y
