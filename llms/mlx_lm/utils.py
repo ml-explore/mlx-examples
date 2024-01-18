@@ -10,8 +10,8 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2
-from .models.base import BaseModelArgs
+from models import llama, mixtral, phi2
+from models.base import BaseModelArgs
 
 # Constants
 MODEL_MAPPING = {

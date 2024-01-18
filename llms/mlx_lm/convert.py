@@ -10,7 +10,7 @@ import mlx.nn as nn
 import transformers
 from mlx.utils import tree_flatten
 
-from .utils import get_model_path, linear_class_predicate, load
+from utils import get_model_path, linear_class_predicate, load
 
 MAX_FILE_SIZE_GB = 15
 

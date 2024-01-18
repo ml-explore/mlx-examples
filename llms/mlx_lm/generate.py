@@ -3,7 +3,7 @@ import time
 
 import mlx.core as mx
 
-from .utils import generate_step, load
+from utils import generate_step, load
 
 DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
