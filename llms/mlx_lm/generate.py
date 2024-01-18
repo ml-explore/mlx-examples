@@ -3,7 +3,6 @@ import time
 
 import mlx.core as mx
 
-from .models import plamo
 from .utils import generate_step, load
 
 DEFAULT_MODEL_PATH = "mlx_model"

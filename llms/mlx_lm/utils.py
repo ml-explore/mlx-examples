@@ -8,11 +8,9 @@ import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
-from transformers.dynamic_module_utils import resolve_trust_remote_code
 
 # Local imports
 from .models import llama, mixtral, phi2, plamo
-from .models.base import BaseModelArgs
 
 # Constants
 MODEL_MAPPING = {
