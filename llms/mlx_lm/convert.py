@@ -9,7 +9,6 @@ import mlx.core as mx
 import mlx.nn as nn
 import transformers
 from mlx.utils import tree_flatten
-from transformers.dynamic_module_utils import resolve_trust_remote_code
 
 from .utils import get_model_path, linear_class_predicate, load
 
@@ -70,8 +69,7 @@ def fetch_from_hub(
         weights.update(mx.load(wf).items())
 
     config = transformers.AutoConfig.from_pretrained(model_path)
-    trust_remote_code = resolve_trust_remote_code(None, config.tokenizer_class, False, True)
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
 
     return weights, config.to_dict(), tokenizer
 

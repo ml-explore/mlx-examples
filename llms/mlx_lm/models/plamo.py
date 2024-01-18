@@ -1,4 +1,3 @@
-from functools import lru_cache
 from typing import Any, List, NamedTuple, Optional, Tuple, Union
 
 import mlx.core as mx
