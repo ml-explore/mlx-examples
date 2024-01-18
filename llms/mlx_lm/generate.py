@@ -44,10 +44,7 @@ def main(args):
     model, tokenizer = load(args.model)
     print("=" * 10)
     print("Prompt:", args.prompt)
-    if model.__class__ is plamo.Model:
-        prompt = tokenizer.encode(args.prompt, add_special_tokens=False)
-    else:
-        prompt = tokenizer.encode(args.prompt)
+    prompt = tokenizer.encode(args.prompt)
     prompt = mx.array(prompt)
     tic = time.time()
     tokens = []
