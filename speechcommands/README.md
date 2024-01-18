@@ -8,10 +8,6 @@ dataset.
 
 ## Pre-requisites
 
-Follow the [installation
-instructions](https://ml-explore.github.io/mlx-data/build/html/install.html)
-for MLX Data.
-
 Install the remaining python requirements:
 
 ```

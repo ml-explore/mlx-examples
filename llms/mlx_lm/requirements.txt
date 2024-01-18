@@ -1,4 +1,4 @@
-mlx>=0.0.7
+mlx
 numpy
 transformers
 protobuf
