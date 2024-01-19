@@ -252,8 +252,9 @@ class GGUFTokenizer:
         ]
         model = BPE(vocab, merges, byte_fallback=True)
         self._tokenizer = Tokenizer(model)
-        self._bos_token_id = metadata["bos_token_id"].item()
-        self._eos_token_id = metadata["eos_token_id"].item()
+
+        self._bos_token_id = metadata["tokenizer.ggml.eos_token_id"].item()
+        self._eos_token_id = metadata["tokenizer.ggml.bos_token_id"].item()
 
     def encode(self, s: str) -> mx.array:
         return mx.array(
