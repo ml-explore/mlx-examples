@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -190,6 +191,13 @@ class LoraTrainer:
                 )
 
                 start = time.perf_counter()
+
+                # Save adapter weights if needed
+                if (it + 1) % self.args.steps_per_save == 0:
+                    self.save_adapter()
+                print(
+                    f"Iter {it + 1}: Saved adapter weights to {os.path.join(self.save_dir, self.args.adapter_file)}."
+                )
 
     def save_adapter(
         self,
