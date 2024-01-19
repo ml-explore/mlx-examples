@@ -142,6 +142,56 @@ def generate(
     return tokens
 
 
+def load_model(model_path: Path) -> nn.Module:
+    """
+    Load and initialize the model from the specified path with weights and configuration.
+
+    Args:
+        model_path (Path): The path where the model configuration and weights are located.
+
+    Returns:
+        nn.Module: The loaded and initialized neural network model.
+
+    Raises:
+        FileNotFoundError: If the weight files (.safetensors) are not found.
+        ValueError: If the model class or args class are not found or cannot be instantiated.
+    """
+    try:
+        with open(model_path / "config.json", "r") as f:
+            config = json.load(f)
+            quantization = config.get("quantization", None)
+    except FileNotFoundError:
+        logging.error(f"Config file not found in {model_path}")
+        raise
+
+    weight_files = glob.glob(str(model_path / "*.safetensors"))
+    if not weight_files:
+        logging.error(f"No safetensors found in {model_path}")
+        raise FileNotFoundError(f"No safetensors found in {model_path}")
+
+    weights = {}
+    for wf in weight_files:
+        weights.update(mx.load(wf))
+
+    model_class, model_args_class = _get_classes(config=config)
+    model_args = model_args_class.from_dict(config)
+
+    model = model_class(model_args)
+
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(
+            model,
+            **quantization,
+            linear_class_predicate=linear_class_predicate,
+        )
+
+    model.load_weights(list(weights.items()))
+
+    mx.eval(model.parameters())
+
+    return model
+
+
 def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     Load the model from a given path or a huggingface repository.
@@ -158,37 +208,6 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    try:
-        with open(model_path / "config.json", "r") as f:
-            config = json.load(f)
-            quantization = config.get("quantization", None)
-    except FileNotFoundError:
-        logging.error(f"Config file not found in {model_path}")
-        raise
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
-    if not weight_files:
-        logging.error(f"No safetensors found in {model_path}")
-        raise FileNotFoundError(f"No safetensors found in {model_path}")
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf))
-
-    model_class, model_args_class = _get_classes(config=config)
-    if hasattr(model_class, "sanitize"):
-        weights = model_class.sanitize(weights)
-
-    model_args = model_args_class.from_dict(config)
-    model = model_class(model_args)
-
-    if quantization is not None:
-        nn.QuantizedLinear.quantize_module(
-            model,
-            **quantization,
-            linear_class_predicate=linear_class_predicate,
-        )
-
-    model.load_weights(list(weights.items()))
-
-    mx.eval(model.parameters())
+    model = load_model(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     return model, tokenizer
