@@ -46,6 +46,12 @@ def setup_arg_parser():
         "--temp", type=float, default=DEFAULT_TEMP, help="Sampling temperature"
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
+    parser.add_argument(
+        "--apply_chat_template",
+        "-a",
+        action="store_true",
+        help="apply the tokenizer's chat template on the prompt",
+    )
     return parser
 
 
@@ -58,9 +64,21 @@ def main(args):
         tokenizer_config["eos_token"] = args.eos_token
 
     model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
+
+    if args.apply_chat_template:
+        messages = [{"role": "user", "content": args.prompt}]
+        # test if the tokenizer has a chat template
+        if not hasattr(tokenizer, "apply_chat_template"):
+            raise ValueError(f"{args.model} does not have a chat template")
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_special_tokens=False
+        )
+    else:
+        prompt = args.prompt
+
     print("=" * 10)
-    print("Prompt:", args.prompt)
-    prompt = tokenizer.encode(args.prompt)
+    print("Prompt:", prompt)
+    prompt = tokenizer.encode(prompt)
     prompt = mx.array(prompt)
     tic = time.time()
     tokens = []
