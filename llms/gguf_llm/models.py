@@ -243,7 +243,6 @@ class GGUFTokenizer:
         # TODO: do we need scores and token type?
         # sores = metadata["tokenizer.ggml.scores"]
         # token_types = metadata["tokenizer.ggml.token_type"]
-
         vocab = {
             parse_token(t): i for i, t in enumerate(metadata["tokenizer.ggml.tokens"])
         }
@@ -252,9 +251,8 @@ class GGUFTokenizer:
         ]
         model = BPE(vocab, merges, byte_fallback=True)
         self._tokenizer = Tokenizer(model)
-
-        self._bos_token_id = metadata["tokenizer.ggml.eos_token_id"].item()
-        self._eos_token_id = metadata["tokenizer.ggml.bos_token_id"].item()
+        self._bos_token_id = metadata["tokenizer.ggml.bos_token_id"].item()
+        self._eos_token_id = metadata["tokenizer.ggml.eos_token_id"].item()
 
     def encode(self, s: str) -> mx.array:
         return mx.array(
@@ -266,7 +264,9 @@ class GGUFTokenizer:
         return self._eos_token_id
 
     def decode(self, toks: List[int]) -> str:
-        return self._tokenizer.decode(toks).replace(" ", "").replace("▁", " ")
+        dtoks = self._tokenizer.decode(toks)
+        # TODO, why is this so messed up?
+        return dtoks.replace(" ", "").replace("▁▁", " ").replace("▁", "")
 
 
 def translate_weight_names(name):
@@ -304,7 +304,6 @@ def load(gguf_file: str, repo: str = None):
     print(f"[INFO] Loading model from {gguf_file}")
     weights, metadata = mx.load(gguf_file, return_metadata=True)
     tokenizer = GGUFTokenizer(metadata)
-    weights = mx.load(gguf_file)
     weights = {translate_weight_names(k): v for k, v in weights.items()}
     config = get_config(metadata, weights)
     model = Model(ModelArgs(**config))
