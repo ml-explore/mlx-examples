@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from gguf.gguf_reader import GGUFReader
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_unflatten
 from tokenizers import Tokenizer
@@ -218,69 +217,43 @@ class Model(nn.Module):
         return self.lm_head(out), cache
 
 
-def get_field(gguf_reader: GGUFReader, key: str):
-    f = gguf_reader.get_field(key)
-    if f is None:
-        return 0
-    if len(f.data) != 1:
-        raise NotImplementedError(f"multiple data is not supported")
-    part = f.parts[f.data[0]]
-    if len(part) != 1:
-        raise NotImplementedError(f"multiple parts are not supported")
-    value = part[0]
-    if isinstance(value, np.float32):
-        return float(value)
-    elif isinstance(value, np.uint32):
-        return int(value)
-    return value
-
-
-def get_string_array_field(gguf_reader: GGUFReader, key: str):
-    f = gguf_reader.get_field(key)
-    if f is None:
-        return []
-    return [bytes(f.parts[d]).decode("utf-8") for d in f.data]
-
-
-def get_config(gguf_reader: GGUFReader, weights: dict[str, mx.array]):
-    output = {}
-    output["hidden_size"] = get_field(gguf_reader, "llama.embedding_length")
-    output["num_hidden_layers"] = get_field(gguf_reader, "llama.block_count")
-    output["num_attention_heads"] = get_field(gguf_reader, "llama.attention.head_count")
-    output["intermediate_size"] = get_field(gguf_reader, "llama.feed_forward_length")
-    output["num_key_value_heads"] = get_field(
-        gguf_reader, "llama.attention.head_count_kv"
-    )
-    output["rms_norm_eps"] = get_field(
-        gguf_reader, "llama.attention.layer_norm_rms_epsilon"
-    )
-    output["vocab_size"] = weights["lm_head.weight"].shape[0]
-    output["rope_theta"] = get_field(gguf_reader, "llama.rope.freq_base")
-    output["rope_traditional"] = True
+def get_config(metadata: dict, weights: dict[str, mx.array]):
+    output = {
+        "hidden_size": metadata["llama.embedding_length"],
+        "num_hidden_layers": metadata["llama.block_count"],
+        "num_attention_heads": metadata["llama.attention.head_count"],
+        "intermediate_size": metadata["llama.feed_forward_length"],
+        "num_key_value_heads": metadata["llama.attention.head_count_kv"],
+        "rms_norm_eps": metadata["llama.attention.layer_norm_rms_epsilon"],
+        "vocab_size": weights["lm_head.weight"].shape[0],
+        "rope_theta": metadata["llama.rope.freq_base"],
+        "rope_traditional": True,
+    }
+    output = {k: v.item() if isinstance(v, mx.array) else v for k, v in output.items()}
     return output
 
 
 class GGUFTokenizer:
-    def __init__(self, gguf_reader):
+    def __init__(self, metadata):
         def parse_token(token):
             if len(token) == 6 and token.startswith("<0x") and token.endswith(">"):
                 return chr(int(token[3:5], 16))
             return token
 
         # TODO: do we need scores and token type?
-        # tokenizer.ggml.scores: [array] [0.000000, 0.000000, 0.000000, ..
-        # tokenizer.ggml.token_type: [array] [2, 3, 3, 6, ...
-        scores = gguf_reader.get_field("tokenizer.ggml.scores")
-        scores = [scores.parts[d].item() for d in scores.data]
+        # sores = metadata["tokenizer.ggml.scores"]
+        # token_types = metadata["tokenizer.ggml.token_type"]
 
-        tokens = get_string_array_field(gguf_reader, "tokenizer.ggml.tokens")
-        vocab = {parse_token(t): i for i, t in enumerate(tokens)}
-        merges = get_string_array_field(gguf_reader, "tokenizer.ggml.merges")
-        merges = [tuple(m.split(" ")) for m in merges]
+        vocab = {
+            parse_token(t): i for i, t in enumerate(metadata["tokenizer.ggml.tokens"])
+        }
+        merges = [
+            tuple(m.split(" ")) for m in metadata.get("tokenizer.ggml.merges", [])
+        ]
         model = BPE(vocab, merges, byte_fallback=True)
         self._tokenizer = Tokenizer(model)
-        self._bos_token_id = get_field(gguf_reader, "bos_token_id")
-        self._eos_token_id = get_field(gguf_reader, "eos_token_id")
+        self._bos_token_id = metadata["bos_token_id"].item()
+        self._eos_token_id = metadata["eos_token_id"].item()
 
     def encode(self, s: str) -> mx.array:
         return mx.array(
@@ -328,11 +301,11 @@ def load(gguf_file: str, repo: str = None):
         gguf_file = str(Path(model_path) / gguf_file)
 
     print(f"[INFO] Loading model from {gguf_file}")
-    reader = GGUFReader(gguf_file)
-    tokenizer = GGUFTokenizer(reader)
+    weights, metadata = mx.load(gguf_file, return_metadata=True)
+    tokenizer = GGUFTokenizer(metadata)
     weights = mx.load(gguf_file)
     weights = {translate_weight_names(k): v for k, v in weights.items()}
-    config = get_config(reader, weights)
+    config = get_config(metadata, weights)
     model = Model(ModelArgs(**config))
     model.load_weights(list(weights.items()))
     return model, tokenizer
