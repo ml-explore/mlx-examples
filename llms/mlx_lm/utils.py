@@ -145,13 +145,14 @@ def generate(
     return tokens
 
 
-def load_model(model_path: Path) -> nn.Module:
+def load_model(model_path: Path, load_train: bool = False) -> nn.Module:
     """
-    Load and initialize the model from a given path.
+    Load and initialize the model from a given path for training or inference based on the `load_train` flag.
 
     Args:
         model_path (Path): The path to load the model from.
-
+        load_train (bool, optional): If True, the model is initialized for training.
+            Otherwise, it is set up for inference. Defaults to False.
     Returns:
         nn.Module: The loaded and initialized model.
 
@@ -181,6 +182,8 @@ def load_model(model_path: Path) -> nn.Module:
         weights = model_class.sanitize(weights)
 
     model_args = model_args_class.from_dict(config)
+    if load_train:
+        model_args.train = True
     model = model_class(model_args)
 
     if quantization is not None:
@@ -197,13 +200,17 @@ def load_model(model_path: Path) -> nn.Module:
     return model
 
 
-def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
+def load(
+    path_or_hf_repo: str, load_train: bool = False
+) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
-    Load the model from a given path or a huggingface repository.
+    Load the model and tokenizer from a given path or a huggingface repository, initializes the
+    model for training or inference based on the `load_train` flag.
 
     Args:
         path_or_hf_repo (str): The path or the huggingface repository to load the model from.
-
+        load_train (bool, optional): If True, the model is initialized for training.
+            Otherwise, it is set up for inference. Defaults to False.
     Returns:
         Tuple[nn.Module, PreTrainedTokenizer]: The loaded model and tokenizer.
 
@@ -213,7 +220,7 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path)
+    model = load_model(model_path, load_train)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     return model, tokenizer
 

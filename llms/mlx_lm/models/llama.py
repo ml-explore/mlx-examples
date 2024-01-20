@@ -9,12 +9,12 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    hidden_size: int
-    num_hidden_layers: int
-    intermediate_size: int
-    num_attention_heads: int
-    rms_norm_eps: float
-    vocab_size: int
+    hidden_size: int = None
+    num_hidden_layers: int = None
+    intermediate_size: int = None
+    num_attention_heads: int = None
+    rms_norm_eps: float = None
+    vocab_size: int = None
     num_key_value_heads: int = None
     rope_theta: float = 10000
     rope_traditional: bool = False

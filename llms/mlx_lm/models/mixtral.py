@@ -3,6 +3,7 @@ from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 
 from .base import BaseModelArgs
 
@@ -174,6 +175,48 @@ class MixtralSparseMoeBlock(nn.Module):
         return y.reshape(orig_shape)
 
 
+class MixtralSparseMoeTrainingBlock(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.hidden_dim = args.hidden_size
+        self.ffn_dim = args.intermediate_size
+        self.num_experts = args.num_local_experts
+        self.num_experts_per_tok = args.num_experts_per_tok
+
+        # gating
+        self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
+
+        self.experts = [
+            MixtralBLockSparseTop2MLP(args=args) for _ in range(self.num_experts)
+        ]
+
+    def __call__(self, x: mx.array) -> mx.array:
+        ne = self.num_experts_per_tok
+        orig_shape = x.shape
+        x = x.reshape(-1, x.shape[-1])
+
+        gates = self.gate(x)
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+
+        scores = mx.softmax(
+            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
+            axis=-1,
+        ).astype(gates.dtype)
+
+        mx.eval(inds)
+        inds = np.array(inds)
+        y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+        for e, expert in enumerate(self.experts):
+            idx1, idx2 = map(mx.array, np.where(inds == e))
+            if idx1.size == 0:
+                continue
+            y[idx1, idx2] = expert(x[idx1])
+
+        y = (y * scores[:, :, None]).sum(axis=1)
+
+        return y.reshape(orig_shape)
+
+
 class MixtralDecoderLayer(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -181,7 +224,11 @@ class MixtralDecoderLayer(nn.Module):
 
         self.self_attn = MixtralAttention(args)
 
-        self.block_sparse_moe = MixtralSparseMoeBlock(args)
+        self.block_sparse_moe = (
+            MixtralSparseMoeTrainingBlock(args)
+            if args.train
+            else MixtralSparseMoeBlock(args)
+        )
         self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -229,7 +276,7 @@ class MixtralModel(nn.Module):
         for e, layer in enumerate(self.layers):
             h, cache[e] = layer(h, mask, cache[e])
 
-        return self.norm(h[:, T - 1 : T, :]), cache
+        return self.norm(h), cache
 
 
 class Model(nn.Module):
