@@ -161,7 +161,7 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model, tokenizer = load(args.model, load_train=True)
+    model, tokenizer = load(args.model)
 
     # Freeze all layers other than LORA linears
     model.freeze()

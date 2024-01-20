@@ -4,8 +4,6 @@ from dataclasses import dataclass
 
 @dataclass
 class BaseModelArgs:
-    train: bool = False
-
     @classmethod
     def from_dict(cls, params):
         return cls(

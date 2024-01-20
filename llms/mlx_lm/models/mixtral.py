@@ -159,60 +159,34 @@ class MixtralSparseMoeBlock(nn.Module):
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
-        inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
 
-        y = []
-        for xt, st, it in zip(x, scores, inds.tolist()):
-            yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
-            yt = (yt * st).sum(axis=-1)
-            y.append(yt[None, :])
-        y = mx.concatenate(y)
-
-        return y.reshape(orig_shape)
-
-
-class MixtralSparseMoeTrainingBlock(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        self.hidden_dim = args.hidden_size
-        self.ffn_dim = args.intermediate_size
-        self.num_experts = args.num_local_experts
-        self.num_experts_per_tok = args.num_experts_per_tok
-
-        # gating
-        self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
-
-        self.experts = [
-            MixtralBLockSparseTop2MLP(args=args) for _ in range(self.num_experts)
-        ]
-
-    def __call__(self, x: mx.array) -> mx.array:
-        ne = self.num_experts_per_tok
-        orig_shape = x.shape
-        x = x.reshape(-1, x.shape[-1])
-
-        gates = self.gate(x)
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+        inds = mx.stop_gradient(
+            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        )  # TODO remove it once we figure how to fine tune TopK in MOE
 
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
             axis=-1,
         ).astype(gates.dtype)
 
-        mx.eval(inds)
-        inds = np.array(inds)
-        y = mx.zeros((x.shape[0], ne, x.shape[-1]))
-        for e, expert in enumerate(self.experts):
-            idx1, idx2 = map(mx.array, np.where(inds == e))
-            if idx1.size == 0:
-                continue
-            y[idx1, idx2] = expert(x[idx1])
+        if self.training:
+            mx.eval(inds)
+            inds = np.array(inds)
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            for e, expert in enumerate(self.experts):
+                idx1, idx2 = map(mx.array, np.where(inds == e))
+                if idx1.size == 0:
+                    continue
+                y[idx1, idx2] = expert(x[idx1])
 
-        y = (y * scores[:, :, None]).sum(axis=1)
+            y = (y * scores[:, :, None]).sum(axis=1)
+        else:
+            y = []
+            for xt, st, it in zip(x, scores, inds.tolist()):
+                yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
+                yt = (yt * st).sum(axis=-1)
+                y.append(yt[None, :])
+            y = mx.concatenate(y)
 
         return y.reshape(orig_shape)
 
@@ -224,11 +198,7 @@ class MixtralDecoderLayer(nn.Module):
 
         self.self_attn = MixtralAttention(args)
 
-        self.block_sparse_moe = (
-            MixtralSparseMoeTrainingBlock(args)
-            if args.train
-            else MixtralSparseMoeBlock(args)
-        )
+        self.block_sparse_moe = MixtralSparseMoeBlock(args)
         self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
