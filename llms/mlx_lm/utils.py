@@ -174,8 +174,10 @@ def load_model(model_path: Path) -> nn.Module:
         weights.update(mx.load(wf))
 
     model_class, model_args_class = _get_classes(config=config)
-    model_args = model_args_class.from_dict(config)
+    if hasattr(model_class, "sanitize"):
+        weights = model_class.sanitize(weights)
 
+    model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
 
     if quantization is not None:
