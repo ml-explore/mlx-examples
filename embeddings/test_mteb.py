@@ -15,6 +15,8 @@ try:
     from sentence_transformers import SentenceTransformer
 except ImportError:
     print("sentence_transformers not installed. Please install it with `pip install sentence_transformers` to run evaluations.")
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 @dataclass
 class Task:
