@@ -32,7 +32,7 @@ class TrainingArguments:
         default=200, metadata={"help": "Number of training steps between validations."}
     )
     steps_per_save: int = field(
-        default=1000, metadata={"help": "Save the model every number steps"}
+        default=100, metadata={"help": "Save the model every number steps"}
     )
     max_seq_length: int = field(
         default=2048, metadata={"help": "Maximum sequence length."}
@@ -195,9 +195,9 @@ class LoraTrainer:
                 # Save adapter weights if needed
                 if (it + 1) % self.args.steps_per_save == 0:
                     self.save_adapter()
-                print(
-                    f"Iter {it + 1}: Saved adapter weights to {os.path.join(self.save_dir, self.args.adapter_file)}."
-                )
+                    print(
+                        f"Iter {it + 1}: Saved adapter weights to {os.path.join(self.save_dir, self.args.adapter_file)}."
+                    )
 
     def save_adapter(
         self,
