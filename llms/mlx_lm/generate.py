@@ -71,7 +71,7 @@ def main(args):
         if not hasattr(tokenizer, "apply_chat_template"):
             raise ValueError(f"{args.model} does not have a chat template")
         prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_special_tokens=False
+            messages, tokenize=False, add_generation_prompt=True
         )
     else:
         prompt = args.prompt
