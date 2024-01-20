@@ -4,17 +4,19 @@ import argparse
 import time
 
 import mlx.core as mx
-import models
+import phixtral
 import transformers
 
 
 def generate(
-    model: models.Model,
+    model: phixtral.Model,
     tokenizer: transformers.AutoTokenizer,
     prompt: str,
     max_tokens: int,
     temp: float = 0.0,
 ):
+    print("[INFO] Generating with Phixtral...", flush=True)
+    print(prompt, end="", flush=True)
     prompt = tokenizer(
         prompt,
         return_tensors="np",
@@ -28,8 +30,8 @@ def generate(
     tokens = []
     skip = 0
     for token, n in zip(
-        models.generate(prompt, model, args.temp),
-        range(args.max_tokens),
+        phixtral.generate(prompt, model, temp),
+        range(max_tokens),
     ):
         if token == tokenizer.eos_token_id:
             break
@@ -66,7 +68,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--prompt",
         help="The message to be processed by the model",
-        default="In the beginning the Universe was created.",
+        default="Write a detailed analogy between mathematics and a lighthouse.",
     )
     parser.add_argument(
         "--max-tokens",
@@ -85,5 +87,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     mx.random.seed(args.seed)
-    model, tokenizer = models.load(args.model)
+    model, tokenizer = phixtral.load(args.model)
     generate(model, tokenizer, args.prompt, args.max_tokens, args.temp)

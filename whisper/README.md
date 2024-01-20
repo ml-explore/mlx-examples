@@ -19,8 +19,13 @@ Install [`ffmpeg`](https://ffmpeg.org/):
 brew install ffmpeg
 ```
 
-Next, download the Whisper PyTorch checkpoint and convert the weights to the
-MLX format. For example, to convert the `tiny` model use:
+> [!TIP]
+> Skip the conversion step by using pre-converted checkpoints from the Hugging
+> Face Hub. There are a few available in the [MLX
+> Community](https://huggingface.co/mlx-community) organization.
+
+To convert a model, first download the Whisper PyTorch checkpoint and convert
+the weights to the MLX format. For example, to convert the `tiny` model use:
 
 ```
 python convert.py --torch-name-or-path tiny --mlx-path mlx_models/tiny
@@ -34,13 +39,8 @@ To generate a 4-bit quantized model, use `-q`. For a full list of options:
 python convert.py --help
 ```
 
-By default, the conversion script will make the directory `mlx_models/tiny` and save
-the converted `weights.npz` and `config.json` there.
-
-> [!TIP]
-> Alternatively, you can also download a few converted checkpoints from the
-> [MLX Community](https://huggingface.co/mlx-community) organization on Hugging
-> Face and skip the conversion step.
+By default, the conversion script will make the directory `mlx_models/tiny`
+and save the converted `weights.npz` and `config.json` there.
 
 ### Run
 
@@ -51,6 +51,16 @@ import whisper
 
 text = whisper.transcribe(speech_file)["text"]
 ```
+
+Choose the model by setting `path_or_hf_repo`. For example:
+
+```python
+result = whisper.transcribe(speech_file, path_or_hf_repo="models/large")
+```
+
+This will load the model contained in `models/large`. The `path_or_hf_repo`
+can also point to an MLX-style Whisper model on the Hugging Face Hub. In this
+case, the model will be automatically downloaded.
 
 The `transcribe` function also supports word-level timestamps. You can generate
 these with:

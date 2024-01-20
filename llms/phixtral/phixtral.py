@@ -1,9 +1,8 @@
-import argparse
 import glob
 import inspect
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +21,8 @@ class ModelArgs:
     num_heads: int = 32
     num_layers: int = 32
     rotary_dim: int = 32
+    num_experts_per_tok: int = 2
+    num_local_experts: int = 4
 
     @classmethod
     def from_dict(cls, params):
@@ -99,6 +100,42 @@ class MLP(nn.Module):
         return self.fc2(self.act(self.fc1(x)))
 
 
+class MOE(nn.Module):
+    def __init__(self, args: ModelArgs, dim: int, hidden_dim: int):
+        super().__init__()
+        self.dim = dim
+        self.hidden_dim = hidden_dim
+        self.num_experts = args.num_local_experts
+        self.num_experts_per_tok = args.num_experts_per_tok
+        self.mlp = [MLP(self.dim, self.hidden_dim) for _ in range(self.num_experts)]
+        self.gate = nn.Linear(args.model_dim, self.num_experts, bias=False)
+
+    def __call__(self, x) -> mx.array:
+        ne = self.num_experts_per_tok
+        orig_shape = x.shape
+        x = x.reshape(-1, x.shape[-1])
+
+        gates = self.gate(x)
+        if ne < self.num_experts:
+            inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        else:
+            inds = mx.broadcast_to(mx.arange(ne), gates.shape)
+
+        scores = mx.softmax(
+            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
+            axis=-1,
+        ).astype(gates.dtype)
+
+        y = []
+        for xt, st, it in zip(x, scores, inds.tolist()):
+            yt = mx.concatenate([self.mlp[e](xt)[:, None] for e in it], axis=-1)
+            yt = (yt * st).sum(axis=-1)
+            y.append(yt[None, :])
+        yc = mx.concatenate(y)
+
+        return yc.reshape(orig_shape)
+
+
 class ParallelBlock(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
@@ -106,12 +143,12 @@ class ParallelBlock(nn.Module):
         mlp_dims = dims * 4
         self.mixer = RoPEAttention(dims, config.num_heads, config.rotary_dim)
         self.ln = LayerNorm(dims)
-        self.mlp = MLP(dims, mlp_dims)
+        self.moe = MOE(config, dims, mlp_dims)
 
     def __call__(self, x, mask, cache):
         h = self.ln(x)
         attn_h, cache = self.mixer(h, mask, cache)
-        ff_h = self.mlp(h)
+        ff_h = self.moe(h)
         return attn_h + ff_h + x, cache
 
 
