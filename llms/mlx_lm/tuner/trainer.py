@@ -62,7 +62,7 @@ def default_loss(model, inputs, targets, lengths):
     return ce, ntoks
 
 
-def iterate_batches(dset, tokenizer, batch_size, max_seq_length):
+def iterate_batches(dset, tokenizer, batch_size, max_seq_length, train=False):
     while True:
         # Shuffle indices
         indices = np.arange(len(dset))
@@ -88,6 +88,9 @@ def iterate_batches(dset, tokenizer, batch_size, max_seq_length):
                 batch_arr[j, : lengths[j]] = batch[j]
             batch = mx.array(batch_arr)
             yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
+
+        if not train:
+            break
 
 
 def evaluate(
@@ -145,6 +148,7 @@ class LoraTrainer:
                 self.tokenizer,
                 self.args.batch_size,
                 self.args.max_seq_length,
+                train=True,
             ),
         ):
             # Forward and backward pass
