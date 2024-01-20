@@ -212,17 +212,3 @@ class LoraTrainer:
         flattened_tree = tree_flatten(self.model.trainable_parameters())
 
         mx.savez(self.save_dir / self.adapter_file, **dict(flattened_tree))
-        # Save the LoRA layer names
-        param_names = list(
-            set(
-                [
-                    name.replace(".lora_a", "").replace(".lora_b", "")
-                    for name, _ in flattened_tree
-                ]
-            )
-        )
-        json_data = json.dumps(param_names, indent=4)
-        json_file_path = self.save_dir / f"{self.adapter_file}.json"
-
-        with open(json_file_path, "w") as json_file:
-            json_file.write(json_data)

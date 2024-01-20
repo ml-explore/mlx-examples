@@ -1,17 +1,17 @@
+import copy
 import glob
 import json
 import logging
 from pathlib import Path
-from typing import Generator, Tuple
+from typing import Dict, Generator, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
 from .models import llama, mixtral, phi2
-from .models.base import BaseModelArgs
 
 # Constants
 MODEL_MAPPING = {
@@ -20,6 +20,7 @@ MODEL_MAPPING = {
     "mixtral": mixtral,
     "phi": phi2,
 }
+MAX_FILE_SIZE_GB = 15
 
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
@@ -215,3 +216,86 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     model = load_model(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     return model, tokenizer
+
+
+def fetch_from_hub(
+    model_path: str,
+) -> Tuple[Dict, dict, PreTrainedTokenizer]:
+    model_path = get_model_path(model_path)
+
+    model = load_model(model_path)
+
+    config = AutoConfig.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    return model, config.to_dict(), tokenizer
+
+
+def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
+    """
+    Splits the weights into smaller shards.
+
+    Args:
+        weights (dict): Model weights.
+        max_file_size_gb (int): Maximum size of each shard in gigabytes.
+
+    Returns:
+        list: List of weight shards.
+    """
+    max_file_size_bytes = max_file_size_gb << 30
+    shards = []
+    shard, shard_size = {}, 0
+    for k, v in weights.items():
+        estimated_size = v.size * v.dtype.size
+        if shard_size + estimated_size > max_file_size_bytes:
+            shards.append(shard)
+            shard, shard_size = {}, 0
+        shard[k] = v
+        shard_size += estimated_size
+    shards.append(shard)
+    return shards
+
+
+def upload_to_hub(path: str, upload_repo: str, hf_path: str):
+    """
+    Uploads the model to Hugging Face hub.
+
+    Args:
+        path (str): Local path to the model.
+        upload_repo (str): Name of the HF repo to upload to.
+        hf_path (str): Path to the original Hugging Face model.
+    """
+    import os
+
+    from huggingface_hub import HfApi, ModelCard, logging
+
+    card = ModelCard.load(hf_path)
+    card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
+    card.text = f"""
+# {upload_repo}
+This model was converted to MLX format from [`{hf_path}`]().
+Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+## Use with mlx
+
+```bash
+pip install mlx-lm
+```
+
+```python
+from mlx_lm import load, generate
+
+model, tokenizer = load("{upload_repo}")
+response = generate(model, tokenizer, prompt="hello", verbose=True)
+```
+"""
+    card.save(os.path.join(path, "README.md"))
+
+    logging.set_verbosity_info()
+
+    api = HfApi()
+    api.create_repo(repo_id=upload_repo, exist_ok=True)
+    api.upload_folder(
+        folder_path=path,
+        repo_id=upload_repo,
+        repo_type="model",
+    )

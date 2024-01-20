@@ -1,15 +1,31 @@
-# Copyright © 2023 Apple Inc.
-
 import argparse
+import json
 from pathlib import Path
+from typing import Any, Dict, Tuple
 
 import mlx.core as mx
-import utils
 from mlx.utils import tree_flatten, tree_unflatten
 
 from .tuner.linear import LoRALinear
+from .tuner.utils import apply_lora_layers
+from .utils import fetch_from_hub, make_shards, upload_to_hub
 
-if __name__ == "__main__":
+
+def save_model(
+    save_dir: str, weights: Dict[str, Any], tokenizer: Any, config: Dict[str, Any]
+) -> None:
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    shards = make_shards(weights)
+    for i, shard in enumerate(shards):
+        shard_file = save_dir / f"weights.{i:02d}.safetensors"
+        mx.save_safetensors(str(shard_file), shard)
+    tokenizer.save_pretrained(save_dir)
+    with open(save_dir / "config.json", "w") as fid:
+        json.dump(config, fid, indent=4)
+
+
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
     parser.add_argument(
         "--model",
@@ -29,38 +45,27 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--hf-path",
-        help=(
-            "Path to the original Hugging Face model. This is "
-            "required for upload if --model is a local directory."
-        ),
         type=str,
         default=None,
+        help="Path to the original Hugging Face model. Required for upload if --model is a local directory.",
     )
     parser.add_argument(
         "--upload-name",
-        help="The name of model to upload to Hugging Face MLX Community",
         type=str,
         default=None,
+        help="The name of model to upload to Hugging Face MLX Community",
     )
+    return parser.parse_args()
 
+
+def main() -> None:
     print("Loading pretrained model")
-    args = parser.parse_args()
+    args = parse_arguments()
 
-    model, tokenizer, config = utils.load(args.model)
-
-    # Load adapters and get number of LoRA layers
-    adapters = list(mx.load(args.adapter_file).items())
-    lora_layers = len([m for m in adapters if "q_proj.lora_a" in m[0]])
-
-    # Freeze all layers other than LORA linears
+    model, config, tokenizer = fetch_from_hub(args.model)
     model.freeze()
-    for l in model.model.layers[-lora_layers:]:
-        l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
-        l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
-        if hasattr(l, "block_sparse_moe"):
-            l.block_sparse_moe.gate = LoRALinear.from_linear(l.block_sparse_moe.gate)
 
-    model.update(tree_unflatten(adapters))
+    model = apply_lora_layers(model, args.adapter_file)
     fused_linears = [
         (n, m.to_linear())
         for n, m in model.named_modules()
@@ -69,15 +74,18 @@ if __name__ == "__main__":
 
     model.update_modules(tree_unflatten(fused_linears))
     weights = dict(tree_flatten(model.parameters()))
-    utils.save_model(args.save_path, weights, tokenizer, config)
+    save_model(args.save_path, weights, tokenizer, config)
 
     if args.upload_name is not None:
-        hf_path = args.hf_path
-        if not Path(args.model).exists():
-            # If the model path doesn't exist, assume it's an HF repo
-            hf_path = args.model
-        elif hf_path is None:
+        hf_path = args.hf_path or (
+            args.model if not Path(args.model).exists() else None
+        )
+        if hf_path is None:
             raise ValueError(
                 "Must provide original Hugging Face repo to upload local model."
             )
-        utils.upload_to_hub(args.save_path, args.upload_name, hf_path)
+        upload_to_hub(args.save_path, args.upload_name, hf_path)
+
+
+if __name__ == "__main__":
+    main()

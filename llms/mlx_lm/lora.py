@@ -131,6 +131,8 @@ class Dataset:
         return self._data[idx][self._key]
 
     def __len__(self):
+        if self._data is None:
+            return 0
         return len(self._data)
 
 
