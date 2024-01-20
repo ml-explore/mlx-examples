@@ -24,7 +24,7 @@ MODEL_MAPPING = {
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
     and m.weight.shape[0]
-    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and uplaod all the mixtral models
+    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
 )
 
 
