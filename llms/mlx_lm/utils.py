@@ -22,8 +22,10 @@ MODEL_MAPPING = {
 }
 
 linear_class_predicate = (
-    lambda m: isinstance(m, nn.Linear) and m.weight.shape[0] % 32 == 0
-)  # TODO remove this once we support quantization for non-multiples of 32
+    lambda m: isinstance(m, nn.Linear)
+    and m.weight.shape[0]
+    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
+)
 
 
 def _get_classes(config: dict):
@@ -144,13 +146,13 @@ def generate(
 
 def load_model(model_path: Path) -> nn.Module:
     """
-    Load and initialize the model from the specified path with weights and configuration.
+    Load and initialize the model from a given path.
 
     Args:
-        model_path (Path): The path where the model configuration and weights are located.
+        model_path (Path): The path to load the model from.
 
     Returns:
-        nn.Module: The loaded and initialized neural network model.
+        nn.Module: The loaded and initialized model.
 
     Raises:
         FileNotFoundError: If the weight files (.safetensors) are not found.
