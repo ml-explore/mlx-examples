@@ -206,8 +206,10 @@ class EmbeddingModel:
             attn_mask = np.array(tokenized["attention_mask"])
             if self.pooling_strategy == "mean":
                 pooled = np.sum(hidden_states * np.expand_dims(attn_mask, -1), axis=1) / np.sum(attn_mask, axis=1, keepdims=True)
-            else:
+            elif self.pooling_strategy == "cls":
                 pooled = pooler_output
+            elif self.pooling_strategy == "first":
+                pooled = hidden_states[:, 0]
             if self.normalize:
                 pooled = pooled / np.linalg.norm(pooled, axis=1, keepdims=True)
 
@@ -221,7 +223,10 @@ class EmbeddingModel:
         return result
 
 def test_embeddings():
-    mx_model, tokenizer = Bert.from_hugging_face("BAAI/bge-small-en-v1.5", precision_nbits=16)
+    mx_model, tokenizer = Bert.from_pretrained(
+        "BAAI/bge-small-en-v1.5", 
+        precision_nbits=32
+    )
     torch_model = AutoModel.from_pretrained("BAAI/bge-small-en-v1.5")
     torch_model.eval()
     batch = [
