@@ -114,6 +114,7 @@ def main(args):
     tic = time.time()
     tokens = []
     skip = 0
+    REPLACEMENT_CHAR = "\ufffd"
     for token, n in zip(
         generate_step(prompt, model, args.temp, args.colorize), range(args.max_tokens)
     ):
@@ -125,12 +126,11 @@ def main(args):
             tic = time.time()
         tokens.append(token.item())
         s = tokenizer.decode(tokens)
-        if args.colorize:
-            colorprint_by_t0(t0,s[skip:])
-        else:
+        if REPLACEMENT_CHAR not in s:
             print(s[skip:], end="", flush=True)
-        skip = len(s)
-    print(tokenizer.decode(tokens)[skip:], flush=True)
+            skip = len(s)
+    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+    print(tokens[skip:], flush=True)
     gen_time = time.time() - tic
     print("=" * 10)
     if len(tokens) == 0:
