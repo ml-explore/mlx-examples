@@ -146,7 +146,7 @@ def generate(
 
 def load_model(model_path: Path) -> nn.Module:
     """
-    Load and initialize the from a given path.
+    Load and initialize the model from a given path.
 
     Args:
         model_path (Path): The path to load the model from.
