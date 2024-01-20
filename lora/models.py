@@ -328,7 +328,12 @@ def load(path_or_hf_repo: str):
 
     model = Model(model_args)
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.QuantizedLinear.quantize_module(
+            model,
+            **quantization,
+            linear_class_predicate=lambda m: isinstance(m, nn.Linear)
+            and m.weight.shape[0] != 8,
+        )
 
     model.load_weights(list(weights.items()))
 
