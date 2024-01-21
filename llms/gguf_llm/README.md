@@ -30,7 +30,7 @@ For example, to generate text with Mistral 7B use:
 ```bash
 python generate.py \
   --repo TheBloke/Mistral-7B-v0.1-GGUF \
-  --gguf mistral-7b-v0.1.Q6_K.gguf \
+  --gguf mistral-7b-v0.1.Q4_0.gguf \
   --prompt "hello"
 ```
 

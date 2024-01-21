@@ -217,7 +217,7 @@ class Model(nn.Module):
         return self.lm_head(out), cache
 
 
-def get_config(metadata: dict, weights: dict[str, mx.array]):
+def get_config(metadata: dict):
     output = {
         "hidden_size": metadata["llama.embedding_length"],
         "num_hidden_layers": metadata["llama.block_count"],
@@ -225,7 +225,7 @@ def get_config(metadata: dict, weights: dict[str, mx.array]):
         "intermediate_size": metadata["llama.feed_forward_length"],
         "num_key_value_heads": metadata["llama.attention.head_count_kv"],
         "rms_norm_eps": metadata["llama.attention.layer_norm_rms_epsilon"],
-        "vocab_size": weights["lm_head.weight"].shape[0],
+        "vocab_size": len(metadata["tokenizer.ggml.tokens"]),
         "rope_theta": metadata["llama.rope.freq_base"],
         "rope_traditional": True,
     }
@@ -303,10 +303,43 @@ def load(gguf_file: str, repo: str = None):
 
     print(f"[INFO] Loading model from {gguf_file}")
     weights, metadata = mx.load(gguf_file, return_metadata=True)
-    tokenizer = GGUFTokenizer(metadata)
+    gguf_ft = metadata["general.file_type"]
+    if gguf_ft == 0 or gguf_ft == 1:
+        # ALL_F32 or MOSTLY_F16
+        quantization = None
+        pass
+    elif gguf_ft == 2 or gguf_ft == 3:
+        # MOSTLY_Q4_0 or MOSTLY_Q4_1
+        quantization = {"group_size": 32, "bits": 4}
+    elif gguf_ft == 7:
+        # MOSTLY_Q8_0 = 7
+        quantization = {"group_size": 32, "bits": 8}
+    else:
+        quantization = None
+        print("[WARNING] Using unsupported GGUF quantization. Casting to float16.")
+
     weights = {translate_weight_names(k): v for k, v in weights.items()}
-    config = get_config(metadata, weights)
+    config = get_config(metadata)
     model = Model(ModelArgs(**config))
+    if quantization is not None:
+        nn.QuantizedLinear.quantize_module(
+            # LM head is not quantized
+            model.model,
+            **quantization,
+        )
+
+    def dequantize(k):
+        weight = weights.pop(f"{k}.weight")
+        scales = weights.pop(f"{k}.scales")
+        biases = weights.pop(f"{k}.biases")
+        weights[f"{k}.weight"] = mx.dequantize(
+            weight, scales=scales, biases=biases, **quantization
+        )
+
+    # Dequantize embeddings
+    dequantize("model.embed_tokens")
+
+    tokenizer = GGUFTokenizer(metadata)
     model.load_weights(list(weights.items()))
     return model, tokenizer
 
