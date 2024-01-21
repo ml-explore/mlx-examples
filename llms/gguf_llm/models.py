@@ -299,6 +299,8 @@ def load(gguf_file: str, repo: str = None):
             repo_id=repo,
             allow_patterns=[gguf_file],
         )
+        if not (Path(model_path) / gguf_file).exists():
+            raise ValueError(f"File {gguf_file} not in repo {repo}.")
         gguf_file = str(Path(model_path) / gguf_file)
 
     print(f"[INFO] Loading model from {gguf_file}")
@@ -322,9 +324,10 @@ def load(gguf_file: str, repo: str = None):
     config = get_config(metadata)
     model = Model(ModelArgs(**config))
     if quantization is not None:
+        # quantized the LM head?
+        qm = model if "lm_head.scales" in weights else model.model
         nn.QuantizedLinear.quantize_module(
-            # LM head is not quantized
-            model.model,
+            qm,
             **quantization,
         )
 
