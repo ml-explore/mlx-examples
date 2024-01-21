@@ -37,15 +37,9 @@ class TrainingArguments:
     max_seq_length: int = field(
         default=2048, metadata={"help": "Maximum sequence length."}
     )
-    save_dir: str = field(
-        default=".",
-        metadata={
-            "help": "Directory to save the training adapter weights. Defaults to the current directory."
-        },
-    )
     adapter_file: str = field(
         default="adapter.npz",
-        metadata={"help": "fFle name for the trained adapter weights."},
+        metadata={"help": "Save/load path for the trained adapter weights."},
     )
 
 
@@ -129,7 +123,6 @@ class LoraTrainer:
         self.args = args
         self.optimizer = optimizer
         self.loss = loss
-        self.save_dir = Path(args.save_dir)
         self.adapter_file = args.adapter_file
 
     def train(self):
@@ -206,9 +199,6 @@ class LoraTrainer:
     def save_adapter(
         self,
     ):
-        if not self.save_dir.is_dir():
-            raise ValueError(f"The provided path {self.save_dir} is not a directory.")
-
         flattened_tree = tree_flatten(self.model.trainable_parameters())
 
-        mx.savez(self.save_dir / self.adapter_file, **dict(flattened_tree))
+        mx.savez(self.adapter_file, **dict(flattened_tree))
