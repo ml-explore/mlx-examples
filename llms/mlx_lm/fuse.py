@@ -16,10 +16,19 @@ def save_model(
 ) -> None:
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
+
     shards = make_shards(weights)
+    shards_count = len(shards)
+    shard_file_format = (
+        "model-{:05d}-of-{:05d}.safetensors"
+        if shards_count > 1
+        else "model.safetensors"
+    )
+
     for i, shard in enumerate(shards):
-        shard_file = save_dir / f"weights.{i:02d}.safetensors"
-        mx.save_safetensors(str(shard_file), shard)
+        shard_name = shard_file_format.format(i + 1, shards_count)
+        mx.save_safetensors(str(save_dir / shard_name), shard)
+
     tokenizer.save_pretrained(save_dir)
     with open(save_dir / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
