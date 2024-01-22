@@ -98,9 +98,9 @@ if __name__ == "__main__":
         model.update_modules(tree_unflatten(de_quantize_layers))
 
     weights = dict(tree_flatten(model.parameters()))
-    utils.save_model(
-        args.save_path, weights, tokenizer, config, de_quantize=args.de_quantize
-    )
+    if args.de_quantize:
+        config.pop("quantization", None)
+    utils.save_model(args.save_path, weights, tokenizer, config)
 
     if args.upload_name is not None:
         hf_path = args.hf_path

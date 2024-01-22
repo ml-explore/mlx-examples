@@ -112,7 +112,7 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
     return shards
 
 
-def save_model(save_dir: str, weights, tokenizer, config, de_quantize: bool = False):
+def save_model(save_dir: str, weights, tokenizer, config):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -131,8 +131,6 @@ def save_model(save_dir: str, weights, tokenizer, config, de_quantize: bool = Fa
     tokenizer.save_pretrained(save_dir)
 
     with open(save_dir / "config.json", "w") as fid:
-        if de_quantize:
-            config.pop("quantization", None)
         json.dump(config, fid, indent=4)
 
 
