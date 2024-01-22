@@ -7,10 +7,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+import utils
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_unflatten
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
 
 
 @dataclass
@@ -235,38 +234,17 @@ def get_config(metadata: dict):
 
 class GGUFTokenizer:
     def __init__(self, metadata):
-        def parse_token(token):
-            if len(token) == 6 and token.startswith("<0x") and token.endswith(">"):
-                return chr(int(token[3:5], 16))
-            return token
-
-        # TODO: do we need scores and token type?
-        # sores = metadata["tokenizer.ggml.scores"]
-        # token_types = metadata["tokenizer.ggml.token_type"]
-        vocab = {
-            parse_token(t): i for i, t in enumerate(metadata["tokenizer.ggml.tokens"])
-        }
-        merges = [
-            tuple(m.split(" ")) for m in metadata.get("tokenizer.ggml.merges", [])
-        ]
-        model = BPE(vocab, merges, byte_fallback=True)
-        self._tokenizer = Tokenizer(model)
-        self._bos_token_id = metadata["tokenizer.ggml.bos_token_id"].item()
-        self._eos_token_id = metadata["tokenizer.ggml.eos_token_id"].item()
+        self._tokenizer = utils.spm_tokenizer(metadata)
 
     def encode(self, s: str) -> mx.array:
-        return mx.array(
-            [self._bos_token_id] + self._tokenizer.encode("▁" + s.replace(" ", "▁")).ids
-        )
+        return mx.array([self._tokenizer.bos_id()] + self._tokenizer.encode(s))
 
     @property
     def eos_token_id(self):
-        return self._eos_token_id
+        return self._tokenizer.eos_id()
 
     def decode(self, toks: List[int]) -> str:
-        dtoks = self._tokenizer.decode(toks)
-        # TODO, why is this so messed up?
-        return dtoks.replace(" ", "").replace("▁▁", " ").replace("▁", "")
+        return self._tokenizer.decode(toks)
 
 
 def translate_weight_names(name):
