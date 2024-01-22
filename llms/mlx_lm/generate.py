@@ -67,9 +67,14 @@ def main(args):
 
     if args.apply_chat_template:
         messages = [{"role": "user", "content": args.prompt}]
-        # test if the tokenizer has a chat template
         if not hasattr(tokenizer, "apply_chat_template"):
-            raise ValueError(f"{args.model} does not have a chat template")
+            raise ValueError(
+                "apply_chat_template() method does not exist, please update your transformers library"
+            )
+        if tokenizer.chat_template is None:
+            print(
+                f"{args.model} does not define a chat template, using the default template, which may cause unexpected results"
+            )
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
