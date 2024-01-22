@@ -19,5 +19,5 @@ setup(
     license="MIT",
     install_requires=requirements,
     packages=["mlx_lm", "mlx_lm.models"],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
 )
