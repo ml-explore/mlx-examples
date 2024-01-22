@@ -95,7 +95,7 @@ class MLP(nn.Module):
             args.hidden_size, args.intermediate_size // 2, bias=not args.no_bias
         )
         self.w2 = nn.Linear(
-            args.intermediate_size // 2, args.hidden_size, bias=not args.no_bias
+            args.hidden_size, args.intermediate_size // 2, bias=not args.no_bias
         )
         self.c_proj = nn.Linear(
             args.intermediate_size // 2, args.hidden_size, bias=not args.no_bias
