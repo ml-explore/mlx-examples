@@ -112,15 +112,27 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
     return shards
 
 
-def save_model(save_dir: str, weights, tokenizer, config):
+def save_model(save_dir: str, weights, tokenizer, config, de_quantize: bool = False):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    shards = make_shards(weights)
+
+    shards = make_shards(weights, max_file_size_gibibyte=5)
+    shards_count = len(shards)
+    shard_file_format = (
+        "model-{:05d}-of-{:05d}.safetensors"
+        if shards_count > 1
+        else "model.safetensors"
+    )
+
     for i, shard in enumerate(shards):
-        # TODO use HF file name scheme for simplicity
-        mx.save_safetensors(str(save_dir / f"weights.{i:02d}.safetensors"), shard)
+        shard_name = shard_file_format.format(i + 1, shards_count)
+        mx.save_safetensors(str(save_dir / shard_name), shard)
+
     tokenizer.save_pretrained(save_dir)
+
     with open(save_dir / "config.json", "w") as fid:
+        if de_quantize:
+            config.pop("quantization", None)
         json.dump(config, fid, indent=4)
 
 
