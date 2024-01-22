@@ -47,10 +47,9 @@ def setup_arg_parser():
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
     parser.add_argument(
-        "--apply_chat_template",
-        "-a",
+        "--ignore-chat-template",
         action="store_true",
-        help="apply the tokenizer's chat template on the prompt",
+        help="don't apply the tokenizer chat template on the prompt",
     )
     return parser
 
@@ -65,19 +64,15 @@ def main(args):
 
     model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
 
-    if args.apply_chat_template:
+    if not args.ignore_chat_template:
         messages = [{"role": "user", "content": args.prompt}]
-        if not hasattr(tokenizer, "apply_chat_template"):
-            raise ValueError(
-                "apply_chat_template() method does not exist, please update your transformers library"
+        if (
+            hasattr(tokenizer, "apply_chat_template")
+            and tokenizer.chat_template is not None
+        ):
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
             )
-        if tokenizer.chat_template is None:
-            print(
-                f"{args.model} does not define a chat template, using the default template, which may cause unexpected results"
-            )
-        prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
     else:
         prompt = args.prompt
 
