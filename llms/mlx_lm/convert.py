@@ -1,6 +1,5 @@
 import argparse
 import copy
-import glob
 import json
 from pathlib import Path
 
@@ -8,7 +7,13 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten
 
-from .utils import fetch_from_hub, linear_class_predicate, make_shards, upload_to_hub
+from .utils import (
+    fetch_from_hub,
+    get_model_path,
+    linear_class_predicate,
+    save_weights,
+    upload_to_hub,
+)
 
 
 def configure_parser() -> argparse.ArgumentParser:
@@ -87,7 +92,8 @@ def convert(
     upload_repo: str = None,
 ):
     print("[INFO] Loading")
-    model, config, tokenizer = fetch_from_hub(hf_path)
+    model_path = get_model_path(hf_path)
+    model, config, tokenizer = fetch_from_hub(model_path)
 
     weights = dict(tree_flatten(model.parameters()))
     dtype = mx.float16 if quantize else getattr(mx, dtype)
@@ -98,12 +104,13 @@ def convert(
         model.load_weights(list(weights.items()))
         weights, config = quantize_model(model, config, q_group_size, q_bits)
 
-    mlx_path = Path(mlx_path)
-    mlx_path.mkdir(parents=True, exist_ok=True)
-    shards = make_shards(weights)
-    for i, shard in enumerate(shards):
-        mx.save_safetensors(str(mlx_path / f"weights.{i:02d}.safetensors"), shard)
+    if isinstance(mlx_path, str):
+        mlx_path = Path(mlx_path)
+
+    save_weights(mlx_path, weights)
+
     tokenizer.save_pretrained(mlx_path)
+
     with open(mlx_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 

@@ -3,7 +3,7 @@ import glob
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Generator, Tuple
+from typing import Any, Dict, Generator, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -220,10 +220,8 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
 
 
 def fetch_from_hub(
-    model_path: str,
+    model_path: Path,
 ) -> Tuple[Dict, dict, PreTrainedTokenizer]:
-    model_path = get_model_path(model_path)
-
     model = load_model(model_path)
 
     config = AutoConfig.from_pretrained(model_path)
@@ -300,3 +298,22 @@ response = generate(model, tokenizer, prompt="hello", verbose=True)
         repo_id=upload_repo,
         repo_type="model",
     )
+
+
+def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
+    """Save model weights into specified directory."""
+    if isinstance(save_path, str):
+        save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    shards = make_shards(weights)
+    shards_count = len(shards)
+    shard_file_format = (
+        "model-{:05d}-of-{:05d}.safetensors"
+        if shards_count > 1
+        else "model.safetensors"
+    )
+
+    for i, shard in enumerate(shards):
+        shard_name = shard_file_format.format(i + 1, shards_count)
+        mx.save_safetensors(str(save_path / shard_name), shard)

@@ -1,36 +1,45 @@
 import argparse
+import glob
 import json
+import shutil
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Union
 
 import mlx.core as mx
 from mlx.utils import tree_flatten, tree_unflatten
 
 from .tuner.linear import LoRALinear
 from .tuner.utils import apply_lora_layers
-from .utils import fetch_from_hub, make_shards, upload_to_hub
+from .utils import (
+    fetch_from_hub,
+    get_model_path,
+    make_shards,
+    save_weights,
+    upload_to_hub,
+)
 
 
 def save_model(
-    save_dir: str, weights: Dict[str, Any], tokenizer: Any, config: Dict[str, Any]
+    base_model_path: Union[str, Path],
+    save_path: str,
+    weights: Dict[str, Any],
+    tokenizer: Any,
+    config: Dict[str, Any],
 ) -> None:
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(base_model_path, str):
+        base_model_path = Path(base_model_path)
 
-    shards = make_shards(weights)
-    shards_count = len(shards)
-    shard_file_format = (
-        "model-{:05d}-of-{:05d}.safetensors"
-        if shards_count > 1
-        else "model.safetensors"
-    )
+    if isinstance(save_path, str):
+        save_path = Path(save_path)
 
-    for i, shard in enumerate(shards):
-        shard_name = shard_file_format.format(i + 1, shards_count)
-        mx.save_safetensors(str(save_dir / shard_name), shard)
+    save_weights(save_path, weights)
 
-    tokenizer.save_pretrained(save_dir)
-    with open(save_dir / "config.json", "w") as fid:
+    py_files = glob.glob(str(base_model_path / "*.py"))
+    for file in py_files:
+        shutil.copy(file, save_path)
+
+    tokenizer.save_pretrained(save_path)
+    with open(save_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
 
@@ -71,9 +80,10 @@ def main() -> None:
     print("Loading pretrained model")
     args = parse_arguments()
 
-    model, config, tokenizer = fetch_from_hub(args.model)
-    model.freeze()
+    model_path = get_model_path(args.model)
+    model, config, tokenizer = fetch_from_hub(model_path)
 
+    model.freeze()
     model = apply_lora_layers(model, args.adapter_file)
     fused_linears = [
         (n, m.to_linear())
@@ -83,7 +93,13 @@ def main() -> None:
 
     model.update_modules(tree_unflatten(fused_linears))
     weights = dict(tree_flatten(model.parameters()))
-    save_model(args.save_path, weights, tokenizer, config)
+    save_model(
+        base_model_path=model_path,
+        save_path=args.save_path,
+        weights=weights,
+        tokenizer=tokenizer,
+        config=config,
+    )
 
     if args.upload_name is not None:
         hf_path = args.hf_path or (
