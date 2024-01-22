@@ -1,6 +1,8 @@
 import glob
 import json
 import logging
+import time
+
 from pathlib import Path
 from typing import Generator, Tuple
 
@@ -105,6 +107,7 @@ def generate(
     prompt: str,
     temp: float = 0.0,
     max_tokens: int = 100,
+    seed: int = 0,
     verbose: bool = False,
 ) -> str:
     """
@@ -116,18 +119,28 @@ def generate(
        prompt (str): The string prompt.
        temp (float): The temperature for sampling (default 0).
        max_tokens (int): The maximum number of tokens (default 100).
+       seed (int): The random seed for generation.
+       verbose (bool): If True, enable the output of the timing information.
     """
 
+    if verbose:
+        print("=" * 10)
+        print("Prompt:", prompt)
+    
+    mx.random.seed(seed)
     prompt = mx.array(tokenizer.encode(prompt))
 
+    tic = time.time()
     tokens = []
     skip = 0
     REPLACEMENT_CHAR = "\ufffd"
 
-    for token, _ in zip(generate_step(prompt, model, temp), range(max_tokens)):
+    for token, n in zip(generate_step(prompt, model, temp), range(max_tokens)):
         if token == tokenizer.eos_token_id:
             break
-
+        if n == 0:
+            prompt_time = time.time() - tic
+            tic = time.time()
         tokens.append(token.item())
 
         if verbose:
@@ -137,8 +150,19 @@ def generate(
                 skip = len(s)
 
     tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+
     if verbose:
         print(tokens[skip:], flush=True)
+        gen_time = time.time() - tic
+        print("=" * 10)
+        if len(tokens) == 0:
+            print("No tokens generated for this prompt")
+            return
+        prompt_tps = prompt.size / prompt_time
+        gen_tps = (len(tokens) - 1) / gen_time
+        print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
+        print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+
     return tokens
 
 
