@@ -1,6 +1,8 @@
 import argparse
 import copy
+import glob
 import json
+import shutil
 from pathlib import Path
 
 import mlx.core as mx
@@ -108,6 +110,10 @@ def convert(
         mlx_path = Path(mlx_path)
 
     save_weights(mlx_path, weights)
+
+    py_files = glob.glob(str(model_path / "*.py"))
+    for file in py_files:
+        shutil.copy(file, mlx_path)
 
     tokenizer.save_pretrained(mlx_path)
 

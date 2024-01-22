@@ -12,30 +12,6 @@ from .tuner.utils import apply_lora_layers
 from .utils import fetch_from_hub, get_model_path, save_weights, upload_to_hub
 
 
-def save_model(
-    base_model_path: Union[str, Path],
-    save_path: str,
-    weights: Dict[str, Any],
-    tokenizer: Any,
-    config: Dict[str, Any],
-) -> None:
-    if isinstance(base_model_path, str):
-        base_model_path = Path(base_model_path)
-
-    if isinstance(save_path, str):
-        save_path = Path(save_path)
-
-    save_weights(save_path, weights)
-
-    py_files = glob.glob(str(base_model_path / "*.py"))
-    for file in py_files:
-        shutil.copy(file, save_path)
-
-    tokenizer.save_pretrained(save_path)
-    with open(save_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
-
-
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
     parser.add_argument(
@@ -86,13 +62,19 @@ def main() -> None:
 
     model.update_modules(tree_unflatten(fused_linears))
     weights = dict(tree_flatten(model.parameters()))
-    save_model(
-        base_model_path=model_path,
-        save_path=args.save_path,
-        weights=weights,
-        tokenizer=tokenizer,
-        config=config,
-    )
+
+    save_path = Path(args.save_path)
+
+    save_weights(save_path, weights)
+
+    py_files = glob.glob(str(model_path / "*.py"))
+    for file in py_files:
+        shutil.copy(file, save_path)
+
+    tokenizer.save_pretrained(save_path)
+
+    with open(save_path / "config.json", "w") as fid:
+        json.dump(config, fid, indent=4)
 
     if args.upload_name is not None:
         hf_path = args.hf_path or (
