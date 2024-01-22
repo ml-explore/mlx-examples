@@ -1,4 +1,4 @@
 mlx
 numpy
-transformers
+transformers>=4.37.0
 protobuf

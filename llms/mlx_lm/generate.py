@@ -53,7 +53,7 @@ def main(args):
     mx.random.seed(args.seed)
 
     # Building tokenizer_config
-    tokenizer_config = {"trust_remote_code": args.trust_remote_code}
+    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
     if args.eos_token is not None:
         tokenizer_config["eos_token"] = args.eos_token
 
