@@ -56,6 +56,8 @@ if __name__ == "__main__":
     for l in model.model.layers[-lora_layers:]:
         l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
         l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
+        if hasattr(l, "block_sparse_moe"):
+            l.block_sparse_moe.gate = LoRALinear.from_linear(l.block_sparse_moe.gate)
 
     model.update(tree_unflatten(adapters))
     fused_linears = [

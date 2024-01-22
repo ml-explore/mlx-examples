@@ -9,14 +9,18 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    hidden_size: int
-    num_hidden_layers: int
-    intermediate_size: int
-    num_attention_heads: int
-    rms_norm_eps: float
+    vocab_size: int = 32000
+    max_position_embeddings: int = 4096 * 32
+    hidden_size: int = 4096
+    intermediate_size: int = 14336
+    num_hidden_layers: int = 32
+    num_attention_heads: int = 32
+    num_experts_per_tok: int = 2
+    num_key_value_heads: int = 8
+    num_local_experts: int = 8
+    rms_norm_eps: float = 1e-5
     vocab_size: int
-    num_key_value_heads: int = None
-    rope_theta: float = 10000
+    rope_theta: float = 1e6
     rope_traditional: bool = False
     model_type: str = None
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
@@ -24,14 +28,6 @@ class ModelArgs(BaseModelArgs):
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
-
-        if self.rope_scaling:
-            required_keys = {"factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
-
-            if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
 
 
 class RMSNorm(nn.Module):
@@ -48,34 +44,37 @@ class RMSNorm(nn.Module):
         return self.weight * output
 
 
-class Attention(nn.Module):
+class MixtralAttention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.hidden_size = args.hidden_size
+        self.num_heads = args.num_attention_heads
+        self.head_dim = self.hidden_size // self.num_heads
+        self.num_key_value_heads = args.num_key_value_heads
+        self.max_position_embeddings = args.max_position_embeddings
+        self.rope_theta = args.rope_theta
 
-        dim = args.hidden_size
-        self.n_heads = n_heads = args.num_attention_heads
-        self.n_kv_heads = n_kv_heads = args.num_key_value_heads
+        self.repeats = self.num_heads // self.num_key_value_heads
 
-        self.repeats = n_heads // n_kv_heads
+        self.scale = self.head_dim**-0.5
 
-        head_dim = args.hidden_size // n_heads
-        self.scale = head_dim**-0.5
-
-        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=False)
-        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
-        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
-        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
-
-        rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
+        self.q_proj = nn.Linear(
+            self.hidden_size, self.num_heads * self.head_dim, bias=False
         )
+        self.k_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        )
+        self.v_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim, self.hidden_size, bias=False
+        )
+
         self.rope = nn.RoPE(
-            head_dim,
+            self.head_dim,
             traditional=args.rope_traditional,
             base=args.rope_theta,
-            scale=rope_scale,
         )
 
     def __call__(
@@ -89,13 +88,15 @@ class Attention(nn.Module):
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
+        queries = queries.reshape(B, L, self.num_heads, -1).transpose(0, 2, 1, 3)
+        keys = keys.reshape(B, L, self.num_key_value_heads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.num_key_value_heads, -1).transpose(
+            0, 2, 1, 3
+        )
 
         def repeat(a):
             a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
-            return a.reshape([B, self.n_heads, L, -1])
+            return a.reshape([B, self.num_heads, L, -1])
 
         if self.repeats > 1:
             keys, values = map(repeat, (keys, values))
@@ -118,27 +119,71 @@ class Attention(nn.Module):
         return self.o_proj(output), (keys, values)
 
 
-class MLP(nn.Module):
-    def __init__(self, dim, hidden_dim):
-        super().__init__()
-        self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
-        self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
-        self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
-
-    def __call__(self, x) -> mx.array:
-        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
-
-
-class TransformerBlock(nn.Module):
+class MixtralBLockSparseTop2MLP(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.num_attention_heads = args.num_attention_heads
+        self.ffn_dim = args.intermediate_size
+        self.hidden_dim = args.hidden_size
+
+        self.w1 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
+        self.w2 = nn.Linear(self.ffn_dim, self.hidden_dim, bias=False)
+        self.w3 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
+
+        self.act_fn = nn.silu
+
+    def __call__(self, x: mx.array) -> mx.array:
+        current_hidden_states = self.act_fn(self.w1(x)) * self.w3(x)
+        current_hidden_states = self.w2(current_hidden_states)
+        return current_hidden_states
+
+
+class MixtralSparseMoeBlock(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.hidden_dim = args.hidden_size
+        self.ffn_dim = args.intermediate_size
+        self.num_experts = args.num_local_experts
+        self.num_experts_per_tok = args.num_experts_per_tok
+
+        # gating
+        self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
+
+        self.experts = [
+            MixtralBLockSparseTop2MLP(args=args) for _ in range(self.num_experts)
+        ]
+
+    def __call__(self, x: mx.array) -> mx.array:
+        ne = self.num_experts_per_tok
+        orig_shape = x.shape
+        x = x.reshape(-1, x.shape[-1])
+
+        gates = self.gate(x)
+        inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        scores = mx.softmax(
+            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
+            axis=-1,
+        ).astype(gates.dtype)
+
+        y = []
+        for xt, st, it in zip(x, scores, inds.tolist()):
+            yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
+            yt = (yt * st).sum(axis=-1)
+            y.append(yt[None, :])
+        y = mx.concatenate(y)
+
+        return y.reshape(orig_shape)
+
+
+class MixtralDecoderLayer(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
         self.hidden_size = args.hidden_size
-        self.self_attn = Attention(args)
-        self.mlp = MLP(args.hidden_size, args.intermediate_size)
+
+        self.self_attn = MixtralAttention(args)
+
+        self.block_sparse_moe = MixtralSparseMoeBlock(args)
         self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.args = args
 
     def __call__(
         self,
@@ -148,21 +193,20 @@ class TransformerBlock(nn.Module):
     ) -> mx.array:
         r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
-        r = self.mlp(self.post_attention_layernorm(h))
+        r = self.block_sparse_moe(self.post_attention_layernorm(h))
         out = h + r
         return out, cache
 
 
-class LlamaModel(nn.Module):
+class MixtralModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.args = args
         self.vocab_size = args.vocab_size
         self.num_hidden_layers = args.num_hidden_layers
-        assert self.vocab_size > 0
+
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-            TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
+            MixtralDecoderLayer(args=args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -174,8 +218,9 @@ class LlamaModel(nn.Module):
         h = self.embed_tokens(inputs)
 
         mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
+        T = h.shape[1]
+        if T > 1:
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
             mask = mask.astype(h.dtype)
 
         if cache is None:
@@ -184,13 +229,13 @@ class LlamaModel(nn.Module):
         for e, layer in enumerate(self.layers):
             h, cache[e] = layer(h, mask, cache[e])
 
-        return self.norm(h), cache
+        return self.norm(h[:, T - 1 : T, :]), cache
 
 
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.model = LlamaModel(args)
+        self.model = MixtralModel(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
@@ -200,10 +245,3 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         return self.lm_head(out), cache
-
-    @staticmethod
-    def sanitize(weights):
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }

@@ -10,15 +10,22 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, phi2, qwen
+from .models import llama, mixtral, phi2
+from .models.base import BaseModelArgs
 
 # Constants
 MODEL_MAPPING = {
     "llama": llama,
     "mistral": llama,  # mistral is compatible with llama
+    "mixtral": mixtral,
     "phi": phi2,
-    "qwen": qwen,
 }
+
+linear_class_predicate = (
+    lambda m: isinstance(m, nn.Linear)
+    and m.weight.shape[0]
+    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
+)
 
 
 def _get_classes(config: dict):
@@ -123,6 +130,8 @@ def generate(
 
     tokens = []
     skip = 0
+    REPLACEMENT_CHAR = "\ufffd"
+
     for token, _ in zip(generate_step(prompt, model, temp), range(max_tokens)):
         if token == tokenizer.eos_token_id:
             break
@@ -131,28 +140,29 @@ def generate(
 
         if verbose:
             s = tokenizer.decode(tokens)
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
+            if REPLACEMENT_CHAR not in s:
+                print(s[skip:], end="", flush=True)
+                skip = len(s)
 
-    tokens = tokenizer.decode(tokens)[skip:]
+    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
     if verbose:
-        print(tokens, flush=True)
+        print(tokens[skip:], flush=True)
     return tokens
 
 
 def load_model(model_path: Path) -> nn.Module:
     """
-    Load the model from a given path or a huggingface repository.
+    Load and initialize the model from a given path.
 
     Args:
-        model_path (Path): The path or the huggingface repository to load the model from.
+        model_path (Path): The path to load the model from.
 
     Returns:
-        nn.Module: The loaded model.
+        nn.Module: The loaded and initialized model.
 
     Raises:
-        FileNotFoundError: If config file or safetensors are not found.
-        ValueError: If model class or args class are not found.
+        FileNotFoundError: If the weight files (.safetensors) are not found.
+        ValueError: If the model class or args class are not found or cannot be instantiated.
     """
     try:
         with open(model_path / "config.json", "r") as f:
@@ -172,30 +182,35 @@ def load_model(model_path: Path) -> nn.Module:
         weights.update(mx.load(wf))
 
     model_class, model_args_class = _get_classes(config=config)
+    if hasattr(model_class, "sanitize"):
+        weights = model_class.sanitize(weights)
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
 
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.QuantizedLinear.quantize_module(
+            model,
+            **quantization,
+            linear_class_predicate=linear_class_predicate,
+        )
 
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
+
     return model
 
 
-def load(path_or_hf_repo: str, **kwargs) -> Tuple[nn.Module, PreTrainedTokenizer]:
+def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     Load the model from a given path or a huggingface repository.
 
     Args:
-        path_or_hf_repo (str): The path or the huggingface repository to load the model from.
-        **kwargs: Additional keyword arguments. Currently, only 'tokenizer_config' is supported,
-                  which should be a dictionary containing tokenizer-specific configurations.
+        model_path (Path): The path or the huggingface repository to load the model from.
 
     Returns:
-        Tuple[nn.Module, PreTrainedTokenizer]: The loaded model and tokenizer.
+        nn.Module: The loaded model.
 
     Raises:
         FileNotFoundError: If config file or safetensors are not found.
@@ -204,8 +219,5 @@ def load(path_or_hf_repo: str, **kwargs) -> Tuple[nn.Module, PreTrainedTokenizer
     model_path = get_model_path(path_or_hf_repo)
 
     model = load_model(model_path)
-
-    tokenizer_config = kwargs.get("tokenizer_config", {})
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     return model, tokenizer

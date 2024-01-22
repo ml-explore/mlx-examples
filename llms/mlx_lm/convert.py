@@ -2,7 +2,6 @@ import argparse
 import copy
 import glob
 import json
-import shutil
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -11,8 +10,7 @@ import mlx.nn as nn
 import transformers
 from mlx.utils import tree_flatten
 
-from .tokenizer_utils import copy_tokenizer_files
-from .utils import get_model_path, load_model
+from .utils import get_model_path, linear_class_predicate, load_model
 
 MAX_FILE_SIZE_GB = 15
 
@@ -58,40 +56,27 @@ def configure_parser() -> argparse.ArgumentParser:
 
 
 def fetch_from_hub(
-    model_path: Path,
-) -> Tuple[Dict, dict]:
-    """
-    Fetches the model weights and configuration from the Hugging Face Hub.
+    model_path: str,
+) -> Tuple[Dict, dict, transformers.PreTrainedTokenizer]:
+    model_path = get_model_path(model_path)
 
-    Args:
-        model_path (Path): Path to the Hugging Face model directory.
-
-    Returns:
-        Tuple[Dict, dict]: A tuple containing the model weights and configuration dictionary.
-    """
-    weight_files = glob.glob(f"{model_path}/*.safetensors")
-    if not weight_files:
-        raise FileNotFoundError(f"No safetensors found in {model_path}")
-
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf).items())
+    model = load_model(model_path)
 
     config = transformers.AutoConfig.from_pretrained(model_path)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
 
-    return weights, config.to_dict()
+    return model, config.to_dict(), tokenizer
 
 
 def quantize_model(
-    weights: dict, config: dict, hf_path: Path, q_group_size: int, q_bits: int
+    model: nn.Module, config: dict, q_group_size: int, q_bits: int
 ) -> tuple:
     """
     Applies quantization to the model weights.
 
     Args:
-        weights (dict): Model weights.
+        model (nn.Module): The model to be quantized.
         config (dict): Model configuration.
-        hf_path (Path): HF model path..
         q_group_size (int): Group size for quantization.
         q_bits (int): Bits per weight for quantization.
 
@@ -99,14 +84,11 @@ def quantize_model(
         tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-    model = load_model(hf_path)
-    model.load_weights(list(weights.items()))
 
-    nn.QuantizedLinear.quantize_module(model, q_group_size, q_bits)
-    quantized_config["quantization"] = {
-        "group_size": q_group_size,
-        "bits": q_bits,
-    }
+    nn.QuantizedLinear.quantize_module(
+        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
+    )
+    quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config
@@ -182,26 +164,6 @@ response = generate(model, tokenizer, prompt="hello", verbose=True)
     )
 
 
-def prepare_and_save_model(
-    mlx_path: Path, weights: dict, config: dict, model_path: Path
-):
-    """Prepares and saves the model to the given path."""
-    mlx_path.mkdir(parents=True, exist_ok=True)
-
-    shards = make_shards(weights)
-    for i, shard in enumerate(shards):
-        mx.save_safetensors(str(mlx_path / f"weights.{i:02d}.safetensors"), shard)
-
-    script_files = model_path.glob("*.py")
-    for file in script_files:
-        shutil.copy(file, mlx_path)
-
-    copy_tokenizer_files(model_path, mlx_path, config["model_type"])
-
-    with open(mlx_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
-
-
 def convert(
     hf_path: str,
     mlx_path: str = "mlx_model",
@@ -211,34 +173,26 @@ def convert(
     dtype: str = "float16",
     upload_repo: str = None,
 ):
-    """
-    Convert the Hugging Face model to MLX format. Supports quantization and uploading to Hugging Face hub.
-
-    Args:
-        hf_path (str): Path to the original Hugging Face model.
-        mlx_path (str): Path to save the converted MLX model.
-        quantize (bool): If True, quantizes the model.
-        q_group_size (int): Group size for quantization (effective if quantize=True).
-        q_bits (int): Number of bits per weight for quantization (effective if quantize=True).
-        dtype (str): Data type for the model parameters
-        upload_repo (str, optional): Repository name to upload the converted model to the Hugging Face hub.
-
-    """
     print("[INFO] Loading")
-    model_path = get_model_path(hf_path)
+    model, config, tokenizer = fetch_from_hub(hf_path)
 
-    weights, config = fetch_from_hub(model_path)
+    weights = dict(tree_flatten(model.parameters()))
     dtype = mx.float16 if quantize else getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
+
     if quantize:
         print("[INFO] Quantizing")
-        weights, config = quantize_model(
-            weights, config, model_path, q_group_size, q_bits
-        )
+        model.load_weights(list(weights.items()))
+        weights, config = quantize_model(model, config, q_group_size, q_bits)
 
     mlx_path = Path(mlx_path)
-
-    prepare_and_save_model(mlx_path, weights, config, model_path)
+    mlx_path.mkdir(parents=True, exist_ok=True)
+    shards = make_shards(weights)
+    for i, shard in enumerate(shards):
+        mx.save_safetensors(str(mlx_path / f"weights.{i:02d}.safetensors"), shard)
+    tokenizer.save_pretrained(mlx_path)
+    with open(mlx_path / "config.json", "w") as fid:
+        json.dump(config, fid, indent=4)
 
     if upload_repo is not None:
         upload_to_hub(mlx_path, upload_repo, hf_path)
