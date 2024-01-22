@@ -10,8 +10,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2
-from .models.base import BaseModelArgs
+from .models import llama, mixtral, phi2, qwen
 
 # Constants
 MODEL_MAPPING = {
@@ -19,6 +18,7 @@ MODEL_MAPPING = {
     "mistral": llama,  # mistral is compatible with llama
     "mixtral": mixtral,
     "phi": phi2,
+    "qwen": qwen,
 }
 
 linear_class_predicate = (
@@ -64,7 +64,13 @@ def get_model_path(path_or_hf_repo: str) -> Path:
         model_path = Path(
             snapshot_download(
                 repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "*.py", "tokenizer.model"],
+                allow_patterns=[
+                    "*.json",
+                    "*.safetensors",
+                    "*.py",
+                    "tokenizer.model",
+                    "*.tiktoken",
+                ],
             )
         )
     return model_path
@@ -196,15 +202,18 @@ def load_model(model_path: Path) -> nn.Module:
     return model
 
 
-def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
+def load(
+    path_or_hf_repo: str, tokenizer_config={}
+) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     Load the model from a given path or a huggingface repository.
 
     Args:
-        path_or_hf_repo (str): The path or the huggingface repository to load the model from.
-
+        model_path (Path): The path or the huggingface repository to load the model from.
+        tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
+            Defaults to an empty dictionary.
     Returns:
-        Tuple[nn.Module, PreTrainedTokenizer]: The loaded model and tokenizer.
+        nn.Module: The loaded model.
 
     Raises:
         FileNotFoundError: If config file or safetensors are not found.
@@ -213,5 +222,5 @@ def load(path_or_hf_repo: str) -> Tuple[nn.Module, PreTrainedTokenizer]:
     model_path = get_model_path(path_or_hf_repo)
 
     model = load_model(model_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
     return model, tokenizer
