@@ -7,8 +7,8 @@ import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .tuner.linear import LoRALinear
-from .tuner.trainer import LoraTrainer, TrainingArguments, default_loss, evaluate
+from .tuner.lora import LoRALinear
+from .tuner.trainer import TrainingArgs, evaluate, train
 from .utils import generate, load
 
 
@@ -184,7 +184,7 @@ if __name__ == "__main__":
         print(f"Loading pretrained adapters from {args.resume_adapter_file}")
         model.load_weights(args.resume_adapter_file, strict=False)
     # init training args
-    training_args = TrainingArguments(
+    trainingArgs = TrainingArgs(
         batch_size=args.batch_size,
         iters=args.iters,
         val_batches=args.val_batches,
@@ -197,21 +197,15 @@ if __name__ == "__main__":
         print("Training")
         model.train()
         opt = optim.Adam(learning_rate=args.learning_rate)
-        # init trainer
-        trainer = LoraTrainer(
+        # Train model
+        train(
             model=model,
             tokenizer=tokenizer,
-            args=training_args,
+            args=trainingArgs,
             optimizer=opt,
-            loss=default_loss,
             train_dataset=train_set,
             val_dataset=valid_set,
-            test_dataset=test_set,
         )
-        # Train model
-        trainer.train()
-        # Save adapter weights
-        trainer.save_adapter()
 
     # Load the LoRA adapter weights which we assume should exist by this point
     if not Path(args.adapter_file).is_file():
@@ -226,13 +220,13 @@ if __name__ == "__main__":
         model.eval()
 
         test_loss = evaluate(
-            model,
-            test_set,
-            default_loss,
-            tokenizer,
-            args.batch_size,
+            model=model,
+            dataset=test_set,
+            tokenizer=tokenizer,
+            batch_size=args.batch_size,
             num_batches=args.test_batches,
         )
+
         test_ppl = math.exp(test_loss)
 
         print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")

@@ -1,7 +1,7 @@
 import mlx.core as mx
 from mlx.utils import tree_unflatten
 
-from .linear import LoRALinear
+from .lora import LoRALinear
 
 
 def apply_lora_layers(model, adapter_file: str):

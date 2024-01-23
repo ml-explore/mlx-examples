@@ -7,7 +7,7 @@ from typing import Any, Dict, Union
 
 from mlx.utils import tree_flatten, tree_unflatten
 
-from .tuner.linear import LoRALinear
+from .tuner.lora import LoRALinear
 from .tuner.utils import apply_lora_layers
 from .utils import fetch_from_hub, get_model_path, save_weights, upload_to_hub
 
