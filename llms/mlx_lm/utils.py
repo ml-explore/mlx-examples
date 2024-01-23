@@ -3,7 +3,6 @@ import glob
 import json
 import logging
 import time
-
 from pathlib import Path
 from typing import Any, Dict, Generator, Tuple, Union
 
@@ -122,7 +121,6 @@ def generate(
     prompt: str,
     temp: float = 0.0,
     max_tokens: int = 100,
-    seed: int = 0,
     verbose: bool = False,
 ) -> str:
     """
@@ -141,8 +139,7 @@ def generate(
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)
-    
-    mx.random.seed(seed)
+
     prompt = mx.array(tokenizer.encode(prompt))
 
     tic = time.time()
