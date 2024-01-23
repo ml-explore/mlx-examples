@@ -102,11 +102,26 @@ Here are a few examples of Hugging Face models that work with this example:
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
 - [mistralai/Mixtral-8x7B-Instruct-v0.1](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1)
+- [Qwen/Qwen-7B](https://huggingface.co/Qwen/Qwen-7B)
 
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
 [Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending),
-[Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending)
+[Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending),
 and
 [Mixtral](https://huggingface.co/models?library=transformers,safetensors&other=mixtral&sort=trending)
 style models should work out of the box.
+
+For
+[Qwen](https://huggingface.co/models?library=transformers,safetensors&other=qwen&sort=trending)
+style models, you must enable the `trust_remote_code` option and specify the
+`eos_token`. This ensures the tokenizer works correctly.  You can do this by
+passing `--trust-remote-code` and `--eos-token "<|endoftext|>"` in the command
+line, or by setting these options in the Python API:
+
+```python
+model, tokenizer = load(
+    "qwen/Qwen-7B",
+    tokenizer_config={"eos_token": "<|endoftext|>", "trust_remote_code": True},
+)
+```

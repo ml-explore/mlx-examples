@@ -22,6 +22,17 @@ def setup_arg_parser():
         help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Enable trusting remote code for tokenizer",
+    )
+    parser.add_argument(
+        "--eos-token",
+        type=str,
+        default=None,
+        help="End of sequence token for tokenizer",
+    )
+    parser.add_argument(
         "--prompt", default=DEFAULT_PROMPT, help="Message to be processed by the model"
     )
     parser.add_argument(
@@ -40,7 +51,13 @@ def setup_arg_parser():
 
 def main(args):
     mx.random.seed(args.seed)
-    model, tokenizer = load(args.model)
+
+    # Building tokenizer_config
+    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
+    if args.eos_token is not None:
+        tokenizer_config["eos_token"] = args.eos_token
+
+    model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
     print("=" * 10)
     print("Prompt:", args.prompt)
     prompt = tokenizer.encode(args.prompt)
