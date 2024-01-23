@@ -8,7 +8,7 @@ with open(Path(__file__).parent / "mlx_lm/requirements.txt") as fid:
     requirements = [str(r) for r in pkg_resources.parse_requirements(fid)]
 setup(
     name="mlx-lm",
-    version="0.0.3",
+    version="0.0.4",
     description="LLMs on Apple silicon with MLX and the Hugging Face Hub",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -18,6 +18,6 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
-    packages=["mlx_lm", "mlx_lm.models"],
+    packages=["mlx_lm", "mlx_lm.models", "mlx_lm.tuner"],
     python_requires=">=3.8",
 )

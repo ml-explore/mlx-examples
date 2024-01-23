@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 import mlx.core as mx
+import mlx.nn as nn
 import utils
 from mlx.utils import tree_flatten, tree_unflatten
 from models.lora import LoRALinear
@@ -41,6 +42,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "-d",
+        "--de-quantize",
+        help="Generate a de-quantized model.",
+        action="store_true",
+    )
 
     print("Loading pretrained model")
     args = parser.parse_args()
@@ -53,9 +60,11 @@ if __name__ == "__main__":
 
     # Freeze all layers other than LORA linears
     model.freeze()
-    for l in model.model.layers[-lora_layers:]:
+    for l in model.model.layers[len(model.model.layers) - lora_layers :]:
         l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
         l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
+        if hasattr(l, "block_sparse_moe"):
+            l.block_sparse_moe.gate = LoRALinear.from_linear(l.block_sparse_moe.gate)
 
     model.update(tree_unflatten(adapters))
     fused_linears = [
@@ -65,7 +74,32 @@ if __name__ == "__main__":
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
+
+    if args.de_quantize:
+        de_quantize_layers = []
+        for n, m in model.named_modules():
+            if isinstance(m, nn.QuantizedLinear):
+                bias = "bias" in m
+                weight = m.weight
+                weight = mx.dequantize(
+                    weight,
+                    m.scales,
+                    m.biases,
+                    m.group_size,
+                    m.bits,
+                ).astype(mx.float16)
+                output_dims, input_dims = weight.shape
+                linear = nn.Linear(input_dims, output_dims, bias=bias)
+                linear.weight = weight
+                if bias:
+                    linear.bias = m.bias
+                de_quantize_layers.append((n, linear))
+
+        model.update_modules(tree_unflatten(de_quantize_layers))
+
     weights = dict(tree_flatten(model.parameters()))
+    if args.de_quantize:
+        config.pop("quantization", None)
     utils.save_model(args.save_path, weights, tokenizer, config)
 
     if args.upload_name is not None:

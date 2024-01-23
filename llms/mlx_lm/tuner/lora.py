@@ -6,17 +6,19 @@ import mlx.nn as nn
 
 class LoRALinear(nn.Module):
     @staticmethod
-    def from_linear(linear: nn.Linear, rank: int = 8):
+    def from_linear(linear: nn.Linear, rank: int = 8, scale: float = 20.0):
         # TODO remove when input_dims and output_dims are attributes
         # on linear and quantized linear
         output_dims, input_dims = linear.weight.shape
         if isinstance(linear, nn.QuantizedLinear):
             input_dims *= 32 // linear.bits
-        lora_lin = LoRALinear(input_dims, output_dims, rank)
+        lora_lin = LoRALinear(
+            input_dims=input_dims, output_dims=output_dims, rank=rank, scale=scale
+        )
         lora_lin.linear = linear
         return lora_lin
 
-    def to_linear(self, de_quantize: bool = False):
+    def to_linear(self):
         linear = self.linear
         bias = "bias" in linear
         weight = linear.weight
@@ -43,7 +45,7 @@ class LoRALinear(nn.Module):
         if bias:
             fused_linear.bias = linear.bias
 
-        if is_quantized and not de_quantize:
+        if is_quantized:
             fused_linear = nn.QuantizedLinear.from_linear(
                 fused_linear,
                 linear.group_size,
@@ -56,7 +58,7 @@ class LoRALinear(nn.Module):
         self,
         input_dims: int,
         output_dims: int,
-        lora_rank: int = 8,
+        rank: int = 8,
         bias: bool = False,
         scale: float = 20.0,
     ):
@@ -73,9 +75,9 @@ class LoRALinear(nn.Module):
         self.lora_a = mx.random.uniform(
             low=-scale,
             high=scale,
-            shape=(input_dims, lora_rank),
+            shape=(input_dims, rank),
         )
-        self.lora_b = mx.zeros(shape=(lora_rank, output_dims))
+        self.lora_b = mx.zeros(shape=(rank, output_dims))
 
     def __call__(self, x):
         dtype = self.linear.weight.dtype

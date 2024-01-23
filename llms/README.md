@@ -2,9 +2,21 @@
 
 The easiest way to get started is to install the `mlx-lm` package:
 
-```shell
+**With `pip`**:
+
+```sh
 pip install mlx-lm
 ```
+
+**With `conda`**:
+
+```sh
+conda install -c conda-forge mlx-lm
+```
+
+The `mlx-lm` package also supports LoRA and QLoRA fine-tuning. For more details
+on this see the [LoRA
+documentation](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md).
 
 ### Python API
 
@@ -30,7 +42,7 @@ upload models to the Hugging Face Hub.
 You can convert models in the Python API with:
 
 ```python
-from mlx_lm import convert 
+from mlx_lm import convert
 
 upload_repo = "mlx-community/My-Mistral-7B-v0.1-4bit"
 
@@ -47,7 +59,7 @@ To see a description of all the arguments you can do:
 >>> help(convert)
 ```
 
-### Command Line 
+### Command Line
 
 You can also use `mlx-lm` from the command line with:
 
@@ -56,7 +68,7 @@ python -m mlx_lm.generate --model mistralai/Mistral-7B-v0.1 --prompt "hello"
 ```
 
 This will download a Mistral 7B model from the Hugging Face Hub and generate
-text using the given prompt. 
+text using the given prompt.
 
 For a full list of options run:
 
@@ -67,7 +79,7 @@ python -m mlx_lm.generate --help
 To quantize a model from the command line run:
 
 ```
-python -m mlx_lm.convert --hf-path mistralai/Mistral-7B-v0.1 -q 
+python -m mlx_lm.convert --hf-path mistralai/Mistral-7B-v0.1 -q
 ```
 
 For more options run:
@@ -77,7 +89,7 @@ python -m mlx_lm.convert --help
 ```
 
 You can upload new models to Hugging Face by specifying `--upload-repo` to
-`convert`. For example, to upload a quantized Mistral-7B model to the 
+`convert`. For example, to upload a quantized Mistral-7B model to the
 [MLX Hugging Face community](https://huggingface.co/mlx-community) you can do:
 
 ```
@@ -102,11 +114,33 @@ Here are a few examples of Hugging Face models that work with this example:
 - [01-ai/Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)
 - [microsoft/phi-2](https://huggingface.co/microsoft/phi-2)
 - [mistralai/Mixtral-8x7B-Instruct-v0.1](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1)
+- [Qwen/Qwen-7B](https://huggingface.co/Qwen/Qwen-7B)
+- [pfnet/plamo-13b](https://huggingface.co/pfnet/plamo-13b)
+- [pfnet/plamo-13b-instruct](https://huggingface.co/pfnet/plamo-13b-instruct)
 
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
 [Llama](https://huggingface.co/models?library=transformers,safetensors&other=llama&sort=trending),
-[Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending)
+[Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending),
 and
 [Mixtral](https://huggingface.co/models?library=transformers,safetensors&other=mixtral&sort=trending)
 style models should work out of the box.
+
+For some models (such as `Qwen` and `plamo`) the tokenizer requires you to
+enable the `trust_remote_code` option. You can do this by passing
+`--trust-remote-code` in the command line. If you don't specify the flag
+explicitly, you will be prompted to trust remote code in the terminal when
+running the model. 
+
+For `Qwen` models you must also specify the `eos_token`. You can do this by
+passing `--eos-token "<|endoftext|>"` in the command
+line. 
+
+These options can also be set in the Python API. For example:
+
+```python
+model, tokenizer = load(
+    "qwen/Qwen-7B",
+    tokenizer_config={"eos_token": "<|endoftext|>", "trust_remote_code": True},
+)
+```
