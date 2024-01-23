@@ -2,8 +2,16 @@
 
 The easiest way to get started is to install the `mlx-lm` package:
 
-```shell
+**With `pip`**:
+
+```sh
 pip install mlx-lm
+```
+
+**With `conda`**:
+
+```sh
+conda install -c conda-forge mlx-lm
 ```
 
 ### Python API
