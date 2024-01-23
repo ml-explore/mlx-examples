@@ -4,6 +4,7 @@ import glob
 import json
 import shutil
 from pathlib import Path
+from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -60,7 +61,7 @@ def configure_parser() -> argparse.ArgumentParser:
 
 def quantize_model(
     model: nn.Module, config: dict, q_group_size: int, q_bits: int
-) -> tuple:
+) -> Tuple:
     """
     Applies quantization to the model weights.
 
@@ -71,7 +72,7 @@ def quantize_model(
         q_bits (int): Bits per weight for quantization.
 
     Returns:
-        tuple: Tuple containing quantized weights and config.
+        Tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
 
