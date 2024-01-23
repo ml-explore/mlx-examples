@@ -123,8 +123,8 @@ and
 style models should work out of the box.
 
 For some models (such as `Qwen` and `plamo`) the tokenizer requires you to
-enable the `trust_remote_code` option. You can do this by passing passing
-`--trust-remote-code` in the command line. If you do not specify the flag
+enable the `trust_remote_code` option. You can do this by passing
+`--trust-remote-code` in the command line. If you don't specify the flag
 explicitly, you will be prompted to trust remote code in the terminal when
 running the model. 
 
