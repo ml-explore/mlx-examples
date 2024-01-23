@@ -64,15 +64,14 @@ def main(args):
 
     model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
 
-    if not args.ignore_chat_template:
+    if not args.ignore_chat_template and (
+        hasattr(tokenizer, "apply_chat_template")
+        and tokenizer.chat_template is not None
+    ):
         messages = [{"role": "user", "content": args.prompt}]
-        if (
-            hasattr(tokenizer, "apply_chat_template")
-            and tokenizer.chat_template is not None
-        ):
-            prompt = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
     else:
         prompt = args.prompt
 
