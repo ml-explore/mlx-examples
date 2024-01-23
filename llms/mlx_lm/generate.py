@@ -52,7 +52,7 @@ def setup_arg_parser():
     )
     parser.add_argument(
         "--colorize",
-        action='store_true',
+        action="store_true",
         help="Colorize output based on T[0] probability",
     )
     return parser
@@ -60,29 +60,29 @@ def setup_arg_parser():
 
 def colorprint(color, s):
     color_codes = {
-        'black': 30,
-        'red': 31,
-        'green': 32,
-        'yellow': 33,
-        'blue': 34,
-        'magenta': 35,
-        'cyan': 36,
-        'white': 39,
+        "black": 30,
+        "red": 31,
+        "green": 32,
+        "yellow": 33,
+        "blue": 34,
+        "magenta": 35,
+        "cyan": 36,
+        "white": 39,
     }
     ccode = color_codes.get(color, 30)
     print(f"\033[1m\033[{ccode}m{s}\033[0m", end="", flush=True)
 
 
-def colorprint_by_t0(t0, s):
+def colorprint_by_t0(s, t0):
     if t0 > 0.95:
-        color = 'white'
+        color = "white"
     elif t0 > 0.70:
-        color = 'green'
+        color = "green"
     elif t0 > 0.30:
-        color = 'yellow'
+        color = "yellow"
     else:
-        color = 'red'
-    colorprint(color,s)
+        color = "red"
+    colorprint(color, s)
 
 
 def main(args):
@@ -106,11 +106,11 @@ def main(args):
     else:
         prompt = args.prompt
 
-    print("=" * 10)
-    print("Prompt:", prompt)
-    prompt = tokenizer.encode(prompt)
-    prompt = mx.array(prompt)
-    generate(model, tokenizer, prompt, args.temp, args.max_tokens, True)
+    formatter = colorprint_by_t0 if args.colorize else None
+
+    generate(
+        model, tokenizer, prompt, args.temp, args.max_tokens, True, formatter=formatter
+    )
 
 
 if __name__ == "__main__":
