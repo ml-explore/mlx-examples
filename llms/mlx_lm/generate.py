@@ -49,7 +49,7 @@ def setup_arg_parser():
     parser.add_argument(
         "--ignore-chat-template",
         action="store_true",
-        help="don't apply the tokenizer chat template on the prompt",
+        help="Use the raw prompt without the tokenizer's chat template.",
     )
     return parser
 
