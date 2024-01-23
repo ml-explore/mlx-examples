@@ -6,6 +6,10 @@ The easiest way to get started is to install the `mlx-lm` package:
 pip install mlx-lm
 ```
 
+The `mlx-lm` package also supports LoRA and QLoRA fine-tuning. For more details
+on this see the [LoRA
+documentation](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md).
+
 ### Python API
 
 You can use `mlx-lm` as a module:

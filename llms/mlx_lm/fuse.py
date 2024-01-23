@@ -37,10 +37,10 @@ def parse_arguments() -> argparse.Namespace:
         help="Path to the original Hugging Face model. Required for upload if --model is a local directory.",
     )
     parser.add_argument(
-        "--upload-name",
+        "--upload-repo",
+        help="The Hugging Face repo to upload the model to.",
         type=str,
         default=None,
-        help="The name of model to upload to Hugging Face MLX Community",
     )
     return parser.parse_args()
 
@@ -76,7 +76,7 @@ def main() -> None:
     with open(save_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
-    if args.upload_name is not None:
+    if args.upload_repo is not None:
         hf_path = args.hf_path or (
             args.model if not Path(args.model).exists() else None
         )
@@ -84,7 +84,7 @@ def main() -> None:
             raise ValueError(
                 "Must provide original Hugging Face repo to upload local model."
             )
-        upload_to_hub(args.save_path, args.upload_name, hf_path)
+        upload_to_hub(args.save_path, args.upload_repo, hf_path)
 
 
 if __name__ == "__main__":
