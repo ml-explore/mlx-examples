@@ -10,7 +10,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, qwen
+from .models import llama, mixtral, phi2, plamo, qwen
 
 # Constants
 MODEL_MAPPING = {
@@ -19,6 +19,7 @@ MODEL_MAPPING = {
     "mixtral": mixtral,
     "phi": phi2,
     "qwen": qwen,
+    "plamo": plamo,
 }
 
 linear_class_predicate = (
