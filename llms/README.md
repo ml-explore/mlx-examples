@@ -14,6 +14,10 @@ pip install mlx-lm
 conda install -c conda-forge mlx-lm
 ```
 
+The `mlx-lm` package also supports LoRA and QLoRA fine-tuning. For more details
+on this see the [LoRA
+documentation](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md).
+
 ### Python API
 
 You can use `mlx-lm` as a module:
