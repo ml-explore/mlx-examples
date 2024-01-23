@@ -16,7 +16,7 @@ class LoRALinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
-    def to_linear(self):
+    def to_linear(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
         weight = linear.weight
@@ -43,7 +43,7 @@ class LoRALinear(nn.Module):
         if bias:
             fused_linear.bias = linear.bias
 
-        if is_quantized:
+        if is_quantized and not de_quantize:
             fused_linear = nn.QuantizedLinear.from_linear(
                 fused_linear,
                 linear.group_size,
