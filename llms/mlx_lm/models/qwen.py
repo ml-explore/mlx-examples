@@ -1,16 +1,14 @@
-import argparse
-import json
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_unflatten
-from transformers import AutoTokenizer
+
+from .base import BaseModelArgs
 
 
 @dataclass
-class ModelArgs:
+class ModelArgs(BaseModelArgs):
     hidden_size: int = 2048
     num_attention_heads: int = 16
     num_hidden_layers: int = 24
@@ -20,6 +18,11 @@ class ModelArgs:
     intermediate_size: int = 11008
     no_bias: bool = True
     vocab_size: int = 151936
+    num_key_value_heads = None
+
+    def __post_init__(self):
+        if self.num_key_value_heads is None:
+            self.num_key_value_heads = self.num_attention_heads
 
 
 class RMSNorm(nn.Module):
@@ -95,7 +98,7 @@ class MLP(nn.Module):
             args.hidden_size, args.intermediate_size // 2, bias=not args.no_bias
         )
         self.w2 = nn.Linear(
-            args.intermediate_size // 2, args.hidden_size, bias=not args.no_bias
+            args.hidden_size, args.intermediate_size // 2, bias=not args.no_bias
         )
         self.c_proj = nn.Linear(
             args.intermediate_size // 2, args.hidden_size, bias=not args.no_bias
@@ -128,17 +131,12 @@ class TransformerBlock(nn.Module):
         return x, cache
 
 
-class Qwen(nn.Module):
+class QwenModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-
-        self.embed_dim = args.hidden_size
-
         self.wte = nn.Embedding(args.vocab_size, args.hidden_size)
         self.h = [TransformerBlock(args) for _ in range(args.num_hidden_layers)]
-        self.ln_f = RMSNorm(self.embed_dim, eps=args.layer_norm_epsilon)
-
-        self.lm_head = nn.Linear(self.embed_dim, args.vocab_size, bias=False)
+        self.ln_f = RMSNorm(args.hidden_size, eps=args.layer_norm_epsilon)
 
     def __call__(self, inputs, mask=None, cache=None):
         x = self.wte(inputs)
@@ -156,123 +154,22 @@ class Qwen(nn.Module):
             x, cache[e] = layer(x, mask, cache[e])
 
         x = self.ln_f(x[:, T - 1 : T, :])
-        return self.lm_head(x), cache
+        return x, cache
 
 
-def generate(prompt: mx.array, model: Qwen, temp: 0.0):
-    def sample(logits):
-        if temp == 0:
-            return mx.argmax(logits, axis=-1)
-        else:
-            return mx.random.categorical(logits * (1 / temp))
+class Model(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+        self.transformer = QwenModel(config)
+        self.lm_head = nn.Linear(
+            config.hidden_size, config.vocab_size, bias=not config.no_bias
+        )
 
-    logits, cache = model(prompt)
-    y = sample(logits[:, -1, :])
-    yield y
-
-    while True:
-        logits, cache = model(y[:, None], cache=cache)
-        y = sample(logits.squeeze(1))
-        yield y
-
-
-def load_model(model_path: str, tokenizer_path: str = "Qwen/Qwen-1_8B"):
-    model_args = ModelArgs()
-
-    model_path = Path(model_path)
-    with open(model_path / "config.json", "r") as f:
-        config = json.load(f)
-        model_args.vocab_size = config["vocab_size"]
-        model_args.hidden_size = config["hidden_size"]
-        model_args.num_attention_heads = config["num_attention_heads"]
-        model_args.num_hidden_layers = config["num_hidden_layers"]
-        model_args.kv_channels = config["kv_channels"]
-        model_args.max_position_embeddings = config["max_position_embeddings"]
-        model_args.layer_norm_epsilon = config["layer_norm_epsilon"]
-        model_args.intermediate_size = config["intermediate_size"]
-        model_args.no_bias = config["no_bias"]
-
-    model = Qwen(model_args)
-    weights = mx.load(str(model_path / "weights.npz"))
-    if quantization := config.get("quantization", False):
-        nn.QuantizedLinear.quantize_module(model, **quantization)
-    model.update(tree_unflatten(list(weights.items())))
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_path, trust_remote_code=True, eos_token="<|endoftext|>"
-    )
-    return model, tokenizer
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Qwen inference script")
-    parser.add_argument(
-        "--model-path",
-        type=str,
-        default="mlx_model",
-        help="The path to the model weights and config",
-    )
-    parser.add_argument(
-        "--tokenizer",
-        help="The tokenizer to be used, defaults to Qwen/Qwen-1_8B",
-        default="Qwen/Qwen-1_8B",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="The message to be processed by the model",
-        # The example from the official huggingface repo of Qwen
-        default="蒙古国的首都是乌兰巴托（Ulaanbaatar）\n冰岛的首都是雷克雅未克（Reykjavik）\n埃塞俄比亚的首都是",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        "-m",
-        type=int,
-        default=100,
-        help="Maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--temp",
-        help="The sampling temperature.",
-        type=float,
-        default=0.0,
-    )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-    args = parser.parse_args()
-
-    mx.random.seed(args.seed)
-
-    model, tokenizer = load_model(args.model_path, args.tokenizer)
-
-    prompt = tokenizer(
-        args.prompt,
-        return_tensors="np",
-        return_attention_mask=False,
-    )["input_ids"]
-
-    prompt = mx.array(prompt)
-
-    print(args.prompt, end="", flush=True)
-
-    tokens = []
-    for token, _ in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
-        tokens.append(token)
-
-        if (len(tokens) % 10) == 0:
-            mx.eval(tokens)
-            eos_index = next(
-                (i for i, t in enumerate(tokens) if t.item() == tokenizer.eos_token_id),
-                None,
-            )
-
-            if eos_index is not None:
-                tokens = tokens[:eos_index]
-
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s, end="", flush=True)
-            tokens = []
-            if eos_index is not None:
-                break
-
-    mx.eval(tokens)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s, flush=True)
+    def __call__(
+        self,
+        x: mx.array,
+        mask: mx.array = None,
+        cache: mx.array = None,
+    ) -> Tuple[mx.array, mx.array]:
+        y, cache = self.transformer(x, mask, cache)
+        return self.lm_head(y), cache
