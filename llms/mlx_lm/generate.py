@@ -110,8 +110,7 @@ def main(args):
     print("Prompt:", prompt)
     prompt = tokenizer.encode(prompt)
     prompt = mx.array(prompt)
-    model, tokenizer = load(args.model)
-    output = generate(model, tokenizer, prompt, args.temp, args.max_tokens, args.seed, True)
+    generate(model, tokenizer, prompt, args.temp, args.max_tokens, True)
 
 
 if __name__ == "__main__":
