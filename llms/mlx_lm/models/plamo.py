@@ -68,13 +68,17 @@ class ModelArgs(PretrainedConfig):  # type: ignore
 
 
 class RotaryEmbedding:
-    def __init__(self, dim: int, max_position_embeddings: int = 2048, base: int = 10000) -> None:
+    def __init__(
+        self, dim: int, max_position_embeddings: int = 2048, base: int = 10000
+    ) -> None:
         super().__init__()
 
         self.dim = dim
         self.max_position_embeddings = max_position_embeddings
         self.base = base
-        self.inv_freq = 1.0 / mx.power(self.base, mx.arange(0, self.dim, 2, dtype=mx.float32) / self.dim)
+        self.inv_freq = 1.0 / mx.power(
+            self.base, mx.arange(0, self.dim, 2, dtype=mx.float32) / self.dim
+        )
         self.cos_cached = mx.zeros((1, 1, max_position_embeddings, dim))
         self.sin_cached = mx.zeros((1, 1, max_position_embeddings, dim))
         self._set_cos_sin_cache(max_position_embeddings)
@@ -107,7 +111,9 @@ def _rotate_half(x: mx.array) -> mx.array:
     return mx.concatenate((-x2, x1), axis=-1)
 
 
-def _rotary_pos_emb(x: mx.array, cos: mx.array, sin: mx.array, position_ids: mx.array) -> mx.array:
+def _rotary_pos_emb(
+    x: mx.array, cos: mx.array, sin: mx.array, position_ids: mx.array
+) -> mx.array:
     # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
     cos = mx.squeeze(cos, (0, 1))  # [seq_len, dim]
     sin = mx.squeeze(sin, (0, 1))  # [seq_len, dim]
@@ -141,15 +147,27 @@ class Attention(nn.Module):
 
         self.q_num_heads = config.num_attention_heads
         self.qk_dim = self.v_dim = head_dim
-        self.k_num_heads = self.v_num_heads = int(np.ceil(self.q_num_heads / config.n_shared_head))
+        self.k_num_heads = self.v_num_heads = int(
+            np.ceil(self.q_num_heads / config.n_shared_head)
+        )
 
         self.scale = head_dim**-0.5
 
-        self.q_proj = nn.Linear(self.hidden_size, self.q_num_heads * self.qk_dim, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.k_num_heads * self.qk_dim, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.v_num_heads * self.v_dim, bias=False)
-        self.o_proj = nn.Linear(self.q_num_heads * self.v_dim, self.hidden_size, bias=False)
-        self.rotary_emb = RotaryEmbedding(self.qk_dim, max_position_embeddings=self.max_position_embeddings)
+        self.q_proj = nn.Linear(
+            self.hidden_size, self.q_num_heads * self.qk_dim, bias=False
+        )
+        self.k_proj = nn.Linear(
+            self.hidden_size, self.k_num_heads * self.qk_dim, bias=False
+        )
+        self.v_proj = nn.Linear(
+            self.hidden_size, self.v_num_heads * self.v_dim, bias=False
+        )
+        self.o_proj = nn.Linear(
+            self.q_num_heads * self.v_dim, self.hidden_size, bias=False
+        )
+        self.rotary_emb = RotaryEmbedding(
+            self.qk_dim, max_position_embeddings=self.max_position_embeddings
+        )
 
     def __call__(
         self,
@@ -165,12 +183,20 @@ class Attention(nn.Module):
         value_states = self.v_proj(hidden_states)
 
         # Prepare the queries, keys and values for the attention computation
-        query_states = query_states.reshape(bsz, q_len, self.q_num_heads, self.qk_dim).transpose(0, 2, 1, 3)
-        key_states = key_states.reshape(bsz, q_len, self.k_num_heads, self.qk_dim).transpose(0, 2, 1, 3)
-        value_states = value_states.reshape(bsz, q_len, self.v_num_heads, self.v_dim).transpose(0, 2, 1, 3)
+        query_states = query_states.reshape(
+            bsz, q_len, self.q_num_heads, self.qk_dim
+        ).transpose(0, 2, 1, 3)
+        key_states = key_states.reshape(
+            bsz, q_len, self.k_num_heads, self.qk_dim
+        ).transpose(0, 2, 1, 3)
+        value_states = value_states.reshape(
+            bsz, q_len, self.v_num_heads, self.v_dim
+        ).transpose(0, 2, 1, 3)
 
         def _expand_kv(a: mx.array) -> mx.array:
-            a = mx.concatenate([mx.expand_dims(a, 1)] * self.config.n_shared_head, axis=1)
+            a = mx.concatenate(
+                [mx.expand_dims(a, 1)] * self.config.n_shared_head, axis=1
+            )
             return a.reshape([bsz, self.q_num_heads, q_len, -1])
 
         # expand shared kv
@@ -257,7 +283,9 @@ class PlamoDecoderLayer(nn.Module):
 class PlamoDecoder(nn.Module):
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()
-        self.layers = [PlamoDecoderLayer(config) for _ in range(config.num_hidden_layers)]
+        self.layers = [
+            PlamoDecoderLayer(config) for _ in range(config.num_hidden_layers)
+        ]
 
 
 class PlamoModel(nn.Module):
@@ -281,7 +309,9 @@ class PlamoModel(nn.Module):
         self.gradient_checkpointing = False
 
     def __call__(
-        self, inputs: mx.array, cache: Optional[List[Union[Tuple[mx.array, mx.array], None]]] = None
+        self,
+        inputs: mx.array,
+        cache: Optional[List[Union[Tuple[mx.array, mx.array], None]]] = None,
     ) -> Tuple[mx.array, Optional[List[Union[Tuple[mx.array, mx.array], None]]]]:
         h = self.embed_tokens(inputs)
 
@@ -310,7 +340,9 @@ class PlamoModel(nn.Module):
 
 def _create_position_ids(seq_length: int, past_key_values_length: int = 0) -> mx.array:
     # create position_ids on the fly for batch generation
-    position_ids = mx.arange(past_key_values_length, seq_length + past_key_values_length, dtype=mx.int64)
+    position_ids = mx.arange(
+        past_key_values_length, seq_length + past_key_values_length, dtype=mx.int64
+    )
     position_ids = position_ids[None, ...].reshape(-1, seq_length)
 
     return position_ids
@@ -320,7 +352,9 @@ class Model(nn.Module):
     def __init__(self, config: PretrainedConfig) -> None:
         super().__init__()
         self.model = PlamoModel(config)
-        self.lm_head: nn.Module = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head: nn.Module = nn.Linear(
+            config.hidden_size, config.vocab_size, bias=False
+        )
 
     def __call__(
         self,

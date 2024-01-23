@@ -113,7 +113,6 @@ Here are a few examples of Hugging Face models that work with this example:
 - [Qwen/Qwen-7B](https://huggingface.co/Qwen/Qwen-7B)
 - [pfnet/plamo-13b](https://huggingface.co/pfnet/plamo-13b)
 - [pfnet/plamo-13b-instruct](https://huggingface.co/pfnet/plamo-13b-instruct)
-    - There is also available a more stronger model not for commercial: [pfnet/plamo-13b-instruct-nc](https://huggingface.co/pfnet/plamo-13b-instruct-nc)
 
 Most
 [Mistral](https://huggingface.co/models?library=transformers,safetensors&other=mistral&sort=trending),
@@ -123,12 +122,17 @@ and
 [Mixtral](https://huggingface.co/models?library=transformers,safetensors&other=mixtral&sort=trending)
 style models should work out of the box.
 
-For
-[Qwen](https://huggingface.co/models?library=transformers,safetensors&other=qwen&sort=trending)
-style models, you must enable the `trust_remote_code` option and specify the
-`eos_token`. This ensures the tokenizer works correctly.  You can do this by
-passing `--trust-remote-code` and `--eos-token "<|endoftext|>"` in the command
-line, or by setting these options in the Python API:
+For some models (such as `Qwen` and `plamo`) the tokenizer requires you to
+enable the `trust_remote_code` option. You can do this by passing passing
+`--trust-remote-code` in the command line. If you do not specify the flag
+explicitly, you will be prompted to trust remote code in the terminal when
+running the model. 
+
+For `Qwen` models you must also specify the `eos_token`. You can do this by
+passing `--eos-token "<|endoftext|>"` in the command
+line. 
+
+These options can also be set in the Python API. For example:
 
 ```python
 model, tokenizer = load(
