@@ -22,6 +22,17 @@ def setup_arg_parser():
         help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Enable trusting remote code for tokenizer",
+    )
+    parser.add_argument(
+        "--eos-token",
+        type=str,
+        default=None,
+        help="End of sequence token for tokenizer",
+    )
+    parser.add_argument(
         "--prompt", default=DEFAULT_PROMPT, help="Message to be processed by the model"
     )
     parser.add_argument(
@@ -36,9 +47,15 @@ def setup_arg_parser():
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
     parser.add_argument(
+        "--ignore-chat-template",
+        action="store_true",
+        help="Use the raw prompt without the tokenizer's chat template.",
+    )
+    parser.add_argument(
         "--colorize",
         action='store_true',
-        help="Colorize output based on T[0] probability")
+        help="Colorize output based on T[0] probability",
+    )
     return parser
 
 
@@ -71,10 +88,28 @@ def colorprint_by_t0(t0, s):
 
 def main(args):
     mx.random.seed(args.seed)
-    model, tokenizer = load(args.model)
+
+    # Building tokenizer_config
+    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
+    if args.eos_token is not None:
+        tokenizer_config["eos_token"] = args.eos_token
+
+    model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
+
+    if not args.ignore_chat_template and (
+        hasattr(tokenizer, "apply_chat_template")
+        and tokenizer.chat_template is not None
+    ):
+        messages = [{"role": "user", "content": args.prompt}]
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+    else:
+        prompt = args.prompt
+
     print("=" * 10)
-    print("Prompt:", args.prompt)
-    prompt = tokenizer.encode(args.prompt)
+    print("Prompt:", prompt)
+    prompt = tokenizer.encode(prompt)
     prompt = mx.array(prompt)
     tic = time.time()
     tokens = []
