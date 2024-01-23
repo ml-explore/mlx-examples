@@ -18,6 +18,6 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
-    packages=["mlx_lm", "mlx_lm.models"],
+    packages=["mlx_lm", "mlx_lm.models", "mlx_lm.tuner"],
     python_requires=">=3.8",
 )
