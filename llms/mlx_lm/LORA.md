@@ -1,8 +1,8 @@
 # Fine-Tuning with LoRA or QLoRA
 
-This is an example of using MLX to fine-tune an LLM with low rank adaptation
-(LoRA) for a target task.[^lora] The example also supports quantized LoRA
-(QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
+You can use use the `mlx-lm` package to fine-tune an LLM with low rank
+adaptation (LoRA) for a target task.[^lora] The example also supports quantized
+LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 - Mistral
 - Llama
@@ -43,10 +43,10 @@ python -m mlx_lm.lora \
 ```
 
 The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
-for `--train` and `test.jsonl` when using `--test`. For more details on the
-data format see the section on [Data](#Data).
+when using `--train` and a path to a `test.jsonl` when using `--test`. For more
+details on the data format see the section on [Data](#Data).
 
-For example to fine-tune a Mistral 7B you can use `--model
+For example, to fine-tune a Mistral 7B you can use `--model
 mistralai/Mistral-7B-v0.1`.
 
 If `--model` points to a quantized model, then the training will use QLoRA,
@@ -72,9 +72,9 @@ python -m mlx_lm.lora \
 
 ## Fuse and Upload
 
-You can generate a fused model with the low-rank adapters included using the
-`mlx_lm.fuse` command. This command also optionally allows you to upload the fused
-model to the Hugging Face Hub.
+You can generate a model fused with the low-rank adapters using the
+`mlx_lm.fuse` command. This command also allows you to upload the fused model
+to the Hugging Face Hub.
 
 To see supported options run:
 
@@ -106,11 +106,10 @@ python -m mlx_lm.fuse \
 
 ## Data
 
-You can make your own dataset for fine-tuning with LoRA. You can specify the
-dataset with `--data=<my_data_directory>`. The MLX Example GitHub repo has an
-[example of the WikiSQL
+The LoRA command expects you to provide a dataset with `--data`.  The MLX
+Examples GitHub repo has an [example of the WikiSQL
 data](https://github.com/ml-explore/mlx-examples/tree/main/lora/data) in the
-correct format.  
+correct format.
 
 For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
@@ -121,7 +120,7 @@ file should look like:
 {"text": "This is an example for the model."}
 ```
 
-Note other keys will be ignored by the loader.
+Note, other keys will be ignored by the loader.
 
 ## Memory Issues
 
