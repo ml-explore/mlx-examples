@@ -352,10 +352,12 @@ if __name__ == "__main__":
         if hasattr(l, "block_sparse_moe"):
             l.block_sparse_moe.gate = LoRALinear.from_linear(l.block_sparse_moe.gate)
 
-    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
-    print(f"Total parameters {p:.3f}M")
-    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
-    print(f"Trainable parameters {p:.3f}M")
+    total_p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10 ** 6
+    print(f"Total parameters {total_p:.3f}M")
+    train_p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10 ** 6
+    print(f"Trainable parameters {train_p:.3f}M")
+    p = 100 * train_p / total_p
+    print(f"Trainable percentage {p:.3f}%")
 
     print("Loading datasets")
     train_set, valid_set, test_set = load(args)
