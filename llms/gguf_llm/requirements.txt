@@ -1,0 +1,4 @@
+mlx>=0.0.11
+numpy
+protobuf==3.20.0
+sentencepiece
