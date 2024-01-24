@@ -278,6 +278,7 @@ def load(
     model = load_model(model_path)
     if adapter_file is not None:
         model = apply_lora_layers(model, adapter_file)
+        model.eval()
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
     return model, tokenizer
