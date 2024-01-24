@@ -99,7 +99,7 @@ def generate_step(
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        softmax_logits = mx.softmax(logits / temp if temp > 0 else logits)
+        softmax_logits = mx.softmax(logits)
 
         if temp == 0:
             token = mx.argmax(logits, axis=-1)
