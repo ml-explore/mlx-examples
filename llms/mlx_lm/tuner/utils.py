@@ -1,10 +1,11 @@
 import mlx.core as mx
+import mlx.nn as nn
 from mlx.utils import tree_unflatten
 
 from .lora import LoRALinear
 
 
-def apply_lora_layers(model, adapter_file: str):
+def apply_lora_layers(model: nn.Module, adapter_file: str) -> nn.Module:
     adapters = list(mx.load(adapter_file).items())
     linear_replacements = {}
     lora_layers = set(
