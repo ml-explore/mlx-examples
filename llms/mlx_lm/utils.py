@@ -1,18 +1,19 @@
+import copy
 import glob
 import json
 import logging
 import time
 
 from pathlib import Path
-from typing import Generator, Tuple
+from typing import Any, Callable, Dict, Generator, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, qwen
+from .models import llama, mixtral, phi2, plamo, qwen
 
 # Constants
 MODEL_MAPPING = {
@@ -21,7 +22,9 @@ MODEL_MAPPING = {
     "mixtral": mixtral,
     "phi": phi2,
     "qwen": qwen,
+    "plamo": plamo,
 }
+MAX_FILE_SIZE_GB = 15
 
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
@@ -79,34 +82,37 @@ def get_model_path(path_or_hf_repo: str) -> Path:
 
 
 def generate_step(
-    prompt: mx.array, model: nn.Module, temp: float = 0.0
-) -> Generator[mx.array, None, None]:
+    prompt: mx.array,
+    model: nn.Module,
+    temp: float = 0.0,
+) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
 
     Args:
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
-        temp (float): The temperature for sampling. If temp is 0, use max sampling.
-
+        temp (float): The temperature for sampling, if 0 the argmax is used.
     Yields:
-        Generator[mx.array]: A generator producing one token per call.
+        Generator[Tuple[mx.array, mx.array]]: A generator producing
+        one token and probability per call.
     """
 
-    def sample(logits: mx.array) -> mx.array:
-        return (
-            mx.argmax(logits, axis=-1)
-            if temp == 0
-            else mx.random.categorical(logits * (1 / temp))
-        )
+    def sample(logits: mx.array) -> Tuple[mx.array, float]:
+        if temp == 0:
+            token = mx.argmax(logits, axis=-1)
+        else:
+            token = mx.random.categorical(logits * (1 / temp))
+            prob = mx.softmax(logits / temp)[0, token]
+        return token, prob
 
     y = prompt
     cache = None
     while True:
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
-        y = sample(logits)
-        yield y
+        y, prob = sample(logits)
+        yield y, prob
 
 
 def generate(
@@ -116,6 +122,7 @@ def generate(
     temp: float = 0.0,
     max_tokens: int = 100,
     verbose: bool = False,
+    formatter: Callable = None,
 ) -> str:
     """
     Generate text from the model.
@@ -126,13 +133,16 @@ def generate(
        prompt (str): The string prompt.
        temp (float): The temperature for sampling (default 0).
        max_tokens (int): The maximum number of tokens (default 100).
-       verbose (bool): If True, enable the output of the timing information.
+       verbose (bool): If ``True``, print prompt and timing information
+           (default ``False``).
+       formatter (Optional[Callable]): A function which takes a token and a
+           probability and displays it.
     """
 
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)
-    
+
     prompt = mx.array(tokenizer.encode(prompt))
 
     tic = time.time()
@@ -140,7 +150,7 @@ def generate(
     skip = 0
     REPLACEMENT_CHAR = "\ufffd"
 
-    for token, n in zip(generate_step(prompt, model, temp), range(max_tokens)):
+    for (token, prob), n in zip(generate_step(prompt, model, temp), range(max_tokens)):
         if token == tokenizer.eos_token_id:
             break
         if n == 0:
@@ -150,7 +160,10 @@ def generate(
 
         s = tokenizer.decode(tokens)
         if REPLACEMENT_CHAR not in s:
-            print(s[skip:], end="", flush=True)
+            if formatter:
+                formatter(s[skip:], prob.item())
+            else:
+                print(s[skip:], end="", flush=True)
             skip = len(s)
 
     tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
@@ -220,6 +233,7 @@ def load_model(model_path: Path) -> nn.Module:
 
     mx.eval(model.parameters())
 
+    model.eval()
     return model
 
 
@@ -227,7 +241,7 @@ def load(
     path_or_hf_repo: str, tokenizer_config={}
 ) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
-    Load the model from a given path or a huggingface repository.
+    Load the model and tokenizer from a given path or a huggingface repository.
 
     Args:
         model_path (Path): The path or the huggingface repository to load the model from.
@@ -245,3 +259,103 @@ def load(
     model = load_model(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
     return model, tokenizer
+
+
+def fetch_from_hub(
+    model_path: Path,
+) -> Tuple[Dict, dict, PreTrainedTokenizer]:
+    model = load_model(model_path)
+
+    config = AutoConfig.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    return model, config.to_dict(), tokenizer
+
+
+def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
+    """
+    Splits the weights into smaller shards.
+
+    Args:
+        weights (dict): Model weights.
+        max_file_size_gb (int): Maximum size of each shard in gigabytes.
+
+    Returns:
+        list: List of weight shards.
+    """
+    max_file_size_bytes = max_file_size_gb << 30
+    shards = []
+    shard, shard_size = {}, 0
+    for k, v in weights.items():
+        estimated_size = v.size * v.dtype.size
+        if shard_size + estimated_size > max_file_size_bytes:
+            shards.append(shard)
+            shard, shard_size = {}, 0
+        shard[k] = v
+        shard_size += estimated_size
+    shards.append(shard)
+    return shards
+
+
+def upload_to_hub(path: str, upload_repo: str, hf_path: str):
+    """
+    Uploads the model to Hugging Face hub.
+
+    Args:
+        path (str): Local path to the model.
+        upload_repo (str): Name of the HF repo to upload to.
+        hf_path (str): Path to the original Hugging Face model.
+    """
+    import os
+
+    from huggingface_hub import HfApi, ModelCard, logging
+
+    card = ModelCard.load(hf_path)
+    card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
+    card.text = f"""
+# {upload_repo}
+This model was converted to MLX format from [`{hf_path}`]().
+Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+## Use with mlx
+
+```bash
+pip install mlx-lm
+```
+
+```python
+from mlx_lm import load, generate
+
+model, tokenizer = load("{upload_repo}")
+response = generate(model, tokenizer, prompt="hello", verbose=True)
+```
+"""
+    card.save(os.path.join(path, "README.md"))
+
+    logging.set_verbosity_info()
+
+    api = HfApi()
+    api.create_repo(repo_id=upload_repo, exist_ok=True)
+    api.upload_folder(
+        folder_path=path,
+        repo_id=upload_repo,
+        repo_type="model",
+    )
+
+
+def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
+    """Save model weights into specified directory."""
+    if isinstance(save_path, str):
+        save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    shards = make_shards(weights)
+    shards_count = len(shards)
+    shard_file_format = (
+        "model-{:05d}-of-{:05d}.safetensors"
+        if shards_count > 1
+        else "model.safetensors"
+    )
+
+    for i, shard in enumerate(shards):
+        shard_name = shard_file_format.format(i + 1, shards_count)
+        mx.save_safetensors(str(save_path / shard_name), shard)

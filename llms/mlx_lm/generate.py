@@ -58,7 +58,39 @@ def setup_arg_parser():
         action="store_true",
         help="Use the raw prompt without the tokenizer's chat template.",
     )
+    parser.add_argument(
+        "--colorize",
+        action="store_true",
+        help="Colorize output based on T[0] probability",
+    )
     return parser
+
+
+def colorprint(color, s):
+    color_codes = {
+        "black": 30,
+        "red": 31,
+        "green": 32,
+        "yellow": 33,
+        "blue": 34,
+        "magenta": 35,
+        "cyan": 36,
+        "white": 39,
+    }
+    ccode = color_codes.get(color, 30)
+    print(f"\033[1m\033[{ccode}m{s}\033[0m", end="", flush=True)
+
+
+def colorprint_by_t0(s, t0):
+    if t0 > 0.95:
+        color = "white"
+    elif t0 > 0.70:
+        color = "green"
+    elif t0 > 0.30:
+        color = "yellow"
+    else:
+        color = "red"
+    colorprint(color, s)
 
 
 def main(args):
@@ -81,7 +113,11 @@ def main(args):
     else:
         prompt = args.prompt
 
-    generate(model, tokenizer, prompt, args.temp, args.max_tokens, args.verbose)
+    formatter = colorprint_by_t0 if args.colorize else None
+
+    generate(
+        model, tokenizer, prompt, args.temp, args.max_tokens, args.verbose, formatter=formatter
+    )
 
 
 if __name__ == "__main__":

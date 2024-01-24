@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -198,7 +198,7 @@ class Model(nn.Module):
         x: mx.array,
         mask: mx.array = None,
         cache: mx.array = None,
-    ) -> tuple[mx.array, mx.array]:
+    ) -> Tuple[mx.array, mx.array]:
         mask = None
         if x.shape[1] > 1:
             mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
