@@ -16,7 +16,6 @@ class LoRALinear(nn.Module):
         # TODO remove when input_dims and output_dims are attributes
         # on linear and quantized linear
         output_dims, input_dims = linear.weight.shape
-        bias = "bias" in linear
         if isinstance(linear, nn.QuantizedLinear):
             input_dims *= 32 // linear.bits
         lora_lin = LoRALinear(
@@ -26,7 +25,6 @@ class LoRALinear(nn.Module):
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             scale=scale,
-            bias=bias,
         )
         lora_lin.linear = linear
         return lora_lin
@@ -82,10 +80,7 @@ class LoRALinear(nn.Module):
         # Regular linear layer weights
         self.linear = nn.Linear(input_dims, output_dims, bias=bias)
 
-        if lora_dropout > 0.0:
-            self.lora_dropout = nn.Dropout(p=lora_dropout)
-        else:
-            self.lora_dropout = lambda x: x
+        self.lora_dropout = nn.Dropout(p=lora_dropout)
 
         # Scale for low-rank update
         self.scale = scale * (lora_alpha / r)
@@ -104,7 +99,5 @@ class LoRALinear(nn.Module):
         if isinstance(self.linear, nn.QuantizedLinear):
             dtype = self.linear.scales.dtype
         y = self.linear(x.astype(dtype))
-        if self.training:
-            x = self.lora_dropout(x)
-        z = (x @ self.lora_a) @ self.lora_b
+        z = (self.lora_dropout(x) @ self.lora_a) @ self.lora_b
         return y + self.scale * z
