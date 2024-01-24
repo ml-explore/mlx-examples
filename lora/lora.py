@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import time
+from datetime import datetime
 from pathlib import Path
 
 import mlx.core as mx
@@ -106,6 +107,11 @@ def build_parser():
         "--test",
         action="store_true",
         help="Evaluate on the test set after training",
+    )
+    parser.add_argument(
+        "--wandb-log",
+        action="store_true",
+        help="Upload log to wandb.",
     )
     parser.add_argument(
         "--test-batches",
@@ -220,6 +226,12 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
 
+    wandb_log = args.wandb_log
+    if wandb_log:
+        import wandb
+        run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        wandb.init(project=f"mlx-{args.model}", name=run_name, config=args)
+
     losses = []
     n_tokens = 0
 
@@ -245,14 +257,25 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
             train_loss = np.mean(losses)
 
             stop = time.perf_counter()
-            print(
-                f"Iter {it + 1}: Train loss {train_loss:.3f}, "
-                f"It/sec {args.steps_per_report / (stop - start):.3f}, "
-                f"Tokens/sec {float(n_tokens) / (stop - start):.3f}"
-            )
+            it_sec = args.steps_per_report / (stop - start)
+            tokens_sec = float(n_tokens) / (stop - start)
+            print(f"Iter {it + 1}: Train loss {train_loss:.3f}, It/sec {it_sec:.3f}, Tokens/sec {tokens_sec:.3f}")
             losses = []
             n_tokens = 0
             start = time.perf_counter()
+
+            if wandb_log:
+                try:
+                    wandb.log(
+                        {
+                            "iter": it + 1,
+                            "loss/train": train_loss,
+                            "it_sec": it_sec,
+                            "tokens_sec": tokens_sec,
+                        }, step=it + 1
+                    )
+                except Exception as e:
+                    print(f"logging to wandb failed: {e}")
 
         # Report validation loss if needed
         if it == 0 or (it + 1) % args.steps_per_eval == 0:
@@ -260,13 +283,23 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
             val_loss = evaluate(
                 model, val_set, loss, tokenizer, args.batch_size, args.val_batches
             )
-            print(
-                f"Iter {it + 1}: "
-                f"Val loss {val_loss:.3f}, "
-                f"Val took {(time.perf_counter() - stop):.3f}s"
-            )
+
+            val_took = (time.perf_counter() - stop)
+            print(f"Iter {it + 1}: Val loss {val_loss:.3f}, Val took {val_took:.3f}s")
 
             start = time.perf_counter()
+
+            if wandb_log:
+                try:
+                    wandb.log(
+                        {
+                            "iter": it + 1,
+                            "loss/val": val_loss,
+                            "val_took": val_took,
+                        }, step=it + 1
+                    )
+                except Exception as e:
+                    print(f"logging to wandb failed: {e}")
 
         # Save adapter weights if needed
         if (it + 1) % args.save_every == 0:
@@ -277,6 +310,7 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
 
 
 def generate(model, prompt, tokenizer, args):
+    print("=" * 10)
     print(prompt, end="", flush=True)
 
     prompt = mx.array(tokenizer.encode(prompt))

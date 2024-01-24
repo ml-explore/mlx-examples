@@ -93,6 +93,8 @@ the output location with `--adapter-file`.
 You can resume fine-tuning with an existing adapter with `--resume-adapter-file
 <path_to_adapters.npz>`. 
 
+You can use `--wandb-log` to upload the training loss data to the [wandb](https://wandb.ai/site) platform.
+
 ### Evaluate
 
 To compute test set perplexity use:
