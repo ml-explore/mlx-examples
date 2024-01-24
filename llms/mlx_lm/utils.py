@@ -24,7 +24,7 @@ MODEL_MAPPING = {
     "qwen": qwen,
     "plamo": plamo,
 }
-MAX_FILE_SIZE_GB = 15
+MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)

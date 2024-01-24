@@ -8,7 +8,7 @@ from typing import Any, Dict, Union
 from mlx.utils import tree_flatten, tree_unflatten
 
 from .tuner.lora import LoRALinear
-from .tuner.utils import apply_lora_layers
+from .tuner.utils import apply_lora_layers, dequantize
 from .utils import fetch_from_hub, get_model_path, save_weights, upload_to_hub
 
 
@@ -42,6 +42,11 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--de-quantize",
+        help="Generate a de-quantized model.",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -54,6 +59,7 @@ def main() -> None:
 
     model.freeze()
     model = apply_lora_layers(model, args.adapter_file)
+
     fused_linears = [
         (n, m.to_linear())
         for n, m in model.named_modules()
@@ -61,6 +67,11 @@ def main() -> None:
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
+
+    if args.de_quantize:
+        print("De-quantizing model")
+        model = dequantize(model)
+
     weights = dict(tree_flatten(model.parameters()))
 
     save_path = Path(args.save_path)
@@ -72,6 +83,9 @@ def main() -> None:
         shutil.copy(file, save_path)
 
     tokenizer.save_pretrained(save_path)
+
+    if args.de_quantize:
+        config.pop("quantization", None)
 
     with open(save_path / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
