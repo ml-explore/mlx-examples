@@ -68,6 +68,11 @@ if __name__ == "__main__":
         type=int,
         default=4,
     )
+    parser.add_argument(
+        "--safetensors",
+        help="Write output in safetensors format.",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     torch_path = Path(args.torch_path)
@@ -84,7 +89,10 @@ if __name__ == "__main__":
         weights, config = quantize(weights, config, args)
 
     # Save weights
-    np.savez(str(mlx_path / "weights.npz"), **weights)
+    if args.safetensors:
+        mx.save_safetensors(str(mlx_path / "weights.safetensors"), weights)
+    else:
+        np.savez(str(mlx_path / "weights.npz"), **weights)
 
     # Copy tokenizer
     shutil.copyfile(

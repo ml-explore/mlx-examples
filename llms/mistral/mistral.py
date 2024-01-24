@@ -191,7 +191,7 @@ class Tokenizer:
         return out
 
 
-def load_model(folder: str):
+def load_model(folder: str, safetensors: bool = False):
     model_path = Path(folder)
     tokenizer = Tokenizer(str(model_path / "tokenizer.model"))
     with open(model_path / "config.json", "r") as f:
@@ -200,7 +200,12 @@ def load_model(folder: str):
         config.pop("model_type", None)
         quantization = config.pop("quantization", None)
         model_args = ModelArgs(**config)
-    weights = mx.load(str(model_path / "weights.npz"))
+    weights_path = (
+        str(model_path / "weights.safetensors")
+        if safetensors
+        else str(model_path / "weights.npz")
+    )
+    weights = mx.load(weights_path)
     weights = tree_unflatten(list(weights.items()))
     model = Mistral(model_args)
     if quantization is not None:
@@ -260,12 +265,17 @@ if __name__ == "__main__":
         default=10,
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+    parser.add_argument(
+        "--safetensors",
+        help="Read weights in safetensors format.",
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
     mx.random.seed(args.seed)
     print("[INFO] Loading model from disk.")
-    model, tokenizer = load_model(args.model_path)
+    model, tokenizer = load_model(args.model_path, args.safetensors)
 
     print("[INFO] Starting generation...")
     tic = time.time()
