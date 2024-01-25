@@ -1,3 +1,5 @@
+import os
+
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_unflatten
@@ -16,7 +18,9 @@ def apply_lora_layers(model: nn.Module, adapter_file: str) -> nn.Module:
     Returns:
         nn.Module: The updated model with LoRA layers applied.
     """
-    print("load adapters :", adapter_file)
+    if not os.path.exists(adapter_file):
+        raise FileNotFoundError(f"The adapter file does not exist: {adapter_file}")
+
     adapters = list(mx.load(adapter_file).items())
 
     linear_replacements = []
