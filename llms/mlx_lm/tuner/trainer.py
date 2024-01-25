@@ -60,19 +60,29 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
         indices = np.random.permutation(indices)
         # Collect batches from dataset
         for i in range(0, len(indices) - batch_size + 1, batch_size):
-            # Encode batch up to the max seq length
+            # Encode batch
             batch = [
-                tokenizer.encode(dataset[indices[i + j]])[:max_seq_length]
-                for j in range(batch_size)
+                tokenizer.encode(dataset[indices[i + j]]) for j in range(batch_size)
             ]
             lengths = [len(x) for x in batch]
+
+            if max(lengths) > max_seq_length:
+                print(
+                    f"[WARNING] Some sequences are longer than {max_seq_length} tokens. "
+                    f"The longest sentence {max(lengths)} will be truncated to {max_seq_length}. "
+                    "Consider pre-splitting your data to save memory."
+                )
 
             # Pad to the max length
             max_length_in_batch = min(max(lengths), max_seq_length)
             batch_arr = np.zeros((batch_size, max_length_in_batch), np.int32)
 
             for j in range(batch_size):
-                batch_arr[j, : lengths[j]] = batch[j]
+                truncated_length = min(lengths[j], max_seq_length)
+                batch_arr[j, :truncated_length] = batch[j][:truncated_length]
+                lengths[
+                    j
+                ] = truncated_length  # Update lengths to match truncated lengths
             batch = mx.array(batch_arr)
 
             yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
