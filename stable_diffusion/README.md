@@ -31,6 +31,7 @@ way to get started is by using the `StableDiffusion` class from the `stable_diff
 module.
 
 ```python
+import mlx.core as mx
 from stable_diffusion import StableDiffusion
 
 # This will download all the weights from HF hub and load the models in
