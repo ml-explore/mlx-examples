@@ -68,7 +68,7 @@ def main(precision_nbits: int = 8):
         "BAAI/bge-small-en-v1.5",
         pooling_strategy="cls",
         precision_nbits=precision_nbits,
-        normalize=True,
+        normalize=False,
     )
     results = evaluator.run(mx_model)
     print("=== Results for MLX model ===")
