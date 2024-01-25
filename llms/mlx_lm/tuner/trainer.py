@@ -62,23 +62,19 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
         for i in range(0, len(indices) - batch_size + 1, batch_size):
             # Encode batch
             batch = [
-                tokenizer.encode(dataset[indices[i + j]]) for j in range(batch_size)
+                tokenizer.encode(dataset[indices[i + j]])[:max_seq_length]
+                for j in range(batch_size)
             ]
             lengths = [len(x) for x in batch]
 
-            # Check if any sequence is longer than max_seq_length
-            if max(lengths) > max_seq_length:
-                print(
-                    "[WARNING] Some sequences are longer than 2048 tokens. "
-                    "Consider pre-splitting your data to save memory."
-                )
-
             # Pad to the max length
-            batch_arr = np.zeros((batch_size, max(lengths)), np.int32)
+            max_length_in_batch = min(max(lengths), max_seq_length)
+            batch_arr = np.zeros((batch_size, max_length_in_batch), np.int32)
 
             for j in range(batch_size):
                 batch_arr[j, : lengths[j]] = batch[j]
             batch = mx.array(batch_arr)
+
             yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
 
         if not train:
