@@ -23,6 +23,7 @@ python convert.py \
 To use the `Bert` model in your own code, you can load it with:
 
 ```python
+import mlx.core as mx
 from model import Bert, load_model
 
 model, tokenizer = load_model(
