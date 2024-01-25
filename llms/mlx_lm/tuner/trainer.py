@@ -60,7 +60,7 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
         indices = np.random.permutation(indices)
         # Collect batches from dataset
         for i in range(0, len(indices) - batch_size + 1, batch_size):
-            # Encode batch
+            # Encode batch up to the max seq length
             batch = [
                 tokenizer.encode(dataset[indices[i + j]])[:max_seq_length]
                 for j in range(batch_size)
