@@ -1,9 +1,5 @@
 # Copyright © 2023 Apple Inc.
 
-import glob
-import inspect
-import json
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -11,8 +7,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+import utils
 from huggingface_hub import snapshot_download
-from transformers import AutoTokenizer
+from mlx.utils import tree_flatten, tree_unflatten
 
 
 @dataclass
@@ -50,88 +47,6 @@ class ModelArgs:
                 if k in inspect.signature(cls).parameters
             }
         )
-
-
-class LoRALinear(nn.Module):
-    @staticmethod
-    def from_linear(linear: nn.Linear, rank: int = 8):
-        # TODO remove when input_dims and output_dims are attributes
-        # on linear and quantized linear
-        output_dims, input_dims = linear.weight.shape
-        if isinstance(linear, nn.QuantizedLinear):
-            input_dims *= 32 // linear.bits
-        lora_lin = LoRALinear(input_dims, output_dims, rank)
-        lora_lin.linear = linear
-        return lora_lin
-
-    def to_linear(self):
-        linear = self.linear
-        bias = "bias" in linear
-        weight = linear.weight
-        is_quantized = isinstance(linear, nn.QuantizedLinear)
-
-        # Use the same type as the linear weight if not quantized
-        dtype = weight.dtype
-
-        if is_quantized:
-            dtype = mx.float16
-            weight = mx.dequantize(
-                weight,
-                linear.scales,
-                linear.biases,
-                linear.group_size,
-                linear.bits,
-            )
-        output_dims, input_dims = weight.shape
-        fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
-
-        lora_b = (self.scale * self.lora_b.T).astype(dtype)
-        lora_a = self.lora_a.T.astype(dtype)
-        fused_linear.weight = weight + lora_b @ lora_a
-        if bias:
-            fused_linear.bias = linear.bias
-
-        if is_quantized:
-            fused_linear = nn.QuantizedLinear.from_linear(
-                fused_linear,
-                linear.group_size,
-                linear.bits,
-            )
-
-        return fused_linear
-
-    def __init__(
-        self,
-        input_dims: int,
-        output_dims: int,
-        lora_rank: int = 8,
-        bias: bool = False,
-        scale: float = 20.0,
-    ):
-        super().__init__()
-
-        # Regular linear layer weights
-        self.linear = nn.Linear(input_dims, output_dims, bias=bias)
-
-        # Scale for low-rank update
-        self.scale = scale
-
-        # Low rank lora weights
-        scale = 1 / math.sqrt(input_dims)
-        self.lora_a = mx.random.uniform(
-            low=-scale,
-            high=scale,
-            shape=(input_dims, lora_rank),
-        )
-        self.lora_b = mx.zeros(shape=(lora_rank, output_dims))
-
-    def __call__(self, x):
-        dtype = self.linear.weight.dtype
-        if isinstance(self.linear, nn.QuantizedLinear):
-            dtype = self.linear.scales.dtype
-        y = self.linear(x.astype(dtype))
-        z = (x @ self.lora_a) @ self.lora_b
-        return y + self.scale * z
 
 
 class RMSNorm(nn.Module):
@@ -301,45 +216,113 @@ class Model(nn.Module):
         return self.lm_head(out), cache
 
 
-def load(path_or_hf_repo: str):
-    # If the path exists, it will try to load model form it
-    # otherwise download and cache from the hf_repo and cache
-    model_path = Path(path_or_hf_repo)
-    if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+def get_config(metadata: dict):
+    output = {
+        "hidden_size": metadata["llama.embedding_length"],
+        "num_hidden_layers": metadata["llama.block_count"],
+        "num_attention_heads": metadata["llama.attention.head_count"],
+        "intermediate_size": metadata["llama.feed_forward_length"],
+        "num_key_value_heads": metadata["llama.attention.head_count_kv"],
+        "rms_norm_eps": metadata["llama.attention.layer_norm_rms_epsilon"],
+        "vocab_size": len(metadata["tokenizer.ggml.tokens"]),
+        "rope_theta": metadata["llama.rope.freq_base"],
+        "rope_traditional": True,
+    }
+    output = {k: v.item() if isinstance(v, mx.array) else v for k, v in output.items()}
+    return output
+
+
+class GGUFTokenizer:
+    def __init__(self, metadata):
+        self._tokenizer = utils.spm_tokenizer(metadata)
+
+    def encode(self, s: str) -> mx.array:
+        return mx.array([self._tokenizer.bos_id()] + self._tokenizer.encode(s))
+
+    @property
+    def eos_token_id(self):
+        return self._tokenizer.eos_id()
+
+    def decode(self, toks: List[int]) -> str:
+        return self._tokenizer.decode(toks)
+
+
+def translate_weight_names(name):
+    name = name.replace("blk.", "model.layers.")
+    name = name.replace("ffn_gate", "mlp.gate_proj")
+    name = name.replace("ffn_down", "mlp.down_proj")
+    name = name.replace("ffn_up", "mlp.up_proj")
+    name = name.replace("attn_q", "self_attn.q_proj")
+    name = name.replace("attn_k", "self_attn.k_proj")
+    name = name.replace("attn_v", "self_attn.v_proj")
+    name = name.replace("attn_output", "self_attn.o_proj")
+    name = name.replace("attn_norm", "input_layernorm")
+    name = name.replace("ffn_norm", "post_attention_layernorm")
+    name = name.replace("token_embd", "model.embed_tokens")
+    name = name.replace("output_norm", "model.norm")
+    name = name.replace("output", "lm_head")
+    return name
+
+
+def load(gguf_file: str, repo: str = None):
+    # If the gguf_file exists, try to load model from it.
+    # Otherwise try to download and cache from the HF repo
+    if not Path(gguf_file).exists():
+        if repo is None:
+            raise ValueError(
+                f"Could not find file {gguf_file}, and no Hugging Face"
+                " repo provided for download."
             )
+        model_path = snapshot_download(
+            repo_id=repo,
+            allow_patterns=[gguf_file],
         )
+        if not (Path(model_path) / gguf_file).exists():
+            raise ValueError(f"File {gguf_file} not in repo {repo}.")
+        gguf_file = str(Path(model_path) / gguf_file)
 
-    with open(model_path / "config.json", "r") as f:
-        config = json.loads(f.read())
-        quantization = config.get("quantization", None)
-        model_args = ModelArgs.from_dict(config)
+    print(f"[INFO] Loading model from {gguf_file}")
+    weights, metadata = mx.load(gguf_file, return_metadata=True)
+    gguf_ft = metadata["general.file_type"]
+    if gguf_ft == 0 or gguf_ft == 1:
+        # ALL_F32 or MOSTLY_F16
+        quantization = None
+        pass
+    elif gguf_ft == 2 or gguf_ft == 3:
+        # MOSTLY_Q4_0 or MOSTLY_Q4_1
+        quantization = {"group_size": 32, "bits": 4}
+    elif gguf_ft == 7:
+        # MOSTLY_Q8_0 = 7
+        quantization = {"group_size": 32, "bits": 8}
+    else:
+        quantization = None
+        print("[WARNING] Using unsupported GGUF quantization. Casting to float16.")
 
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
-    if len(weight_files) == 0:
-        raise FileNotFoundError("No safetensors found in {}".format(model_path))
-
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf).items())
-
-    model = Model(model_args)
+    weights = {translate_weight_names(k): v for k, v in weights.items()}
+    config = get_config(metadata)
+    model = Model(ModelArgs(**config))
     if quantization is not None:
+        # quantized the LM head?
+        qm = model if "lm_head.scales" in weights else model.model
         nn.QuantizedLinear.quantize_module(
-            model,
+            qm,
             **quantization,
-            linear_class_predicate=lambda m: isinstance(m, nn.Linear)
-            and m.weight.shape[0] != 8,
         )
 
-    model.load_weights(list(weights.items()))
+    def dequantize(k):
+        weight = weights.pop(f"{k}.weight")
+        scales = weights.pop(f"{k}.scales")
+        biases = weights.pop(f"{k}.biases")
+        weights[f"{k}.weight"] = mx.dequantize(
+            weight, scales=scales, biases=biases, **quantization
+        )
 
-    mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    return model, tokenizer, config
+    # Dequantize embeddings
+    dequantize("model.embed_tokens")
+
+    tokenizer = GGUFTokenizer(metadata)
+    model.load_weights(list(weights.items()))
+    return model, tokenizer
 
 
 def generate(prompt: mx.array, model: Model, temp: float = 0.0):

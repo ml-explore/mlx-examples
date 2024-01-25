@@ -9,6 +9,7 @@ from typing import Generator
 import mlx.core as mx
 import mlx.nn as nn
 import models.llama as llama
+import models.mixtral as mixtral
 import models.phi2 as phi2
 import transformers
 from huggingface_hub import snapshot_download
@@ -18,6 +19,7 @@ MODEL_MAPPING = {
     "llama": llama,
     "mistral": llama,  # mistral is compatible with llama
     "phi": phi2,
+    "mixtral": mixtral,
 }
 
 
@@ -113,11 +115,21 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
 def save_model(save_dir: str, weights, tokenizer, config):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    shards = make_shards(weights)
+
+    shards = make_shards(weights, max_file_size_gibibyte=5)
+    shards_count = len(shards)
+    shard_file_format = (
+        "model-{:05d}-of-{:05d}.safetensors"
+        if shards_count > 1
+        else "model.safetensors"
+    )
+
     for i, shard in enumerate(shards):
-        # TODO use HF file name scheme for simplicity
-        mx.save_safetensors(str(save_dir / f"weights.{i:02d}.safetensors"), shard)
+        shard_name = shard_file_format.format(i + 1, shards_count)
+        mx.save_safetensors(str(save_dir / shard_name), shard)
+
     tokenizer.save_pretrained(save_dir)
+
     with open(save_dir / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
 
@@ -150,7 +162,12 @@ def load(path_or_hf_repo: str):
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.QuantizedLinear.quantize_module(
+            model,
+            **quantization,
+            linear_class_predicate=lambda m: isinstance(m, nn.Linear)
+            and m.weight.shape[0] != 8,
+        )
 
     model.load_weights(list(weights.items()))
 

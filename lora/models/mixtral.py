@@ -159,34 +159,23 @@ class MixtralSparseMoeBlock(nn.Module):
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
-
-        inds = mx.stop_gradient(
-            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        )  # TODO remove it once we figure out how to fine tune TopK in MOE
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
 
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
             axis=-1,
         ).astype(gates.dtype)
 
-        if self.training:
-            mx.eval(inds)
-            inds = np.array(inds)
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
-            for e, expert in enumerate(self.experts):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
+        mx.eval(inds)
+        inds = np.array(inds)
+        y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+        for e, expert in enumerate(self.experts):
+            idx1, idx2 = map(mx.array, np.where(inds == e))
+            if idx1.size == 0:
+                continue
+            y[idx1, idx2] = expert(x[idx1])
 
-            y = (y * scores[:, :, None]).sum(axis=1)
-        else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
-            y = mx.concatenate(y)
+        y = (y * scores[:, :, None]).sum(axis=1)
 
         return y.reshape(orig_shape)
 

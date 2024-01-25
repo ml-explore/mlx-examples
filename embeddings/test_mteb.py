@@ -1,20 +1,28 @@
 import glob
 import json
 import os
-import warnings
 import tempfile
-from typing import Union
+import warnings
 from dataclasses import dataclass
+from typing import Union
+
 from embeddings import EmbeddingModel
+
 try:
     from mteb import MTEB
 except ImportError:
-    print("MTEB not installed. Please install it with `pip install mteb` to run evaluations.")
-    print("You'll also need to install `beir` if you want to run retrieval evaluations.")
+    print(
+        "MTEB not installed. Please install it with `pip install mteb` to run evaluations."
+    )
+    print(
+        "You'll also need to install `beir` if you want to run retrieval evaluations."
+    )
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError:
-    print("sentence_transformers not installed. Please install it with `pip install sentence_transformers` to run evaluations.")
+    print(
+        "sentence_transformers not installed. Please install it with `pip install sentence_transformers` to run evaluations."
+    )
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
@@ -22,6 +30,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 class Task:
     mteb_task: str
     metric: list[str]  # list of keys to extract the metric
+
 
 class Evaluator:
     def __init__(self, tasks: Union[list[Task], list[dict]]):
@@ -45,20 +54,21 @@ class Evaluator:
                 result = result[key]
             results[task.mteb_task] = result
         return results
-    
+
+
 def main(precision_nbits: int = 8):
     tasks = [
         Task(mteb_task="Banking77Classification", metric=["test", "accuracy"]),
-        Task(mteb_task="STS12", metric=["test", "cos_sim", "spearman"])
+        Task(mteb_task="STS12", metric=["test", "cos_sim", "spearman"]),
     ]
     evaluator = Evaluator(tasks)
-    
+
     # Run the evaluation
     mx_model = EmbeddingModel(
-        "BAAI/bge-small-en-v1.5", 
+        "BAAI/bge-small-en-v1.5",
         pooling_strategy="cls",
         precision_nbits=precision_nbits,
-        normalize=True
+        normalize=True,
     )
     results = evaluator.run(mx_model)
     print("=== Results for MLX model ===")
@@ -68,9 +78,11 @@ def main(precision_nbits: int = 8):
     results = evaluator.run(st_model)
     print("=== Results for SentenceTransformer model ===")
     print(results)
-    
+
+
 if __name__ == "__main__":
     import sys
+
     precision_nbits = 8
     if len(sys.argv) > 1:
         precision_nbits = int(sys.argv[1])
