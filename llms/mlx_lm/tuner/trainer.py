@@ -175,6 +175,7 @@ def train(
                 tokenizer=tokenizer,
                 batch_size=args.batch_size,
                 num_batches=args.val_batches,
+                max_seq_length=args.max_seq_length,
             )
             print(
                 f"Iter {it + 1}: "
