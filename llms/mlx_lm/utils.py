@@ -149,7 +149,7 @@ def generate(
 
     prompt = mx.array(tokenizer.encode(prompt))
 
-    tic = time.time()
+    tic = time.perf_counter()
     tokens = []
     skip = 0
     REPLACEMENT_CHAR = "\ufffd"
@@ -158,8 +158,8 @@ def generate(
         if token == tokenizer.eos_token_id:
             break
         if n == 0:
-            prompt_time = time.time() - tic
-            tic = time.time()
+            prompt_time = time.perf_counter() - tic
+            tic = time.perf_counter()
         tokens.append(token.item())
 
         if verbose:
@@ -175,7 +175,7 @@ def generate(
 
     if verbose:
         print(tokens[skip:], flush=True)
-        gen_time = time.time() - tic
+        gen_time = time.perf_counter() - tic
         print("=" * 10)
         if len(tokens) == 0:
             print("No tokens generated for this prompt")
