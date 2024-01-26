@@ -34,8 +34,6 @@ if __name__ == "__main__":
         negative_text=args.negative_prompt,
     )
     for x_t in tqdm(latents, total=args.steps):
-        mx.simplify(x_t)
-        mx.simplify(x_t)
         mx.eval(x_t)
 
     # Decode them into images
