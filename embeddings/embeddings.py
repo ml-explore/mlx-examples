@@ -3,15 +3,18 @@
 # and use it for batch inference for text embeddings.
 # It also implements the proper API to be evaluated in MTEB
 # and used like a sentence transformer model.
+
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 import tqdm
+from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
-from transformers import AutoModel, AutoTokenizer, BertConfig
+from transformers import AutoTokenizer, BertConfig
 
 
 def replace_key(key: str) -> str:
@@ -91,13 +94,12 @@ class BertEmbeddings(nn.Module):
         self.position_embeddings = nn.Embedding(
             config.max_position_embeddings, config.hidden_size
         )
+        self.position_ids = mx.arange(config.max_position_embeddings)[None]
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def __call__(self, input_ids: mx.array, token_type_ids: mx.array) -> mx.array:
         words = self.word_embeddings(input_ids)
-        position = self.position_embeddings(
-            mx.broadcast_to(mx.arange(input_ids.shape[1]), input_ids.shape)
-        )
+        position = self.position_embeddings(mx.arange(input_ids.shape[1]))
         token_types = self.token_type_embeddings(token_type_ids)
 
         embeddings = position + words + token_types
@@ -141,40 +143,37 @@ class Bert(nn.Module):
         return y, self.pooler(y)
 
     @classmethod
-    def from_pretrained(cls, model_path: str, precision_nbits: int = 8):
-        if precision_nbits not in [2, 4, 8, 32]:
-            raise ValueError("precision_nbits must be one of 2, 4, 8, 32")
+    def from_pretrained(cls, model_path: str, dtype=mx.float32):
         config = BertConfig.from_pretrained(model_path)
-        torch_weights = AutoModel.from_pretrained(model_path).state_dict()
+        model_path = Path(
+            snapshot_download(
+                repo_id=model_path,
+                allow_patterns=[
+                    "*.json",
+                    "*.safetensors",
+                ],
+            )
+        )
 
-        # figure out how to convert torch weights to mx weights
-        mx_weights = {
-            replace_key(key): mx.array(tensor.numpy())
-            for key, tensor in torch_weights.items()
-        }
-        mlx_model = cls(config)
-        mlx_model.update(tree_unflatten(list(mx_weights.items())))
-        if precision_nbits == 32:
-            print("Keeping in fp32 precision")
-        else:
-            print(f"Quantizing to {precision_nbits} bits")
-            nn.QuantizedLinear.quantize_module(mlx_model, bits=precision_nbits)
+        weights = mx.load(str(model_path / "model.safetensors"))
+        weights = [(replace_key(k), v.astype(dtype)) for k, v in weights.items()]
+        model = cls(config)
+        model.load_weights(weights)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-        return mlx_model, tokenizer
+        return model, tokenizer
 
 
 class EmbeddingModel:
     def __init__(
         self,
-        model_path: str,  # path to model on huggingface. must be BERT
+        model_path: str,
         max_length: int = 512,
         pooling_strategy: Literal["mean", "cls"] = "cls",
         normalize: bool = True,
-        precision_nbits: int = 8,
+        dtype: int = 8,
     ):
         super().__init__()
-        self.model, self.tokenizer = Bert.from_pretrained(model_path, precision_nbits)
+        self.model, self.tokenizer = Bert.from_pretrained(model_path, dtype)
         self.max_length = max_length
         self.pooling_strategy = pooling_strategy
         self.normalize = normalize
@@ -183,11 +182,11 @@ class EmbeddingModel:
         """
         Returns a list of embeddings for the given sentences.
         Args:
-            sentences (`List[str]`): List of sentences to encode
-            batch_size (`int`): Batch size for the encoding
+            sentences (List[str]): List of sentences to encode
+            batch_size (int): Batch size for the encoding
 
         Returns:
-            `List[np.ndarray]` or `List[tensor]`: List of embeddings for the given sentences
+            List[np.ndarray]: List of embeddings for the given sentences
         """
         result = None
         if show_progress:
@@ -236,9 +235,9 @@ class EmbeddingModel:
 
 
 def test_embeddings():
-    mx_model, tokenizer = Bert.from_pretrained(
-        "BAAI/bge-small-en-v1.5", precision_nbits=32
-    )
+    from transformers import AutoModel
+
+    mx_model, tokenizer = Bert.from_pretrained("BAAI/bge-small-en-v1.5")
     torch_model = AutoModel.from_pretrained("BAAI/bge-small-en-v1.5")
     torch_model.eval()
     batch = [
@@ -267,3 +266,7 @@ def test_embeddings():
     assert np.allclose(
         np.array(mx_embed_out), torch_embed_out.detach().numpy(), atol=1e-2
     ), "Embeddings mismatch"
+
+
+if __name__ == "__main__":
+    test_embeddings()

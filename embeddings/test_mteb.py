@@ -6,23 +6,12 @@ import warnings
 from dataclasses import dataclass
 from typing import Union
 
+import mlx.core as mx
+from mteb import MTEB
+from sentence_transformers import SentenceTransformer
+
 from embeddings import EmbeddingModel
 
-try:
-    from mteb import MTEB
-except ImportError:
-    print(
-        "MTEB not installed. Please install it with `pip install mteb` to run evaluations."
-    )
-    print(
-        "You'll also need to install `beir` if you want to run retrieval evaluations."
-    )
-try:
-    from sentence_transformers import SentenceTransformer
-except ImportError:
-    print(
-        "sentence_transformers not installed. Please install it with `pip install sentence_transformers` to run evaluations."
-    )
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
@@ -56,7 +45,7 @@ class Evaluator:
         return results
 
 
-def main(precision_nbits: int = 8):
+def main(dtype):
     tasks = [
         Task(mteb_task="Banking77Classification", metric=["test", "accuracy"]),
         Task(mteb_task="STS12", metric=["test", "cos_sim", "spearman"]),
@@ -67,7 +56,7 @@ def main(precision_nbits: int = 8):
     mx_model = EmbeddingModel(
         "BAAI/bge-small-en-v1.5",
         pooling_strategy="cls",
-        precision_nbits=precision_nbits,
+        dtype=dtype,
         normalize=False,
     )
     results = evaluator.run(mx_model)
@@ -81,9 +70,5 @@ def main(precision_nbits: int = 8):
 
 
 if __name__ == "__main__":
-    import sys
-
-    precision_nbits = 8
-    if len(sys.argv) > 1:
-        precision_nbits = int(sys.argv[1])
-    main(precision_nbits=precision_nbits)
+    dtype = mx.float32
+    main(dtype=dtype)
