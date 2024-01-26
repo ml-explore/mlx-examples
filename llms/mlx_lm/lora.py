@@ -242,6 +242,7 @@ if __name__ == "__main__":
 
     if args.prompt is not None:
         print("Generating")
+        model.eval()
         generate(
             model=model,
             tokenizer=tokenizer,

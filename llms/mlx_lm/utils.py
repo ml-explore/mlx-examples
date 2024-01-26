@@ -24,7 +24,7 @@ MODEL_MAPPING = {
     "qwen": qwen,
     "plamo": plamo,
 }
-MAX_FILE_SIZE_GB = 15
+MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
@@ -226,11 +226,25 @@ def load_model(model_path: Path) -> nn.Module:
     model = model_class(model_args)
 
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(
-            model,
-            **quantization,
-            linear_class_predicate=linear_class_predicate,
-        )
+        # for legacy models that don't have lm_head quant due to non-32 dims
+        if "lm_head.scales" not in weights.keys():
+            vocab_size = config["vocab_size"]
+            extended_linear_class_predicate = (
+                lambda layer: linear_class_predicate(layer)
+                and layer.weight.shape[0] != vocab_size
+            )
+            nn.QuantizedLinear.quantize_module(
+                model,
+                **quantization,
+                linear_class_predicate=extended_linear_class_predicate,
+            )
+        # for models that have lm_head quant
+        else:
+            nn.QuantizedLinear.quantize_module(
+                model,
+                **quantization,
+                linear_class_predicate=linear_class_predicate,
+            )
 
     model.load_weights(list(weights.items()))
 
@@ -264,6 +278,7 @@ def load(
     model = load_model(model_path)
     if adapter_file is not None:
         model = apply_lora_layers(model, adapter_file)
+        model.eval()
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
     return model, tokenizer
