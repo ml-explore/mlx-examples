@@ -6,10 +6,10 @@ import model
 import numpy as np
 import torch
 import transformers
+from image_processor import CLIPImageProcessor
 from PIL import Image
-from preprocessing.image_processor import CLIPImageProcessor
-from preprocessing.tokenizer import CLIPTokenizer
-from transformers import AutoTokenizer
+from tokenizer import CLIPTokenizer
+from transformers import AutoTokenizer, CLIPImageProcessor
 from transformers.image_processing_utils import ChannelDimension
 
 CONVERTED_WEIGHTS_PATH = Path("weights/mlx")

@@ -41,8 +41,8 @@ CLIP model to embed images and text.
 from pathlib import Path
 from model import CLIPModel
 from PIL import Image
-from preprocessing.tokenizer import CLIPTokenizer
-from preprocessing.image_processor import CLIPImageProcessor
+from tokenizer import CLIPTokenizer
+from image_processor import CLIPImageProcessor
 
 MODEL: str = "openai/clip-vit-base-patch32"
 CONVERTED_CKPT_PATH: str = f"weights/mlx/{MODEL}"
