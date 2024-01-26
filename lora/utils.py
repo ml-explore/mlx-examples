@@ -102,12 +102,11 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
     shards = []
     shard, shard_size = {}, 0
     for k, v in weights.items():
-        estimated_size = v.size * v.dtype.size
-        if shard_size + estimated_size > max_file_size_bytes:
+        if shard_size + v.nbytes > max_file_size_bytes:
             shards.append(shard)
             shard, shard_size = {}, 0
         shard[k] = v
-        shard_size += estimated_size
+        shard_size += v.nbytes
     shards.append(shard)
     return shards
 
