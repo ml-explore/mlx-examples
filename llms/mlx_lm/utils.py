@@ -12,7 +12,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, plamo, qwen
+from .models import llama, mixtral, phi2, plamo, qwen, stablelm_epoch
 from .tuner.utils import apply_lora_layers
 
 # Constants
@@ -21,6 +21,7 @@ MODEL_MAPPING = {
     "mistral": llama,  # mistral is compatible with llama
     "mixtral": mixtral,
     "phi": phi2,
+    "stablelm_epoch": stablelm_epoch,
     "qwen": qwen,
     "plamo": plamo,
 }
