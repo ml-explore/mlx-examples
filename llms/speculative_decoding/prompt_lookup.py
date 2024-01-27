@@ -51,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--prompt",
         help="The prompt processed by the model.",
-        default="Repeat the following sentence 5 times: 'The quick brown fox jumped over the fence.'",
+        default="Repeat the following sentence five times in a row: 'The quick brown fox jumped over the fence.'",
     )
     parser.add_argument(
         "--max-tokens",

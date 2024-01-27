@@ -218,7 +218,6 @@ class SpeculativeDecoder:
 
 ########################################################
 
-
 class PromptLookupDecoder:
     def __init__(
         self,
@@ -240,31 +239,29 @@ class PromptLookupDecoder:
         self.seed = seed
         self.color = color
 
+    @staticmethod
+    def window_compare(start_idx, input_ids, ngram):
+        return input_ids[mx.arange(ngram.size) + start_idx] == ngram 
+
     def generate_draft(self, input_ids):
-        ngram = input_ids[-self.ngram_max :]
+        for ngram_size in range(self.ngram_max, self.ngram_min - 1, -1): 
+            ngram = input_ids[-ngram_size:]
 
-        largest_match = 0
-        draft = mx.array([], dtype=mx.uint32)
+            start_indices = mx.arange(0, input_ids.size - self.ngram_max)
+            matches = self.vmap_compare(start_indices, input_ids, ngram)
+            
+            # check for full `ngram` matches
+            matches = matches.all(axis=1)
+            # get idx of first match; 0 if no match
+            idx_match = matches.argmax() 
 
-        # Sliding window search
-        for i in range(1, input_ids.size - self.ngram_max):
-            matches = input_ids[max(0, i - self.ngram_max) : i] == ngram[-i:]
-
-            # reverse through the matches array
-            match_length = 0
-            for j in range(matches.size - 1, -1, -1):
-                if matches[j]:
-                    match_length += 1
-                else:
-                    break
-
-            if match_length >= self.ngram_min and match_length > largest_match:
-                largest_match = match_length
-                start_idx = i
+            # double check idx
+            if matches[idx_match]:
+                start_idx = idx_match.item() + ngram_size
                 end_idx = start_idx + self.n_draft
-                draft = input_ids[start_idx:end_idx]
+                return input_ids[start_idx:end_idx]
 
-        return draft
+        return mx.array([], dtype=mx.uint32)
 
     def prompt_lookup(
         self,
@@ -276,6 +273,9 @@ class PromptLookupDecoder:
                 return mx.argmax(logits, axis=-1)
             else:
                 return mx.random.categorical(logits * (1 / self.temp))
+        
+        # used in draft generation
+        self.vmap_compare = mx.vmap(self.window_compare, in_axes=(0, None, None))
 
         prompt = mx.array(self.tokenizer.encode(prompt), mx.uint32)[None]
         memory = self.model.encode(prompt)
