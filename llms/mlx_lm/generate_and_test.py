@@ -1,5 +1,3 @@
-# python -m mlx_lm.generate_and_test
-
 import argparse
 import re
 import io
@@ -13,11 +11,26 @@ import mlx.core as mx
 from .utils import generate, load
 
 DEFAULT_MODEL_PATH = "mlx-community/stablelm-2-zephyr-1_6b-4bit"
-DEFAULT_CODE_PROMPT = "Create a Python function named 'calculate_factorial' that takes a non-negative integer and returns its factorial."
-DEFAULT_TEST_PROMPT = "Write basic unit tests for the following code, make no mistake:\n{}"
-DEFAULT_MAX_TOKENS = 500
+DEFAULT_CODE_PROMPT = "Write a simple python function takes a value as an input and returns that value."
+DEFAULT_TEST_PROMPT = """Write basic unit tests in Python using the unittest framework for the following function:\n{}
+
+Guidelines for Writing Tests:
+
+1. Import unittest at the start.
+2. Create a class that inherits from unittest.TestCase.
+3. Inside the class, write methods for each test. Test methods should start with the word 'test'.
+4. Use assertion methods to verify that the function behaves as expected. Some common assertions include:
+   - assertEqual(a, b): Checks if a equals b.
+   - assertTrue(x): Checks if x is True.
+   - assertFalse(x): Checks if x is False.
+   - assertRaises(Error, func, *args, **kwargs): Checks if calling func with args and kwargs raises an Error.
+5. Remember to include if __name__ == '__main__': at the end to make the test executable.
+
+"""
+
+DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMP = 0.6
-DEFAULT_SEED = 0
+DEFAULT_SEED = 42
 
 
 def setup_arg_parser():
@@ -158,23 +171,21 @@ def run(script: str) -> str:
     else:
         return "No tests were found to run."    
 
-def python(code: str) -> Any:
+def python(code: str, ask_for_input: bool = True) -> Any:
     """
-    Executes the provided Python code after user confirmation. Returns `#FAIL#` if execution is not permitted.
+    Executes the provided Python code. Optionally asks for user confirmation.
 
     Args:
         code (str): Python code to be executed.
+        ask_for_input (bool): Whether to ask for user input to proceed.
 
     Returns:
-        Any: Result of executing the code, or `#FAIL#` if not executed.
+        Any: Result of executing the code, or `#FAIL#` if execution is not permitted.
     """
-    # Extract code from Markdown (if present)
-    extracted_code = extract_code_from_markdown(code)
-    if extracted_code is not None:
-        code = extracted_code
-    colorprint('red', f'Proceed with execution? Press Y if you are sure \n```\n{code}\n```\n')  # Colorize the prompt
-    go = input()
-    if go.lower() != 'y': return '#FAIL#'
+    if ask_for_input:
+        colorprint('red', f'Proceed with execution? Press Y if you are sure \n```\n{code}\n```\n')  # Colorize the prompt
+        go = input()
+        if go.lower() != 'y': return '#FAIL#'
     return run(code)
 
 @contextmanager
@@ -193,7 +204,7 @@ def load_model_context(model_name: str, tokenizer_config: dict):
     try:
         yield model, tokenizer
     finally:
-        del model  # Ensure the model is deleted to free up memory
+        del model, tokenizer # Ensure the model is deleted to free up memory
 
 def run_model_generate_code(model: Any, tokenizer: Any, prompt: str, temp: float, max_tokens: int, ignore_chat_template: bool, formatter: Any) -> str:
     # Apply chat template if available and not ignored
@@ -203,26 +214,30 @@ def run_model_generate_code(model: Any, tokenizer: Any, prompt: str, temp: float
             messages, tokenize=False, add_generation_prompt=True
         )
 
-    code = generate(model, tokenizer, prompt, temp, max_tokens, True, formatter)
-    return code
+    generated_code = generate(model, tokenizer, prompt, temp, max_tokens, True, formatter)
+    extracted_code = extract_code_from_markdown(generated_code)
+    
+    # If no code was extracted, then stop further processing
+    if extracted_code is None:
+        print("No code block found.")
+        return None
 
-def get_model_advice_for_error(model: Any, tokenizer: Any, error_message: str, temp: float, max_tokens: int, ignore_chat_template: bool, formatter: Any) -> str:
-    advice_prompt = f"Fix these error and give updated code: {error_message}"
-    advice = run_model_generate_code(model, tokenizer, advice_prompt, temp, max_tokens, ignore_chat_template, formatter)
-    return advice
+    return extracted_code
 
 def combine_code_and_tests(code: str, tests: str) -> str:
-    """
-    Combines generated Python code and unit tests into a single script.
-
-    Args:
-        code (str): Generated Python code.
-        tests (str): Generated unit tests.
-
-    Returns:
-        str: Combined Python code and unit tests.
-    """
     return f"{code}\n\n{tests}"
+
+def create_full_context(script, test_results):
+    return f"Fix these error and give updated code: \n Script:\n{script}\n\nTest Results:\n{test_results}"
+
+def apply_model_advice():
+    return input("Apply the above advice? (y/n): ").lower() == 'y'
+
+def decide_to_give_up():
+    return input("Would you like to give up? (y/n): ").lower() == 'y'
+
+def is_test_successful(test_result):
+    return "FAILED" not in test_result and "ERROR" not in test_result
 
 def main(args):
     mx.random.seed(args.seed)
@@ -236,57 +251,48 @@ def main(args):
     with load_model_context(args.model, tokenizer_config) as (model, tokenizer):
         formatter = colorprint_by_t0 if args.colorize else None
         
+        # Initial prompt for generating Python code
+        current_prompt = args.prompt
+        retry_generation = False
+
         while True:
-            # Generate Python code
-            python_code = run_model_generate_code(model, tokenizer, DEFAULT_CODE_PROMPT, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
-            python_code = extract_code_from_markdown(python_code)
+            # If retry_generation is False, generate new Python code
+            if not retry_generation:
+                python_code = run_model_generate_code(model, tokenizer, current_prompt, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
+                if python_code is None:
+                    break
 
-            if "Error" in python_code:
-                print(python_code)
-                break
+                # Generate unit tests for the Python code
+                unit_test_code = run_model_generate_code(model, tokenizer, DEFAULT_TEST_PROMPT.format(python_code), args.temp, args.max_tokens, args.ignore_chat_template, formatter)
+                if unit_test_code is None:
+                    break
 
-            # Generate unit tests for the Python code
-            unit_test_code = run_model_generate_code(model, tokenizer, DEFAULT_TEST_PROMPT.format(python_code), args.temp, args.max_tokens, args.ignore_chat_template, formatter)
-            unit_test_code = extract_code_from_markdown(unit_test_code)
+                combined_script = combine_code_and_tests(python_code, unit_test_code)
+            else:
+                # If retry_generation is True, reuse the existing combined script
+                combined_script = run_model_generate_code(model, tokenizer, current_prompt, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
+                retry_generation = False
 
-            if "Error" in unit_test_code:
-                print(unit_test_code)
-                break
-
-            combined_script = combine_code_and_tests(python_code, unit_test_code)
             combined_result = python(combined_script)
 
-            if "FAILED" not in combined_result and "ERROR" not in combined_result:
+            if combined_result != '#FAIL#' and is_test_successful(combined_result):
                 print("All tests passed successfully!")
                 break
 
-            # Send both the combined script and the test results for better context
-            full_context = f"Script:\n{combined_script}\n\nTest Results:\n{combined_result}"
-            model_advice =  get_model_advice_for_error(model, tokenizer, full_context, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
-            model_advice = extract_code_from_markdown(model_advice)
+            # Get advice from the model to fix errors
+            full_context = create_full_context(script=combined_script, test_results=combined_result)
+            model_advice = run_model_generate_code(model, tokenizer, full_context, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
 
-            apply_advice = input("Apply the above advice? (y/n): ").lower()
-            if apply_advice != 'y':
-                print("Stopping as per user's decision.")
-                break
-            
-            combined_script = model_advice  # Replace with logic to integrate advice
-
-            # Re-run tests with the updated script
-            combined_result = python(combined_script)
-            print("Re-run Combined Execution Result:\n", combined_result)
-
-            if "FAILED" not in combined_result and "ERROR" not in combined_result:
-                print("All tests passed successfully!")
+            if model_advice and apply_model_advice():
+                # Update the current prompt with the model's advice for the next iteration
+                current_prompt = model_advice
+                retry_generation = True
+                continue
+            elif decide_to_give_up():
+                print("Process terminated by user.")
                 break
             else:
-                print("Test still failing or error occurred.")
-                give_up = input("Would you like to give up? (y/n): ").lower()
-                if give_up == 'y':
-                    print("Process terminated by user.")
-                    break
-                else:
-                    print("Continuing the process.")
+                print("Continuing the process without applying advice.")
                 
 if __name__ == "__main__":
     parser = setup_arg_parser()
