@@ -269,9 +269,11 @@ def main(args):
 
                 combined_script = combine_code_and_tests(python_code, unit_test_code)
             else:
-                # If retry_generation is True, reuse the existing combined script
+                # If retry_generation is True, generate a new script based on the model's advice
                 combined_script = run_model_generate_code(model, tokenizer, current_prompt, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
-                retry_generation = False
+                if combined_script is None:
+                    break
+                retry_generation = False  # Reset the flag
 
             combined_result = python(combined_script)
 
