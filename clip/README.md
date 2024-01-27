@@ -55,7 +55,7 @@ img_processor = CLIPImageProcessor.from_pretrained(Path(CONVERTED_CKPT_PATH))
 # Preprocess the input
 clip_input = {
     "input_ids": tokenizer(["a photo of a cat", "a photo of a dog"]),
-    "pixel_values": img_processor([Image.open("cats.jpeg"), Image.open("dog.jpeg")])
+    "pixel_values": img_processor([Image.open("assets/cat/1.jpeg"), Image.open("assets/dog/1.jpeg")])
 }
 # Compute the output
 mlx_out = mlx_clip(
@@ -75,9 +75,9 @@ text embeddings:
 array([[0.0148391, 0.0069961, -0.0233705, ..., -0.0508463, -0.0437914, 0.00330403],
        [0.00870739, 0.0258293, -0.0386577, ..., -0.0546769, -0.0241999, 0.0111514]], dtype=float32)
 image embeddings:
-array([[-0.00978788, 0.0127698, -0.0274189, ..., 0.0802634, -0.00135005, 0.0237339],
-       [0.017399, 0.0232256, -0.0505955, ..., 0.0478406, 0.0470153, 0.00132057]], dtype=float32)
-CLIP loss: array(0.00763702, dtype=float32)
+array([[-0.000217342, -0.00493075, 0.0141712, ..., 0.0798553, -0.0224953, -0.0192719],
+       [0.000887777, -0.0116987, -0.0106347, ..., 0.0521466, -0.00254955, -0.00344686]], dtype=float32)
+CLIP loss: array(0.00633574, dtype=float32)
 ```
 
 It is also possible to embed only the images or only the text.
@@ -98,4 +98,8 @@ The conversion method and the correctness of the CLIP implementation were tested
 To verify the correctness of the CLIP implementation by comparing it to `transformers` PyTorch implementation, adapt `test.py` (e.g. choose the desired testing checkpoint by setting `TEST_CKPTS`) and run:
 ```
 python test.py
-```
+
+### Photo Attribution
+We used the photo of a cat ("assets/cat/1.jpeg") and the photo of a dog ("assets/dog/1.jpeg").
+"Cat" by London's is licensed under CC BY-SA 2.0.
+"Happy Dog" by tedmurphy is licensed under CC BY 2.0.
