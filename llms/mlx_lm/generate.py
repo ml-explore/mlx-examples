@@ -116,4 +116,5 @@ def main(args):
 if __name__ == "__main__":
     parser = setup_arg_parser()
     args = parser.parse_args()
+    print(args)
     main(args)
