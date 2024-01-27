@@ -20,7 +20,6 @@ class ModelArgs(BaseModelArgs):
     intermediate_size: int
     norm_eps: float
     rope_theta: float
-    use_qkv_bias: bool
 
 
 class LayerNorm(nn.LayerNorm):
@@ -45,19 +44,20 @@ class Attention(nn.Module):
                 f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
                 f" and `num_heads`: {self.num_heads})."
             )
+        self.use_qkv_bias = True if config.vocab_size > 50304 else False
 
         self.q_proj = nn.Linear(
-            self.hidden_size, self.num_heads * self.head_dim, bias=config.use_qkv_bias
+            self.hidden_size, self.num_heads * self.head_dim, bias=self.use_qkv_bias
         )
         self.k_proj = nn.Linear(
             self.hidden_size,
             self.num_key_value_heads * self.head_dim,
-            bias=config.use_qkv_bias,
+            bias=self.use_qkv_bias,
         )
         self.v_proj = nn.Linear(
             self.hidden_size,
             self.num_key_value_heads * self.head_dim,
-            bias=config.use_qkv_bias,
+            bias=self.use_qkv_bias,
         )
         self.o_proj = nn.Linear(
             self.num_heads * self.head_dim, self.hidden_size, bias=False
