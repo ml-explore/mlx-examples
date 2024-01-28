@@ -11,11 +11,9 @@ import mlx.core as mx
 from .utils import generate, load
 
 DEFAULT_MODEL_PATH = "mlx-community/stablelm-2-zephyr-1_6b-4bit"
-DEFAULT_CODE_PROMPT = "Write a simple python function takes a value as an input and returns that value."
-DEFAULT_TEST_PROMPT = """Write basic unit tests in Python using the unittest framework for the following function:\n{}
-
+DEFAULT_CODE_PROMPT = "Write a simple python function that takes a value as an input and returns that value."
+DEFAULT_TEST_PROMPT = """Write basic unit tests in Python using the unittest framework for the following function:\n
 Guidelines for Writing Tests:
-
 1. Import unittest at the start.
 2. Create a class that inherits from unittest.TestCase.
 3. Inside the class, write methods for each test. Test methods should start with the word 'test'.
@@ -26,8 +24,9 @@ Guidelines for Writing Tests:
    - assertRaises(Error, func, *args, **kwargs): Checks if calling func with args and kwargs raises an Error.
 5. Remember to include if __name__ == '__main__': at the end to make the test executable.
 
-"""
+\n{}\n
 
+"""
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMP = 0.6
 DEFAULT_SEED = 42
@@ -155,21 +154,20 @@ def run(script: str) -> str:
             print(f"Loaded Tests: {loaded_suite.countTestCases()}")
             suite.addTests(loaded_suite)
 
-    # Run the tests if any are found
-    if suite.countTestCases() > 0:
-        # Define a custom stream for capturing test results
-        result_stream = io.StringIO()
+    try:
+        if suite.countTestCases() > 0:
+            result_stream = io.StringIO()
+            runner = unittest.TextTestRunner(stream=result_stream)
+            runner.run(suite)
 
-        # Create a test runner that uses the custom stream
-        runner = unittest.TextTestRunner(stream=result_stream)
+            # Debug print
+            print("Test Execution Output:", result_stream.getvalue())
 
-        # Run the tests
-        runner.run(suite)
-
-        # Return the captured output
-        return result_stream.getvalue()
-    else:
-        return "No tests were found to run."    
+            return result_stream.getvalue()
+        else:
+            return "No tests were found to run."
+    except Exception as e:
+        return f"Error during test execution: {e}"   
 
 def python(code: str, ask_for_input: bool = True) -> Any:
     """
@@ -228,7 +226,17 @@ def combine_code_and_tests(code: str, tests: str) -> str:
     return f"{code}\n\n{tests}"
 
 def create_full_context(script, test_results):
-    return f"Fix these error and give updated code: \n Script:\n{script}\n\nTest Results:\n{test_results}"
+    return (
+        "Analyze the following Python script and its unit test results. Identify the errors and provide a corrected version of the script along with improved unit tests, enclosed within a Python code block (```python```).\n\n"
+        "Script:\n```python\n" + script + "\n```\n\n"
+        "Unit Test Results:\n```bash\n" + test_results + "\n```\n\n"
+        "Instructions:\n"
+        "1. Correct any syntactical, logical, or structural errors in the script.\n"
+        "2. Ensure that the function in the script meets its intended purpose.\n"
+        "3. Modify or add new unit tests to cover identified issues or missing test cases.\n"
+        "4. Ensure that the unit tests follow Python's unittest framework guidelines.\n"
+        "5. Provide a clear explanation of any changes made to the script or the tests, enclosed within a Python code block (```python```)."
+    )
 
 def apply_model_advice():
     return input("Apply the above advice? (y/n): ").lower() == 'y'
@@ -254,6 +262,7 @@ def main(args):
         # Initial prompt for generating Python code
         current_prompt = args.prompt
         retry_generation = False
+        ask_for_input = True
 
         while True:
             # If retry_generation is False, generate new Python code
@@ -269,13 +278,11 @@ def main(args):
 
                 combined_script = combine_code_and_tests(python_code, unit_test_code)
             else:
-                # If retry_generation is True, generate a new script based on the model's advice
-                combined_script = run_model_generate_code(model, tokenizer, current_prompt, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
-                if combined_script is None:
-                    break
-                retry_generation = False  # Reset the flag
+                # Reset the flags
+                retry_generation = False  
+                ask_for_input = False 
 
-            combined_result = python(combined_script)
+            combined_result = python(combined_script, ask_for_input=ask_for_input)
 
             if combined_result != '#FAIL#' and is_test_successful(combined_result):
                 print("All tests passed successfully!")
@@ -285,9 +292,12 @@ def main(args):
             full_context = create_full_context(script=combined_script, test_results=combined_result)
             model_advice = run_model_generate_code(model, tokenizer, full_context, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
 
-            if model_advice and apply_model_advice():
+            if model_advice is None:
+                print("Model could not fix the code.")
+
+            if apply_model_advice():
                 # Update the current prompt with the model's advice for the next iteration
-                current_prompt = model_advice
+                combined_script = model_advice
                 retry_generation = True
                 continue
             elif decide_to_give_up():
