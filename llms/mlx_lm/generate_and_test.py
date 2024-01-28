@@ -12,17 +12,17 @@ from .utils import generate, load
 
 DEFAULT_MODEL_PATH = "mlx-community/stablelm-2-zephyr-1_6b-4bit"
 DEFAULT_CODE_PROMPT = "Write a simple python function that takes a value as an input and returns that value."
-DEFAULT_TEST_PROMPT = """Write basic unit tests in Python using the unittest framework for the following function:\n
+DEFAULT_TEST_PROMPT = """Write very basic unit tests in Python using the unittest framework for the following function:\n
 Guidelines for Writing Tests:
 1. Import unittest at the start.
 2. Create a class that inherits from unittest.TestCase.
-3. Inside the class, write methods for each test. Test methods should start with the word 'test'.
-4. Use assertion methods to verify that the function behaves as expected. Some common assertions include:
+3. You can use following assertion methods to verify that the function behaves as expected. 
+   Some common assertions include:
    - assertEqual(a, b): Checks if a equals b.
    - assertTrue(x): Checks if x is True.
    - assertFalse(x): Checks if x is False.
    - assertRaises(Error, func, *args, **kwargs): Checks if calling func with args and kwargs raises an Error.
-5. Remember to include if __name__ == '__main__': at the end to make the test executable.
+4. Remember to include if __name__ == '__main__': at the end to make the test executable.
 
 \n{}\n
 
@@ -107,7 +107,7 @@ def colorprint_by_t0(s, t0):
         color = "red"
     colorprint(color, s)
 
-def extract_code_from_markdown(text: str) -> Optional[str]:
+def extract_code_from_markdown(text: str, pattern) -> Optional[str]:
     """
     Extracts code from a Markdown fenced code block.
 
@@ -117,9 +117,7 @@ def extract_code_from_markdown(text: str) -> Optional[str]:
     Returns:
         Optional[str]: Extracted code if found, otherwise None.
     """
-    # Regular expression pattern for fenced code block
-    # Adjusted to account for variations in whitespaces and line breaks
-    pattern = r"```python[\s\S]*?(.*?)```"
+
     match = re.search(pattern, text, re.DOTALL)
     if match:
         extracted_code = match.group(1).strip()
@@ -204,7 +202,7 @@ def load_model_context(model_name: str, tokenizer_config: dict):
     finally:
         del model, tokenizer # Ensure the model is deleted to free up memory
 
-def run_model_generate_code(model: Any, tokenizer: Any, prompt: str, temp: float, max_tokens: int, ignore_chat_template: bool, formatter: Any) -> str:
+def run_model_generate_code(model: Any, tokenizer: Any, prompt: str, temp: float, max_tokens: int, ignore_chat_template: bool, formatter: Any, pattern) -> str:
     # Apply chat template if available and not ignored
     if not ignore_chat_template and hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template is not None:
         messages = [{"role": "user", "content": prompt}]
@@ -213,7 +211,7 @@ def run_model_generate_code(model: Any, tokenizer: Any, prompt: str, temp: float
         )
 
     generated_code = generate(model, tokenizer, prompt, temp, max_tokens, True, formatter)
-    extracted_code = extract_code_from_markdown(generated_code)
+    extracted_code = extract_code_from_markdown(generated_code, pattern)
     
     # If no code was extracted, then stop further processing
     if extracted_code is None:
@@ -227,14 +225,13 @@ def combine_code_and_tests(code: str, tests: str) -> str:
 
 def create_full_context(script, test_results):
     return (
-        "Correct the provided Python script and its unit tests based on the test results. "
-        "Include a revised script and updated tests in a single Python code block.\n\n"
+        "Analyze the Python script and unit test results provided below. "
+        "Identify errors, inconsistencies, or areas for improvement, and correct them. "
+        "Provide a revised version of the script."
         "Script:\n```python\n" + script + "\n```\n\n"
-        "Unit Test Results:\n```bash\n" + test_results + "\n```\n\n"
-        "Tasks:\n"
-        "1. Fix any syntax, logic, or structure issues in the script.\n"
-        "2. Ensure the script's function works as intended.\n"
-        "3. Modify the unit tests to cover all scenarios, including handling non-integer inputs for getValue function.\n"
+        "Unit Test Results (analyze and fix):\n" + test_results + "\n\n"
+        "Make sure the updated unit tests comprehensively cover all scenarios, including edge cases.\n"
+        "Format the corrections as a single Python code block (```python```). "
     )
 
 
@@ -263,16 +260,19 @@ def main(args):
         current_prompt = args.prompt
         retry_generation = False
         ask_for_input = True
-
+        # Regular expression pattern for fenced code block
+        # Adjusted to account for variations in whitespaces and line breaks
+        pattern = r"```python[\s\S]*?(.*?)```"
+        
         while True:
             # If retry_generation is False, generate new Python code
             if not retry_generation:
-                python_code = run_model_generate_code(model, tokenizer, current_prompt, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
+                python_code = run_model_generate_code(model, tokenizer, current_prompt, args.temp, args.max_tokens, args.ignore_chat_template, formatter, pattern)
                 if python_code is None:
                     break
 
                 # Generate unit tests for the Python code
-                unit_test_code = run_model_generate_code(model, tokenizer, DEFAULT_TEST_PROMPT.format(python_code), args.temp, args.max_tokens, args.ignore_chat_template, formatter)
+                unit_test_code = run_model_generate_code(model, tokenizer, DEFAULT_TEST_PROMPT.format(python_code), args.temp, args.max_tokens, args.ignore_chat_template, formatter, pattern)
                 if unit_test_code is None:
                     break
 
@@ -290,7 +290,7 @@ def main(args):
 
             # Get advice from the model to fix errors
             full_context = create_full_context(script=combined_script, test_results=combined_result)
-            model_advice = run_model_generate_code(model, tokenizer, full_context, args.temp, args.max_tokens, args.ignore_chat_template, formatter)
+            model_advice = run_model_generate_code(model, tokenizer, full_context, args.temp, args.max_tokens, args.ignore_chat_template, formatter, pattern)
 
             if model_advice is None:
                 print("Model could not fix the code.")
