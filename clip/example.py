@@ -16,7 +16,7 @@ tf_processor = transformers.CLIPProcessor.from_pretrained(MODEL)
 
 clip_input = tf_processor(
     text=["a photo of a cat", "a photo of a dog"],
-    images=[Image.open("assets/cat/1.jpeg"), Image.open("assets/dog/1.jpeg")],
+    images=[Image.open("assets/cat.jpeg"), Image.open("assets/dog.jpeg")],
     return_tensors="pt",
 )
 

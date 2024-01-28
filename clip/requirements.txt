@@ -1,5 +1,4 @@
 mlx
-mlx-data
 numpy
 transformers
 torch

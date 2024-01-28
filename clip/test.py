@@ -9,7 +9,7 @@ import transformers
 from image_processor import CLIPImageProcessor
 from PIL import Image
 from tokenizer import CLIPTokenizer
-from transformers import AutoTokenizer, CLIPImageProcessor
+from transformers import AutoTokenizer
 from transformers.image_processing_utils import ChannelDimension
 
 CONVERTED_WEIGHTS_PATH = Path("weights/mlx")
@@ -22,7 +22,7 @@ TEST_CKPTS: List[str] = [
 def test_image_processor(TEST_CKPT: str):
     mx_image_proc = CLIPImageProcessor.from_pretrained(TEST_CKPT)
     tf_image_proc = transformers.CLIPImageProcessor.from_pretrained(TEST_CKPT)
-    image = Image.open("cats.jpeg")
+    image = Image.open("assets/cat.jpeg")
 
     mx_data = mx_image_proc([image])
     tf_data = mx.array(
@@ -30,8 +30,7 @@ def test_image_processor(TEST_CKPT: str):
             tf_image_proc([image], data_format=ChannelDimension.LAST)["pixel_values"]
         )
     )
-
-    assert mx.array_equal(mx_data, tf_data)
+    assert mx.allclose(mx_data, tf_data, atol=1e-5)
 
 
 def test_text_tokenizer(TEST_CKPT: str):
@@ -76,7 +75,7 @@ def test_vision_encoder(TEST_CKPT: str):
     hf_processor = transformers.CLIPProcessor.from_pretrained(TEST_CKPT)
     # Load and process test image
     x = hf_processor(
-        images=[Image.open("cats.jpeg")], return_tensors="np"
+        images=[Image.open("assets/dog.jpeg")], return_tensors="np"
     ).pixel_values.transpose((0, 2, 3, 1))
     x = mx.array(x)
     # Infer with HuggingFace model
@@ -103,7 +102,7 @@ def test_clip_model(TEST_CKPT: str):
 
     clip_input = hf_processor(
         text=["a photo of a cat", "a photo of a dog"],
-        images=[Image.open("cats.jpeg"), Image.open("dog.jpeg")],
+        images=[Image.open("assets/cat.jpeg"), Image.open("assets/dog.jpeg")],
         return_tensors="pt",
     )
     with torch.inference_mode():
