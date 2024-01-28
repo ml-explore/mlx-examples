@@ -100,6 +100,5 @@ To verify the correctness of the CLIP implementation by comparing it to `transfo
 python test.py
 
 ### Photo Attribution
-We used the photo of a cat ("assets/cat.jpeg") and the photo of a dog ("assets/dog.jpeg").
-"Cat" by London's is licensed under CC BY-SA 2.0.
-"Happy Dog" by tedmurphy is licensed under CC BY 2.0.
+"assets/cat.jpeg" is a "Cat" by London's is licensed under CC BY-SA 2.0.
+"assets/dog.jpeg" is a "Happy Dog" by tedmurphy is licensed under CC BY 2.0.

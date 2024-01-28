@@ -2,7 +2,6 @@
 
 import json
 from dataclasses import dataclass
-from functools import reduce
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
@@ -23,8 +22,8 @@ def quick_gelu(x: mx.array) -> mx.array:
 
 
 def clip_loss(logits_per_text: mx.array, logits_per_image: mx.array) -> mx.array:
-    [N, _] = logits_per_text.shape
-    [M, _] = logits_per_image.shape
+    N, _ = logits_per_text.shape
+    M, _ = logits_per_image.shape
     caption_loss = cross_entropy(logits_per_text, mx.arange(N), reduction="mean")
     image_loss = cross_entropy(logits_per_image, mx.arange(M), reduction="mean")
     return (caption_loss + image_loss) / 2.0
@@ -66,13 +65,11 @@ class CLIPEncoderLayer(nn.TransformerEncoderLayer):
             activation=quick_gelu,
             norm_first=True,
         )
-        self.attention.query_proj.bias = mx.zeros(hidden_dim)
-        self.attention.key_proj.bias = mx.zeros(hidden_dim)
-        self.attention.value_proj.bias = mx.zeros(hidden_dim)
-        self.attention.out_proj.bias = mx.zeros(hidden_dim)
+        # Add biases to the attention projections
+        self.attention = nn.MultiHeadAttention(hidden_dim, num_heads, bias=True)
 
     def init_weights(self, factor: float, num_hidden_layers: int):
-        [embed_dim, _] = self.linear2.weight.shape
+        embed_dim, _ = self.linear2.weight.shape
         # Compute std
         in_proj_std = (embed_dim**-0.5) * ((2 * num_hidden_layers) ** -0.5) * factor
         out_proj_std = (embed_dim**-0.5) * factor
@@ -138,7 +135,8 @@ class CLIPTextModel(nn.Module):
         # Compute the causal mask
         mask = nn.MultiHeadAttention.create_additive_causal_mask(N, x.dtype)
         # Push through the transformer
-        x = reduce(lambda x, l: l(x, mask), self.layers, x)
+        for l in self.layers:
+            x = l(x, mask)
         # Apply the final layernorm
         last_hidden_state = self.final_layer_norm(x)
         pooler_output = last_hidden_state[mx.arange(B), eot_tokens]
@@ -221,12 +219,12 @@ class CLIPVisionModel(nn.Module):
         self.init_weights(config.initializer_range, config.initializer_factor)
 
     def _embed(self, x: mx.array) -> mx.array:
-        [batch_size, _, _, _] = x.shape
+        batch_size, _, _, _ = x.shape
         # Patchify using conv; [batch_size, sqrt(num_patches), sqrt(num_patches), embed_dim]
         patch_embeddings = self.patch_embedding(x)
         # [batch_size, num_patches, embed_dim]
         patch_embeddings = mx.flatten(patch_embeddings, start_axis=1, end_axis=2)
-        [_, _, embed_dim] = patch_embeddings.shape
+        _, _, embed_dim = patch_embeddings.shape
         # Append <CLS> embeddings
         # [batch_size, 1, embed_dim]
         cls_embeddings = mx.broadcast_to(
@@ -244,13 +242,14 @@ class CLIPVisionModel(nn.Module):
         # Prenorm
         x = self.pre_layernorm(x)
         # Push through transformer
-        x = reduce(lambda x, l: l(x, mask=None), self.layers, x)
+        for l in self.layers:
+            x = l(x, mask=None)
         # Pool <CLS> token
         pooler_output = self.post_layernorm(x[:, 0, :])
         return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x)
 
     def init_weights(self, initializer_range: float, factor: float):
-        [_, embed_dim] = self.position_embedding.shape
+        _, embed_dim = self.position_embedding.shape
         # Init embeddings
         self.class_embedding = normal(
             shape=self.class_embedding.shape, std=embed_dim**-0.5 * factor
@@ -394,8 +393,8 @@ class CLIPModel(nn.Module):
             vision_initializer_range, vision_initializer_factor
         )
         # Initialize projections
-        [_, text_embed_dim] = self.text_projection.weight.shape
-        [_, vision_embed_dim] = self.visual_projection.weight.shape
+        _, text_embed_dim = self.text_projection.weight.shape
+        _, vision_embed_dim = self.visual_projection.weight.shape
         self.text_projection.weight = normal(
             shape=self.text_projection.weight.shape,
             std=text_embed_dim**-0.5 * initializer_factor,
