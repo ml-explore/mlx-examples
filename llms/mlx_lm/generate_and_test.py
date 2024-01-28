@@ -227,16 +227,16 @@ def combine_code_and_tests(code: str, tests: str) -> str:
 
 def create_full_context(script, test_results):
     return (
-        "Analyze the following Python script and its unit test results. Identify the errors and provide a corrected version of the script along with improved unit tests, enclosed within a Python code block (```python```).\n\n"
+        "Correct the provided Python script and its unit tests based on the test results. "
+        "Include a revised script and updated tests in a single Python code block.\n\n"
         "Script:\n```python\n" + script + "\n```\n\n"
         "Unit Test Results:\n```bash\n" + test_results + "\n```\n\n"
-        "Instructions:\n"
-        "1. Correct any syntactical, logical, or structural errors in the script.\n"
-        "2. Ensure that the function in the script meets its intended purpose.\n"
-        "3. Modify or add new unit tests to cover identified issues or missing test cases.\n"
-        "4. Ensure that the unit tests follow Python's unittest framework guidelines.\n"
-        "5. Provide a clear explanation of any changes made to the script or the tests, enclosed within a Python code block (```python```)."
+        "Tasks:\n"
+        "1. Fix any syntax, logic, or structure issues in the script.\n"
+        "2. Ensure the script's function works as intended.\n"
+        "3. Modify the unit tests to cover all scenarios, including handling non-integer inputs for getValue function.\n"
     )
+
 
 def apply_model_advice():
     return input("Apply the above advice? (y/n): ").lower() == 'y'
