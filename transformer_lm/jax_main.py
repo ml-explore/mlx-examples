@@ -9,7 +9,7 @@ import datasets
 import jax
 import jax.numpy as jnp
 import numpy as np
-from tree_utils import tree_flatten
+from mlx.utils import tree_flatten
 
 """
 Some TODOs for this model:
@@ -30,6 +30,20 @@ def embedding_init(key, num_embeddings, embed_dim):
 
 def embedding_apply(params, X):
     return params.take(X, axis=0)
+
+
+def positional_encoding_init(dim):
+    max_len = 5000
+    position = jnp.arange(max_len)[:, None]
+    div_term = jnp.exp(jnp.arange(0, dim, 2) * (-math.log(10000.0) / dim))
+    pe = jnp.concatenate(
+        [jnp.sin(position * div_term), jnp.cos(position * div_term)], axis=1
+    )
+    return pe
+
+
+def positional_encoding_apply(pe, X):
+    return X + pe[: X.shape[1]]
 
 
 def dense_init(key, in_dim, out_dim, bias=True):
@@ -106,7 +120,10 @@ def selfattention_apply(params, num_heads, X, mask):
 
 def transformer_init(key, token_set_size, num_blocks, dim):
     key, ek = jax.random.split(key)
-    params = {"embedding": embedding_init(ek, token_set_size, dim)}
+    params = {
+        "embedding": embedding_init(ek, token_set_size, dim),
+        "pe": positional_encoding_init(dim),
+    }
     transformer_blocks = []
     for b in range(num_blocks):
         key, k1, k2, k3, k4 = jax.random.split(key, 5)
@@ -134,6 +151,7 @@ def create_additive_causal_mask(N):
 def transformer_apply(params, static_params, inputs):
     mask = create_additive_causal_mask(inputs.shape[1])
     X = embedding_apply(params["embedding"], inputs)
+    X = positional_encoding_apply(params["pe"], X)
     for block in params["transformer_blocks"]:
         out = layernorm_apply(block["ln1"], X)
         out = selfattention_apply(
@@ -154,6 +172,13 @@ def loss_fn(params, static_params, inputs, targets, reduce=True):
     token_indices = jnp.arange(targets.shape[1])[None, :]
     losses = -logits[sample_indices, token_indices, targets]
     return jnp.mean(losses) if reduce else losses.mean(-1)
+
+
+@functools.partial(jax.jit, static_argnames=["static_params", "lr"])
+def step(params, static_params, inputs, targets, lr):
+    loss, grad = jax.value_and_grad(loss_fn)(params, static_params, inputs, targets)
+    new_params = jax.tree_map(lambda p, g: p - lr * g, params, grad)
+    return loss, new_params
 
 
 def to_samples(context_size, dataset):
@@ -219,9 +244,8 @@ def main(args):
     losses = []
     tic = time.perf_counter()
     for it, (inputs, targets) in zip(range(args.num_iters), train_iterator):
-        loss, grads = loss_and_grad_fn(params, config, inputs, targets)
+        loss, params = step(params, config, inputs, targets, args.learning_rate)
         losses.append(loss.item())
-        params = update_fn(params, grads)
         if (it + 1) % steps_per_report == 0:
             train_loss = np.mean(losses)
             toc = time.perf_counter()

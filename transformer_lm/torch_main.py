@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import math
 import time
@@ -42,11 +42,29 @@ def create_additive_causal_mask(N, device):
     return mask.to(torch.float32) * -1e9
 
 
+class PositionalEncoding(torch.nn.Module):
+    def __init__(self, d_model: int, max_len: int = 5000):
+        super().__init__()
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
+        )
+        pe = torch.cat(
+            [torch.sin(position * div_term), torch.cos(position * div_term)], dim=1
+        )
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        return x + self.pe[: x.shape[1]]
+
+
 class TransformerLM(torch.nn.Module):
     def __init__(self, vocab_size, num_layers, num_heads, model_dims):
         super().__init__()
 
         self.embedding = torch.nn.Embedding(vocab_size, model_dims)
+        self.pe = PositionalEncoding(model_dims)
         self.transformer = torch.nn.TransformerEncoder(
             torch.nn.TransformerEncoderLayer(
                 model_dims,
@@ -63,6 +81,7 @@ class TransformerLM(torch.nn.Module):
     def forward(self, x):
         mask = create_additive_causal_mask(x.shape[1], device=x.device)
         x = self.embedding(x)
+        x = self.pe(x)
         x = self.transformer(x, mask=mask)
         x = self.projection(x)
         return x
