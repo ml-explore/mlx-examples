@@ -71,7 +71,7 @@ def dequantize(model: nn.Module) -> nn.Module:
 
 def remove_lora_layers(model: nn.Module) -> nn.Module:
     """
-    Reset the LoRA layers to original linear layers in the model.
+    Remove the LoRA layers from the model.
 
     Args:
         model (nn.Module): The model with LoRA layers.
