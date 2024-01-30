@@ -12,9 +12,6 @@ from .tuner.lora import LoRALinear
 from .tuner.trainer import TrainingArgs, evaluate, train
 from .utils import generate, load
 
-SUPPORTED_MODELS = [llama.Model, mixtral.Model, phi2.Model]
-
-
 def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
     parser.add_argument(
@@ -165,12 +162,6 @@ if __name__ == "__main__":
 
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
-
-    if model.__class__ not in SUPPORTED_MODELS:
-        raise ValueError(
-            f"Model {model.__class__} not supported. "
-            f"Supported models: { SUPPORTED_MODELS}"
-        )
 
     # Freeze all layers other than LORA linears
     model.freeze()
