@@ -2,7 +2,7 @@
 
 ## About
 
-Convolutional variational autoencoder (CVAE) implementation in MLX using MNIST. This is a minimal example ported from the [torch-vae](https://github.com/menzHSE/torch-vae) repo. 
+Convolutional variational autoencoder (CVAE) implementation in MLX using MNIST. 
 
 
 ## Variational Autoencoder Implementation Overview
