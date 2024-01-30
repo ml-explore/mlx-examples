@@ -77,7 +77,7 @@ def remove_lora_layers(model: nn.Module) -> nn.Module:
         model (nn.Module): The model with LoRA layers.
 
     Returns:
-        nn.Module: The model with reset LoRA layers.
+        nn.Module: The model without LoRA layers.
     """
     reset_layers = []
     for name, module in model.named_modules():
