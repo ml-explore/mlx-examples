@@ -25,6 +25,9 @@ MODEL_MAPPING = {
     "qwen": qwen,
     "plamo": plamo,
 }
+LORA_SUPPORTED_MODELS = [
+    llama.Model, mixtral.Model, phi2.Model, stablelm_epoch.Model
+]
 MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
