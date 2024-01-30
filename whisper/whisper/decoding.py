@@ -50,7 +50,7 @@ def detect_language(
         mel = mel[None]
 
     # skip encoder forward pass if already-encoded audio features were given
-    if mel.shape[-2:] != [model.dims.n_audio_ctx, model.dims.n_audio_state]:
+    if mel.shape[-2:] != (model.dims.n_audio_ctx, model.dims.n_audio_state):
         mel = model.encoder(mel)
 
     # forward pass using a single token, startoftranscript
