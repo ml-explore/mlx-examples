@@ -126,6 +126,7 @@ def train(
     val_dataset,
     args: TrainingArgs = TrainingArgs(),
     loss: callable = default_loss,
+    iterate_batches: callable = iterate_batches
 ):
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
