@@ -33,6 +33,9 @@ def apply_lora_layers(model: nn.Module, adapter_file: str) -> nn.Module:
             linear_replacements.append((name, replacement_module))
 
     model.update_modules(tree_unflatten(linear_replacements))
+
+    model.update(tree_unflatten(adapters))
+
     return model
 
 
