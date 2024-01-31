@@ -1,12 +1,11 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import json
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import mlx.core as mx
 import regex
-from huggingface_hub import hf_hub_download
 
 
 class CLIPTokenizer:
@@ -19,7 +18,6 @@ class CLIPTokenizer:
             r"""<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+""",
             regex.IGNORECASE,
         )
-
         self._cache = {self.bos: self.bos, self.eos: self.eos}
 
     @property
@@ -90,8 +88,8 @@ class CLIPTokenizer:
         if isinstance(text, list):
             return mx.array([self.tokenize(t, prepend_bos, append_eos) for t in text])
 
-        # Lower case cleanup and split according to self.pat. Hugging Face does
-        # a much more thorough job here but this should suffice for 95% of
+        # Lower case, cleanup, and split. Hugging Face does a much,
+        # more thorough job here but this should suffice for 95% of
         # cases.
         clean_text = regex.sub(r"\s+", " ", text.lower())
         tokens = regex.findall(self.pat, clean_text)
@@ -100,23 +98,21 @@ class CLIPTokenizer:
         bpe_tokens = [ti for t in tokens for ti in self.bpe(t)]
 
         # Map to token ids and return
-        tokens = [self.vocab[t] for t in bpe_tokens]
+        tokens = []
         if prepend_bos:
-            tokens = [self.bos_token] + tokens
+            tokens.append(self.bos_token)
+        tokens.extend(self.vocab[t] for t in bpe_tokens)
         if append_eos:
             tokens.append(self.eos_token)
-
         return mx.array(tokens)
 
     @staticmethod
     def from_pretrained(path: str):
         path = Path(path)
-        vocab_file = path / "vocab.json"
-        merges_file = path / "merges.txt"
 
-        with open(vocab_file, encoding="utf-8") as f:
+        with open(path / "vocab.json", encoding="utf-8") as f:
             vocab = json.load(f)
-        with open(merges_file, encoding="utf-8") as f:
+        with open(path / "merges.txt", encoding="utf-8") as f:
             bpe_merges = f.read().strip().split("\n")[1 : 49152 - 256 - 2 + 1]
 
         bpe_merges = [tuple(m.split()) for m in bpe_merges]

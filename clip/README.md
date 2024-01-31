@@ -7,7 +7,7 @@ model embeds images and text in the same space.[^1]
 
 Install the dependencies:
 
-```
+```shell
 pip install -r requirements.txt
 ```
 
@@ -28,9 +28,9 @@ You can use the CLIP model to embed images and text.
 
 ```python
 from PIL import Image
-from clip import load
+import clip
 
-model, tokenizer, img_processor = load("mlx_model")
+model, tokenizer, img_processor = clip.load("mlx_model")
 inputs = {
     "input_ids": tokenizer(["a photo of a cat", "a photo of a dog"]),
     "pixel_values": img_processor(
@@ -38,30 +38,31 @@ inputs = {
     ),
 }
 output = model(**inputs)
+
+# Get text and image embeddings:
+text_embeds = output.text_embeds
+image_embeds = output.image_embeds
 ```
 
 You can embed only images or only the text by passing just the
 ``input_ids`` or ``pixel_values``, respectively.
 
-It is also possible to use ``transformers`` preprocessing utilities.
-This is demonstrated in `example.py`:
-```
-python example.py
-```
+This example implements minimal image preprocessing and tokenization to reduce
+dependencies. For additional preprocessing functionality, you can use
+``transformers``. The file `hf_preproc.py` has an example.
 
-This example has been tested on the following Hugging Face repos:
+MLX CLIP has been tested and works with the following Hugging Face repos:
 
 - [openai/clip-vit-base-patch32](https://huggingface.co/openai/clip-vit-base-patch32)
 - [openai/clip-vit-large-patch14](https://huggingface.co/openai/clip-vit-large-patch14)
 
-You can run the test with:
-```
+You can run the tests with:
+
+```shell
 python test.py
 ```
 
-This compares the MLX implementation to the Transformers PyTorch
-implementation. You can test new models by updating the `TEST_CKPT` list in
-`test.py`.
+To test new models, update the `TEST_CKPT` list in `test.py`.
 
 ### Attribution
 
