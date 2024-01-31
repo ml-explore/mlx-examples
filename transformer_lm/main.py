@@ -25,7 +25,7 @@ class TransformerLM(nn.Module):
         self.embedding = nn.Embedding(vocab_size, dims)
         self.pe = nn.SinusoidalPositionalEncoding(dims)
         self.transformer = nn.TransformerEncoder(
-            num_layers, dims, num_heads, checkpoint=checkpoint
+            num_layers, dims, num_heads, norm_first=True, checkpoint=checkpoint
         )
         self.out_proj = nn.Linear(dims, vocab_size)
 
@@ -109,7 +109,9 @@ def main(args):
     for it, (inputs, targets) in zip(range(args.num_iters), train_iterator):
         inputs, targets = map(mx.array, (inputs, targets))
         loss, grads = loss_and_grad_fn(inputs, targets)
-        model.update(optimizer.apply_gradients(grads, model))
+        optimizer.learning_rate = min(1, it/args.lr_warmup) * args.learning_rate
+        optimizer.update(model, grads)
+        del grads
         mx.eval(loss, model.parameters())
         losses.append(loss.item())
         if (it + 1) % steps_per_report == 0:
@@ -183,7 +185,10 @@ if __name__ == "__main__":
         "--learning_rate", type=float, default=1e-3, help="SGD learning rate."
     )
     parser.add_argument(
-        "--weight_decay", type=float, default=1e-3, help="Set the weight decay"
+        "--weight_decay", type=float, default=1e-5, help="Set the weight decay"
+    )
+    parser.add_argument(
+        "--lr_warmup", type=int, default=200, help="LR linear warmup iterations"
     )
     parser.add_argument(
         "--steps_per_report",
