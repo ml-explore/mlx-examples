@@ -82,10 +82,33 @@ def get_model_path(path_or_hf_repo: str) -> Path:
     return model_path
 
 
+def apply_penalty(logits: mx.array, context: list, penalty: float):
+    """
+    Apply repetition penalty to specific logits based on the given context.
+
+    Args:
+        logits (mx.array): The logits produced by the language model.
+        context (list): A list of N previous tokens.
+        penalty (float): The repetition penalty factor to be applied.
+
+    Returns:
+        None: The function modifies the input logits in place.
+    """
+    if len(context) > 0:
+        indices = mx.array([token for token in context])
+        selected_logits = logits[:, indices]
+        selected_logits = mx.where(
+            selected_logits < 0, selected_logits * penalty, selected_logits / penalty
+        )
+        logits[:, indices] = selected_logits
+
+
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
-    temp: float = 0.0,
+    temp: 0.0,
+    generated_logits: list,
+    repetition_penalty: float,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -94,6 +117,7 @@ def generate_step(
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
+        repetition_penalty (float): The penalty factor for repeating tokens.
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
         one token and probability per call.
@@ -110,20 +134,28 @@ def generate_step(
         prob = softmax_logits[0, token]
         return token, prob
 
+    if repetition_penalty < 0 or not isinstance(repetition_penalty, float):
+        raise ValueError(
+            f"repetition_penalty must be a non-negative float, got {repetition_penalty}"
+        )
+
     y = prompt
     cache = None
+
     while True:
-        logits, cache = model(y[None], cache=cache)
-        logits = logits[:, -1, :]
+        logits, cache = model(y[:, None], cache=cache)
+        logits = logits.squeeze(1)
+        apply_penalty(logits, generated_logits, repetition_penalty)
         y, prob = sample(logits)
-        yield y, prob
+        yield y[mx.argmax(prob)], mx.argmax(prob)
 
 
 def generate(
     model: nn.Module,
     tokenizer: PreTrainedTokenizer,
     prompt: str,
-    temp: float = 0.0,
+    temp: float,
+    repetition_penalty,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Callable = None,
@@ -136,6 +168,7 @@ def generate(
        tokenizer (PreTrainedTokenizer): The tokenizer.
        prompt (str): The string prompt.
        temp (float): The temperature for sampling (default 0).
+       repetition_penalty (float): The penalty factor for repeating tokens.
        max_tokens (int): The maximum number of tokens (default 100).
        verbose (bool): If ``True``, print tokens and timing information
            (default ``False``).
@@ -154,7 +187,10 @@ def generate(
     skip = 0
     REPLACEMENT_CHAR = "\ufffd"
 
-    for (token, prob), n in zip(generate_step(prompt, model, temp), range(max_tokens)):
+    for (token, prob), n in zip(
+        generate_step(prompt, model, temp, tokens, repetition_penalty),
+        range(max_tokens),
+    ):
         if token == tokenizer.eos_token_id:
             break
         if n == 0:
