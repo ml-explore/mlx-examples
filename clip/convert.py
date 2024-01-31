@@ -81,11 +81,13 @@ def should_keep_weight(key: str):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Convert (OpenAI) CLIP weights to MLX")
+    parser = ArgumentParser(
+        description="Download and Convert (OpenAI) CLIP weights to MLX"
+    )
     parser.add_argument(
-        "--torch-path-or-hf-repo",
+        "--hf-repo",
         type=str,
-        help="Path to the PyTorch model or HuggingFace repository.",
+        help="HuggingFace repositor name.",
     )
     parser.add_argument(
         "--mlx-path",
@@ -96,7 +98,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    torch_path = get_model_path(args.torch_path_or_hf_repo)
+    torch_path = get_model_path(args.hf_repo)
     mlx_path = Path(args.mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
 
