@@ -88,7 +88,9 @@ def main(args):
     )
     print(f"Training a transformer with {nparams / 1024**2:.3f} M parameters")
 
-    optimizer = optim.SGD(learning_rate=args.learning_rate)
+    optimizer = optim.AdamW(
+        learning_rate=args.learning_rate, weight_decay=args.weight_decay
+    )
     loss_and_grad_fn = nn.value_and_grad(model, model.loss)
 
     def eval_fn(model, dataset):
@@ -179,6 +181,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--learning_rate", type=float, default=1e-3, help="SGD learning rate."
+    )
+    parser.add_argument(
+        "--weight_decay", type=float, default=1e-3, help="Set the weight decay"
     )
     parser.add_argument(
         "--steps_per_report",
