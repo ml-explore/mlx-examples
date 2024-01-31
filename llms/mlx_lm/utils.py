@@ -82,13 +82,13 @@ def get_model_path(path_or_hf_repo: str) -> Path:
     return model_path
 
 
-def apply_penalty(logits: mx.array, generated_tokens: list, penalty: float):
+def apply_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
     """
     Apply repetition penalty to specific logits based on the given context.
 
     Args:
         logits (mx.array): The logits produced by the language model.
-        generated_tokens (list): A list of N previous tokens.
+        generated_tokens (any): A list of N previous tokens.
         penalty (float): The repetition penalty factor to be applied.
 
     Returns:
@@ -101,14 +101,15 @@ def apply_penalty(logits: mx.array, generated_tokens: list, penalty: float):
             selected_logits < 0, selected_logits * penalty, selected_logits / penalty
         )
         logits[:, indices] = selected_logits
+    return logits
 
 
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
     temp: 0.0,
-    generated_tokens: list,
-    repetition_penalty: float,
+    generated_tokens: Any,
+    repetition_penalty: float = 1.0,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -117,7 +118,7 @@ def generate_step(
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
-        generated_tokens (list): A list of N previous tokens.
+        generated_tokens (any): A list of N previous tokens.
         repetition_penalty (float): The penalty factor for repeating tokens.
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
@@ -146,9 +147,9 @@ def generate_step(
     while True:
         logits, cache = model(y[:, None], cache=cache)
         logits = logits.squeeze(1)
-        apply_penalty(logits, generated_tokens, repetition_penalty)
+        logits = apply_penalty(logits, generated_tokens, repetition_penalty)
         y, prob = sample(logits)
-        yield y[mx.argmax(prob)], mx.argmax(prob)
+        yield y, prob
 
 
 def generate(
@@ -192,12 +193,12 @@ def generate(
         generate_step(prompt, model, temp, tokens, repetition_penalty),
         range(max_tokens),
     ):
-        if token == tokenizer.eos_token_id:
+        if token[0] == tokenizer.eos_token_id:
             break
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
-        tokens.append(token.item())
+        tokens.append(token[0].item())
 
         if verbose:
             s = tokenizer.decode(tokens)
