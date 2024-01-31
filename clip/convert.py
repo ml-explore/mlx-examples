@@ -1,7 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import argparse
 import shutil
-from argparse import ArgumentParser
 from pathlib import Path
 from typing import Tuple
 
@@ -71,7 +71,7 @@ def should_keep_weight(key: str):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Download and Convert (OpenAI) CLIP weights to MLX"
     )
     parser.add_argument(
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     print("[INFO] Loading")
     torch_weights = torch.load(torch_path / "pytorch_model.bin")
     print("[INFO] Converting")
-    mlx_weights = dict([map_weights(k, v) for (k, v) in torch_weights.items()])
+    mlx_weights = dict(map_weights(k, v) for (k, v) in torch_weights.items())
     mlx_weights = {k: v for (k, v) in mlx_weights.items() if should_keep_weight(k)}
     print("[INFO] Saving")
     mx.savez(str(mlx_path / "weights.npz"), **mlx_weights)

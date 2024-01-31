@@ -3,34 +3,13 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-from config import CLIPConfig, CLIPTextConfig, CLIPVisionConfig
-from huggingface_hub import hf_hub_download
 from mlx.core import linalg as LA
 from mlx.nn.losses import cross_entropy
 from mlx.utils import tree_flatten
-
-
-def quick_gelu(x: mx.array) -> mx.array:
-    """
-    Applies GELU approximation that is fast but somewhat inaccurate. See: https://github.com/hendrycks/GELUs
-    """
-    return x * mx.sigmoid(1.702 * x)
-
-
-def clip_loss(logits_per_text: mx.array, logits_per_image: mx.array) -> mx.array:
-    N, _ = logits_per_text.shape
-    M, _ = logits_per_image.shape
-    caption_loss = cross_entropy(logits_per_text, mx.arange(N), reduction="mean")
-    image_loss = cross_entropy(logits_per_image, mx.arange(M), reduction="mean")
-    return (caption_loss + image_loss) / 2.0
-
-
-def normal(shape: List[int], mean=0.0, std=1.0) -> mx.array:
-    return mean + std * mx.random.normal(shape)
 
 
 @dataclass
@@ -52,6 +31,48 @@ class CLIPModelOutput:
     image_embeds: Optional[mx.array]
     text_model_output: CLIPTextOutput
     vision_model_output: CLIPVisionOutput
+
+
+@dataclass
+class CLIPTextConfig:
+    num_hidden_layers: int
+    hidden_size: int
+    intermediate_size: int
+    num_attention_heads: int
+    max_position_embeddings: int
+    vocab_size: int
+
+
+@dataclass
+class CLIPVisionConfig:
+    num_hidden_layers: int
+    hidden_size: int
+    intermediate_size: int
+    num_attention_heads: int
+    num_channels: int
+    image_size: int
+    patch_size: int
+
+
+@dataclass
+class CLIPConfig:
+    text_config: CLIPTextConfig
+    vision_config: CLIPVisionConfig
+    projection_dim: int
+
+
+def quick_gelu(x: mx.array) -> mx.array:
+    """
+    A fast GELU approximation https://github.com/hendrycks/GELUs
+    """
+    return x * mx.sigmoid(1.702 * x)
+
+
+def clip_loss(logits: mx.array) -> mx.array:
+    N, M = logits.shape
+    caption_loss = cross_entropy(logits, mx.arange(N), reduction="mean")
+    image_loss = cross_entropy(logits.T, mx.arange(M), reduction="mean")
+    return (caption_loss + image_loss) / 2.0
 
 
 class CLIPEncoderLayer(nn.TransformerEncoderLayer):
@@ -106,36 +127,6 @@ class CLIPTextModel(nn.Module):
             pooler_output=pooler_output, last_hidden_state=last_hidden_state
         )
 
-    @staticmethod
-    def model_config(config):
-        return CLIPTextConfig(
-            num_hidden_layers=config["num_hidden_layers"],
-            hidden_size=config["hidden_size"],
-            intermediate_size=config["intermediate_size"],
-            num_attention_heads=config["num_attention_heads"],
-            max_position_embeddings=config["max_position_embeddings"],
-            vocab_size=config["vocab_size"],
-            initializer_factor=config["initializer_factor"],
-        )
-
-    @staticmethod
-    def from_pretrained(path: str):
-        path = Path(path)
-
-        with open(path / "config.json", "r") as fs:
-            config = json.load(fs)["text_config"]
-
-        weights = mx.load(str(path / "weights.npz"))
-        weights = {
-            k.replace("text_model.", ""): v
-            for (k, v) in weights.items()
-            if "text_model" in k
-        }
-        text_config = CLIPTextModel.model_config(config)
-        model = CLIPTextModel(text_config)
-        model.load_weights(tree_flatten(weights))
-        return model
-
 
 class CLIPVisionModel(nn.Module):
     """Implements the vision encoder transformer from CLIP."""
@@ -143,7 +134,7 @@ class CLIPVisionModel(nn.Module):
     def __init__(self, config: CLIPVisionConfig):
         super().__init__()
 
-        self.class_embedding = mx.random.normal((config.hidden_size,))
+        self.class_embedding = mx.zeros((config.hidden_size,))
         self.patch_embedding = nn.Conv2d(
             in_channels=config.num_channels,
             out_channels=config.hidden_size,
@@ -153,7 +144,7 @@ class CLIPVisionModel(nn.Module):
         )
         num_patches = (config.image_size // config.patch_size) ** 2
         num_positions = num_patches + 1
-        self.position_embedding = mx.random.normal((num_positions, config.hidden_size))
+        self.position_embedding = mx.zeros((num_positions, config.hidden_size))
         self.pre_layernorm = nn.LayerNorm(config.hidden_size)
         self.layers = [
             CLIPEncoderLayer(
@@ -164,13 +155,14 @@ class CLIPVisionModel(nn.Module):
         self.post_layernorm = nn.LayerNorm(config.hidden_size)
 
     def _embed(self, x: mx.array) -> mx.array:
-        batch_size, _, _, _ = x.shape
-        # Patchify using conv; [batch_size, sqrt(num_patches), sqrt(num_patches), embed_dim]
+        batch_size = x.shape[0]
+        # Patchify using conv:
+        # [batch_size, sqrt(num_patches), sqrt(num_patches), embed_dim]
         patch_embeddings = self.patch_embedding(x)
         # [batch_size, num_patches, embed_dim]
         patch_embeddings = mx.flatten(patch_embeddings, start_axis=1, end_axis=2)
-        _, _, embed_dim = patch_embeddings.shape
-        # Append <CLS> embeddings
+        embed_dim = patch_embeddings.shape[-1]
+        # Prepend <CLS> embeddings
         # [batch_size, 1, embed_dim]
         cls_embeddings = mx.broadcast_to(
             self.class_embedding, (batch_size, 1, embed_dim)
@@ -182,48 +174,15 @@ class CLIPVisionModel(nn.Module):
         return embeddings
 
     def __call__(self, x: mx.array) -> CLIPVisionOutput:
-        # Look up patch embeddings
         x = self._embed(x)
-        # Prenorm
         x = self.pre_layernorm(x)
-        # Push through transformer
+
         for l in self.layers:
             x = l(x, mask=None)
-        # Pool <CLS> token
+
+        # Extract <CLS> token embedding
         pooler_output = self.post_layernorm(x[:, 0, :])
         return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x)
-
-    @staticmethod
-    def model_config(config):
-        return CLIPVisionConfig(
-            num_hidden_layers=config["num_hidden_layers"],
-            hidden_size=config["hidden_size"],
-            intermediate_size=config["intermediate_size"],
-            num_attention_heads=config["num_attention_heads"],
-            num_channels=3,
-            image_size=config["image_size"],
-            patch_size=config["patch_size"],
-        )
-
-    @staticmethod
-    def from_pretrained(path: str):
-        path = Path(path)
-
-        with open(path / "config.json", "r") as fs:
-            config = json.load(fs)["vision_config"]
-
-        vision_config = CLIPVisionModel.model_config(config)
-
-        weights = mx.load(str(path / "weights.npz"))
-        weights = {
-            k.replace("vision_model.", ""): v
-            for (k, v) in weights.items()
-            if "vision_model" in k
-        }
-
-        model = CLIPVisionModel(vision_config)
-        model.load_weights(tree_flatten(weights))
-        return model
 
 
 class CLIPModel(nn.Module):
@@ -237,7 +196,7 @@ class CLIPModel(nn.Module):
 
         self.visual_projection = nn.Linear(vision_embed_dim, projection_dim, bias=False)
         self.text_projection = nn.Linear(text_embed_dim, projection_dim, bias=False)
-        self.logit_scale = mx.array(config.logit_scale_init_value)
+        self.logit_scale = mx.array(0.0)
 
     def get_text_features(self, x: mx.array) -> mx.array:
         return self.text_projection(self.text_model(x).pooler_output)
@@ -250,7 +209,7 @@ class CLIPModel(nn.Module):
         input_ids: Optional[mx.array] = None,
         pixel_values: Optional[mx.array] = None,
         return_loss=False,
-    ) -> Any:
+    ) -> CLIPModelOutput:
         if input_ids is not None:
             text_model_output = self.text_model(input_ids)
             text_embeds = self.text_projection(text_model_output.pooler_output)
@@ -267,15 +226,15 @@ class CLIPModel(nn.Module):
             image_embeds = None
             vision_model_output = None
 
-        loss = None
+        if return_loss and (input_ids is None or pixel_values is None):
+            raise ValueError("Must provide text and image inputs to compute loss.")
 
-        if input_ids is not None and pixel_values is not None:
+        if return_loss:
             logit_scale = mx.exp(self.logit_scale)
-            logits_per_text = (text_embeds @ image_embeds.T) * logit_scale
-            logits_per_image = logits_per_text.T
-
-            if return_loss:
-                loss = clip_loss(logits_per_text, logits_per_image)
+            logits = (text_embeds @ image_embeds.T) * logit_scale
+            loss = clip_loss(logits)
+        else:
+            loss = None
 
         return CLIPModelOutput(
             loss=loss,
@@ -289,16 +248,35 @@ class CLIPModel(nn.Module):
     def from_pretrained(path: str):
         path = Path(path)
 
-        with open(path / "config.json", "r") as fs:
-            config = json.load(fs)
+        with open(path / "config.json", "r") as fid:
+            config = json.load(fid)
 
-        text_config = CLIPTextModel.model_config(config["text_config"])
-        vision_config = CLIPVisionModel.model_config(config["vision_config"])
+        text_config = config["text_config"]
+        text_config = CLIPTextConfig(
+            num_hidden_layers=text_config["num_hidden_layers"],
+            hidden_size=text_config["hidden_size"],
+            intermediate_size=text_config["intermediate_size"],
+            num_attention_heads=text_config["num_attention_heads"],
+            max_position_embeddings=text_config["max_position_embeddings"],
+            vocab_size=text_config["vocab_size"],
+        )
+
+        vision_config = config["vision_config"]
+
+        vision_config = CLIPVisionConfig(
+            num_hidden_layers=vision_config["num_hidden_layers"],
+            hidden_size=vision_config["hidden_size"],
+            intermediate_size=vision_config["intermediate_size"],
+            num_attention_heads=vision_config["num_attention_heads"],
+            num_channels=3,
+            image_size=vision_config["image_size"],
+            patch_size=vision_config["patch_size"],
+        )
+
         config = CLIPConfig(
             text_config=text_config,
             vision_config=vision_config,
             projection_dim=config["projection_dim"],
-            initializer_factor=config["initializer_factor"],
         )
         model = CLIPModel(config)
         model.load_weights(str(path / "weights.npz"))
