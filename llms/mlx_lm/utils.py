@@ -82,20 +82,20 @@ def get_model_path(path_or_hf_repo: str) -> Path:
     return model_path
 
 
-def apply_penalty(logits: mx.array, context: list, penalty: float):
+def apply_penalty(logits: mx.array, generated_tokens: list, penalty: float):
     """
     Apply repetition penalty to specific logits based on the given context.
 
     Args:
         logits (mx.array): The logits produced by the language model.
-        context (list): A list of N previous tokens.
+        generated_tokens (list): A list of N previous tokens.
         penalty (float): The repetition penalty factor to be applied.
 
     Returns:
         None: The function modifies the input logits in place.
     """
-    if len(context) > 0:
-        indices = mx.array([token for token in context])
+    if len(generated_tokens) > 0:
+        indices = mx.array([token for token in generated_tokens])
         selected_logits = logits[:, indices]
         selected_logits = mx.where(
             selected_logits < 0, selected_logits * penalty, selected_logits / penalty
@@ -107,7 +107,7 @@ def generate_step(
     prompt: mx.array,
     model: nn.Module,
     temp: 0.0,
-    generated_logits: list,
+    generated_tokens: list,
     repetition_penalty: float,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
@@ -117,6 +117,7 @@ def generate_step(
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
+        generated_tokens (list): A list of N previous tokens.
         repetition_penalty (float): The penalty factor for repeating tokens.
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
@@ -145,7 +146,7 @@ def generate_step(
     while True:
         logits, cache = model(y[:, None], cache=cache)
         logits = logits.squeeze(1)
-        apply_penalty(logits, generated_logits, repetition_penalty)
+        apply_penalty(logits, generated_tokens, repetition_penalty)
         y, prob = sample(logits)
         yield y[mx.argmax(prob)], mx.argmax(prob)
 
