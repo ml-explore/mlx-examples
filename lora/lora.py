@@ -293,7 +293,7 @@ def generate(model, prompt, tokenizer, args):
         tokens.append(token.item())
         s = tokenizer.decode(tokens)
         if len(s) - skip > 1:
-            print(s[skip:skip + 1], end="", flush=True)
+            print(s[skip:-1], end="", flush=True)
             skip = len(s) - 1
     print(tokenizer.decode(tokens)[skip:], flush=True)
     print("=" * 10)
