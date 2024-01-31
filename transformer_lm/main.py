@@ -109,7 +109,7 @@ def main(args):
     for it, (inputs, targets) in zip(range(args.num_iters), train_iterator):
         inputs, targets = map(mx.array, (inputs, targets))
         loss, grads = loss_and_grad_fn(inputs, targets)
-        optimizer.learning_rate = min(1, it/args.lr_warmup) * args.learning_rate
+        optimizer.learning_rate = min(1, it / args.lr_warmup) * args.learning_rate
         optimizer.update(model, grads)
         del grads
         mx.eval(loss, model.parameters())
@@ -182,7 +182,7 @@ if __name__ == "__main__":
         "--num_iters", type=int, default=100000, help="Iterations to train for."
     )
     parser.add_argument(
-        "--learning_rate", type=float, default=1e-3, help="SGD learning rate."
+        "--learning_rate", type=float, default=3e-4, help="SGD learning rate."
     )
     parser.add_argument(
         "--weight_decay", type=float, default=1e-5, help="Set the weight decay"
