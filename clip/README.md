@@ -1,10 +1,8 @@
 # (OpenAI) CLIP (ViT-based)
 
-An example of visual-language representation learning using MLX.
+An example of CLIP in MLX. Contrastive Language-Image Pre-training (CLIP)
+embedds images and text in the same space.[^1]
 
-CLIP, for Contrastive Language-Image Pre-training, is a powerful representation learning method that aims to learn shared embedding space for both images and text.
-
-Paper: https://arxiv.org/pdf/2103.00020.pdf
 
 ### Setup
 
@@ -14,19 +12,19 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Next, download the model configuration and weights from HuggingFace and convert the weights to `mlx`. 
-In this example, we will use ```openai/clip-vit-base-patch32```.
+Next, download the model from Hugging Face and convert it to MLX. This example
+uses ``openai/clip-vit-base-patch32``.
 
 ```
-python convert.py --hf-repo openai/clip-vit-base-patch32 --mlx-path weights/openai/clip-vit-base-patch32
+python convert.py
 ```
-If the download and conversion are successful, the folder ```weights``` will appear. In the ```weights``` folder, there will be the HuggingFace configuration with 
-the converted weights for ```openai/clip-vit-base-patch32```.
+
+The script will by default download the model and config to the directory
+``mlx_model/``.
 
 ### Run
 
-Once you've downloaded and converted the weights to `mlx`, you can use the
-CLIP model to embed images and text. 
+You can use the CLIP model to embed images and text. 
 
 ```python
 from clip import load
@@ -47,11 +45,13 @@ clip_input = {
     "input_ids": tokenizer(["a photo of a cat", "a photo of a dog"]),
     "pixel_values": img_processor([Image.open("assets/cat.jpeg"), Image.open("assets/dog.jpeg")])
 }
+
 # Compute the output
 mlx_out = mlx_clip(
     **clip_input,
     return_loss=True
 )
+
 # Print some embeddings and the CLIP loss
 print("text embeddings:")
 print(mlx_out.text_embeds)
@@ -59,7 +59,9 @@ print("image embeddings:")
 print(mlx_out.image_embeds)
 print(f"CLIP loss: {mlx_out.loss}")
 ```
+
 The output should be:
+
 ```
 text embeddings:
 array([[0.0148391, 0.0069961, -0.0233705, ..., -0.0508463, -0.0437914, 0.00330403],
@@ -93,3 +95,7 @@ python test.py
 ### Photo Attribution
 - *"assets/cat.jpeg"* is a "Cat" by London's, licensed under CC BY-SA 2.0.
 - *"assets/dog.jpeg"* is a "Happy Dog" by tedmurphy, licensed under CC BY 2.0.
+
+[^1]: Refer to the original paper [Learning Transferable Visual Models From
+  Natural Language Supervision ](https://arxiv.org/abs/2103.00020) or [blog
+  post](https://openai.com/research/clip)

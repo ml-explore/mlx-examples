@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import shutil
 from argparse import ArgumentParser
@@ -11,16 +11,6 @@ from huggingface_hub import snapshot_download
 
 
 def get_model_path(path_or_hf_repo: str) -> Path:
-    """
-    Ensures the model is available locally. If the path does not exist locally,
-    it is downloaded from the Hugging Face Hub.
-
-    Args:
-        path_or_hf_repo (str): The local path or Hugging Face repository ID of the model.
-
-    Returns:
-        Path: The path to the model.
-    """
     model_path = Path(path_or_hf_repo)
     if not model_path.exists():
         model_path = Path(
@@ -87,7 +77,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--hf-repo",
         type=str,
-        help="HuggingFace repositor name.",
+        default="openai/clip-vit-base-patch32",
+        help="Hugging Face repository name.",
     )
     parser.add_argument(
         "--mlx-path",
@@ -109,19 +100,8 @@ if __name__ == "__main__":
     mlx_weights = {k: v for (k, v) in mlx_weights.items() if should_keep_weight(k)}
     print("[INFO] Saving")
     mx.savez(str(mlx_path / "weights.npz"), **mlx_weights)
-    shutil.copyfile(
-        str(torch_path / "config.json"),
-        str(mlx_path / "config.json"),
-    )
-    shutil.copyfile(
-        str(torch_path / "merges.txt"),
-        str(mlx_path / "merges.txt"),
-    )
-    shutil.copyfile(
-        str(torch_path / "vocab.json"),
-        str(mlx_path / "vocab.json"),
-    )
-    shutil.copyfile(
-        str(torch_path / "preprocessor_config.json"),
-        str(mlx_path / "preprocessor_config.json"),
-    )
+    for fn in ["config.json", "merges.txt", "vocab.json", "preprocessor_config.json"]:
+        shutil.copyfile(
+            str(torch_path / f"{fn}"),
+            str(mlx_path / f"{fn}"),
+        )
