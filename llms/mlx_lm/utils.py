@@ -155,7 +155,7 @@ def generate(
     tokenizer: PreTrainedTokenizer,
     prompt: str,
     temp: float,
-    repetition_penalty,
+    repetition_penalty: float,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Callable = None,
