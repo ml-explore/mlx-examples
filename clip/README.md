@@ -14,23 +14,14 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Next, download the model configuration and weights. To download the model, it is necessary to specify the desired HuggingFace configuration and checkpoint. In this example, we will use ```
-openai/clip-vit-base-patch32```.
+Next, download the model configuration and weights from HuggingFace and convert the weights to `mlx`. 
+In this example, we will use ```openai/clip-vit-base-patch32```.
 
 ```
-python download.py openai/clip-vit-base-patch32
+python convert.py --torch-path-or-hf-repo openai/clip-vit-base-patch32 --mlx-path weights/openai/clip-vit-base-patch32
 ```
-If the download is successful, the folder ```weights``` will appear. In the ```weights``` folder, there will be the HuggingFace configuration and weights for ```openai/clip-vit-base-patch32```.
-
-Now, convert the PyTorch weights to MLX with:
-
-```
-python convert.py --torch-path weights/openai/clip-vit-base-patch32 --mlx-path weights/mlx/openai/clip-vit-base-patch32
-```
-
-By default, the conversion script will make the directory `mlx` folder within `weights`.
-In `weights/mlx/openai/clip-vit-base-patch32`, the script will save
-the converted `weights.npz`,  `config.json`,  `vocab.json`, and `merges.txt`.
+If the download and conversion are successful, the folder ```weights``` will appear. In the ```weights``` folder, there will be the HuggingFace configuration with 
+the converted weights for ```openai/clip-vit-base-patch32```.
 
 ### Run
 
@@ -38,20 +29,19 @@ Once you've converted the weights to MLX format, you can use the
 CLIP model to embed images and text. 
 
 ```python
-from pathlib import Path
-from model import CLIPModel
+from clip import load
 from PIL import Image
-from tokenizer import CLIPTokenizer
-from image_processor import CLIPImageProcessor
 
 MODEL: str = "openai/clip-vit-base-patch32"
-CONVERTED_CKPT_PATH: str = f"weights/mlx/{MODEL}"
+CONVERTED_CKPT_PATH: str = f"weights/{MODEL}"
 
-# Load pretrained MLX CLIPModel
-mlx_clip = CLIPModel.from_pretrained(Path(CONVERTED_CKPT_PATH))
-# Load input tokenizer and transformers image (pre)processor
-tokenizer = CLIPTokenizer.from_pretrained(Path(CONVERTED_CKPT_PATH))
-img_processor = CLIPImageProcessor.from_pretrained(Path(CONVERTED_CKPT_PATH))
+# Load MLX CLIP model, tokenizer and image (pre)processor
+(
+    mlx_clip,
+    tokenizer,
+    img_processor
+) = load(CONVERTED_CKPT_PATH)
+
 # Preprocess the input
 clip_input = {
     "input_ids": tokenizer(["a photo of a cat", "a photo of a dog"]),

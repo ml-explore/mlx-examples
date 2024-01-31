@@ -1,16 +1,15 @@
-from pathlib import Path
-
 import mlx.core as mx
-import model
 import numpy as np
 import torch
 import transformers
 from PIL import Image
 
-MODEL: str = "openai/clip-vit-base-patch32"
-CONVERTED_CKPT_PATH: str = f"weights/mlx/{MODEL}"
+from clip import load
 
-mlx_clip = model.CLIPModel.from_pretrained(Path(CONVERTED_CKPT_PATH))
+MODEL: str = "openai/clip-vit-base-patch32"
+CONVERTED_CKPT_PATH: str = f"weights/{MODEL}"
+
+mlx_clip, _, _ = load(CONVERTED_CKPT_PATH)
 tf_clip = transformers.CLIPModel.from_pretrained(MODEL)
 tf_processor = transformers.CLIPProcessor.from_pretrained(MODEL)
 

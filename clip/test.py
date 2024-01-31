@@ -12,7 +12,7 @@ from tokenizer import CLIPTokenizer
 from transformers import AutoTokenizer
 from transformers.image_processing_utils import ChannelDimension
 
-CONVERTED_WEIGHTS_PATH = Path("weights/mlx")
+CONVERTED_WEIGHTS_PATH = Path("weights")
 TEST_CKPTS: List[str] = [
     "openai/clip-vit-base-patch32",
     "openai/clip-vit-large-patch14",

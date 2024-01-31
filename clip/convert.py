@@ -7,6 +7,33 @@ from typing import Tuple
 
 import mlx.core as mx
 import torch
+from huggingface_hub import snapshot_download
+
+
+def get_model_path(path_or_hf_repo: str) -> Path:
+    """
+    Ensures the model is available locally. If the path does not exist locally,
+    it is downloaded from the Hugging Face Hub.
+
+    Args:
+        path_or_hf_repo (str): The local path or Hugging Face repository ID of the model.
+
+    Returns:
+        Path: The path to the model.
+    """
+    model_path = Path(path_or_hf_repo)
+    if not model_path.exists():
+        model_path = Path(
+            snapshot_download(
+                repo_id=path_or_hf_repo,
+                allow_patterns=[
+                    "*.bin",
+                    "*.json",
+                    "*.txt",
+                ],
+            )
+        )
+    return model_path
 
 
 def torch_to_mx(a: torch.Tensor, *, dtype: str) -> mx.array:
@@ -56,9 +83,9 @@ def should_keep_weight(key: str):
 if __name__ == "__main__":
     parser = ArgumentParser(description="Convert (OpenAI) CLIP weights to MLX")
     parser.add_argument(
-        "--torch-path",
+        "--torch-path-or-hf-repo",
         type=str,
-        help="Path to the PyTorch model.",
+        help="Path to the PyTorch model or HuggingFace repository.",
     )
     parser.add_argument(
         "--mlx-path",
@@ -69,7 +96,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    torch_path = Path(args.torch_path)
+    torch_path = get_model_path(args.torch_path_or_hf_repo)
     mlx_path = Path(args.mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
 
