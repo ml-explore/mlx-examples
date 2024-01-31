@@ -44,8 +44,10 @@ text_embeds = output.text_embeds
 image_embeds = output.image_embeds
 ```
 
-You can embed only images or only the text by passing just the
-``input_ids`` or ``pixel_values``, respectively.
+Run the above example with `python clip.py`.
+
+To embed only images or only the text pass just the ``input_ids`` or
+``pixel_values``, respectively.
 
 This example implements minimal image preprocessing and tokenization to reduce
 dependencies. For additional preprocessing functionality, you can use
@@ -62,7 +64,7 @@ You can run the tests with:
 python test.py
 ```
 
-To test new models, update the `TEST_CKPT` list in `test.py`.
+To test new models, update the `MLX_PATH` and `HF_PATH` in `test.py`.
 
 ### Attribution
 
