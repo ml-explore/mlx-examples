@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import json
 from pathlib import Path
@@ -87,11 +87,9 @@ class CLIPImageProcessor:
         return (image - mean) / std
 
     @staticmethod
-    def from_pretrained(path: Union[Path, str]):
-        if isinstance(path, str):
-            config_file = hf_hub_download(path, "preprocessor_config.json")
-        else:
-            config_file = path / "preprocessor_config.json"
+    def from_pretrained(path: str):
+        path = Path(path)
+        config_file = path / "preprocessor_config.json"
         with open(config_file, encoding="utf-8") as f:
             config = json.load(f)
         return CLIPImageProcessor(**config)

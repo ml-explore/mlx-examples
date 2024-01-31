@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import json
 from dataclasses import dataclass
@@ -68,36 +68,6 @@ class CLIPEncoderLayer(nn.TransformerEncoderLayer):
         # Add biases to the attention projections
         self.attention = nn.MultiHeadAttention(hidden_dim, num_heads, bias=True)
 
-    def init_weights(self, factor: float, num_hidden_layers: int):
-        embed_dim, _ = self.linear2.weight.shape
-        # Compute std
-        in_proj_std = (embed_dim**-0.5) * ((2 * num_hidden_layers) ** -0.5) * factor
-        out_proj_std = (embed_dim**-0.5) * factor
-        # Initialize attention
-        self.attention.query_proj.weight = normal(
-            shape=self.attention.query_proj.weight.shape, std=in_proj_std
-        )
-        self.attention.key_proj.weight = normal(
-            shape=self.attention.key_proj.weight.shape, std=in_proj_std
-        )
-        self.attention.value_proj.weight = normal(
-            shape=self.attention.value_proj.weight.shape, std=in_proj_std
-        )
-        self.attention.out_proj.weight = normal(
-            shape=self.attention.out_proj.weight.shape, std=out_proj_std
-        )
-        # Initialize MLPs
-        fc_std = (2 * embed_dim) ** -0.5 * factor
-        self.linear1.weight = normal(shape=self.linear1.weight.shape, std=fc_std)
-        self.linear2.weight = normal(shape=self.linear2.weight.shape, std=in_proj_std)
-        self.linear1.bias = mx.zeros_like(self.linear1.bias)
-        self.linear2.bias = mx.zeros_like(self.linear2.bias)
-        # Initialize layer norms
-        self.ln1.bias = mx.zeros_like(self.ln1.bias)
-        self.ln1.weight = mx.ones_like(self.ln1.weight)
-        self.ln2.bias = mx.zeros_like(self.ln2.bias)
-        self.ln2.weight = mx.ones_like(self.ln2.weight)
-
 
 class CLIPTextModel(nn.Module):
     """Implements the text encoder transformer from CLIP."""
@@ -116,28 +86,19 @@ class CLIPTextModel(nn.Module):
             for _ in range(config.num_hidden_layers)
         ]
         self.final_layer_norm = nn.LayerNorm(config.hidden_size)
-        self.init_weights(config.initializer_factor)
 
     def _embed(self, x: mx.array) -> mx.array:
-        # Extract some shapes
-        _, N = x.shape
-        # Compute the embeddings
         embeddings = self.token_embedding(x)
-        embeddings += self.position_embedding[:N]
+        embeddings += self.position_embedding[: x.shape[1]]
         return embeddings
 
     def __call__(self, x: mx.array) -> CLIPTextOutput:
-        # Extract some shapes
         B, N = x.shape
         eot_tokens = mx.argmax(x, axis=-1)
-        # Look up embeddings
         x = self._embed(x)
-        # Compute the causal mask
         mask = nn.MultiHeadAttention.create_additive_causal_mask(N, x.dtype)
-        # Push through the transformer
         for l in self.layers:
             x = l(x, mask)
-        # Apply the final layernorm
         last_hidden_state = self.final_layer_norm(x)
         pooler_output = last_hidden_state[mx.arange(B), eot_tokens]
 
@@ -145,49 +106,34 @@ class CLIPTextModel(nn.Module):
             pooler_output=pooler_output, last_hidden_state=last_hidden_state
         )
 
-    def init_weights(self, factor: float):
-        self.token_embedding.weight = normal(
-            shape=self.token_embedding.weight.shape, std=factor * 0.02
+    @staticmethod
+    def model_config(config):
+        return CLIPTextConfig(
+            num_hidden_layers=config["num_hidden_layers"],
+            hidden_size=config["hidden_size"],
+            intermediate_size=config["intermediate_size"],
+            num_attention_heads=config["num_attention_heads"],
+            max_position_embeddings=config["max_position_embeddings"],
+            vocab_size=config["vocab_size"],
+            initializer_factor=config["initializer_factor"],
         )
-        self.position_embedding = normal(
-            shape=self.position_embedding.shape, std=factor * 0.02
-        )
-        for layer in self.layers:
-            layer.init_weights(factor, len(self.layers))
-        self.final_layer_norm.bias = mx.zeros_like(self.final_layer_norm.bias)
-        self.final_layer_norm.weight = mx.ones_like(self.final_layer_norm.weight)
 
     @staticmethod
-    def from_pretrained(path: Union[Path, str]):
-        if isinstance(path, str):
-            config_path = hf_hub_download(path, "config.json")
-            weights_path = hf_hub_download(path, "weights.npz")
-        else:
-            config_path = path / "config.json"
-            weights_path = path / "weights.npz"
+    def from_pretrained(path: str):
+        path = Path(path)
 
-        with open(config_path, "r") as fs:
-            config = json.load(fs)
+        with open(path / "config.json", "r") as fs:
+            config = json.load(fs)["text_config"]
 
-        weights = mx.load(str(weights_path))
+        weights = mx.load(str(path / "weights.npz"))
         weights = {
             k.replace("text_model.", ""): v
             for (k, v) in weights.items()
             if "text_model" in k
         }
-
-        text_config = CLIPTextConfig(
-            num_hidden_layers=config["text_config"]["num_hidden_layers"],
-            hidden_size=config["text_config"]["hidden_size"],
-            intermediate_size=config["text_config"]["intermediate_size"],
-            num_attention_heads=config["text_config"]["num_attention_heads"],
-            max_position_embeddings=config["text_config"]["max_position_embeddings"],
-            vocab_size=config["text_config"]["vocab_size"],
-            initializer_factor=config["text_config"]["initializer_factor"],
-        )
-
+        text_config = CLIPTextModel.model_config(config)
         model = CLIPTextModel(text_config)
-        model.load_weights(tree_flatten(weights), strict=True)
+        model.load_weights(tree_flatten(weights))
         return model
 
 
@@ -216,7 +162,6 @@ class CLIPVisionModel(nn.Module):
             for _ in range(config.num_hidden_layers)
         ]
         self.post_layernorm = nn.LayerNorm(config.hidden_size)
-        self.init_weights(config.initializer_range, config.initializer_factor)
 
     def _embed(self, x: mx.array) -> mx.array:
         batch_size, _, _, _ = x.shape
@@ -248,72 +193,41 @@ class CLIPVisionModel(nn.Module):
         pooler_output = self.post_layernorm(x[:, 0, :])
         return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x)
 
-    def init_weights(self, initializer_range: float, factor: float):
-        _, embed_dim = self.position_embedding.shape
-        # Init embeddings
-        self.class_embedding = normal(
-            shape=self.class_embedding.shape, std=embed_dim**-0.5 * factor
+    @staticmethod
+    def model_config(config):
+        return CLIPVisionConfig(
+            num_hidden_layers=config["num_hidden_layers"],
+            hidden_size=config["hidden_size"],
+            intermediate_size=config["intermediate_size"],
+            num_attention_heads=config["num_attention_heads"],
+            num_channels=3,
+            image_size=config["image_size"],
+            patch_size=config["patch_size"],
         )
-        self.position_embedding = normal(
-            shape=self.position_embedding.shape, std=initializer_range * factor
-        )
-        self.patch_embedding.weight = normal(
-            shape=self.patch_embedding.weight.shape, std=initializer_range * factor
-        )
-        # Init Transformer Layers
-        for layer in self.layers:
-            layer.init_weights(factor, len(self.layers))
-        # Init layer norms
-        self.pre_layernorm.bias = mx.zeros_like(self.pre_layernorm.bias)
-        self.pre_layernorm.weight = mx.ones_like(self.pre_layernorm.weight)
-        self.post_layernorm.bias = mx.zeros_like(self.post_layernorm.bias)
-        self.post_layernorm.weight = mx.ones_like(self.post_layernorm.weight)
 
     @staticmethod
-    def from_pretrained(path: Union[Path, str]):
-        if isinstance(path, str):
-            config_path = hf_hub_download(path, "config.json")
-            weights_path = hf_hub_download(path, "weights.npz")
-        else:
-            config_path = path / "config.json"
-            weights_path = path / "weights.npz"
+    def from_pretrained(path: str):
+        path = Path(path)
 
-        with open(config_path, "r") as fs:
-            config = json.load(fs)
+        with open(path / "config.json", "r") as fs:
+            config = json.load(fs)["vision_config"]
 
-        weights = mx.load(str(weights_path))
+        vision_config = CLIPVisionModel.model_config(config)
+
+        weights = mx.load(str(path / "weights.npz"))
         weights = {
             k.replace("vision_model.", ""): v
             for (k, v) in weights.items()
             if "vision_model" in k
         }
 
-        vision_config = CLIPVisionConfig(
-            num_hidden_layers=config["vision_config"]["num_hidden_layers"],
-            hidden_size=config["vision_config"]["hidden_size"],
-            intermediate_size=config["vision_config"]["intermediate_size"],
-            num_attention_heads=config["vision_config"]["num_attention_heads"],
-            num_channels=3,
-            image_size=config["vision_config"]["image_size"],
-            patch_size=config["vision_config"]["patch_size"],
-        )
-
         model = CLIPVisionModel(vision_config)
-        model.load_weights(tree_flatten(weights), strict=True)
+        model.load_weights(tree_flatten(weights))
         return model
 
 
 class CLIPModel(nn.Module):
     def __init__(self, config: CLIPConfig):
-        if not isinstance(config.text_config, CLIPTextConfig):
-            raise ValueError(
-                f"config.text_config is expected to be of type CLIPTextConfig but is of type {type(config.text_config)}."
-            )
-        if not isinstance(config.vision_config, CLIPVisionConfig):
-            raise ValueError(
-                f"config.vision_config is expected to be of type CLIPVisionConfig but is of type {type(config.vision_config)}."
-            )
-
         self.text_model = CLIPTextModel(config.text_config)
         self.vision_model = CLIPVisionModel(config.vision_config)
 
@@ -324,14 +238,6 @@ class CLIPModel(nn.Module):
         self.visual_projection = nn.Linear(vision_embed_dim, projection_dim, bias=False)
         self.text_projection = nn.Linear(text_embed_dim, projection_dim, bias=False)
         self.logit_scale = mx.array(config.logit_scale_init_value)
-
-        self.init_weights(
-            logit_scale_init_value=config.logit_scale_init_value,
-            initializer_factor=config.initializer_factor,
-            text_initializer_factor=config.text_config.initializer_factor,
-            vision_initializer_factor=config.vision_config.initializer_factor,
-            vision_initializer_range=config.vision_config.initializer_range,
-        )
 
     def get_text_features(self, x: mx.array) -> mx.array:
         return self.text_projection(self.text_model(x).pooler_output)
@@ -379,62 +285,15 @@ class CLIPModel(nn.Module):
             text_model_output=text_model_output,
         )
 
-    def init_weights(
-        self,
-        logit_scale_init_value: float,
-        initializer_factor: float,
-        text_initializer_factor: float,
-        vision_initializer_factor: float,
-        vision_initializer_range: float,
-    ):
-        # Initializer encoders
-        self.text_model.init_weights(text_initializer_factor)
-        self.vision_model.init_weights(
-            vision_initializer_range, vision_initializer_factor
-        )
-        # Initialize projections
-        _, text_embed_dim = self.text_projection.weight.shape
-        _, vision_embed_dim = self.visual_projection.weight.shape
-        self.text_projection.weight = normal(
-            shape=self.text_projection.weight.shape,
-            std=text_embed_dim**-0.5 * initializer_factor,
-        )
-        self.visual_projection.weight = normal(
-            shape=self.visual_projection.weight.shape,
-            std=vision_embed_dim**-0.5 * initializer_factor,
-        )
-        # Reset temperature
-        self.logit_scale = mx.array(logit_scale_init_value)
-
     @staticmethod
-    def from_pretrained(path: Union[Path, str]):
-        if isinstance(path, str):
-            config_path = hf_hub_download(path, "config.json")
-            weights_path = hf_hub_download(path, "weights.npz")
-        else:
-            config_path = path / "config.json"
-            weights_path = path / "weights.npz"
+    def from_pretrained(path: str):
+        path = Path(path)
 
-        with open(config_path, "r") as fs:
+        with open(path / "config.json", "r") as fs:
             config = json.load(fs)
 
-        text_config = CLIPTextConfig(
-            num_hidden_layers=config["text_config"]["num_hidden_layers"],
-            hidden_size=config["text_config"]["hidden_size"],
-            intermediate_size=config["text_config"]["intermediate_size"],
-            num_attention_heads=config["text_config"]["num_attention_heads"],
-            max_position_embeddings=config["text_config"]["max_position_embeddings"],
-            vocab_size=config["text_config"]["vocab_size"],
-        )
-        vision_config = CLIPVisionConfig(
-            num_hidden_layers=config["vision_config"]["num_hidden_layers"],
-            hidden_size=config["vision_config"]["hidden_size"],
-            intermediate_size=config["vision_config"]["intermediate_size"],
-            num_attention_heads=config["vision_config"]["num_attention_heads"],
-            num_channels=3,
-            image_size=config["vision_config"]["image_size"],
-            patch_size=config["vision_config"]["patch_size"],
-        )
+        text_config = CLIPTextModel.model_config(config["text_config"])
+        vision_config = CLIPVisionModel.model_config(config["vision_config"])
         config = CLIPConfig(
             text_config=text_config,
             vision_config=vision_config,
@@ -442,5 +301,5 @@ class CLIPModel(nn.Module):
             initializer_factor=config["initializer_factor"],
         )
         model = CLIPModel(config)
-        model.load_weights(str(weights_path), strict=True)
+        model.load_weights(str(path / "weights.npz"))
         return model

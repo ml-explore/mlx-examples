@@ -109,13 +109,10 @@ class CLIPTokenizer:
         return mx.array(tokens)
 
     @staticmethod
-    def from_pretrained(path: Union[Path, str]):
-        if isinstance(path, str):
-            vocab_file = hf_hub_download(path, "vocab.json")
-            merges_file = hf_hub_download(path, "merges.txt")
-        else:
-            vocab_file = path / "vocab.json"
-            merges_file = path / "merges.txt"
+    def from_pretrained(path: str):
+        path = Path(path)
+        vocab_file = path / "vocab.json"
+        merges_file = path / "merges.txt"
 
         with open(vocab_file, encoding="utf-8") as f:
             vocab = json.load(f)

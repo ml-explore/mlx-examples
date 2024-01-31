@@ -1,8 +1,7 @@
-# (OpenAI) CLIP (ViT-based)
+# CLIP
 
-An example of CLIP in MLX. Contrastive Language-Image Pre-training (CLIP)
-embedds images and text in the same space.[^1]
-
+An example of OpenAI's CLIP in MLX. The Contrastive Language-Image Pre-training (CLIP)
+model embeds images and text in the same space.[^1]
 
 ### Setup
 
@@ -12,69 +11,37 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
-Next, download the model from Hugging Face and convert it to MLX. This example
-uses ``openai/clip-vit-base-patch32``.
+Next, download a CLIP model from Hugging Face and convert it to MLX. The
+default model is
+[openai/clip-vit-base-patch32](https://huggingface.co/openai/clip-vit-base-patch32).
 
 ```
 python convert.py
 ```
 
-The script will by default download the model and config to the directory
-``mlx_model/``.
+The script will by default download the model and configuration files to the
+directory ``mlx_model/``.
 
 ### Run
 
 You can use the CLIP model to embed images and text. 
 
 ```python
-from clip import load
 from PIL import Image
+from clip import load
 
-MODEL: str = "openai/clip-vit-base-patch32"
-CONVERTED_CKPT_PATH: str = f"weights/{MODEL}"
-
-# Load MLX CLIP model, tokenizer and image (pre)processor
-(
-    mlx_clip,
-    tokenizer,
-    img_processor
-) = load(CONVERTED_CKPT_PATH)
-
-# Preprocess the input
-clip_input = {
+model, tokenizer, img_processor = load("mlx_model")
+inputs = {
     "input_ids": tokenizer(["a photo of a cat", "a photo of a dog"]),
-    "pixel_values": img_processor([Image.open("assets/cat.jpeg"), Image.open("assets/dog.jpeg")])
+    "pixel_values": img_processor(
+        [Image.open("assets/cat.jpeg"), Image.open("assets/dog.jpeg")]
+    ),
 }
-
-# Compute the output
-mlx_out = mlx_clip(
-    **clip_input,
-    return_loss=True
-)
-
-# Print some embeddings and the CLIP loss
-print("text embeddings:")
-print(mlx_out.text_embeds)
-print("image embeddings:")
-print(mlx_out.image_embeds)
-print(f"CLIP loss: {mlx_out.loss}")
+output = model(**inputs)
 ```
 
-The output should be:
-
-```
-text embeddings:
-array([[0.0148391, 0.0069961, -0.0233705, ..., -0.0508463, -0.0437914, 0.00330403],
-       [0.00870739, 0.0258293, -0.0386577, ..., -0.0546769, -0.0241999, 0.0111514]], dtype=float32)
-image embeddings:
-array([[-0.000217405, -0.00493075, 0.0141711, ..., 0.0798553, -0.0224953, -0.0192719],
-       [0.000887729, -0.0116987, -0.0106347, ..., 0.0521465, -0.00254958, -0.0034469]], dtype=float32)
-CLIP loss: array(0.00633574, dtype=float32)
-```
-
-It is also possible to embed only the images or only the text.
-Thus, both ``input_ids`` and ``pixel_values`` parameters are optional. 
-To embed only the text, simply provide only the `input_ids`. Similarly, to embed only the images, simply provide only the ``pixel_values``.
+You can embed only images or only the text by passing just the
+``input_ids`` or ``pixel_values``, respectively.
 
 It is also possible to use ``transformers`` preprocessing utilities.
 This is demonstrated in `example.py`:
@@ -82,17 +49,22 @@ This is demonstrated in `example.py`:
 python example.py
 ```
 
-### Remarks
-The conversion method and the correctness of the CLIP implementation were tested on the following HuggingFace repos:
-- `openai/clip-vit-base-patch32`
-- `openai/clip-vit-large-patch14`
+This example has been tested on the following Hugging Face repos:
 
-To verify the correctness of the CLIP implementation by comparing it to `transformers` PyTorch implementation, adapt `test.py` (e.g. choose the desired testing checkpoint by setting `TEST_CKPTS`) and run:
+- [openai/clip-vit-base-patch32](https://huggingface.co/openai/clip-vit-base-patch32)
+- [openai/clip-vit-large-patch14](https://huggingface.co/openai/clip-vit-large-patch14)
+
+You can run the test with:
 ```
 python test.py
 ```
 
-### Photo Attribution
+This compares the MLX implementation to the Transformers PyTorch
+implementation. You can test new models by updating the `TEST_CKPT` list in
+`test.py`.
+
+### Attribution
+
 - *"assets/cat.jpeg"* is a "Cat" by London's, licensed under CC BY-SA 2.0.
 - *"assets/dog.jpeg"* is a "Happy Dog" by tedmurphy, licensed under CC BY 2.0.
 
