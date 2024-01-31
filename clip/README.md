@@ -1,4 +1,4 @@
-# (OpenAI) CLIP
+# (OpenAI) CLIP (ViT-based)
 
 An example of visual-language representation learning using MLX.
 
@@ -18,14 +18,14 @@ Next, download the model configuration and weights from HuggingFace and convert 
 In this example, we will use ```openai/clip-vit-base-patch32```.
 
 ```
-python convert.py --torch-path-or-hf-repo openai/clip-vit-base-patch32 --mlx-path weights/openai/clip-vit-base-patch32
+python convert.py --hf-repo openai/clip-vit-base-patch32 --mlx-path weights/openai/clip-vit-base-patch32
 ```
 If the download and conversion are successful, the folder ```weights``` will appear. In the ```weights``` folder, there will be the HuggingFace configuration with 
 the converted weights for ```openai/clip-vit-base-patch32```.
 
 ### Run
 
-Once you've converted the weights to MLX format, you can use the
+Once you've downloaded and converted the weights to `mlx`, you can use the
 CLIP model to embed images and text. 
 
 ```python
@@ -81,14 +81,15 @@ python example.py
 ```
 
 ### Remarks
-The conversion method and the correctness of the CLIP implementation were tested for:
+The conversion method and the correctness of the CLIP implementation were tested on the following HuggingFace repos:
 - `openai/clip-vit-base-patch32`
 - `openai/clip-vit-large-patch14`
 
 To verify the correctness of the CLIP implementation by comparing it to `transformers` PyTorch implementation, adapt `test.py` (e.g. choose the desired testing checkpoint by setting `TEST_CKPTS`) and run:
 ```
 python test.py
+```
 
 ### Photo Attribution
-"assets/cat.jpeg" is a "Cat" by London's is licensed under CC BY-SA 2.0.
-"assets/dog.jpeg" is a "Happy Dog" by tedmurphy is licensed under CC BY 2.0.
+- *"assets/cat.jpeg"* is a "Cat" by London's, licensed under CC BY-SA 2.0.
+- *"assets/dog.jpeg"* is a "Happy Dog" by tedmurphy, licensed under CC BY 2.0.
