@@ -174,7 +174,7 @@ def train(
                 f"Tokens/sec {num_tokens_per_sec :.3f}"
             )
             if reported_train_loss_data is not None:
-                reported_train_loss_data.append((train_loss, iters_per_sec, num_tokens_per_sec))
+                reported_train_loss_data.append((it, train_loss, iters_per_sec, num_tokens_per_sec))
             losses = []
             n_tokens = 0
             start = time.perf_counter()
@@ -199,7 +199,7 @@ def train(
                 f"Val took {val_run_time :.3f}s"
             )
             if validation_loss_data is not None:
-                validation_loss_data.append((val_loss, val_run_time))
+                validation_loss_data.append((it, val_loss, val_run_time))
             start = time.perf_counter()
 
             # Save adapter weights if needed
