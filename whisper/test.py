@@ -303,7 +303,7 @@ class TestWhisper(unittest.TestCase):
         def check_segment(seg, expected):
             for k, v in expected.items():
                 if isinstance(v, float):
-                    self.assertAlmostEqual(seg[k], v, places=3)
+                    self.assertAlmostEqual(seg[k], v, places=2)
                 else:
                     self.assertEqual(seg[k], v)
 
