@@ -1,4 +1,4 @@
-mlx
+mlx>=0.1
 numba
 numpy
 torch
