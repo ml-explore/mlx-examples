@@ -26,9 +26,15 @@ Some more useful examples are listed below.
 
 - Speech recognition with [OpenAI's Whisper](whisper).
 
+### Multimodal models
+
+- Joint text and image embeddings with [CLIP](clip).
+
 ### Other Models 
 
 - Semi-supervised learning on graph-structured data with [GCN](gcn).
+- Real NVP [normalizing flow](normalizing_flow) for density estimation and
+  sampling.
 
 ### Hugging Face
 
