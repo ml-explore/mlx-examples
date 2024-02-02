@@ -7,12 +7,9 @@ import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .models import llama, mixtral, phi2
 from .tuner.lora import LoRALinear
 from .tuner.trainer import TrainingArgs, evaluate, train
-from .utils import generate, load
-
-SUPPORTED_MODELS = [llama.Model, mixtral.Model, phi2.Model]
+from .utils import LORA_SUPPORTED_MODELS, generate, load
 
 
 def build_parser():
@@ -166,10 +163,10 @@ if __name__ == "__main__":
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
-    if model.__class__ not in SUPPORTED_MODELS:
+    if model.__class__ not in LORA_SUPPORTED_MODELS:
         raise ValueError(
             f"Model {model.__class__} not supported. "
-            f"Supported models: { SUPPORTED_MODELS}"
+            f"Supported models: {LORA_SUPPORTED_MODELS}"
         )
 
     # Freeze all layers other than LORA linears
