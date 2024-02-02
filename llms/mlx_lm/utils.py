@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -108,8 +108,8 @@ def generate_step(
     prompt: mx.array,
     model: nn.Module,
     temp: 0.0,
-    generated_tokens: Any,
-    repetition_penalty: float = 1.0,
+    repetition_penalty: Optional[float],
+    repetition_context: Optional[List[int]],
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -118,8 +118,9 @@ def generate_step(
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
-        generated_tokens (any): A list of N previous tokens.
-        repetition_penalty (float): The penalty factor for repeating tokens.
+        repetition_penalty (Optional[float]): The penalty factor for repeating tokens.
+        repetition_context Optional(List[int]): A list containing the repetition context.
+
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
         one token and probability per call.
@@ -147,7 +148,10 @@ def generate_step(
     while True:
         logits, cache = model(y[:, None], cache=cache)
         logits = logits.squeeze(1)
-        logits = apply_penalty(logits, generated_tokens, repetition_penalty)
+
+        if repetition_context is not None and repetition_penalty > 1.0:
+            logits = apply_penalty(logits, repetition_context, repetition_penalty)
+
         y, prob = sample(logits)
         yield y, prob
 
@@ -156,8 +160,9 @@ def generate(
     model: nn.Module,
     tokenizer: PreTrainedTokenizer,
     prompt: str,
-    temp: float,
-    repetition_penalty: float,
+    temp: Optional[float] = 0.0,
+    repetition_penalty: Optional[float] = 1.0,
+    repetition_context_size: Optional[int] = 5,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Callable = None,
@@ -170,7 +175,8 @@ def generate(
        tokenizer (PreTrainedTokenizer): The tokenizer.
        prompt (str): The string prompt.
        temp (float): The temperature for sampling (default 0).
-       repetition_penalty (float): The penalty factor for repeating tokens.
+       repetition_penalty (Optional[float]): The penalty factor for repeating tokens.
+       repetition_context_size (Optional[int]): The number of tokens to consider for repetition penalty.
        max_tokens (int): The maximum number of tokens (default 100).
        verbose (bool): If ``True``, print tokens and timing information
            (default ``False``).
@@ -182,7 +188,9 @@ def generate(
         print("=" * 10)
         print("Prompt:", prompt)
 
-    prompt = mx.array(tokenizer.encode(prompt))
+    prompt_tokens = mx.array(tokenizer.encode(prompt))
+    repetition_context = []
+    repetition_context.extend(tokenizer.encode(prompt))
 
     tic = time.perf_counter()
     tokens = []
@@ -190,7 +198,9 @@ def generate(
     REPLACEMENT_CHAR = "\ufffd"
 
     for (token, prob), n in zip(
-        generate_step(prompt, model, temp, tokens, repetition_penalty),
+        generate_step(
+            prompt_tokens, model, temp, repetition_penalty, repetition_context
+        ),
         range(max_tokens),
     ):
         if token[0] == tokenizer.eos_token_id:
@@ -209,6 +219,13 @@ def generate(
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
 
+        repetition_context.append(
+            token[0].item()
+        )  # Update repetition context after each token
+        repetition_context = repetition_context[
+            -repetition_context_size:
+        ]  # Maintain the specified context size
+
     tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
 
     if verbose:
@@ -218,7 +235,7 @@ def generate(
         if len(tokens) == 0:
             print("No tokens generated for this prompt")
             return
-        prompt_tps = prompt.size / prompt_time
+        prompt_tps = prompt_tokens.size / prompt_time
         gen_tps = (len(tokens) - 1) / gen_time
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
