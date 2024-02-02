@@ -219,6 +219,13 @@ def generate(
             elif REPLACEMENT_CHAR not in s:
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
+
+    repetition_context.append(
+        token[0].item()
+    )  # Update repetition context after each token
+    repetition_context = repetition_context[
+        -repetition_context_size:
+    ]  # Maintain the specified context size
     token_count = len(tokens)
     token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
 
