@@ -187,8 +187,10 @@ def generate(
         print("Prompt:", prompt)
 
     prompt_tokens = mx.array(tokenizer.encode(prompt))
+
     repetition_context = []
-    repetition_context.extend([token.item() for token in prompt_tokens])
+    if repetition_penalty > 1.0:
+        repetition_context.extend([token.item() for token in prompt_tokens])
 
     tic = time.perf_counter()
     tokens = []
@@ -217,18 +219,20 @@ def generate(
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
 
-        repetition_context.append(
-            token.item()
-        )  # Update repetition context after each token
-        repetition_context = repetition_context[
-            -repetition_context_size:
-        ]  # Maintain the specified context size
+        if repetition_penalty > 1.0:
+            repetition_context.append(
+                token.item()
+            )  # Update repetition context after each token
+            print(repetition_context)
+            repetition_context = repetition_context[
+                -repetition_context_size:
+            ]  # Maintain the specified context size
 
     token_count = len(tokens)
-    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+    token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
 
     if verbose:
-        print(tokens[skip:], flush=True)
+        print(token_string[skip:], flush=True)
         gen_time = time.perf_counter() - tic
         print("=" * 10)
         if token_count == 0:
@@ -239,7 +243,7 @@ def generate(
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
 
-    return tokens
+    return token_string
 
 
 def load_model(model_path: Path) -> nn.Module:
