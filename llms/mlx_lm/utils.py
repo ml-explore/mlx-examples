@@ -109,8 +109,8 @@ def generate_step(
     prompt: mx.array,
     model: nn.Module,
     temp: 0.0,
-    repetition_penalty: Optional[float],
-    repetition_context: Optional[List[int]],
+    repetition_penalty: Optional[float] = 1.0,
+    repetition_context: Optional[List[int]] = [],
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -147,12 +147,9 @@ def generate_step(
     cache = None
 
     while True:
-        logits, cache = model(y[:, None], cache=cache)
-        logits = logits.squeeze(1)
-
-        if repetition_context is not None and repetition_penalty > 1.0:
-            logits = apply_penalty(logits, repetition_context, repetition_penalty)
-
+        logits, cache = model(y[None], cache=cache)
+        logits = logits[:, -1, :]
+        logits = apply_penalty(logits, repetition_context, repetition_penalty)
         y, prob = sample(logits)
         yield y, prob
 
@@ -162,11 +159,11 @@ def generate(
     tokenizer: PreTrainedTokenizer,
     prompt: str,
     temp: Optional[float] = 0.0,
-    repetition_penalty: Optional[float] = 1.0,
-    repetition_context_size: Optional[int] = 5,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Callable = None,
+    repetition_penalty: Optional[float] = 1.0,
+    repetition_context_size: Optional[int] = 0,
 ) -> str:
     """
     Generate text from the model.
@@ -191,7 +188,7 @@ def generate(
 
     prompt_tokens = mx.array(tokenizer.encode(prompt))
     repetition_context = []
-    repetition_context.extend(tokenizer.encode(prompt))
+    repetition_context.extend([token.item() for token in prompt_tokens])
 
     tic = time.perf_counter()
     tokens = []
@@ -204,12 +201,12 @@ def generate(
         ),
         range(max_tokens),
     ):
-        if token[0] == tokenizer.eos_token_id:
+        if token == tokenizer.eos_token_id:
             break
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
-        tokens.append(token[0].item())
+        tokens.append(token.item())
 
         if verbose:
             s = tokenizer.decode(tokens)
@@ -220,28 +217,29 @@ def generate(
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
 
-    repetition_context.append(
-        token[0].item()
-    )  # Update repetition context after each token
-    repetition_context = repetition_context[
-        -repetition_context_size:
-    ]  # Maintain the specified context size
+        repetition_context.append(
+            token.item()
+        )  # Update repetition context after each token
+        repetition_context = repetition_context[
+            -repetition_context_size:
+        ]  # Maintain the specified context size
+
     token_count = len(tokens)
-    token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
 
     if verbose:
-        print(token_string[skip:], flush=True)
+        print(tokens[skip:], flush=True)
         gen_time = time.perf_counter() - tic
         print("=" * 10)
         if token_count == 0:
             print("No tokens generated for this prompt")
             return
-        prompt_tps = prompt.size / prompt_time
+        prompt_tps = prompt_tokens.size / prompt_time
         gen_tps = (len(token_count) - 1) / gen_time
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
 
-    return token_string
+    return tokens
 
 
 def load_model(model_path: Path) -> nn.Module:
