@@ -12,7 +12,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, plamo, qwen, stablelm_epoch
+from .models import llama, mixtral, phi2, plamo, qwen, stablelm_epoch, qwen2
 from .tuner.utils import apply_lora_layers
 
 # Constants
@@ -24,9 +24,10 @@ MODEL_MAPPING = {
     "stablelm_epoch": stablelm_epoch,
     "qwen": qwen,
     "plamo": plamo,
+    "qwen2": qwen2
 }
 LORA_SUPPORTED_MODELS = [
-    llama.Model, mixtral.Model, phi2.Model, stablelm_epoch.Model
+    llama.Model, mixtral.Model, phi2.Model, stablelm_epoch.Model, qwen2.Model
 ]
 MAX_FILE_SIZE_GB = 5
 
