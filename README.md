@@ -21,6 +21,7 @@ Some more useful examples are listed below.
 ### Image Models 
 
 - Generating images with [Stable Diffusion](stable_diffusion).
+- Image classification with [MLPMixer](mlp_mixer).
 
 ### Audio Models
 
