@@ -5,10 +5,11 @@ import mlx.core as mx
 import mlx.data as dx
 from mixer import MLX_WEIGHTS_PATH
 from mixer import load as load_mlx
+from mixer_jax import JAX_WEIGHTS_PATH
 from mixer_jax import load as load_jax
 from preprocess import rescale
 
-TEST_JAX_WEIGHTS_PATH = "weights/jax"
+TEST_JAX_WEIGHTS_PATH = JAX_WEIGHTS_PATH
 TEST_MLX_WEIGHTS_PATH = MLX_WEIGHTS_PATH
 
 TEST_MODELS = [
