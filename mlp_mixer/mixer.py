@@ -13,7 +13,7 @@ class MixerGELU(nn.Module):
 
 
 class MlpBlock(nn.Sequential):
-    """Mixer block layer."""
+    """Mixer MLP."""
 
     def __init__(self, input_dim: int, hidden_dim: int):
         super(MlpBlock, self).__init__(
