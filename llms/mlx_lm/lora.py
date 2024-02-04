@@ -109,6 +109,12 @@ def build_parser():
         default=500,
         help="Number of test set batches, -1 uses the entire test set.",
     )
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=2048,
+        help="Maximum sequence length.",
+    )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
     return parser
 
@@ -197,6 +203,7 @@ if __name__ == "__main__":
         steps_per_eval=args.steps_per_eval,
         steps_per_save=args.save_every,
         adapter_file=args.adapter_file,
+        max_seq_length=args.max_seq_length
     )
     if args.train:
         print("Training")
