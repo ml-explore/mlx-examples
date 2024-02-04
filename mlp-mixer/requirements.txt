@@ -1,0 +1,8 @@
+mlx
+mlx-data
+tensorflow
+jax
+numpy
+einops
+flax
+gsutil
