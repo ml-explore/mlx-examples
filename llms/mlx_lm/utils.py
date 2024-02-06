@@ -12,7 +12,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, plamo, qwen, stablelm_epoch
+from .models import llama, mixtral, olmo, phi2, plamo, qwen, qwen2, stablelm_epoch
 from .tuner.utils import apply_lora_layers
 
 # Constants
@@ -24,8 +24,16 @@ MODEL_MAPPING = {
     "stablelm_epoch": stablelm_epoch,
     "qwen": qwen,
     "plamo": plamo,
+    "olmo": olmo,
+    "qwen2": qwen2,
 }
-LORA_SUPPORTED_MODELS = [llama.Model, mixtral.Model, phi2.Model, stablelm_epoch.Model]
+LORA_SUPPORTED_MODELS = [
+    llama.Model,
+    mixtral.Model,
+    phi2.Model,
+    stablelm_epoch.Model,
+    qwen2.Model,
+]
 MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
@@ -437,6 +445,25 @@ def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
         else "model.safetensors"
     )
 
+    total_size = sum(v.nbytes for v in weights.values())
+    index_data = {"metadata": {"total_size": total_size}, "weight_map": {}}
+
     for i, shard in enumerate(shards):
         shard_name = shard_file_format.format(i + 1, shards_count)
-        mx.save_safetensors(str(save_path / shard_name), shard)
+        shard_path = save_path / shard_name
+
+        mx.save_safetensors(str(shard_path), shard)
+
+        for weight_name in shard.keys():
+            index_data["weight_map"][weight_name] = shard_name
+
+    index_data["weight_map"] = {
+        k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
+    }
+
+    with open(save_path / "model.safetensors.index.json", "w") as f:
+        json.dump(
+            index_data,
+            f,
+            indent=4,
+        )
