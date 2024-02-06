@@ -401,7 +401,7 @@ def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
 
         index_data["metadata"]["total_size"] += shard_path.stat().st_size
 
-    sorted_weight_map = {
+    index_data["weight_map"] = {
         k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
     }
 
