@@ -1,9 +1,9 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 
 import mlx.core as mx
 import mlx.nn as nn
-import utils
-from mlx.utils import tree_flatten
 
 
 # from https://github.com/ml-explore/mlx-examples/blob/main/stable_diffusion/stable_diffusion/unet.py
@@ -16,9 +16,10 @@ def upsample_nearest(x, scale: int = 2):
 
 class UpsamplingConv2d(nn.Module):
     """
-    A convolutional layer that upsamples the input by a factor of 2. MLX does not yet
-    support transposed convolutions, so we approximate them with nearest neighbor upsampling
-    followed by a convolution. This is similar to the approach used in the original U-Net.
+    A convolutional layer that upsamples the input by a factor of 2. MLX does
+    not yet support transposed convolutions, so we approximate them with
+    nearest neighbor upsampling followed by a convolution. This is similar to
+    the approach used in the original U-Net.
     """
 
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
@@ -187,7 +188,10 @@ class Decoder(nn.Module):
 
 
 class CVAE(nn.Module):
-    """A convolutional variational autoencoder consisting of an encoder and a decoder."""
+    """
+    A convolutional variational autoencoder consisting
+    of an encoder and a decoder.
+    """
 
     def __init__(self, num_latent_dims, num_img_channels, max_num_filters):
         super().__init__()
@@ -197,7 +201,6 @@ class CVAE(nn.Module):
         self.encoder = Encoder(num_latent_dims, num_img_channels, max_num_filters)
         self.decoder = Decoder(num_latent_dims, num_img_channels, max_num_filters)
 
-    # forward pass of the data "x"
     def __call__(self, x):
         # image to latent vector
         z = self.encode(x)
@@ -213,16 +216,3 @@ class CVAE(nn.Module):
 
     def get_kl_div(self):
         return self.encoder.kl_div
-
-    def num_params(self):
-        nparams = sum(x.size for k, x in tree_flatten(self.trainable_parameters()))
-        return nparams
-
-    def save(self, fname):
-        # ensure the directory exists
-        utils.ensure_folder_exists(fname)
-        # save the model weights
-        self.save_weights(fname)
-
-    def load(self, fname):
-        self.load_weights(fname)

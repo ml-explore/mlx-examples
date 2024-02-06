@@ -1,7 +1,5 @@
-import os
-import tempfile
+# Copyright © 2023-2024 Apple Inc.
 
-import utils
 from mlx.data.datasets import load_mnist
 
 
@@ -38,6 +36,11 @@ def mnist(batch_size, img_size, root=None):
 
 
 if __name__ == "__main__":
+    import os
+    import tempfile
+
+    import utils
+
     batch_size = 32
     img_size = (64, 64)  # (H, W)
 
@@ -64,9 +67,3 @@ if __name__ == "__main__":
     temp_fname = os.path.join(tempfile.gettempdir(), "mnist_train_batch.png")
     img.save(temp_fname)
     print(f"Saved training batch to {temp_fname}")
-
-    # Reset the iterators, if necessary
-    tr_iter.reset()
-    test_iter.reset()
-
-    print("Dataset prepared successfully!")
