@@ -407,7 +407,7 @@ def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
 
     with open(save_path / "model.safetensors.index.json", "w") as f:
         json.dump(
-            {"metadata": index_data["metadata"], "weight_map": sorted_weight_map},
+            index_data,
             f,
             indent=4,
         )
