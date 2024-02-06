@@ -388,7 +388,8 @@ def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
         else "model.safetensors"
     )
 
-    index_data = {"metadata": {"total_size": 0}, "weight_map": {}}
+    total_size = sum(v.nbytes for v in weights.values())
+    index_data = {"metadata": {"total_size": total_size}, "weight_map": {}}
 
     for i, shard in enumerate(shards):
         shard_name = shard_file_format.format(i + 1, shards_count)
@@ -398,8 +399,6 @@ def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
 
         for weight_name in shard.keys():
             index_data["weight_map"][weight_name] = shard_name
-
-        index_data["metadata"]["total_size"] += shard_path.stat().st_size
 
     index_data["weight_map"] = {
         k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
