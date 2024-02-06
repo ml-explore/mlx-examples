@@ -35,32 +35,13 @@ class UpsamplingConv2d(nn.Module):
 
 class Encoder(nn.Module):
     """
-    A convolutional variational encoder. We do not map the input image
-    deterministically to a latent vector. Instead, we map the input to
-    a probability distribution in latent space and sample a latent vector
-    fron that distribution. In this example, we linearly map the input
-    image to a mean vector and a vector of standard deviations that
-    parameterize a normal distribution.
-
-    We can then sample from this distribution to generate a new image. Also,
-    we can add an auxiliary loss to the network that forces the distribution
-    to be close to a standard normal distribution. We use the KL divergence
-    between the two distributions as this auxiliary loss.
+    A convolutional variational encoder.
+    Maps the input to a normal distribution in latent space and sample a latent
+    vector from that distribution.
     """
 
-    def __init__(self, num_latent_dims, num_img_channels, max_num_filters):
+    def __init__(self, num_latent_dims, image_shape, max_num_filters):
         super().__init__()
-        self.num_latent_dims = num_latent_dims
-        self.num_img_channels = num_img_channels
-        self.max_num_filters = max_num_filters
-        # Track KL divergence. This is used as an auxiliary loss term.
-        self.kl_div = mx.array(0.0)
-
-        # we assume B x 64 x 64 x #img_channels input
-        # Todo: add input shape attribute to the model to make it more flexible
-
-        # HWC
-        img_input_shape = (64, 64, num_img_channels)
 
         # number of filters in the convolutional layers
         num_filters_1 = max_num_filters // 4
@@ -68,7 +49,7 @@ class Encoder(nn.Module):
         num_filters_3 = max_num_filters
 
         # Output (BHWC):  B x 32 x 32 x num_filters_1
-        self.conv1 = nn.Conv2d(num_img_channels, num_filters_1, 3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(image_shape[-1], num_filters_1, 3, stride=2, padding=1)
         # Output (BHWC):  B x 16 x 16 x num_filters_2
         self.conv2 = nn.Conv2d(num_filters_1, num_filters_2, 3, stride=2, padding=1)
         # Output (BHWC):  B x 8 x 8 x num_filters_3
@@ -79,20 +60,14 @@ class Encoder(nn.Module):
         self.bn2 = nn.BatchNorm(num_filters_2)
         self.bn3 = nn.BatchNorm(num_filters_3)
 
-        # Linear mappings to mean and standard deviation
-
-        # std-dev is not directly outputted but rather as a
-        # vector of log-variances. This is because the
-        # standard deviation must be positive and the exp()
-        # in __call__ ensures this. It might also be numerically
-        # more stable.
-
-        # divide the spatial dimensions by 8 because of the 3 strided convolutions
+        # Divide the spatial dimensions by 8 because of the 3 strided convolutions
         output_shape = [num_filters_3] + [
-            dimension // 8 for dimension in img_input_shape[:-1]
+            dimension // 8 for dimension in image_shape[:-1]
         ]
 
         flattened_dim = math.prod(output_shape)
+
+        # Linear mappings to mean and standard deviation
         self.proj_mu = nn.Linear(flattened_dim, num_latent_dims)
         self.proj_log_var = nn.Linear(flattened_dim, num_latent_dims)
 
@@ -110,43 +85,28 @@ class Encoder(nn.Module):
         # Generate a tensor of random values from a normal distribution
         eps = mx.random.normal(sigma.shape)
 
-        # Perform the reparametrization step.
-        # This allows us to backpropagate through it, which we could not do,
-        # if we had just sampled from a normal distribution with mean mu and
-        # standard deviation sigma. The multiplication with sigma and addition
-        # of mu is just a linear transformation of the random values from the
-        # normal distribution. The result is a random value from the distribution
-        # with mean mu and standard deviation sigma. Backpropagation is possible
-        # because the gradients of the random values are just 1 and the gradients
-        # of the linear transformation are just the weights of the linear transformation.
+        # Reparametrization trick to brackpropagate through sampling.
         z = eps * sigma + mu
 
-        # compute KL divergence
-        # see Appendix B from VAE paper:    https://arxiv.org/abs/1312.6114
-        self.kl_div = -0.5 * mx.sum(1 + logvar - mu * mu - logvar.exp())
-        return z  # return latent vector
+        return z, mu, logvar
 
 
 class Decoder(nn.Module):
     """A convolutional decoder"""
 
-    def __init__(self, num_latent_dims, num_img_channels, max_num_filters):
+    def __init__(self, num_latent_dims, image_shape, max_num_filters):
         super().__init__()
         self.num_latent_dims = num_latent_dims
-        self.num_img_channels = num_img_channels
+        num_img_channels = image_shape[-1]
         self.max_num_filters = max_num_filters
-        self.input_shape = None
 
         # decoder layers
         num_filters_1 = max_num_filters
         num_filters_2 = max_num_filters // 2
         num_filters_3 = max_num_filters // 4
 
-        # HWC
-        img_output_shape = (64, 64, self.num_img_channels)
-
         # divide the last two dimensions by 8 because of the 3 upsampling convolutions
-        self.input_shape = [dimension // 8 for dimension in img_output_shape[:-1]] + [
+        self.input_shape = [dimension // 8 for dimension in image_shape[:-1]] + [
             num_filters_1
         ]
         flattened_dim = math.prod(self.input_shape)
@@ -189,30 +149,25 @@ class Decoder(nn.Module):
 
 class CVAE(nn.Module):
     """
-    A convolutional variational autoencoder consisting
-    of an encoder and a decoder.
+    A convolutional variational autoencoder consisting of an encoder and a
+    decoder.
     """
 
-    def __init__(self, num_latent_dims, num_img_channels, max_num_filters):
+    def __init__(self, num_latent_dims, input_shape, max_num_filters):
         super().__init__()
         self.num_latent_dims = num_latent_dims
-        self.num_img_channels = num_img_channels
-        self.max_num_filters = max_num_filters
-        self.encoder = Encoder(num_latent_dims, num_img_channels, max_num_filters)
-        self.decoder = Decoder(num_latent_dims, num_img_channels, max_num_filters)
+        self.encoder = Encoder(num_latent_dims, input_shape, max_num_filters)
+        self.decoder = Decoder(num_latent_dims, input_shape, max_num_filters)
 
     def __call__(self, x):
         # image to latent vector
-        z = self.encode(x)
+        z, mu, logvar = self.encoder(x)
         # latent vector to image
         x = self.decode(z)
-        return x
+        return x, mu, logvar
 
     def encode(self, x):
-        return self.encoder(x)
+        return self.encoder(x)[0]
 
     def decode(self, z):
         return self.decoder(z)
-
-    def get_kl_div(self):
-        return self.encoder.kl_div

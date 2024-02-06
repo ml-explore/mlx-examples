@@ -41,13 +41,16 @@ def grid_image_from_batch(image_batch, num_rows):
 
 
 def loss_fn(model, X):
-    X_recon = model(X)
+    X_recon, mu, logvar = model(X)
 
     # Reconstruction loss
     recon_loss = nn.losses.mse_loss(X_recon, X, reduction="sum")
 
+    # KL divergence between encoder distribution and standard normal:
+    kl_div = -0.5 * mx.sum(1 + logvar - mu.square() - logvar.exp())
+
     # Total loss
-    return recon_loss + model.get_kl_div()
+    return recon_loss + kl_div
 
 
 def train_epoch(model, data, optimizer, epoch):
@@ -84,7 +87,6 @@ def train_epoch(model, data, optimizer, epoch):
                 ),
                 end="\r",
             )
-            break
 
     return loss_acc, throughput_acc, batch_count
 
@@ -92,7 +94,7 @@ def train_epoch(model, data, optimizer, epoch):
 def reconstruct(model, batch, out_file):
     # Reconstruct a single batch only
     images = mx.array(batch["image"])
-    images_recon = model(images)
+    images_recon = model(images)[0]
     paired_images = mx.stack([images, images_recon]).swapaxes(0, 1).flatten(0, 1)
     grid_image = grid_image_from_batch(paired_images, num_rows=16)
     grid_image.save(out_file)
@@ -118,16 +120,16 @@ def generate(
 
 def main(args):
     # Load the data
-    img_size = (64, 64)
-    train_iter, test_iter, num_img_channels = dataset.mnist(
-        batch_size=args.batch_size, img_size=img_size
+    img_size = (64, 64, 1)
+    train_iter, test_iter = dataset.mnist(
+        batch_size=args.batch_size, img_size=img_size[:2]
     )
 
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Load the model
-    vae = model.CVAE(args.latent_dims, num_img_channels, args.max_filters)
+    vae = model.CVAE(args.latent_dims, img_size, args.max_filters)
     mx.eval(vae.parameters())
 
     num_params = sum(x.size for _, x in tree_flatten(vae.trainable_parameters()))

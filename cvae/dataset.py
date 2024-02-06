@@ -32,23 +32,16 @@ def mnist(batch_size, img_size, root=None):
         .key_transform("image", normalize)
         .batch(batch_size)
     )
-    return tr_iter, test_iter, num_img_channels
+    return tr_iter, test_iter
 
 
 if __name__ == "__main__":
-    import os
-    import tempfile
-
-    import utils
-
     batch_size = 32
     img_size = (64, 64)  # (H, W)
 
-    tr_iter, test_iter, num_img_channels = mnist(
-        batch_size=batch_size, img_size=img_size
-    )
+    tr_iter, test_iter = mnist(batch_size=batch_size, img_size=img_size)
 
-    B, H, W, C = batch_size, img_size[0], img_size[1], num_img_channels
+    B, H, W, C = batch_size, img_size[0], img_size[1], 1
     print(f"Batch size: {B}, Channels: {C}, Height: {H}, Width: {W}")
 
     batch_tr_iter = next(tr_iter)
@@ -58,12 +51,3 @@ if __name__ == "__main__":
     batch_test_iter = next(test_iter)
     assert batch_test_iter["image"].shape == (B, H, W, C), "Wrong training set size"
     assert batch_test_iter["label"].shape == (batch_size,), "Wrong training set size"
-
-    # Save a batch as an image (as a sanity check)
-    img = utils.gen_grid_image_from_batch(
-        batch_tr_iter["image"], num_rows=4, norm_factor=255
-    )
-
-    temp_fname = os.path.join(tempfile.gettempdir(), "mnist_train_batch.png")
-    img.save(temp_fname)
-    print(f"Saved training batch to {temp_fname}")

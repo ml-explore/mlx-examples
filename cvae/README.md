@@ -63,9 +63,9 @@ generated images.
 
 At the time of writing, MLX does not have tranposed 2D convolutions. The
 example approximates them with a combination of nearest neighbor upsampling and
-regular convolutions, e.g. similar to the original U-Net. We intend to update
-this example once transposed 2D convolutions are available.
+regular convolutions, similar to the original U-Net. We intend to update this
+example once transposed 2D convolutions are available.
 
 [^1]: For a good overview of VAEs see the original paper [Auto-Encoding
   Variational Bayes](https://arxiv.org/abs/1312.6114) or [An Introduction to
-  Variational Autoencoders]((https://arxiv.org/abs/1906.02691).
+  Variational Autoencoders](https://arxiv.org/abs/1906.02691).
