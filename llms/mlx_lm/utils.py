@@ -12,7 +12,8 @@ from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, plamo, qwen, qwen2, stablelm_epoch
+
+from .models import llama, mixtral, olmo, phi2, plamo, qwen, qwen2, stablelm_epoch
 from .tuner.utils import apply_lora_layers
 
 # Constants
@@ -24,6 +25,7 @@ MODEL_MAPPING = {
     "stablelm_epoch": stablelm_epoch,
     "qwen": qwen,
     "plamo": plamo,
+    "olmo": olmo,
     "qwen2": qwen2,
 }
 LORA_SUPPORTED_MODELS = [

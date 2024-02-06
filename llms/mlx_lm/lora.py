@@ -9,7 +9,8 @@ from mlx.utils import tree_flatten
 
 from .tuner.lora import LoRALinear
 from .tuner.trainer import TrainingArgs, evaluate, train
-from .utils import generate, load, LORA_SUPPORTED_MODELS
+from .utils import LORA_SUPPORTED_MODELS, generate, load
+
 
 def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
@@ -203,7 +204,7 @@ if __name__ == "__main__":
         steps_per_eval=args.steps_per_eval,
         steps_per_save=args.save_every,
         adapter_file=args.adapter_file,
-        max_seq_length=args.max_seq_length
+        max_seq_length=args.max_seq_length,
     )
     if args.train:
         print("Training")
