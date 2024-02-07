@@ -130,7 +130,7 @@ def main(args):
             loss = step(X)
 
             # Evaluate updated model parameters
-            mx.eval(model.parameters(), optimizer.state)
+            mx.eval(state)
 
             throughput_toc = time.perf_counter()
             throughput_acc += X.shape[0] / (throughput_toc - throughput_tic)

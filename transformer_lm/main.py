@@ -119,7 +119,7 @@ def main(args):
         inputs, targets = map(mx.array, (inputs, targets))
         optimizer.learning_rate = min(1, it / args.lr_warmup) * args.learning_rate
         loss = step(inputs, targets)
-        mx.eval(loss, model.parameters(), optimizer.state)
+        mx.eval(state)
         losses.append(loss.item())
         if (it + 1) % steps_per_report == 0:
             train_loss = np.mean(losses)

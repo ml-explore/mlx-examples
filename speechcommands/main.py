@@ -80,7 +80,7 @@ def train_epoch(model, train_iter, optimizer, epoch):
         y = mx.array(batch["label"])
         tic = time.perf_counter()
         loss, acc = step(x, y)
-        mx.eval(model.parameters(), optimizer.state)
+        mx.eval(state)
         toc = time.perf_counter()
         loss = loss.item()
         acc = acc.item()

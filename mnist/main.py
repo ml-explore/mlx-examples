@@ -79,7 +79,7 @@ def main(args):
         tic = time.perf_counter()
         for X, y in batch_iterate(batch_size, train_images, train_labels):
             step(X, y)
-            mx.eval(model.parameters())
+            mx.eval(model.state)
         accuracy = eval_fn(test_images, test_labels)
         toc = time.perf_counter()
         print(

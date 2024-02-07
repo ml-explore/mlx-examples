@@ -44,7 +44,7 @@ def main(args):
         for it in steps:
             idx = np.random.choice(x.shape[0], replace=False, size=args.n_batch)
             loss = step(mx.array(x[idx]))
-            mx.eval(model.parameters(), optimizer.state)
+            mx.eval(state)
             steps.set_postfix(val=loss.item())
 
     # Plot samples from trained flow
