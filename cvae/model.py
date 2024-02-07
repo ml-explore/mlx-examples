@@ -131,7 +131,6 @@ class Decoder(nn.Module):
         self.bn2 = nn.BatchNorm(num_filters_3)
 
     def __call__(self, z):
-        # unflatten the latent vector
         x = self.lin1(z)
 
         # reshape to BHWC

@@ -98,7 +98,6 @@ def reconstruct(model, batch, out_file):
     paired_images = mx.stack([images, images_recon]).swapaxes(0, 1).flatten(0, 1)
     grid_image = grid_image_from_batch(paired_images, num_rows=16)
     grid_image.save(out_file)
-    print(f"Reconstructed {images.shape[0]} images.")
 
 
 def generate(
@@ -115,7 +114,6 @@ def generate(
     # Save all images in a single file
     grid_image = grid_image_from_batch(images, num_rows=8)
     grid_image.save(out_file)
-    print(f"Generated {num_samples} images.")
 
 
 def main(args):
@@ -141,7 +139,7 @@ def main(args):
     train_batch = next(train_iter)
     test_batch = next(test_iter)
 
-    for e in range(args.epochs):
+    for e in range(1, args.epochs + 1):
         # Reset iterators and stats at the beginning of each epoch
         train_iter.reset()
         vae.train()
@@ -155,13 +153,6 @@ def main(args):
 
         vae.eval()
 
-        # Reconstruct a batch of training and test images
-        reconstruct(vae, train_batch, save_dir / f"train_{e:03d}.png")
-        reconstruct(vae, test_batch, save_dir / f"test_{e:03d}.png")
-
-        # Generate images
-        generate(vae, save_dir / f"generated_{e:03d}.png")
-
         print(
             " | ".join(
                 [
@@ -172,6 +163,12 @@ def main(args):
                 ]
             )
         )
+        # Reconstruct a batch of training and test images
+        reconstruct(vae, train_batch, save_dir / f"train_{e:03d}.png")
+        reconstruct(vae, test_batch, save_dir / f"test_{e:03d}.png")
+
+        # Generate images
+        generate(vae, save_dir / f"generated_{e:03d}.png")
 
         vae.save_weights(str(save_dir / "weights.npz"))
 

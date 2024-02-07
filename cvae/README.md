@@ -35,13 +35,10 @@ Options:
   Learning rate: 0.001
   Number of latent dimensions: 8
 Number of trainable params: 0.1493 M
-Epoch    0 | Loss   19200.76 | Throughput   413.73 im/s | Time    148.6 (s)
-Epoch    1 | Loss   11817.73 | Throughput   412.47 im/s | Time    149.7 (s)
-Epoch    2 | Loss   10835.43 | Throughput   414.91 im/s | Time    148.1 (s)
+Epoch    1 | Loss   14626.96 | Throughput  1803.44 im/s | Time     34.3 (s)
+Epoch    2 | Loss   10462.21 | Throughput  1802.20 im/s | Time     34.3 (s)
 ...
-Epoch   47 | Loss    8320.16 | Throughput   420.39 im/s | Time    146.4 (s)
-Epoch   48 | Loss    8310.72 | Throughput   418.78 im/s | Time    147.0 (s)
-Epoch   49 | Loss    8307.03 | Throughput   420.12 im/s | Time    146.4 (s)
+Epoch   50 | Loss    8293.13 | Throughput  1804.91 im/s | Time     34.2 (s)
 ```
 
 The throughput was measured on a 32GB M1 Max. 
