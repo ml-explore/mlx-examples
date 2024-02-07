@@ -14,6 +14,7 @@ from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 # Local imports
 from .models import llama, mixtral, olmo, phi2, plamo, qwen, qwen2, stablelm_epoch
 from .tuner.utils import apply_lora_layers
+from .stopping_criteria import StoppingCriteria
 
 # Constants
 MODEL_MAPPING = {
@@ -136,6 +137,7 @@ def generate(
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Callable = None,
+    stopping_criteria: StoppingCriteria = None,
 ) -> str:
     """
     Generate text from the model.
@@ -163,12 +165,19 @@ def generate(
     skip = 0
     REPLACEMENT_CHAR = "\ufffd"
 
+    # Used by the stopping criteria only
+    token_string = ""
+
     for (token, prob), n in zip(generate_step(prompt, model, temp), range(max_tokens)):
+
+        # Stop generation on end-of-sequence token
         if token == tokenizer.eos_token_id:
             break
+
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
+
         tokens.append(token.item())
 
         if verbose:
@@ -179,6 +188,12 @@ def generate(
             elif REPLACEMENT_CHAR not in s:
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
+
+        # Stop generating upon specific criteria
+        if stopping_criteria:
+            token_string += tokenizer.decode(tokens)
+            if stopping_criteria(token_string):
+                break
 
     token_count = len(tokens)
     token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
