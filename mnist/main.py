@@ -65,9 +65,7 @@ def main(args):
     optimizer = optim.SGD(learning_rate=learning_rate)
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
 
-    state = [model.state, optimizer.state]
-
-    @partial(mx.compile, inputs=state, outputs=state)
+    @partial(mx.compile, inputs=model.state, outputs=model.state)
     def step(X, y):
         loss, grads = loss_and_grad_fn(model, X, y)
         optimizer.update(model, grads)
@@ -81,7 +79,7 @@ def main(args):
         tic = time.perf_counter()
         for X, y in batch_iterate(batch_size, train_images, train_labels):
             step(X, y)
-            mx.eval(model.parameters(), optimizer.state)
+            mx.eval(model.parameters())
         accuracy = eval_fn(test_images, test_labels)
         toc = time.perf_counter()
         print(
