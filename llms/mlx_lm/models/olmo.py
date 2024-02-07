@@ -6,6 +6,8 @@ import mlx.nn as nn
 
 from .base import BaseModelArgs
 
+from sys import exit
+
 try:
     import hf_olmo
 except ImportError:
