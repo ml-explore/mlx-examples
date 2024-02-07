@@ -1,12 +1,11 @@
 from dataclasses import dataclass
+from sys import exit
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-
-from sys import exit
 
 try:
     import hf_olmo
