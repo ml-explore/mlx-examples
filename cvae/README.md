@@ -58,7 +58,7 @@ generated images.
 
 ## Limitations
 
-At the time of writing, MLX does not have tranposed 2D convolutions. The
+At the time of writing, MLX does not have transposed 2D convolutions. The
 example approximates them with a combination of nearest neighbor upsampling and
 regular convolutions, similar to the original U-Net. We intend to update this
 example once transposed 2D convolutions are available.
