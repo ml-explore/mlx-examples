@@ -91,7 +91,7 @@ def get_model_path(path_or_hf_repo: str) -> Path:
     return model_path
 
 
-def apply_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
+def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
     """
     Apply repetition penalty to specific logits based on the given context.
 
@@ -101,7 +101,7 @@ def apply_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
         penalty (float): The repetition penalty factor to be applied.
 
     Returns:
-        None: The function modifies the input logits in place.
+        logits (mx.array): Logits with repetition penalty applied to generated tokens.
     """
     if len(generated_tokens) > 0:
         indices = mx.array([token for token in generated_tokens])
@@ -117,8 +117,9 @@ def generate_step(
     prompt: mx.array,
     model: nn.Module,
     temp: 0.0,
-    repetition_penalty: Optional[float] = 1.0,
-    repetition_context: Optional[List[int]] = [],
+    repetition_penalty: Optional[float] = None,
+    repetition_context: Optional[List[int]] = None,
+    repetition_context_size: Optional[int] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -127,8 +128,9 @@ def generate_step(
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
-        repetition_penalty (Optional[float]): The penalty factor for repeating tokens.
-        repetition_context Optional(List[int]): A list containing the repetition context.
+        repetition_penalty (float, optional): The penalty factor for repeating tokens.
+        repetition_context (int, optional): A list containing the repetition context.
+        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
 
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
@@ -146,7 +148,9 @@ def generate_step(
         prob = softmax_logits[0, token]
         return token, prob
 
-    if repetition_penalty < 0 or not isinstance(repetition_penalty, float):
+    if repetition_penalty and (
+        repetition_penalty < 0 or not isinstance(repetition_penalty, float)
+    ):
         raise ValueError(
             f"repetition_penalty must be a non-negative float, got {repetition_penalty}"
         )
@@ -157,8 +161,18 @@ def generate_step(
     while True:
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
-        logits = apply_penalty(logits, repetition_context, repetition_penalty)
+
+        if repetition_penalty:
+            logits = apply_repetition_penalty(
+                logits, repetition_context, repetition_penalty
+            )
+
         y, prob = sample(logits)
+
+        if repetition_context and repetition_context_size:
+            repetition_context.append(y.item())
+            if len(repetition_context) > repetition_context_size:
+                repetition_context = repetition_context[-repetition_context_size:]
         yield y, prob
 
 
@@ -166,12 +180,12 @@ def generate(
     model: nn.Module,
     tokenizer: PreTrainedTokenizer,
     prompt: str,
-    temp: Optional[float] = 0.0,
+    temp: float = 0.0,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Callable = None,
-    repetition_penalty: Optional[float] = 1.0,
-    repetition_context_size: Optional[int] = 0,
+    repetition_penalty: Optional[float] = None,
+    repetition_context_size: Optional[int] = None,
 ) -> str:
     """
     Generate text from the model.
@@ -181,13 +195,13 @@ def generate(
        tokenizer (PreTrainedTokenizer): The tokenizer.
        prompt (str): The string prompt.
        temp (float): The temperature for sampling (default 0).
-       repetition_penalty (Optional[float]): The penalty factor for repeating tokens.
-       repetition_context_size (Optional[int]): The number of tokens to consider for repetition penalty.
        max_tokens (int): The maximum number of tokens (default 100).
        verbose (bool): If ``True``, print tokens and timing information
            (default ``False``).
        formatter (Optional[Callable]): A function which takes a token and a
            probability and displays it.
+       repetition_penalty (float, optional): The penalty factor for repeating tokens.
+       repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
     """
 
     if verbose:
@@ -197,8 +211,9 @@ def generate(
     prompt_tokens = mx.array(tokenizer.encode(prompt))
 
     repetition_context = []
-    if repetition_penalty > 1.0:
-        repetition_context.extend([token.item() for token in prompt_tokens])
+    if repetition_penalty and repetition_penalty > 1.0:
+        repetition_context = prompt_tokens.tolist()
+        repetition_context = repetition_context[-repetition_context_size:]
 
     tic = time.perf_counter()
     tokens = []
@@ -207,7 +222,12 @@ def generate(
 
     for (token, prob), n in zip(
         generate_step(
-            prompt_tokens, model, temp, repetition_penalty, repetition_context
+            prompt_tokens,
+            model,
+            temp,
+            repetition_penalty,
+            repetition_context,
+            repetition_context_size,
         ),
         range(max_tokens),
     ):
@@ -226,15 +246,6 @@ def generate(
             elif REPLACEMENT_CHAR not in s:
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
-
-        if repetition_penalty > 1.0:
-            repetition_context.append(
-                token.item()
-            )  # Update repetition context after each token
-            print(repetition_context)
-            repetition_context = repetition_context[
-                -repetition_context_size:
-            ]  # Maintain the specified context size
 
     token_count = len(tokens)
     token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
