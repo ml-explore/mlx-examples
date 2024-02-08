@@ -1,2 +1,2 @@
-mlx
+mlx>=0.2
 mlx-data

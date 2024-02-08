@@ -1,5 +1,6 @@
 import argparse
 import time
+from functools import partial
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -33,19 +34,25 @@ def train_epoch(model, train_iter, optimizer, epoch):
         acc = mx.mean(mx.argmax(output, axis=1) == tgt)
         return loss, acc
 
-    train_step_fn = nn.value_and_grad(model, train_step)
-
     losses = []
     accs = []
     samples_per_sec = []
+
+    state = [model.state, optimizer.state]
+
+    @partial(mx.compile, inputs=state, outputs=state)
+    def step(inp, tgt):
+        train_step_fn = nn.value_and_grad(model, train_step)
+        (loss, acc), grads = train_step_fn(model, inp, tgt)
+        optimizer.update(model, grads)
+        return loss, acc
 
     for batch_counter, batch in enumerate(train_iter):
         x = mx.array(batch["image"])
         y = mx.array(batch["label"])
         tic = time.perf_counter()
-        (loss, acc), grads = train_step_fn(model, x, y)
-        optimizer.update(model, grads)
-        mx.eval(model.parameters(), optimizer.state)
+        loss, acc = step(x, y)
+        mx.eval(state)
         toc = time.perf_counter()
         loss = loss.item()
         acc = acc.item()
