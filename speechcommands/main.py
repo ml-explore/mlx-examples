@@ -47,6 +47,8 @@ def prepare_dataset(batch_size, split, root=None):
         .key_transform("audio", normalize)
         .shuffle()
         .batch(batch_size)
+        .to_stream()
+        .prefetch(4, 4)
     )
     return data_iter
 

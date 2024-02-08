@@ -23,6 +23,7 @@ def mnist(batch_size, img_size, root=None):
         .image_resize("image", h=img_size[0], w=img_size[1])
         .key_transform("image", normalize)
         .batch(batch_size)
+        .prefetch(4, 4)
     )
 
     # iterator over test set
