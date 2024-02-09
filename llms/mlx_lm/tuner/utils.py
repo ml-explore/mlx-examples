@@ -36,6 +36,11 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
             len(model.model.transformer.blocks) - num_lora_layers :
         ]:
             l.att_proj = LoRALinear.from_linear(l.att_proj)
+    elif model.model_type == "phi-msft":
+        for l in model.transformer.h[len(model.transformer.h) - num_lora_layers :]:
+            l.mixer.Wqkv = LoRALinear.from_linear(l.mixer.Wqkv)
+            l.moe.gate = LoRALinear.from_linear(l.moe.gate)
+
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 

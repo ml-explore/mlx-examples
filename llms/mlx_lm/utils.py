@@ -18,6 +18,7 @@ from .tuner.utils import apply_lora_layers
 # Constants
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
+    "phi-msft": "phixtral",
 }
 
 MAX_FILE_SIZE_GB = 5
