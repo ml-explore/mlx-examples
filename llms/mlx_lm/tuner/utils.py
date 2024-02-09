@@ -32,7 +32,9 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
                     l.block_sparse_moe.gate
                 )
     elif model.model_type == "olmo":
-        for l in model.transformer.blocks[len(model.model.layers) - num_lora_layers :]:
+        for l in model.model.transformer.blocks[
+            len(model.model.transformer.blocks) - num_lora_layers :
+        ]:
             l.att_proj = LoRALinear.from_linear(l.att_proj)
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
