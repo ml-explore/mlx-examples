@@ -9,6 +9,7 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
+    model_type: str
     hidden_size: int = 2048
     num_attention_heads: int = 16
     num_hidden_layers: int = 24
@@ -160,6 +161,7 @@ class QwenModel(nn.Module):
 class Model(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
+        self.model_type = config.model_type
         self.transformer = QwenModel(config)
         self.lm_head = nn.Linear(
             config.hidden_size, config.vocab_size, bias=not config.no_bias

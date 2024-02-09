@@ -20,13 +20,6 @@ MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
 }
 
-LORA_SUPPORTED_MODELS = [
-    #    llama.Model,
-    #    mixtral.Model,
-    #    phi2.Model,
-    #    stablelm_epoch.Model,
-    #    qwen2.Model,
-]
 MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (

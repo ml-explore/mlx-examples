@@ -6,24 +6,6 @@ import numpy as np
 from transformers import PretrainedConfig
 
 
-class DecoderInput(NamedTuple):
-    hidden_states: mx.array
-    position_ids: mx.array
-    attention_mask: Optional[mx.array] = None
-    past_key_values: Optional[List[mx.array]] = None
-    output_hidden_states: Optional[bool] = False
-    output_attentions: Optional[bool] = False
-    use_cache: Optional[bool] = False
-    gradient_checkpointing: bool = False
-
-
-class DecoderOutput(NamedTuple):
-    hidden_states: mx.array
-    all_hidden_states: Optional[Tuple[mx.array, ...]]
-    all_self_attns: Optional[Tuple[mx.array, ...]]
-    next_decoder_cache: Optional[Tuple[mx.array, ...]]
-
-
 class ModelArgs(PretrainedConfig):  # type: ignore
     model_type: str = "plamo"
 
@@ -292,7 +274,6 @@ class PlamoModel(nn.Module):
     config_class = ModelArgs
     _no_split_modules: List[str]
     base_model_prefix = "model"
-    supports_gradient_checkpointing = True
     _no_split_modules = ["PlamoDecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
     _keys_to_ignore_on_load_unexpected = [r"decoder\.version"]
@@ -306,7 +287,6 @@ class PlamoModel(nn.Module):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = PlamoDecoder(config)  # type: ignore
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.gradient_checkpointing = False
 
     def __call__(
         self,
@@ -349,11 +329,12 @@ def _create_position_ids(seq_length: int, past_key_values_length: int = 0) -> mx
 
 
 class Model(nn.Module):
-    def __init__(self, config: PretrainedConfig) -> None:
+    def __init__(self, args: ModelArgs) -> None:
         super().__init__()
-        self.model = PlamoModel(config)
+        self.model_type = args.model_type
+        self.model = PlamoModel(args)
         self.lm_head: nn.Module = nn.Linear(
-            config.hidden_size, config.vocab_size, bias=False
+            args.hidden_size, args.vocab_size, bias=False
         )
 
     def __call__(

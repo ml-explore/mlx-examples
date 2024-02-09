@@ -11,6 +11,7 @@ from .base import BaseModelArgs
 @dataclass
 class ModelArgs(BaseModelArgs):
     max_position_embeddings: int
+    model_type: str
     vocab_size: int
     hidden_size: int
     num_attention_heads: int
@@ -169,6 +170,7 @@ class StableLM(nn.Module):
 class Model(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
+        self.model_type = config.model_type
         self.model = StableLM(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
