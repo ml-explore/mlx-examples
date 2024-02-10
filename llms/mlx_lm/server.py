@@ -219,7 +219,7 @@ class APIHandler(BaseHTTPRequestHandler):
                         }
                     ],
                 }
-                self.wfile.write(f"{json.dumps(response)}".encode())
+                self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
                 self.wfile.flush()
 
 
