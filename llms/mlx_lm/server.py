@@ -49,12 +49,28 @@ def generate(
     stop_id_sequences: List[np.ndarray] = None,
     eos_token_id: int = None,
     max_tokens: int = 100,
+    top_p: float = 1.0,
 ):
     def sample(logits):
         if temp == 0:
             return mx.argmax(logits, axis=-1)
         else:
-            return mx.random.categorical(logits * (1 / temp))
+            if top_p > 0 and top_p < 1.0:
+                probs = mx.softmax(logits / temp, axis=-1)
+
+                sorted_probs = mx.sort(probs)[::-1]
+                sorted_indices = mx.argsort(probs)[::-1]
+                cumulative_probs = mx.cumsum(sorted_probs, axis=-1)
+
+                top_probs = mx.where(
+                    cumulative_probs > 1 - top_p,
+                    sorted_probs,
+                    mx.zeros_like(sorted_probs),
+                )
+                sorted_tok = mx.random.categorical(mx.log(top_probs))
+                tok = sorted_indices.squeeze(0)[sorted_tok]
+                return tok
+        return mx.random.categorical(logits * (1 / temp))
 
     y = prompt
     cache = None
@@ -152,6 +168,7 @@ class APIHandler(BaseHTTPRequestHandler):
         stream = body.get("stream", False)
         requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
+        top_p = body.get("top_p", 1.0)
         if not stream:
             tokens = list(
                 generate(
@@ -161,6 +178,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     stop_id_sequences,
                     eos_token_id,
                     max_tokens,
+                    top_p=top_p,
                 )
             )
             text = _tokenizer.decode(tokens)
@@ -202,6 +220,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 stop_id_sequences,
                 eos_token_id,
                 max_tokens,
+                top_p=top_p,
             ):
                 s = _tokenizer.decode(token)
                 response = {
