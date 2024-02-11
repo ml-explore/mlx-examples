@@ -9,8 +9,9 @@ from typing import List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from mlx_lm import load
 from transformers import PreTrainedTokenizer
+
+from .utils import load
 
 _model: Optional[nn.Module] = None
 _tokenizer: Optional[PreTrainedTokenizer] = None
