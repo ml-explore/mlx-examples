@@ -80,9 +80,9 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
             for j in range(batch_size):
                 truncated_length = min(lengths[j], max_seq_length)
                 batch_arr[j, :truncated_length] = batch[j][:truncated_length]
-                lengths[
-                    j
-                ] = truncated_length  # Update lengths to match truncated lengths
+                lengths[j] = (
+                    truncated_length  # Update lengths to match truncated lengths
+                )
             batch = mx.array(batch_arr)
 
             yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
