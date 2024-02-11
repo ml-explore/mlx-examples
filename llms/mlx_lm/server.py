@@ -213,7 +213,8 @@ class APIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-
+            accumulated_tokens = []
+            generated_text = ""
             for token in generate(
                 prompt,
                 _model,
@@ -223,7 +224,11 @@ class APIHandler(BaseHTTPRequestHandler):
                 max_tokens,
                 top_p=top_p,
             ):
-                s = _tokenizer.decode(token)
+                # This is a workaround because the llama tokenizer emits spaces during decoding token by token.
+                accumulated_tokens.append(token)
+                cur = _tokenizer.decode(accumulated_tokens)
+                next_chunk = cur.replace(generated_text, "")
+                generated_text = cur
                 response = {
                     "id": chat_id,
                     "object": "chat.completion.chunk",
@@ -233,7 +238,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     "choices": [
                         {
                             "index": 0,
-                            "delta": {"role": "assistant", "content": s},
+                            "delta": {"role": "assistant", "content": next_chunk},
                             "logprobs": None,
                             "finish_reason": None,
                         }
