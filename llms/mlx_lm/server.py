@@ -3,6 +3,7 @@ import json
 import os
 import time
 import uuid
+from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import List, Optional, Tuple
 
@@ -23,24 +24,48 @@ def load_model(model_path: str, adapter_file: Optional[str] = None):
     _model, _tokenizer = load(model_path, adapter_file=adapter_file)
 
 
+StopCondition = namedtuple("StopCondition", ["stop_met", "trim_needed", "trim_length"])
+
+
 def is_stop_condition_met(
     tokens: List[int],
     stop_id_sequences: List[np.ndarray],
     eos_token_id: int,
     max_tokens: int,
-) -> Tuple[bool, bool, int]:
+) -> StopCondition:
+    """
+    Determines whether a stop condition for text generation has been met.
+
+    It checks if the generated text has reached a specified maximum length,
+    ended with an EOS token, or contains a specified sequence of tokens
+    that should trigger stopping.
+
+    Parameters:
+    - tokens (List[int]): The list of generated token IDs.
+    - stop_id_sequences (List[np.ndarray]): A list of numpy arrays, each representing a sequence
+      of token IDs that, if generated, should trigger the end of text generation.
+    - eos_token_id (int): The token ID representing the end-of-sequence (EOS) marker.
+    - max_tokens (int): The maximum number of tokens to generate. Text generation will stop
+      if this number is reached.
+
+    Returns:
+    - StopCondition: A named tuple with the fields `stop_met` (bool), `trim_needed` (bool),
+      and `trim_length` (int), providing details about the stop condition.
+    """
     if len(tokens) >= max_tokens:
-        return True, False, 0
+        return StopCondition(stop_met=True, trim_needed=False, trim_length=0)
 
     if tokens and tokens[-1] == eos_token_id:
-        return True, True, 1
+        return StopCondition(stop_met=True, trim_needed=True, trim_length=1)
 
     for stop_ids in stop_id_sequences:
         if len(tokens) >= len(stop_ids):
             if np.all(np.equal(np.array(tokens[-len(stop_ids) :]), stop_ids)):
-                return True, True, len(stop_ids)
+                return StopCondition(
+                    stop_met=True, trim_needed=True, trim_length=len(stop_ids)
+                )
 
-    return False, False, 0
+    return StopCondition(stop_met=False, trim_needed=False, trim_length=0)
 
 
 def generate(
