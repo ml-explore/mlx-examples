@@ -137,7 +137,7 @@ def train(
     losses = []
     n_tokens = 0
     print("Starting training..., iters:", args.iters)
-    # Main  training loop
+    # Main training loop
     start = time.perf_counter()
     for it, batch in zip(
         range(args.iters),
