@@ -227,7 +227,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 # This is a workaround because the llama tokenizer omitted spaces during decoding token by token.
                 accumulated_tokens.append(token)
                 cur = _tokenizer.decode(accumulated_tokens)
-                next_chunk = cur.replace(generated_text, "")
+                next_chunk = cur[len(generated_text) :]
                 generated_text = cur
                 response = {
                     "id": chat_id,
