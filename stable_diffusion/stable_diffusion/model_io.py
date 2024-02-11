@@ -186,9 +186,11 @@ def load_unet(key: str = _DEFAULT_MODEL, float16: bool = False):
             out_channels=config["out_channels"],
             block_out_channels=config["block_out_channels"],
             layers_per_block=[config["layers_per_block"]] * n_blocks,
-            num_attention_heads=[config["attention_head_dim"]] * n_blocks
-            if isinstance(config["attention_head_dim"], int)
-            else config["attention_head_dim"],
+            num_attention_heads=(
+                [config["attention_head_dim"]] * n_blocks
+                if isinstance(config["attention_head_dim"], int)
+                else config["attention_head_dim"]
+            ),
             cross_attention_dim=[config["cross_attention_dim"]] * n_blocks,
             norm_num_groups=config["norm_num_groups"],
         )
