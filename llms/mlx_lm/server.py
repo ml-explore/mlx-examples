@@ -244,8 +244,15 @@ class APIHandler(BaseHTTPRequestHandler):
                         }
                     ],
                 }
-                self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-                self.wfile.flush()
+                try:
+                    self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+                    self.wfile.flush()
+                except Exception as e:
+                    print(e)
+                    break
+
+            self.wfile.write(f"data: [DONE]\n\n".encode())
+            self.wfile.flush()
 
 
 def run(server_class=HTTPServer, handler_class=APIHandler):
