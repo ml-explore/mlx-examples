@@ -214,7 +214,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             accumulated_tokens = []
-            generated_text = ""
+            current_generated_text_index = 0
             for token in generate(
                 prompt,
                 _model,
@@ -226,9 +226,9 @@ class APIHandler(BaseHTTPRequestHandler):
             ):
                 # This is a workaround because the llama tokenizer omitted spaces during decoding token by token.
                 accumulated_tokens.append(token)
-                cur = _tokenizer.decode(accumulated_tokens)
-                next_chunk = cur[len(generated_text) :]
-                generated_text = cur
+                generated_text = _tokenizer.decode(accumulated_tokens)
+                next_chunk = generated_text[current_generated_text_index:]
+                current_generated_text_index = len(generated_text)
                 response = {
                     "id": chat_id,
                     "object": "chat.completion.chunk",
@@ -255,9 +255,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
 
-def run(server_class=HTTPServer, handler_class=APIHandler):
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", 8080))
+def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler):
     server_address = (host, port)
     httpd = server_class(server_address, handler_class)
     print(f"Starting httpd at {host} on port {port}...")
@@ -275,10 +273,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--adapter-file",
         type=str,
-        help="The path for the trained adapter weights.",
+        help="Optional path for the trained adapter weights.",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host for the HTTP server (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port for the HTTP server (default: 8080)",
     )
     args = parser.parse_args()
 
     load_model(args.model, adapter_file=args.adapter_file)
 
-    run()
+    run(args.host, args.port)
