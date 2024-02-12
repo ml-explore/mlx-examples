@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_unflatten
 from transformers import AutoTokenizer
@@ -15,6 +16,7 @@ from transformers import AutoTokenizer
 
 @dataclass
 class ModelArgs:
+    model_type: str
     max_sequence_length: int = 2048
     num_vocab: int = 51200
     model_dim: int = 2560
@@ -110,30 +112,37 @@ class MOE(nn.Module):
         self.mlp = [MLP(self.dim, self.hidden_dim) for _ in range(self.num_experts)]
         self.gate = nn.Linear(args.model_dim, self.num_experts, bias=False)
 
-    def __call__(self, x) -> mx.array:
+    def __call__(self, x: mx.array) -> mx.array:
         ne = self.num_experts_per_tok
         orig_shape = x.shape
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
-        if ne < self.num_experts:
-            inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        else:
-            inds = mx.broadcast_to(mx.arange(ne), gates.shape)
-
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1))[:, :ne]
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
             axis=-1,
         ).astype(gates.dtype)
 
-        y = []
-        for xt, st, it in zip(x, scores, inds.tolist()):
-            yt = mx.concatenate([self.mlp[e](xt)[:, None] for e in it], axis=-1)
-            yt = (yt * st).sum(axis=-1)
-            y.append(yt[None, :])
-        yc = mx.concatenate(y)
+        if self.training:
+            ys = []
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            for e, expert in enumerate(self.mlp):
+                idx1, idx2 = map(mx.array, np.where(inds == e))
+                if idx1.size == 0:
+                    continue
+                y[idx1, idx2] = expert(x[idx1])
 
-        return yc.reshape(orig_shape)
+            y = (y * scores[..., None]).sum(axis=1)
+        else:
+            y = []
+            for xt, st, it in zip(x, scores, inds.tolist()):
+                yt = mx.concatenate([self.mlp[e](xt)[:, None] for e in it], axis=-1)
+                yt = (yt * st).sum(axis=-1)
+                y.append(yt[None, :])
+            y = mx.concatenate(y)
+
+        return y.reshape(orig_shape)
 
 
 class ParallelBlock(nn.Module):
@@ -190,6 +199,7 @@ class OutputHead(nn.Module):
 class Model(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
+        self.model_type = config.model_type
         self.transformer = TransformerDecoder(config)
         self.lm_head = OutputHead(config)
 
@@ -206,57 +216,3 @@ class Model(nn.Module):
 
         y, cache = self.transformer(x, mask, cache)
         return self.lm_head(y), cache
-
-
-def generate(prompt: mx.array, model: Model, temp: float = 0.0):
-    def sample(logits):
-        if temp == 0:
-            return mx.argmax(logits, axis=-1)
-        else:
-            return mx.random.categorical(logits * (1 / temp))
-
-    y = prompt
-    cache = None
-    while True:
-        logits, cache = model(y[None], cache=cache)
-        logits = logits[:, -1, :]
-        y = sample(logits)
-        yield y
-
-
-def load(path_or_hf_repo: str):
-    # If the path exists, it will try to load model form it
-    # otherwise download and cache from the hf_repo and cache
-    model_path = Path(path_or_hf_repo)
-    if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
-            )
-        )
-
-    with open(model_path / "config.json", "r") as f:
-        config = json.loads(f.read())
-        quantization = config.get("quantization", None)
-        model_args = ModelArgs.from_dict(config)
-
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
-    if len(weight_files) == 0:
-        raise FileNotFoundError("No safetensors found in {}".format(model_path))
-
-    weights = {}
-    for wf in weight_files:
-        weights.update(mx.load(wf).items())
-
-    model = Model(model_args)
-    if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
-
-    model.load_weights(list(weights.items()))
-
-    mx.eval(model.parameters())
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-    )
-    return model, tokenizer

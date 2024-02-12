@@ -1,5 +1,6 @@
 import copy
 import glob
+import importlib
 import json
 import logging
 import time
@@ -12,28 +13,14 @@ from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, olmo, phi2, plamo, qwen, qwen2, stablelm_epoch
 from .tuner.utils import apply_lora_layers
 
 # Constants
-MODEL_MAPPING = {
-    "llama": llama,
-    "mistral": llama,  # mistral is compatible with llama
-    "mixtral": mixtral,
-    "phi": phi2,
-    "stablelm_epoch": stablelm_epoch,
-    "qwen": qwen,
-    "plamo": plamo,
-    "olmo": olmo,
-    "qwen2": qwen2,
+MODEL_REMAPPING = {
+    "mistral": "llama",  # mistral is compatible with llama
+    "phi-msft": "phixtral",
 }
-LORA_SUPPORTED_MODELS = [
-    llama.Model,
-    mixtral.Model,
-    phi2.Model,
-    stablelm_epoch.Model,
-    qwen2.Model,
-]
+
 MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
@@ -54,12 +41,14 @@ def _get_classes(config: dict):
         A tuple containing the Model class and the ModelArgs class.
     """
     model_type = config["model_type"]
-    if model_type not in MODEL_MAPPING:
+    model_type = MODEL_REMAPPING.get(model_type, model_type)
+    try:
+        arch = importlib.import_module(f"mlx_lm.models.{model_type}")
+    except ImportError:
         msg = f"Model type {model_type} not supported."
         logging.error(msg)
         raise ValueError(msg)
 
-    arch = MODEL_MAPPING[model_type]
     return arch.Model, arch.ModelArgs
 
 
