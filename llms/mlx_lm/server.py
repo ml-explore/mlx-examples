@@ -27,7 +27,7 @@ def load_model(model_path: str, adapter_file: Optional[str] = None):
 StopCondition = namedtuple("StopCondition", ["stop_met", "trim_needed", "trim_length"])
 
 
-def is_stop_condition_met(
+def stopping_criteria(
     tokens: List[int],
     stop_id_sequences: List[np.ndarray],
     eos_token_id: int,
@@ -109,7 +109,7 @@ def generate(
         token = y.item()
         tokens.append(token)
 
-        stop_met, trim_needed, trim_length = is_stop_condition_met(
+        stop_met, trim_needed, trim_length = stopping_criteria(
             tokens, stop_id_sequences, eos_token_id, max_tokens
         )
         if stop_met:
