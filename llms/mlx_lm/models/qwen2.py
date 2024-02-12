@@ -9,6 +9,7 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
+    model_type: str
     hidden_size: int
     num_hidden_layers: int
     intermediate_size: int
@@ -190,6 +191,7 @@ class Qwen2Model(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.model_type = args.model_type
         self.model = Qwen2Model(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
