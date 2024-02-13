@@ -63,6 +63,7 @@ def build_parser():
     parser.add_argument(
         "--iters", type=int, default=1000, help="Iterations to train for."
     )
+    parser.add_argument("--epochs", type=int, default=None, help="Number of training epochs (overrides iters if provided).")
     parser.add_argument(
         "--val-batches",
         type=int,
@@ -220,13 +221,20 @@ def train(model, train_set, val_set, optimizer, loss, tokenizer, args):
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
 
+    # Determine total iterations based on epochs or iters
+    if args.epochs is not None:
+        total_iters_per_epoch = len(train_set) // args.batch_size
+        total_iters = total_iters_per_epoch * args.epochs
+    else:
+        total_iters = args.iters
+
     losses = []
     n_tokens = 0
 
     # Main training loop
     start = time.perf_counter()
     for it, batch in zip(
-        range(args.iters),
+        range(total_iters),
         iterate_batches(train_set, tokenizer, args.batch_size, train=True),
     ):
         # Forward and backward pass
@@ -305,6 +313,9 @@ def generate(model, prompt, tokenizer, args):
 if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.epochs is not None:
+        print(f"Epochs provided ({args.epochs}), overriding iters ({args.iters}) with calculated total iterations based on epochs.")
 
     np.random.seed(args.seed)
 
