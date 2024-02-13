@@ -121,7 +121,7 @@ def evaluate(
 
 class TrainingCallback:
 
-    def on_train_loss_report(self, steps: int, loss: float, it_sec: float, tokens_sec: float):
+    def on_train_loss_report(self, steps: int, loss: float, it_sec: float, tokens_sec: float, trained_tokens: int):
         """Called to report training loss at specified intervals."""
         pass
 
@@ -152,6 +152,7 @@ def train(
 
     losses = []
     n_tokens = 0
+    trained_tokens = 0
     # Main training loop
     start = time.perf_counter()
     for it, batch in zip(
@@ -183,14 +184,16 @@ def train(
             stop = time.perf_counter()
             it_sec = args.steps_per_report / (stop - start)
             tokens_sec = float(n_tokens) / (stop - start)
+            trained_tokens += n_tokens
             print(
                 f"Iter {it + 1}: Train loss {train_loss:.3f}, "
                 f"It/sec {it_sec:.3f}, "
-                f"Tokens/sec {tokens_sec:.3f}"
+                f"Tokens/sec {tokens_sec:.3f}, "
+                f"Trained Tokens {trained_tokens}"
             )
 
             if training_callback is not None:
-                training_callback.on_train_loss_report(it + 1, train_loss, it_sec, tokens_sec)
+                training_callback.on_train_loss_report(it + 1, train_loss, it_sec, tokens_sec, trained_tokens)
 
             losses = []
             n_tokens = 0
