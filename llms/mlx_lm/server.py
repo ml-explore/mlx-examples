@@ -82,6 +82,10 @@ def generate(
             return mx.argmax(logits, axis=-1)
         else:
             if top_p > 0 and top_p < 1.0:
+                if (
+                    logits.dtype == mx.bfloat16
+                ):  # workdaround for unable to load kernel contiguous_scan_inclusive_sum_bfloat16_bfloat16
+                    logits = logits.astype(mx.float32)
                 probs = mx.softmax(logits / temp, axis=-1)
 
                 sorted_probs = mx.sort(probs)[::-1]
