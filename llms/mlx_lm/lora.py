@@ -7,12 +7,10 @@ import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .models import llama, mixtral, phi2
 from .tuner.lora import LoRALinear
 from .tuner.trainer import TrainingArgs, evaluate, train
+from .tuner.utils import linear_to_lora_layers
 from .utils import generate, load
-
-SUPPORTED_MODELS = [llama.Model, mixtral.Model, phi2.Model]
 
 
 def build_parser():
@@ -113,6 +111,12 @@ def build_parser():
         default=500,
         help="Number of test set batches, -1 uses the entire test set.",
     )
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=2048,
+        help="Maximum sequence length.",
+    )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
     return parser
 
@@ -166,19 +170,10 @@ if __name__ == "__main__":
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
-    if model.__class__ not in SUPPORTED_MODELS:
-        raise ValueError(
-            f"Model {model.__class__} not supported. "
-            f"Supported models: { SUPPORTED_MODELS}"
-        )
-
-    # Freeze all layers other than LORA linears
+    # Freeze all layers
     model.freeze()
-    for l in model.model.layers[len(model.model.layers) - args.lora_layers :]:
-        l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
-        l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
-        if hasattr(l, "block_sparse_moe"):
-            l.block_sparse_moe.gate = LoRALinear.from_linear(l.block_sparse_moe.gate)
+    # Convert linear layers to lora layers and unfreeze in the process
+    linear_to_lora_layers(model, args.lora_layers)
 
     p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
     print(f"Total parameters {p:.3f}M")
@@ -201,6 +196,7 @@ if __name__ == "__main__":
         steps_per_eval=args.steps_per_eval,
         steps_per_save=args.save_every,
         adapter_file=args.adapter_file,
+        max_seq_length=args.max_seq_length,
     )
     if args.train:
         print("Training")

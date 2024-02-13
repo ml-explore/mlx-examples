@@ -48,8 +48,6 @@ latent_generator = sd.generate_latents("A photo of an astronaut riding a horse o
 # Here we are evaluating each diffusion step but we could also evaluate
 # once at the end.
 for x_t in latent_generator:
-    mx.simplify(x_t) # remove possible redundant computation eg reuse
-                     # scalars etc
     mx.eval(x_t)
 
 # Now x_t is the last latent from the reverse process aka x_0. We can

@@ -10,6 +10,7 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
+    model_type: str
     max_position_embeddings: int = 2048
     vocab_size: int = 51200
     hidden_size: int = 2560
@@ -163,6 +164,7 @@ class PhiModel(nn.Module):
 class Model(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
+        self.model_type = config.model_type
         self.model = PhiModel(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=True)
 

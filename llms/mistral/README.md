@@ -16,7 +16,7 @@ pip install -r requirements.txt
 Next, download the model and tokenizer:
 
 ```
-curl -O https://files.mistral-7b-v0-1.mistral.ai/mistral-7B-v0.1.tar
+curl -O https://models.mistralcdn.com/mistral-7b-v0-1/mistral-7B-v0.1.tar
 tar -xf mistral-7B-v0.1.tar
 ```
 

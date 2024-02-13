@@ -1,5 +1,6 @@
 import copy
 import glob
+import importlib
 import json
 import logging
 import time
@@ -12,19 +13,14 @@ from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
-from .models import llama, mixtral, phi2, plamo, qwen, stablelm_epoch
 from .tuner.utils import apply_lora_layers
 
 # Constants
-MODEL_MAPPING = {
-    "llama": llama,
-    "mistral": llama,  # mistral is compatible with llama
-    "mixtral": mixtral,
-    "phi": phi2,
-    "stablelm_epoch": stablelm_epoch,
-    "qwen": qwen,
-    "plamo": plamo,
+MODEL_REMAPPING = {
+    "mistral": "llama",  # mistral is compatible with llama
+    "phi-msft": "phixtral",
 }
+
 MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
@@ -45,12 +41,14 @@ def _get_classes(config: dict):
         A tuple containing the Model class and the ModelArgs class.
     """
     model_type = config["model_type"]
-    if model_type not in MODEL_MAPPING:
+    model_type = MODEL_REMAPPING.get(model_type, model_type)
+    try:
+        arch = importlib.import_module(f"mlx_lm.models.{model_type}")
+    except ImportError:
         msg = f"Model type {model_type} not supported."
         logging.error(msg)
         raise ValueError(msg)
 
-    arch = MODEL_MAPPING[model_type]
     return arch.Model, arch.ModelArgs
 
 
@@ -171,21 +169,22 @@ def generate(
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
 
-    tokens = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+    token_count = len(tokens)
+    token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
 
     if verbose:
-        print(tokens[skip:], flush=True)
+        print(token_string[skip:], flush=True)
         gen_time = time.perf_counter() - tic
         print("=" * 10)
-        if len(tokens) == 0:
+        if token_count == 0:
             print("No tokens generated for this prompt")
             return
         prompt_tps = prompt.size / prompt_time
-        gen_tps = (len(tokens) - 1) / gen_time
+        gen_tps = (token_count - 1) / gen_time
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
 
-    return tokens
+    return token_string
 
 
 def load_model(model_path: Path) -> nn.Module:
@@ -379,6 +378,25 @@ def save_weights(save_path: Union[str, Path], weights: Dict[str, Any]) -> None:
         else "model.safetensors"
     )
 
+    total_size = sum(v.nbytes for v in weights.values())
+    index_data = {"metadata": {"total_size": total_size}, "weight_map": {}}
+
     for i, shard in enumerate(shards):
         shard_name = shard_file_format.format(i + 1, shards_count)
-        mx.save_safetensors(str(save_path / shard_name), shard)
+        shard_path = save_path / shard_name
+
+        mx.save_safetensors(str(shard_path), shard)
+
+        for weight_name in shard.keys():
+            index_data["weight_map"][weight_name] = shard_name
+
+    index_data["weight_map"] = {
+        k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
+    }
+
+    with open(save_path / "model.safetensors.index.json", "w") as f:
+        json.dump(
+            index_data,
+            f,
+            indent=4,
+        )

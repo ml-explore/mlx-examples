@@ -20,15 +20,23 @@ Some more useful examples are listed below.
 
 ### Image Models 
 
+- Image classification using [ResNets on CIFAR-10](cifar).
 - Generating images with [Stable Diffusion](stable_diffusion).
+- Convolutional variational autoencoder [(CVAE) on MNIST](cvae).
 
 ### Audio Models
 
 - Speech recognition with [OpenAI's Whisper](whisper).
 
+### Multimodal models
+
+- Joint text and image embeddings with [CLIP](clip).
+
 ### Other Models 
 
 - Semi-supervised learning on graph-structured data with [GCN](gcn).
+- Real NVP [normalizing flow](normalizing_flow) for density estimation and
+  sampling.
 
 ### Hugging Face
 

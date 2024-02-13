@@ -21,9 +21,9 @@ class ModelArgs(BaseModelArgs):
     num_local_experts: int = 8
     rms_norm_eps: float = 1e-5
     vocab_size: int
+    model_type: str
     rope_theta: float = 1e6
     rope_traditional: bool = False
-    model_type: str = None
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
 
     def __post_init__(self):
@@ -252,6 +252,7 @@ class MixtralModel(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.model_type = args.model_type
         self.model = MixtralModel(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 

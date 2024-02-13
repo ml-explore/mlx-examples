@@ -10,3 +10,5 @@ MLX Examples was developed with contributions from the following individuals:
 - Juarez Bochi: Added support for T5 models.
 - Sarthak Yadav: Added the `cifar` and `speechcommands` examples.
 - Shunta Saito: Added support for PLaMo models.
+- Gabrijel Boduljak: Implemented `CLIP`.
+- Markus Enzweiler: Added the `cvae` examples.

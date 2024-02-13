@@ -80,9 +80,9 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
             for j in range(batch_size):
                 truncated_length = min(lengths[j], max_seq_length)
                 batch_arr[j, :truncated_length] = batch[j][:truncated_length]
-                lengths[
-                    j
-                ] = truncated_length  # Update lengths to match truncated lengths
+                lengths[j] = (
+                    truncated_length  # Update lengths to match truncated lengths
+                )
             batch = mx.array(batch_arr)
 
             yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
@@ -129,6 +129,10 @@ def train(
     loss: callable = default_loss,
     iterate_batches: callable = iterate_batches
 ):
+    # Create checkpoints directory if it does not exist
+    if not os.path.exists('checkpoints'):
+        os.makedirs('checkpoints')
+
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
 
@@ -194,12 +198,13 @@ def train(
 
             start = time.perf_counter()
 
-            # Save adapter weights if needed
-            if (it + 1) % args.steps_per_save == 0:
-                save_adapter(model=model, adapter_file=args.adapter_file)
-                print(
-                    f"Iter {it + 1}: Saved adapter weights to {os.path.join(args.adapter_file)}."
-                )
+        # Save adapter weights if needed
+        if (it + 1) % args.steps_per_save == 0:
+            checkpoint_adapter_file = f"checkpoints/{it + 1}_{args.adapter_file}"
+            save_adapter(model=model, adapter_file=checkpoint_adapter_file)
+            print(
+                f"Iter {it + 1}: Saved adapter weights to {os.path.join(checkpoint_adapter_file)}."
+            )
     # save final adapter weights
     save_adapter(model=model, adapter_file=args.adapter_file)
     print(f"Saved final adapter weights to {os.path.join(args.adapter_file)}.")
