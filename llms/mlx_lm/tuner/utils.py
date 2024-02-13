@@ -7,26 +7,6 @@ from mlx.utils import tree_unflatten
 from .lora import LoRALinear
 
 
-def check_lora_layers(num_lora_layers, num_model_layers):
-    """
-    Checks if the number of LoRA layers requested exceeds the number of layers in the model.
-
-    Args:
-    - num_lora_layers (int): The number of LoRA layers requested.
-    - num_model_layers (int): The total number of layers in the model.
-
-    Raises:
-    - ValueError: If the number of LoRA layers requested exceeds the number of model layers.
-    """
-    if num_lora_layers > num_model_layers:
-        raise ValueError(
-            f"The model consists of {num_model_layers} layers, "
-            f"but you want to train LoRA with {num_lora_layers} layers, "
-            f"which exceeds the maximum number of trainable layers of the model. "
-            f"Please reduce the number of LoRA layers to match the model's limitations and try again."
-        )
-
-
 def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
     """
     Convert some of the models linear layers to lora layers.
@@ -36,6 +16,14 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         num_lora_layers (int): The number of blocks to convert to lora layers
         starting from the last layer.
     """
+
+    def check_lora_layers(num_model):
+        if num_lora_layers > num_model:
+            raise ValueError(
+                f"Requested {num_lora_layers} LoRA layers "
+                f"but the model only has {num_model_layers} layers."
+            )
+
     if model.model_type in [
         "mistral",
         "llama",
@@ -44,7 +32,7 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         "stablelm_epoch",
         "qwen2",
     ]:
-        check_lora_layers(num_lora_layers, len(model.model.layers))
+        check_lora_layers(len(model.model.layers))
 
         for l in model.model.layers[len(model.model.layers) - num_lora_layers :]:
             l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
@@ -54,14 +42,14 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
                     l.block_sparse_moe.gate
                 )
     elif model.model_type == "olmo":
-        check_lora_layers(num_lora_layers, len(model.model.transformer.blocks))
+        check_lora_layers(len(model.model.transformer.blocks))
 
         for l in model.model.transformer.blocks[
             len(model.model.transformer.blocks) - num_lora_layers :
         ]:
             l.att_proj = LoRALinear.from_linear(l.att_proj)
     elif model.model_type == "phi-msft":
-        check_lora_layers(num_lora_layers, len(model.transformer.h))
+        check_lora_layers(len(model.transformer.h))
 
         for l in model.transformer.h[len(model.transformer.h) - num_lora_layers :]:
             l.mixer.Wqkv = LoRALinear.from_linear(l.mixer.Wqkv)
