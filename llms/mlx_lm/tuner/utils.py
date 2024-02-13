@@ -16,6 +16,14 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         num_lora_layers (int): The number of blocks to convert to lora layers
         starting from the last layer.
     """
+
+    def check_lora_layers(num_model):
+        if num_lora_layers > num_model:
+            raise ValueError(
+                f"Requested {num_lora_layers} LoRA layers "
+                f"but the model only has {num_model_layers} layers."
+            )
+
     if model.model_type in [
         "mistral",
         "llama",
@@ -24,6 +32,8 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         "stablelm_epoch",
         "qwen2",
     ]:
+        check_lora_layers(len(model.model.layers))
+
         for l in model.model.layers[len(model.model.layers) - num_lora_layers :]:
             l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
             l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
@@ -32,11 +42,15 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
                     l.block_sparse_moe.gate
                 )
     elif model.model_type == "olmo":
+        check_lora_layers(len(model.model.transformer.blocks))
+
         for l in model.model.transformer.blocks[
             len(model.model.transformer.blocks) - num_lora_layers :
         ]:
             l.att_proj = LoRALinear.from_linear(l.att_proj)
     elif model.model_type == "phi-msft":
+        check_lora_layers(len(model.transformer.h))
+
         for l in model.transformer.h[len(model.transformer.h) - num_lora_layers :]:
             l.mixer.Wqkv = LoRALinear.from_linear(l.mixer.Wqkv)
             l.moe.gate = LoRALinear.from_linear(l.moe.gate)

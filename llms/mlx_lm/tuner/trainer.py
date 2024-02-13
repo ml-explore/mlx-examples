@@ -128,8 +128,8 @@ def train(
     loss: callable = default_loss,
 ):
     # Create checkpoints directory if it does not exist
-    if not os.path.exists('checkpoints'):
-        os.makedirs('checkpoints')
+    if not os.path.exists("checkpoints"):
+        os.makedirs("checkpoints")
 
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
