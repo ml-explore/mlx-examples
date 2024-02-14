@@ -130,7 +130,7 @@ class StableDiffusion:
         # Get the latents from the input image and add noise according to the
         # start time.
         x_0, _ = self.autoencoder.encode(image[None])
-        x_0 = mx.broadcast_to(x_0, [n_images] + x_0.shape[1:])
+        x_0 = mx.broadcast_to(x_0, (n_images,) + x_0.shape[1:])
         x_T = self.sampler.add_noise(x_0, mx.array(start_step))
 
         # Perform the denoising loop
