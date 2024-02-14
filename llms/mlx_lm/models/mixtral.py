@@ -95,12 +95,9 @@ class MixtralAttention(nn.Module):
             0, 2, 1, 3
         )
 
-        def repeat(a):
-            a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
-            return a.reshape([B, self.num_heads, L, -1])
-
         if self.repeats > 1:
-            keys, values = map(repeat, (keys, values))
+            keys = mx.repeat(keys, self.repeats, axis=1)
+            values = mx.repeat(values, self.repeats, axis=1)
 
         if cache is not None:
             key_cache, value_cache = cache
