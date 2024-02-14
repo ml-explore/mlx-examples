@@ -118,7 +118,6 @@ def generate_step(
     model: nn.Module,
     temp: 0.0,
     repetition_penalty: Optional[float] = None,
-    repetition_context: Optional[List[int]] = None,
     repetition_context_size: Optional[int] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
@@ -129,7 +128,6 @@ def generate_step(
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
         repetition_penalty (float, optional): The penalty factor for repeating tokens.
-        repetition_context (int, optional): A list containing the repetition context.
         repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
 
     Yields:
@@ -158,6 +156,7 @@ def generate_step(
     y = prompt
     cache = None
 
+    repetition_context = prompt.tolist()
     while True:
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
@@ -166,11 +165,12 @@ def generate_step(
             logits = apply_repetition_penalty(
                 logits, repetition_context, repetition_penalty
             )
-
-        y, prob = sample(logits)
-
-        if repetition_context and repetition_context_size:
+            y, prob = sample(logits)
             repetition_context.append(y.item())
+        else:
+            y, prob = sample(logits)
+
+        if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
         yield y, prob
@@ -210,11 +210,6 @@ def generate(
 
     prompt_tokens = mx.array(tokenizer.encode(prompt))
 
-    repetition_context = []
-    if repetition_penalty and repetition_penalty > 1.0:
-        repetition_context = prompt_tokens.tolist()
-        repetition_context = repetition_context[-repetition_context_size:]
-
     tic = time.perf_counter()
     tokens = []
     skip = 0
@@ -226,7 +221,6 @@ def generate(
             model,
             temp,
             repetition_penalty,
-            repetition_context,
             repetition_context_size,
         ),
         range(max_tokens),
