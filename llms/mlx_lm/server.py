@@ -244,6 +244,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self.end_headers()
             accumulated_tokens = []
             current_generated_text_index = 0
+            REPLACEMENT_CHAR = "\ufffd"
             for token in generate(
                 prompt,
                 _model,
@@ -255,6 +256,8 @@ class APIHandler(BaseHTTPRequestHandler):
             ):
                 # This is a workaround because the llama tokenizer omitted spaces during decoding token by token.
                 accumulated_tokens.append(token)
+                if REPLACEMENT_CHAR in _tokenizer.decode(token):
+                    continue
                 generated_text = _tokenizer.decode(accumulated_tokens)
                 next_chunk = generated_text[current_generated_text_index:]
                 current_generated_text_index = len(generated_text)
