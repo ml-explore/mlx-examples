@@ -19,7 +19,6 @@ class ModelArgs(BaseModelArgs):
     num_key_value_heads: int = None
     rope_theta: float = 1000000
     rope_traditional: bool = False
-    model_type: str = None
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
 
     def __post_init__(self):
