@@ -157,6 +157,10 @@ def generate_step(
     cache = None
 
     repetition_context = prompt.tolist()
+
+    if repetition_context_size:
+        repetition_context = repetition_context[-repetition_context_size:]
+
     while True:
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
