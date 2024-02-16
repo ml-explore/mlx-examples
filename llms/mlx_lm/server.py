@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import time
 import uuid
 from collections import namedtuple
@@ -24,57 +23,43 @@ def load_model(model_path: str, adapter_file: Optional[str] = None):
     _model, _tokenizer = load(model_path, adapter_file=adapter_file)
 
 
-StopCondition = namedtuple("StopCondition", ["stop_met", "trim_needed", "trim_length"])
+StopCondition = namedtuple("StopCondition", ["stop_met", "trim_length"])
 
 
 def stopping_criteria(
     tokens: List[int],
     stop_id_sequences: List[np.ndarray],
     eos_token_id: int,
-    max_tokens: int,
 ) -> StopCondition:
     """
-    Determines whether a stop condition for text generation has been met.
+    Determines whether the token generation should stop based on predefined conditions.
 
-    It checks if the generated text has reached a specified maximum length,
-    ended with an EOS token, or contains a specified sequence of tokens
-    that should trigger stopping.
-
-    Parameters:
-    - tokens (List[int]): The list of generated token IDs.
-    - stop_id_sequences (List[np.ndarray]): A list of numpy arrays, each representing a sequence
-      of token IDs that, if generated, should trigger the end of text generation.
-    - eos_token_id (int): The token ID representing the end-of-sequence (EOS) marker.
-    - max_tokens (int): The maximum number of tokens to generate. Text generation will stop
-      if this number is reached.
+    Args:
+        tokens (List[int]): The current sequence of generated tokens.
+        stop_id_sequences (List[np.ndarray]): A list of numpy arrays, each representing a sequence of token IDs.
+            If the end of the `tokens` list matches any of these sequences, the generation should stop.
+        eos_token_id (int): The token ID that represents the end-of-sequence. If the last token in `tokens` matches this,
+            the generation should stop.
 
     Returns:
-    - StopCondition: A named tuple with the fields `stop_met` (bool), `trim_needed` (bool),
-      and `trim_length` (int), providing details about the stop condition.
+        StopCondition: A named tuple indicating whether the stop condition has been met (`stop_met`)
+            and how many tokens should be trimmed from the end if it has (`trim_length`).
     """
-    if len(tokens) >= max_tokens:
-        return StopCondition(stop_met=True, trim_needed=False, trim_length=0)
-
     if tokens and tokens[-1] == eos_token_id:
-        return StopCondition(stop_met=True, trim_needed=True, trim_length=1)
+        return StopCondition(stop_met=True, trim_length=0)
 
     for stop_ids in stop_id_sequences:
         if len(tokens) >= len(stop_ids):
-            if np.all(np.equal(np.array(tokens[-len(stop_ids) :]), stop_ids)):
-                return StopCondition(
-                    stop_met=True, trim_needed=True, trim_length=len(stop_ids)
-                )
+            if np.array_equal(tokens[-len(stop_ids) :], stop_ids):
+                return StopCondition(stop_met=True, trim_length=len(stop_ids))
 
-    return StopCondition(stop_met=False, trim_needed=False, trim_length=0)
+    return StopCondition(stop_met=False, trim_length=0)
 
 
 def generate(
     prompt: mx.array,
     model: nn.Module,
     temp: float = 0.0,
-    stop_id_sequences: List[np.ndarray] = None,
-    eos_token_id: int = None,
-    max_tokens: int = 100,
     top_p: float = 1.0,
 ):
     def sample(logits):
@@ -104,23 +89,13 @@ def generate(
 
     y = prompt
     cache = None
-    tokens = []
 
     while True:
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
+
         y = sample(logits)
         token = y.item()
-        tokens.append(token)
-
-        stop_met, trim_needed, trim_length = stopping_criteria(
-            tokens, stop_id_sequences, eos_token_id, max_tokens
-        )
-        if stop_met:
-            if trim_needed and trim_length > 0:
-                tokens = tokens[:-trim_length]
-            tokens = None
-            break
 
         yield token
 
@@ -144,6 +119,53 @@ def convert_chat(messages: any, role_mapping: Optional[dict] = None):
 
     prompt += role_mapping.get("assistant", "")
     return prompt.rstrip()
+
+
+def create_response(chat_id, requested_model, prompt, tokens, text):
+    response = {
+        "id": chat_id,
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": requested_model,
+        "system_fingerprint": f"fp_{uuid.uuid4()}",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": text,
+                },
+                "logprobs": None,
+                "finish_reason": None,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": len(prompt),
+            "completion_tokens": len(tokens),
+            "total_tokens": len(prompt) + len(tokens),
+        },
+    }
+
+    return response
+
+
+def create_chunk_response(chat_id, requested_model, next_chunk):
+    response = {
+        "id": chat_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": requested_model,
+        "system_fingerprint": f"fp_{uuid.uuid4()}",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": next_chunk},
+                "logprobs": None,
+                "finish_reason": None,
+            }
+        ],
+    }
+    return response
 
 
 class APIHandler(BaseHTTPRequestHandler):
@@ -184,6 +206,7 @@ class APIHandler(BaseHTTPRequestHandler):
         else:
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
             prompt = _tokenizer.encode(prompt, return_tensors="np")
+
         prompt = mx.array(prompt[0])
         stop_words = body.get("stop", [])
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
@@ -200,88 +223,88 @@ class APIHandler(BaseHTTPRequestHandler):
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
         if not stream:
-            tokens = list(
+            tokens = []
+            for token, _ in zip(
                 generate(
                     prompt,
                     _model,
                     temperature,
-                    stop_id_sequences,
-                    eos_token_id,
-                    max_tokens,
                     top_p=top_p,
+                ),
+                range(max_tokens),
+            ):
+                tokens.append(token)
+                stop_condition = stopping_criteria(
+                    tokens, stop_id_sequences, eos_token_id
                 )
-            )
-            text = _tokenizer.decode(tokens)
-            response = {
-                "id": chat_id,
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": requested_model,
-                "system_fingerprint": f"fp_{uuid.uuid4()}",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": text,
-                        },
-                        "logprobs": None,
-                        "finish_reason": None,
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": len(prompt),
-                    "completion_tokens": len(tokens),
-                    "total_tokens": len(prompt) + len(tokens),
-                },
-            }
+                if stop_condition.stop_met:
+                    if stop_condition.trim_length:
+                        tokens = tokens[: -stop_condition.trim_length]
+                    break
 
-            return response
+            text = _tokenizer.decode(tokens)
+            return create_response(chat_id, requested_model, prompt, tokens, text)
         else:
             self.send_response(200)
             self.send_header("Content-type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            accumulated_tokens = []
+            max_stop_id_sequence_len = (
+                max(len(seq) for seq in stop_id_sequences) if stop_id_sequences else 0
+            )
+            tokens = []
             current_generated_text_index = 0
+            # Buffer to store the last `max_stop_id_sequence_len` tokens to check for stop conditions before writing to the stream.
+            stop_sequence_buffer = []
             REPLACEMENT_CHAR = "\ufffd"
-            for token in generate(
-                prompt,
-                _model,
-                temperature,
-                stop_id_sequences,
-                eos_token_id,
-                max_tokens,
-                top_p=top_p,
+            for token, _ in zip(
+                generate(
+                    prompt,
+                    _model,
+                    temperature,
+                    top_p=top_p,
+                ),
+                range(max_tokens),
             ):
-                # This is a workaround because the llama tokenizer omitted spaces during decoding token by token.
-                accumulated_tokens.append(token)
-                if REPLACEMENT_CHAR in _tokenizer.decode(token):
-                    continue
-                generated_text = _tokenizer.decode(accumulated_tokens)
+                tokens.append(token)
+                stop_sequence_buffer.append(token)
+                if len(stop_sequence_buffer) > max_stop_id_sequence_len:
+                    if REPLACEMENT_CHAR in _tokenizer.decode(token):
+                        continue
+                    stop_condition = stopping_criteria(
+                        stop_sequence_buffer,
+                        stop_id_sequences,
+                        eos_token_id,
+                    )
+                    if stop_condition.stop_met:
+                        if stop_condition.trim_length:
+                            tokens = tokens[: -stop_condition.trim_length]
+                        break
+                    # This is a workaround because the llama tokenizer emits spaces when decoding token by token.
+                    generated_text = _tokenizer.decode(tokens)
+                    next_chunk = generated_text[current_generated_text_index:]
+                    current_generated_text_index = len(generated_text)
+
+                    response = create_chunk_response(
+                        chat_id, requested_model, next_chunk
+                    )
+                    try:
+                        self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+                        self.wfile.flush()
+                        stop_sequence_buffer = []
+                    except Exception as e:
+                        print(e)
+                        break
+            # check is there any remaining text to send
+            if stop_sequence_buffer:
+                generated_text = _tokenizer.decode(tokens)
                 next_chunk = generated_text[current_generated_text_index:]
-                current_generated_text_index = len(generated_text)
-                response = {
-                    "id": chat_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": requested_model,
-                    "system_fingerprint": f"fp_{uuid.uuid4()}",
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {"role": "assistant", "content": next_chunk},
-                            "logprobs": None,
-                            "finish_reason": None,
-                        }
-                    ],
-                }
+                response = create_chunk_response(chat_id, requested_model, next_chunk)
                 try:
                     self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
                     self.wfile.flush()
                 except Exception as e:
                     print(e)
-                    break
 
             self.wfile.write(f"data: [DONE]\n\n".encode())
             self.wfile.flush()
