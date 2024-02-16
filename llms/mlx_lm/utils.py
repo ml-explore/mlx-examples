@@ -95,6 +95,8 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
     """
     Apply repetition penalty to specific logits based on the given context.
 
+    Paper: https://arxiv.org/abs/1909.05858
+
     Args:
         logits (mx.array): The logits produced by the language model.
         generated_tokens (any): A list of N previous tokens.
@@ -118,7 +120,7 @@ def generate_step(
     model: nn.Module,
     temp: 0.0,
     repetition_penalty: Optional[float] = None,
-    repetition_context_size: Optional[int] = None,
+    repetition_context_size: Optional[int] = 20,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -128,7 +130,7 @@ def generate_step(
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
         repetition_penalty (float, optional): The penalty factor for repeating tokens.
-        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
+        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty (default 20).
 
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
