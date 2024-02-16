@@ -21,7 +21,7 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         if num_lora_layers > num_model:
             raise ValueError(
                 f"Requested {num_lora_layers} LoRA layers "
-                f"but the model only has {num_model_layers} layers."
+                f"but the model only has {num_model} layers."
             )
 
     if model.model_type in [
