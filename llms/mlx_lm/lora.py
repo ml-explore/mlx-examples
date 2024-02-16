@@ -7,7 +7,6 @@ import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .tuner.lora import LoRALinear
 from .tuner.trainer import TrainingArgs, evaluate, train
 from .tuner.utils import linear_to_lora_layers
 from .utils import generate, load
