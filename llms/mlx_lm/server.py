@@ -272,7 +272,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     if REPLACEMENT_CHAR in _tokenizer.decode(token):
                         continue
                     stop_condition = stopping_criteria(
-                        stop_sequence_buffer,
+                        tokens,
                         stop_id_sequences,
                         eos_token_id,
                     )
