@@ -254,7 +254,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 max_tokens,
                 top_p=top_p,
             ):
-                # This is a workaround because the llama tokenizer omitted spaces during decoding token by token.
+                # This is a workaround because the llama tokenizer emits spaces when decoding token by token.
                 accumulated_tokens.append(token)
                 if REPLACEMENT_CHAR in _tokenizer.decode(token):
                     continue
