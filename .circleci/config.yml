@@ -17,13 +17,9 @@ jobs:
 workflows:
   build_and_test:
     when:
-      and:
-        - matches:
-            pattern: "^(?!pull/)[-\\w]+$"
-            value: << pipeline.git.branch >>
-        - not: << pipeline.parameters.nightly_build >>
-        - not: << pipeline.parameters.weekly_build >>
-        - not: << pipeline.parameters.test_release >>
+      matches:
+        pattern: "^(?!pull/)[-\\w]+$"
+        value: << pipeline.git.branch >>
     jobs:
       - linux_build_and_test
 
