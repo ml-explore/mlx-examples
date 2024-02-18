@@ -10,6 +10,8 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
+    model_type: str
+    vocab_size: int
     vocab_size: int = 32000
     max_position_embeddings: int = 4096 * 32
     hidden_size: int = 4096
@@ -20,8 +22,6 @@ class ModelArgs(BaseModelArgs):
     num_key_value_heads: int = 8
     num_local_experts: int = 8
     rms_norm_eps: float = 1e-5
-    vocab_size: int
-    model_type: str
     rope_theta: float = 1e6
     rope_traditional: bool = False
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
