@@ -111,7 +111,7 @@ def build_parser():
         help="Number of test set batches, -1 uses the entire test set.",
     )
     parser.add_argument(
-        "--max_seq_length",
+        "--max-seq-length",
         type=int,
         default=2048,
         help="Maximum sequence length.",
