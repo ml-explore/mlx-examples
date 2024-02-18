@@ -25,7 +25,7 @@ You can use `mlx-lm` as a module:
 ```python
 from mlx_lm import load, generate
 
-model, tokenizer = load("mistralai/Mistral-7B-v0.1")
+model, tokenizer = load("mistralai/Mistral-7B-Instruct-v0.1")
 
 response = generate(model, tokenizer, prompt="hello", verbose=True)
 ```
@@ -44,7 +44,7 @@ You can convert models in the Python API with:
 ```python
 from mlx_lm import convert
 
-upload_repo = "mlx-community/My-Mistral-7B-v0.1-4bit"
+upload_repo = "mistralai/Mistral-7B-Instruct-v0.1"
 
 convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_repo=upload_repo)
 ```
@@ -64,7 +64,7 @@ To see a description of all the arguments you can do:
 You can also use `mlx-lm` from the command line with:
 
 ```
-python -m mlx_lm.generate --model mistralai/Mistral-7B-v0.1 --prompt "hello"
+python -m mlx_lm.generate --model mistralai/Mistral-7B-Instruct-v0.1 --prompt "hello"
 ```
 
 This will download a Mistral 7B model from the Hugging Face Hub and generate
@@ -79,7 +79,7 @@ python -m mlx_lm.generate --help
 To quantize a model from the command line run:
 
 ```
-python -m mlx_lm.convert --hf-path mistralai/Mistral-7B-v0.1 -q
+python -m mlx_lm.convert --hf-path mistralai/Mistral-7B-Instruct-v0.1 -q
 ```
 
 For more options run:
