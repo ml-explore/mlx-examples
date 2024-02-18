@@ -1,17 +1,13 @@
-import glob
 import inspect
-import json
 import math
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from huggingface_hub import snapshot_download
-from mlx.utils import tree_unflatten
-from transformers import AutoTokenizer
+
+from .layers import LayerNorm
 
 
 @dataclass
@@ -35,11 +31,6 @@ class ModelArgs:
                 if k in inspect.signature(cls).parameters
             }
         )
-
-
-class LayerNorm(nn.LayerNorm):
-    def __call__(self, x: mx.array) -> mx.array:
-        return super().__call__(x.astype(mx.float32)).astype(x.dtype)
 
 
 class RoPEAttention(nn.Module):

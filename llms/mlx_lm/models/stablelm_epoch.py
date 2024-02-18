@@ -6,6 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .layers import LayerNorm
 
 
 @dataclass
@@ -22,11 +23,6 @@ class ModelArgs(BaseModelArgs):
     norm_eps: float
     rope_theta: float
     use_qkv_bias: bool
-
-
-class LayerNorm(nn.LayerNorm):
-    def __call__(self, x: mx.array) -> mx.array:
-        return super().__call__(x.astype(mx.float32)).astype(x.dtype)
 
 
 class Attention(nn.Module):

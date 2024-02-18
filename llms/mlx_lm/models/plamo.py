@@ -6,6 +6,7 @@ import mlx.nn as nn
 import numpy as np
 
 from .base import BaseModelArgs
+from .layers import RMSNorm
 
 
 @dataclass
@@ -20,20 +21,6 @@ class ModelArgs(BaseModelArgs):
     n_shared_head: int = (8,)
     rope_theta: float = 10000
     rope_traditional: bool = False
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((dims,))
-        self.variance_epsilon = eps
-
-    def _norm(self, x):
-        return x * mx.rsqrt(x.square().mean(-1, keepdims=True) + self.variance_epsilon)
-
-    def __call__(self, x):
-        output = self._norm(x.astype(mx.float32)).astype(x.dtype)
-        return self.weight * output
 
 
 class Attention(nn.Module):
