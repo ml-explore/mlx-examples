@@ -182,11 +182,13 @@ def train(
             train_loss = np.mean(losses)
 
             stop = time.perf_counter()
+            learning_rate = optimizer.learning_rate.item()
             it_sec = args.steps_per_report / (stop - start)
             tokens_sec = float(n_tokens) / (stop - start)
             trained_tokens += n_tokens
             print(
                 f"Iter {it + 1}: Train loss {train_loss:.3f}, "
+                f"Learning Rate {learning_rate:.3e}, "
                 f"It/sec {it_sec:.3f}, "
                 f"Tokens/sec {tokens_sec:.3f}, "
                 f"Trained Tokens {trained_tokens}"
@@ -196,6 +198,7 @@ def train(
                 train_info = {
                     "iteration": it + 1,
                     "train_loss": train_loss,
+                    "learning_rate": learning_rate,
                     "iterations_per_second": it_sec,
                     "tokens_per_second": tokens_sec,
                     "trained_tokens": trained_tokens,
