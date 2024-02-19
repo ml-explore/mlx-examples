@@ -71,8 +71,20 @@ class LlavaModel(nn.Module):
 
     def __call__(self,
                  input_ids: Optional[mx.array] = None,
-                 pixel_values: Optional[mx.array] = None):
+                 pixel_values: Optional[mx.array] = None,
+                 attention_mask: Optional[mx.array] = None,):
         # TODO: add the forward pass
+
+        if pixel_values is not None and input_ids.shape[1] != 1:
+            image_outputs = self.vision_tower(pixel_values)
+
+            image_features = self.multi_modal_projector(
+                image_outputs)
+            inputs_embeds, attention_mask, labels, position_ids = self._merge_input_ids_with_image_features(
+                image_features, inputs_embeds, input_ids, attention_mask, labels)
+
+    def _merge_input_ids_with_image_features(self, image_features, inputs_embeds, input_ids, attention_mask, labels):
+        # TODO: https://github.com/huggingface/transformers/blob/4f09d0fd888dbf2660313f9715992822acfb99ce/src/transformers/models/llava/modeling_llava.py#L279
         pass
 
     @staticmethod
