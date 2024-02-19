@@ -138,21 +138,14 @@ class Dataset:
 
 
 def load(args):
-    try:
-        train = Dataset(Path(args.data) / "train.jsonl")
-    except Exception as e:
-        print(f"Training set not built at {args.data}/train.jsonl ({e})")
-        raise
-    try:
-        valid = Dataset(Path(args.data) / "valid.jsonl")
-    except Exception as e:
-        print(f"Validation set not built at {args.data}/valid.jsonl ({e})")
-        raise
-    try:
-        test = Dataset(Path(args.data) / "test.jsonl")
-    except Exception as e:
-        print(f"Test set not built at {args.data}/test.jsonl ({e})")
-        raise
+    def load_and_check(name):
+         dataset_path = Path(args.data) / f"{name}.jsonl"
+         try:
+             train = Dataset(dataset_path)
+         except Exception as e:
+             print(f"Unable to build dataset {dataset_path} ({e})")
+             raise
+    train, valid, test = (load_and_check(n) for n in names)
 
     if args.train and len(train) == 0:
         raise ValueError(
