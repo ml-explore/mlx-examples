@@ -138,8 +138,22 @@ class Dataset:
 
 
 def load(args):
-    names = ("train", "valid", "test")
-    train, valid, test = (Dataset(Path(args.data) / f"{n}.jsonl") for n in names)
+    try:
+        train = Dataset(Path(args.data) / "train.jsonl")
+    except Exception as e:
+        print(f"Training set not built at {args.data}/train.jsonl ({e})")
+        raise
+    try:
+        valid = Dataset(Path(args.data) / "valid.jsonl")
+    except Exception as e:
+        print(f"Validation set not built at {args.data}/valid.jsonl ({e})")
+        raise
+    try:
+        test = Dataset(Path(args.data) / "test.jsonl")
+    except Exception as e:
+        print(f"Test set not built at {args.data}/test.jsonl ({e})")
+        raise
+
     if args.train and len(train) == 0:
         raise ValueError(
             "Training set not found or empty. Must provide training set for fine-tuning."
