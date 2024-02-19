@@ -121,18 +121,11 @@ def evaluate(
 
 class TrainingCallback:
 
-    def on_train_loss_report(
-        self,
-        steps: int,
-        loss: float,
-        it_sec: float,
-        tokens_sec: float,
-        trained_tokens: int,
-    ):
+    def on_train_loss_report(self, train_info: dict):
         """Called to report training loss at specified intervals."""
         pass
 
-    def on_val_loss_report(self, steps: int, loss: float, val_time: float):
+    def on_val_loss_report(self, val_info: dict):
         """Called to report validation loss at specified intervals or the beginning."""
         pass
 
@@ -146,7 +139,7 @@ def train(
     args: TrainingArgs = TrainingArgs(),
     loss: callable = default_loss,
     iterate_batches: callable = iterate_batches,
-    training_callback=None,
+    training_callback: TrainingCallback = None,
 ):
     print(f"Starting training..., iters: {args.iters}")
 
@@ -200,9 +193,14 @@ def train(
             )
 
             if training_callback is not None:
-                training_callback.on_train_loss_report(
-                    it + 1, train_loss, it_sec, tokens_sec, trained_tokens
-                )
+                train_info = {
+                    "iteration": it + 1,
+                    "train_loss": train_loss,
+                    "iterations_per_second": it_sec,
+                    "tokens_per_second": tokens_sec,
+                    "trained_tokens": trained_tokens,
+                }
+                training_callback.on_train_loss_report(train_info)
 
             losses = []
             n_tokens = 0
@@ -229,7 +227,12 @@ def train(
             )
 
             if training_callback is not None:
-                training_callback.on_val_loss_report(it + 1, val_loss, val_time)
+                val_info = {
+                    "iteration": it + 1,
+                    "val_loss": val_loss,
+                    "val_time": val_time
+                }
+                training_callback.on_val_loss_report(val_info)
 
             start = time.perf_counter()
 
