@@ -145,6 +145,8 @@ def load(args):
          except Exception as e:
              print(f"Unable to build dataset {dataset_path} ({e})")
              raise
+
+    names = ("train", "valid", "test")
     train, valid, test = (load_and_check(n) for n in names)
 
     if args.train and len(train) == 0:
