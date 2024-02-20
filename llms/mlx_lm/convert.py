@@ -96,7 +96,7 @@ def convert(
 ):
     print("[INFO] Loading")
     model_path = get_model_path(hf_path)
-    model, config, tokenizer = fetch_from_hub(model_path)
+    model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))
     dtype = mx.float16 if quantize else getattr(mx, dtype)
@@ -110,7 +110,8 @@ def convert(
     if isinstance(mlx_path, str):
         mlx_path = Path(mlx_path)
 
-    save_weights(mlx_path, weights)
+    del model
+    save_weights(mlx_path, weights, donate_weights=True)
 
     py_files = glob.glob(str(model_path / "*.py"))
     for file in py_files:
