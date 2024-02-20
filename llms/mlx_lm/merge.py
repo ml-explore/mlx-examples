@@ -121,7 +121,7 @@ def merge(
     base_model, base_config, tokenizer = fetch_from_hub(base_path)
     models = []
     for mp in model_paths[1:]:
-        model, config, _ = fetch_from_hub(get_model_path(mp))
+        model, config, _ = fetch_from_hub(get_model_path(mp), lazy=True)
         base_type = base_config["model_type"]
         model_type = config["model_type"]
         if base_type != model_type:
@@ -138,7 +138,7 @@ def merge(
     # Save base model
     mlx_path = Path(mlx_path)
     weights = dict(tree_flatten(base_model.parameters()))
-    save_weights(mlx_path, weights)
+    save_weights(mlx_path, weights, donate_weights=True)
     py_files = glob.glob(str(base_path / "*.py"))
     for file in py_files:
         shutil.copy(file, mlx_path)
