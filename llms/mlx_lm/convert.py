@@ -110,6 +110,7 @@ def convert(
     if isinstance(mlx_path, str):
         mlx_path = Path(mlx_path)
 
+    del model
     save_weights(mlx_path, weights, donate_weights=True)
 
     py_files = glob.glob(str(model_path / "*.py"))
