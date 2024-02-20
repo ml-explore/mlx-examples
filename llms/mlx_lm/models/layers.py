@@ -22,7 +22,7 @@ class RMSNorm(nn.Module):
 
 
 @partial(mx.compile, shapeless=True)
-def ln_norm(x, eps, weight, bias):
+def ln_norm(x, eps, weight=None, bias=None):
     t = x.dtype
     x = x.astype(mx.float32)
     means = mx.mean(x, axis=-1, keepdims=True)
@@ -48,4 +48,4 @@ class LayerNorm(nn.Module):
         if "weight" in self:
             return ln_norm(x, self.eps, self.weight, self.bias)
         else:
-            return ln_norm(x, self.eps, None, None)
+            return ln_norm(x, self.eps)
