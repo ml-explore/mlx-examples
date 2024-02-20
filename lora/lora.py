@@ -138,8 +138,17 @@ class Dataset:
 
 
 def load(args):
+    def load_and_check(name):
+         dataset_path = Path(args.data) / f"{name}.jsonl"
+         try:
+             train = Dataset(dataset_path)
+         except Exception as e:
+             print(f"Unable to build dataset {dataset_path} ({e})")
+             raise
+
     names = ("train", "valid", "test")
-    train, valid, test = (Dataset(Path(args.data) / f"{n}.jsonl") for n in names)
+    train, valid, test = (load_and_check(n) for n in names)
+
     if args.train and len(train) == 0:
         raise ValueError(
             "Training set not found or empty. Must provide training set for fine-tuning."
