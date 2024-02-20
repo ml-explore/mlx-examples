@@ -8,6 +8,8 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Llama
 - Phi2
 - Mixtral
+- Qwen2
+- OLMo
 
 ## Contents
 

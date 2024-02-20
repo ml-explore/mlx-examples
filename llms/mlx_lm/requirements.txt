@@ -2,3 +2,4 @@ mlx>=0.1
 numpy
 transformers>=4.37.0
 protobuf
+pyyaml
