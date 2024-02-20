@@ -56,7 +56,7 @@ class Attention(nn.Module):
         self.wk = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
-        self.rope = nn.RoPE(args.head_dim, traditional=True)
+        self.rope = nn.RoPE(args.head_dim, base=1000000, traditional=True)
 
     def __call__(
         self,
