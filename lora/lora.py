@@ -141,7 +141,7 @@ def load(args):
     def load_and_check(name):
         dataset_path = Path(args.data) / f"{name}.jsonl"
         try:
-            train = Dataset(dataset_path)
+            return Dataset(dataset_path)
         except Exception as e:
             print(f"Unable to build dataset {dataset_path} ({e})")
             raise
