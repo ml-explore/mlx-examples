@@ -1,9 +1,9 @@
 # Model Merging
 
-You use `mlx-lm` to merge models and upload them to the Hugging
-Face hub and also save them locally for LoRA fine tuning.
+You can use `mlx-lm` to merge models and upload them to the Hugging
+Face hub or save them locally for LoRA fine tuning.
 
-The main command is `mlx_lm.merge`. 
+The main command is `mlx_lm.merge`:
 
 ```shell
 python -m mlx_lm.merge --config config.yaml 
@@ -16,7 +16,7 @@ full list of options run:
 python -m mlx_lm.merge --help
 ```
 
-Here is an example config:
+Here is an example `config.yaml`:
 
 ```yaml
 models:
@@ -33,17 +33,18 @@ parameters:
 ```
 
 The `models` field is a list of Hugging Face repo ids. The first model in the
-list is treated as the base model into which other models are merged.
+list is treated as the base model into which the remaining models are merged.
 
-The `method` field is the merging method. Right now `slerp` is the only supported method.
+The `method` field is the merging method. Right now `slerp` is the only
+supported method.
 
 The `parameters` are the corresponding parameters for the given `method`.
 Each parameter is a list with `filter` determining which layer the parameter
 applies to and `value` determining the actual value used. The last item in
-the list without a `filter` key is the default.
+the list without a `filter` field is the default.
 
-If `value` is a list it specifies the start and end values for the
-corresponding section of blocks.  In the example above, the models have 32
+If `value` is a list, it specifies the start and end values for the
+corresponding segment of blocks. In the example above, the models have 32
 blocks. For blocks 1-8, the layers with `self_attn` in the name will use the
-values `np.linspace(0, 0.5, 8)`.  The same layers in the next 8 blocks (9-16)
-will use `np.linspace(0.5, 0.3, 8)`. 
+values `np.linspace(0, 0.5, 8)`, the same layers in the next 8 blocks (9-16)
+will use `np.linspace(0.5, 0.3, 8)`, and so on.
