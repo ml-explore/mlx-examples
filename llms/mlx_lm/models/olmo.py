@@ -178,3 +178,7 @@ class Model(nn.Module):
         cache=None,
     ):
         return self.model(inputs, cache)
+
+    @property
+    def layers(self):
+        return self.model.transformer.blocks

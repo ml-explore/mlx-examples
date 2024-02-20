@@ -11,7 +11,6 @@ from .base import BaseModelArgs
 @dataclass
 class ModelArgs(BaseModelArgs):
     model_type: str
-    vocab_size: int
     vocab_size: int = 32000
     max_position_embeddings: int = 4096 * 32
     hidden_size: int = 4096
@@ -260,3 +259,7 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         return self.lm_head(out), cache
+
+    @property
+    def layers(self):
+        return self.model.layers

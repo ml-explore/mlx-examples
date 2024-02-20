@@ -1,0 +1,11 @@
+models: 
+  - OpenPipe/mistral-ft-optimized-1218
+  - mlabonne/NeuralHermes-2.5-Mistral-7B
+method: slerp
+parameters:
+  t:
+    - filter: self_attn
+      value: [0, 0.5, 0.3, 0.7, 1]
+    - filter: mlp
+      value: [1, 0.5, 0.7, 0.3, 0]
+    - value: 0.5
