@@ -1,5 +1,5 @@
 mlx>=0.1
 numpy
-transformers>=4.37.0
+transformers>=4.38.0
 protobuf
 pyyaml
