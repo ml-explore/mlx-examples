@@ -1,9 +1,12 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import glob
 import json
+import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -41,6 +44,7 @@ class CLIPTextConfig:
     num_attention_heads: int
     max_position_embeddings: int
     vocab_size: int
+    layer_norm_eps: float
 
 
 @dataclass
@@ -52,6 +56,7 @@ class CLIPVisionConfig:
     num_channels: int
     image_size: int
     patch_size: int
+    layer_norm_eps: float
 
 
 @dataclass
@@ -75,19 +80,162 @@ def clip_loss(logits: mx.array) -> mx.array:
     return (caption_loss + image_loss) / 2.0
 
 
-class CLIPEncoderLayer(nn.TransformerEncoderLayer):
+class Conv2d(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: Union[int, tuple],
+        stride: Union[int, tuple] = 1,
+        padding: Union[int, tuple] = 0,
+        bias: bool = True,
+    ):
+        super().__init__()
+
+        kernel_size, stride, padding = map(
+            lambda x: (x, x) if isinstance(x, int) else x,
+            (kernel_size, stride, padding),
+        )
+        scale = math.sqrt(1 / (in_channels * kernel_size[0] * kernel_size[1]))
+        self.weight = mx.random.uniform(
+            low=-scale,
+            high=scale,
+            shape=(out_channels, in_channels, *kernel_size),
+        )
+        if bias:
+            self.bias = mx.zeros((out_channels,))
+
+        self.padding = padding
+        self.stride = stride
+
+    def _extra_repr(self):
+        return (
+            f"{self.weight.shape[-1]}, {self.weight.shape[0]}, "
+            f"kernel_size={self.weight.shape[1:2]}, stride={self.stride}, "
+            f"padding={self.padding}, bias={'bias' in self}"
+        )
+
+    def __call__(self, x):
+        # pytorch conv2d expects the weight tensor to be of shape [out_channels, in_channels, kH, KW]
+        # mlx conv2d expects the weight tensor to be of shape [out_channels, kH, KW, in_channels]
+        y = mx.conv2d(x, self.weight.transpose(0, 2, 3, 1), self.stride, self.padding)
+        if "bias" in self:
+            y = y + self.bias
+        return y
+
+
+class CLIPAttention(nn.Module):
+    def __init__(
+        self,
+        dims: int,
+        num_heads: int,
+        query_input_dims: Optional[int] = None,
+        key_input_dims: Optional[int] = None,
+        value_input_dims: Optional[int] = None,
+        value_dims: Optional[int] = None,
+        value_output_dims: Optional[int] = None,
+        bias: bool = False,
+    ):
+        super().__init__()
+
+        if (dims % num_heads) != 0:
+            raise ValueError(
+                "The input feature dimensions should be divisible by the "
+                f"number of heads ({dims} % {num_heads}) != 0"
+            )
+
+        query_input_dims = query_input_dims or dims
+        key_input_dims = key_input_dims or dims
+        value_input_dims = value_input_dims or key_input_dims
+        value_dims = value_dims or dims
+        value_output_dims = value_output_dims or dims
+
+        self.num_heads = num_heads
+        self.q_proj = nn.Linear(query_input_dims, dims, bias=bias)
+        self.k_proj = nn.Linear(key_input_dims, dims, bias=bias)
+        self.v_proj = nn.Linear(value_input_dims, value_dims, bias=bias)
+        self.out_proj = nn.Linear(value_dims, value_output_dims, bias=bias)
+
+    def __call__(self, queries, keys, values, mask=None):
+        queries = self.q_proj(queries)
+        keys = self.k_proj(keys)
+        values = self.v_proj(values)
+
+        num_heads = self.num_heads
+        B, L, D = queries.shape
+        _, S, _ = keys.shape
+        queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
+        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
+        values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
+
+        scale = math.sqrt(1 / queries.shape[-1])
+        scores = (queries * scale) @ keys
+        if mask is not None:
+            scores = scores + mask.astype(scores.dtype)
+        scores = mx.softmax(scores, axis=-1)
+        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+
+        return self.out_proj(values_hat)
+
+
+class CLIPMLP(nn.Module):
+    def __init__(self, config: CLIPTextConfig):
+        super().__init__()
+        self.config = config
+        self.activation_fn = quick_gelu
+        self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
+        self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+
+    def __call__(self, x: mx.array) -> mx.array:
+        x = self.activation_fn(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+class CLIPEncoderLayer(nn.Module):
     """The transformer encoder layer from CLIP."""
 
-    def __init__(self, hidden_dim: int, intermediate_dim: int, num_heads: int):
-        super().__init__(
-            dims=hidden_dim,
-            mlp_dims=intermediate_dim,
-            num_heads=num_heads,
-            activation=quick_gelu,
-            norm_first=True,
-        )
+    def __init__(self, config: CLIPTextConfig):
+        super().__init__()
+        self.embed_dim = config.hidden_size
         # Add biases to the attention projections
-        self.attention = nn.MultiHeadAttention(hidden_dim, num_heads, bias=True)
+        self.self_attn = CLIPAttention(
+            config.hidden_size, config.num_attention_heads, bias=True
+        )
+        self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+        self.mlp = CLIPMLP(config)
+        self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+
+    def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
+        y = self.layer_norm1(x)
+        y = self.self_attn(y, y, y, mask)
+        x = x + y
+        y = self.layer_norm2(x)
+        y = self.mlp(y)
+        return x + y
+
+
+class CLIPTextEmbeddings(nn.Module):
+    def __init__(self, config: CLIPTextConfig):
+        super().__init__()
+        embed_dim = config.hidden_size
+
+        self.token_embedding = nn.Embedding(config.vocab_size, embed_dim)
+        self.position_embedding = nn.Embedding(
+            config.max_position_embeddings, embed_dim
+        )
+
+    def __call__(self, x: mx.array) -> mx.array:
+        embeddings = self.token_embedding(x)
+        embeddings += self.position_embedding.weight[: x.shape[1]]
+        return embeddings
+
+
+class CLIPEncoder(nn.Module):
+    def __init__(self, config: CLIPTextConfig):
+        self.layers = [
+            CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)
+        ]
 
 
 class CLIPTextModel(nn.Module):
@@ -95,30 +243,16 @@ class CLIPTextModel(nn.Module):
 
     def __init__(self, config: CLIPTextConfig):
         super().__init__()
-
-        self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.position_embedding = mx.zeros(
-            (config.max_position_embeddings, config.hidden_size)
-        )
-        self.layers = [
-            CLIPEncoderLayer(
-                config.hidden_size, config.intermediate_size, config.num_attention_heads
-            )
-            for _ in range(config.num_hidden_layers)
-        ]
+        self.embeddings = CLIPTextEmbeddings(config)
+        self.encoder = CLIPEncoder(config)
         self.final_layer_norm = nn.LayerNorm(config.hidden_size)
-
-    def _embed(self, x: mx.array) -> mx.array:
-        embeddings = self.token_embedding(x)
-        embeddings += self.position_embedding[: x.shape[1]]
-        return embeddings
 
     def __call__(self, x: mx.array) -> CLIPTextOutput:
         B, N = x.shape
         eot_tokens = mx.argmax(x, axis=-1)
-        x = self._embed(x)
+        x = self.embeddings(x)
         mask = nn.MultiHeadAttention.create_additive_causal_mask(N, x.dtype)
-        for l in self.layers:
+        for l in self.encoder.layers:
             x = l(x, mask)
         last_hidden_state = self.final_layer_norm(x)
         pooler_output = last_hidden_state[mx.arange(B), eot_tokens]
@@ -128,33 +262,29 @@ class CLIPTextModel(nn.Module):
         )
 
 
-class CLIPVisionModel(nn.Module):
-    """Implements the vision encoder transformer from CLIP."""
-
+class CLIPVisionEmbeddings(nn.Module):
     def __init__(self, config: CLIPVisionConfig):
         super().__init__()
+        self.config = config
+        self.embed_dim = config.hidden_size
+        self.image_size = config.image_size
+        self.patch_size = config.patch_size
 
         self.class_embedding = mx.zeros((config.hidden_size,))
-        self.patch_embedding = nn.Conv2d(
+
+        self.patch_embedding = Conv2d(
             in_channels=config.num_channels,
-            out_channels=config.hidden_size,
-            kernel_size=config.patch_size,
-            stride=config.patch_size,
+            out_channels=self.embed_dim,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
             bias=False,
         )
-        num_patches = (config.image_size // config.patch_size) ** 2
-        num_positions = num_patches + 1
-        self.position_embedding = mx.zeros((num_positions, config.hidden_size))
-        self.pre_layernorm = nn.LayerNorm(config.hidden_size)
-        self.layers = [
-            CLIPEncoderLayer(
-                config.hidden_size, config.intermediate_size, config.num_attention_heads
-            )
-            for _ in range(config.num_hidden_layers)
-        ]
-        self.post_layernorm = nn.LayerNorm(config.hidden_size)
 
-    def _embed(self, x: mx.array) -> mx.array:
+        self.num_patches = (self.image_size // self.patch_size) ** 2
+        self.num_positions = self.num_patches + 1
+        self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
+
+    def __call__(self, x: mx.array) -> mx.array:
         batch_size = x.shape[0]
         # Patchify using conv:
         # [batch_size, sqrt(num_patches), sqrt(num_patches), embed_dim]
@@ -170,14 +300,25 @@ class CLIPVisionModel(nn.Module):
         # [batch_size, num_patches + 1, embed_dim]
         embeddings = mx.concatenate((cls_embeddings, patch_embeddings), axis=1)
         # Add positional encoding
-        embeddings += self.position_embedding
+        embeddings += self.position_embedding.weight
         return embeddings
 
-    def __call__(self, x: mx.array) -> CLIPVisionOutput:
-        x = self._embed(x)
-        x = self.pre_layernorm(x)
 
-        for l in self.layers:
+class CLIPVisionModel(nn.Module):
+    """Implements the vision encoder transformer from CLIP."""
+
+    def __init__(self, config: CLIPVisionConfig):
+        super().__init__()
+        self.embeddings = CLIPVisionEmbeddings(config)
+        self.pre_layrnorm = nn.LayerNorm(config.hidden_size)
+        self.encoder = CLIPEncoder(config)
+        self.post_layernorm = nn.LayerNorm(config.hidden_size)
+
+    def __call__(self, x: mx.array) -> CLIPVisionOutput:
+        x = self.embeddings(x)
+        x = self.pre_layrnorm(x)
+
+        for l in self.encoder.layers:
             x = l(x, mask=None)
 
         # Extract <CLS> token embedding
@@ -259,6 +400,7 @@ class CLIPModel(nn.Module):
             num_attention_heads=text_config["num_attention_heads"],
             max_position_embeddings=text_config["max_position_embeddings"],
             vocab_size=text_config["vocab_size"],
+            layer_norm_eps=text_config["layer_norm_eps"],
         )
 
         vision_config = config["vision_config"]
@@ -271,6 +413,7 @@ class CLIPModel(nn.Module):
             num_channels=3,
             image_size=vision_config["image_size"],
             patch_size=vision_config["patch_size"],
+            layer_norm_eps=vision_config["layer_norm_eps"],
         )
 
         config = CLIPConfig(
@@ -279,5 +422,20 @@ class CLIPModel(nn.Module):
             projection_dim=config["projection_dim"],
         )
         model = CLIPModel(config)
-        model.load_weights(str(path / "weights.npz"))
+        weight_files = glob.glob(str(path / "*.safetensors"))
+        if not weight_files:
+            logging.error(f"No safetensors found in {path}")
+            raise FileNotFoundError(f"No safetensors found in {path}")
+
+        weights = {}
+        for wf in weight_files:
+            weights.update(mx.load(wf))
+
+        weights = model.sanitize(weights)
+        model.load_weights(list(weights.items()))
         return model
+
+    @staticmethod
+    def sanitize(weights):
+        # Remove unused position_ids
+        return {k: v for k, v in weights.items() if "position_ids" not in k}

@@ -4,3 +4,4 @@ transformers
 torch
 huggingface_hub
 Pillow
+mlx-lm
