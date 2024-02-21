@@ -51,8 +51,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dtype",
-        help="dtype for loading the torch model and input for quantization or saving the converted model. "
-        "The original weights are stored in bfloat16.",
+        help="The data type to save the converted model. "
         type=str,
         default="float32",
     )
