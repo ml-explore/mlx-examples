@@ -233,7 +233,7 @@ def train(
                 val_info = {
                     "iteration": it + 1,
                     "val_loss": val_loss,
-                    "val_time": val_time
+                    "val_time": val_time,
                 }
                 training_callback.on_val_loss_report(val_info)
 
