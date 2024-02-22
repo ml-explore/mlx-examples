@@ -6,6 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .layers import LayerNorm
 
 try:
     import hf_olmo
@@ -35,11 +36,6 @@ class ModelArgs(BaseModelArgs):
             if self.mlp_hidden_size is not None
             else self.mlp_ratio * self.d_model
         )
-
-
-class LayerNorm(nn.LayerNorm):
-    def __call__(self, x: mx.array) -> mx.array:
-        return super().__call__(x.astype(mx.float32)).astype(x.dtype)
 
 
 class TransformerBlock(nn.Module):

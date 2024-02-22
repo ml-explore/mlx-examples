@@ -6,6 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .layers import LayerNorm
 
 
 @dataclass
@@ -25,11 +26,6 @@ class ModelArgs(BaseModelArgs):
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
-
-
-class LayerNorm(nn.LayerNorm):
-    def __call__(self, x: mx.array) -> mx.array:
-        return super().__call__(x.astype(mx.float32)).astype(x.dtype)
 
 
 class PhiAttention(nn.Module):
