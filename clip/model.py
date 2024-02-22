@@ -19,6 +19,7 @@ from mlx.utils import tree_flatten
 class CLIPVisionOutput:
     pooler_output: mx.array
     last_hidden_state: mx.array
+    hidden_states: Optional[mx.array]
 
 
 @dataclass
@@ -312,16 +313,30 @@ class ClipVisionModel(nn.Module):
         self.encoder = Encoder(config)
         self.post_layernorm = nn.LayerNorm(config.hidden_size)
 
-    def __call__(self, x: mx.array) -> CLIPVisionOutput:
+    def __call__(
+        self,
+        x: mx.array,
+        output_hidden_states: Optional[bool] = None,
+    ) -> CLIPVisionOutput:
         x = self.embeddings(x)
         x = self.pre_layrnorm(x)
 
+        encoder_states = () if output_hidden_states else None
+
         for l in self.encoder.layers:
+            if output_hidden_states:
+                encoder_states = encoder_states + (x,)
             x = l(x, mask=None)
 
+        if output_hidden_states:
+            encoder_states = encoder_states + (x,)
         # Extract <CLS> token embedding
         pooler_output = self.post_layernorm(x[:, 0, :])
-        return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x)
+        return CLIPVisionOutput(
+            pooler_output=pooler_output,
+            last_hidden_state=x,
+            hidden_states=encoder_states,
+        )
 
 
 class CLIPModel(nn.Module):
