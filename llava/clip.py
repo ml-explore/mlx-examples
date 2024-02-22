@@ -16,6 +16,7 @@ from mlx.utils import tree_flatten
 class CLIPVisionOutput:
     pooler_output: mx.array
     last_hidden_state: mx.array
+    llava_hidden_state: mx.array
 
 
 @dataclass
@@ -185,7 +186,9 @@ class CLIPVisionModel(nn.Module):
 
         # Extract <CLS> token embedding
         pooler_output = self.post_layernorm(x[:, 0, :])
-        return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x)
+
+        llava_hidden_state = x
+        return CLIPVisionOutput(pooler_output=pooler_output, last_hidden_state=x, llava_hidden_state=llava_hidden_state)
 
 
 class CLIPModel(nn.Module):
