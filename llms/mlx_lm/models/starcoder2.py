@@ -86,7 +86,7 @@ class Attention(nn.Module):
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.wo(output), (keys, values)
 
-class FeedForward(nn.Module):
+class MLP(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
 
@@ -103,7 +103,7 @@ class TransformerBlock(nn.Module):
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.attention = Attention(args)
-        self.feed_forward = FeedForward(args=args)
+        self.feed_forward = MLP(args=args)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.args = args
