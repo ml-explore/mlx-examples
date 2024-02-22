@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import copy
 import gc
 import glob
@@ -11,6 +13,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
+from mlx.utils import tree_flatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
@@ -493,3 +496,29 @@ def save_weights(
             f,
             indent=4,
         )
+
+
+def quantize_model(
+    model: nn.Module, config: dict, q_group_size: int, q_bits: int
+) -> Tuple:
+    """
+    Applies quantization to the model weights.
+
+    Args:
+        model (nn.Module): The model to be quantized.
+        config (dict): Model configuration.
+        q_group_size (int): Group size for quantization.
+        q_bits (int): Bits per weight for quantization.
+
+    Returns:
+        Tuple: Tuple containing quantized weights and config.
+    """
+    quantized_config = copy.deepcopy(config)
+
+    nn.QuantizedLinear.quantize_module(
+        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
+    )
+    quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+    quantized_weights = dict(tree_flatten(model.parameters()))
+
+    return quantized_weights, quantized_config
