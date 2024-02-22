@@ -1,31 +1,52 @@
-# Copyright © 2023 Apple Inc.
-
-import argparse
-import glob
-import json
-import time
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_unflatten
-from sentencepiece import SentencePieceProcessor
+
+import inspect
 
 
 @dataclass
-class ModelArgs:
-    dim: int
-    n_layers: int
-    head_dim: int
-    hidden_dim: int
-    n_heads: int
-    n_kv_heads: int
-    norm_eps: float
+class BaseModelArgs:
+    @classmethod
+    def from_dict(cls, params):
+        return cls(
+            **{
+                k: v
+                for k, v in params.items()
+                if k in inspect.signature(cls).parameters
+            }
+        )
+
+
+@dataclass
+class ModelArgs(BaseModelArgs):
+    model_type: str
+    hidden_size: int
+    num_hidden_layers: int
+    intermediate_size: int
+    num_attention_heads: int
+    rms_norm_eps: float
     vocab_size: int
-    rope_theta: float
-    rope_traditional: bool = True
+    num_key_value_heads: int = None
+    rope_theta: float = 10000
+    rope_traditional: bool = False
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+
+    def __post_init__(self):
+        if self.num_key_value_heads is None:
+            self.num_key_value_heads = self.num_attention_heads
+
+        if self.rope_scaling:
+            required_keys = {"factor", "type"}
+            if not all(key in self.rope_scaling for key in required_keys):
+                raise ValueError(
+                    f"rope_scaling must contain keys {required_keys}")
+
+            if self.rope_scaling["type"] != "linear":
+                raise ValueError(
+                    "rope_scaling 'type' currently only supports 'linear'")
 
 
 class RMSNorm(nn.Module):
@@ -45,23 +66,31 @@ class RMSNorm(nn.Module):
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.args = args
 
-        self.n_heads: int = args.n_heads
-        self.n_kv_heads: int = args.n_kv_heads
+        dim = args.hidden_size
+        self.n_heads = n_heads = args.num_attention_heads
+        self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        self.repeats = self.n_heads // self.n_kv_heads
+        self.repeats = n_heads // n_kv_heads
 
-        self.scale = self.args.head_dim**-0.5
+        head_dim = args.hidden_size // n_heads
+        self.scale = head_dim**-0.5
 
-        self.wq = nn.Linear(args.dim, args.n_heads * args.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, args.n_kv_heads *
-                            args.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, args.n_kv_heads *
-                            args.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=False)
+        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
+
+        rope_scale = (
+            1 / args.rope_scaling["factor"]
+            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
+            else 1
+        )
         self.rope = nn.RoPE(
-            args.head_dim, traditional=args.rope_traditional, base=args.rope_theta
+            head_dim,
+            traditional=args.rope_traditional,
+            base=args.rope_theta,
+            scale=rope_scale,
         )
 
     def __call__(
@@ -69,10 +98,10 @@ class Attention(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
+    ) -> mx.array:
         B, L, D = x.shape
 
-        queries, keys, values = self.wq(x), self.wk(x), self.wv(x)
+        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
@@ -80,11 +109,9 @@ class Attention(nn.Module):
         values = values.reshape(
             B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
-        def repeat(a):
-            a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
-            return a.reshape([B, self.n_heads, L, -1])
-
-        keys, values = map(repeat, (keys, values))
+        if self.repeats > 1:
+            keys = mx.repeat(keys, self.repeats, axis=1)
+            values = mx.repeat(values, self.repeats, axis=1)
 
         if cache is not None:
             key_cache, value_cache = cache
@@ -102,30 +129,30 @@ class Attention(nn.Module):
         scores = mx.softmax(scores.astype(mx.float32),
                             axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.wo(output), (keys, values)
+        return self.o_proj(output), (keys, values)
 
 
-class FeedForward(nn.Module):
-    def __init__(self, args: ModelArgs):
+class MLP(nn.Module):
+    def __init__(self, dim, hidden_dim):
         super().__init__()
-
-        self.w1 = nn.Linear(args.dim, args.hidden_dim, bias=False)
-        self.w2 = nn.Linear(args.hidden_dim, args.dim, bias=False)
-        self.w3 = nn.Linear(args.dim, args.hidden_dim, bias=False)
+        self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
+        self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
 
     def __call__(self, x) -> mx.array:
-        return self.w2(nn.silu(self.w1(x)) * self.w3(x))
+        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
 class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.n_heads = args.n_heads
-        self.dim = args.dim
-        self.attention = Attention(args)
-        self.feed_forward = FeedForward(args=args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.num_attention_heads = args.num_attention_heads
+        self.hidden_size = args.hidden_size
+        self.self_attn = Attention(args)
+        self.mlp = MLP(args.hidden_size, args.intermediate_size)
+        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(
+            args.hidden_size, eps=args.rms_norm_eps)
         self.args = args
 
     def __call__(
@@ -134,9 +161,9 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attention(self.attention_norm(x), mask, cache)
+        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
-        r = self.feed_forward(self.ffn_norm(h))
+        r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
         return out, cache
 
@@ -146,259 +173,58 @@ class Llama(nn.Module):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
-        self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
-        self.layers = [TransformerBlock(args=args)
-                       for _ in range(args.n_layers)]
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.output = nn.Linear(args.dim, args.vocab_size, bias=False)
+        self.num_hidden_layers = args.num_hidden_layers
+        assert self.vocab_size > 0
+        self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
+        self.layers = [
+            TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
+        ]
+        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
-    def __call__(self, x):
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-        mask = mask.astype(self.tok_embeddings.weight.dtype)
+    def __call__(
+        self,
+        inputs: mx.array,
+        cache=None,
+    ):
+        h = self.embed_tokens(inputs)
 
-        x = self.tok_embeddings(x)
-        for l in self.layers:
-            x, _ = l(x, mask)
-        x = self.norm(x)
-        return self.output(x)
+        mask = None
+        if h.shape[1] > 1:
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(
+                h.shape[1])
+            mask = mask.astype(h.dtype)
 
-    def generate(self, x, temp=1.0):
-        def sample(logits):
-            if temp == 0:
-                return mx.argmax(logits, axis=-1)
-            else:
-                return mx.random.categorical(logits * (1 / temp))
+        if cache is None:
+            cache = [None] * len(self.layers)
 
-        cache = []
+        for e, layer in enumerate(self.layers):
+            h, cache[e] = layer(h, mask, cache[e])
 
-        # Make an additive causal mask. We will need that to process the prompt.
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-        mask = mask.astype(self.tok_embeddings.weight.dtype)
-
-        # First we process the prompt x the same was as in __call__ but
-        # save the caches in cache
-        x = self.tok_embeddings(x)
-        for l in self.layers:
-            x, c = l(x, mask=mask)
-            # We store the per layer cache in a simple python list
-            cache.append(c)
-        x = self.norm(x)
-        # We only care about the last logits that generate the next token
-        y = self.output(x[:, -1])
-        y = sample(y)
-
-        # y now has size [1]
-        # Since MLX is lazily evaluated nothing is computed yet.
-        # Calling y.item() would force the computation to happen at
-        # this point but we can also choose not to do that and let the
-        # user choose when to start the computation.
-        yield y
-
-        # Now we parsed the prompt and generated the first token we
-        # need to feed it back into the model and loop to generate the
-        # rest.
-        while True:
-            # Unsqueezing the last dimension to add a sequence length
-            # dimension of 1
-            x = y[:, None]
-
-            x = self.tok_embeddings(x)
-            for i in range(len(cache)):
-                # We are overwriting the arrays in the cache list. When
-                # the computation will happen, MLX will be discarding the
-                # old cache the moment it is not needed anymore.
-                x, cache[i] = self.layers[i](x, mask=None, cache=cache[i])
-            x = self.norm(x)
-            y = sample(self.output(x[:, -1]))
-
-            yield y
+        return self.norm(h), cache
 
 
-def tic():
-    return time.time()
+class LlamaModel(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.model_type = args.model_type
+        self.model = Llama(args)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
+    def __call__(
+        self,
+        inputs: mx.array,
+        cache=None,
+    ):
+        out, cache = self.model(inputs, cache)
+        return self.lm_head(out), cache
 
-def toc(msg, start):
-    end = time.time()
-    return f"[INFO] {msg}: {end - start:.3f} s"
+    @staticmethod
+    def sanitize(weights):
+        # Remove unused precomputed rotary freqs
+        return {
+            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
+        }
 
-
-def generate(args):
-    input("Press enter to start generation")
-    print("------")
-    print(args.prompt)
-    x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(args.prompt)])
-    skip = 0
-    prompt_processing = None
-    tokens = []
-    start = tic()
-    for token in model.generate(x, args.temp):
-        tokens.append(token)
-
-        if len(tokens) == 1:
-            # Actually perform the computation to measure the prompt processing time
-            mx.eval(token)
-            prompt_processing = toc("Prompt processing", start)
-
-        if len(tokens) >= args.max_tokens:
-            break
-
-        elif (len(tokens) % args.write_every) == 0:
-            # It is perfectly ok to eval things we have already eval-ed.
-            mx.eval(tokens)
-            s = tokenizer.decode([t.item() for t in tokens])
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
-
-    mx.eval(tokens)
-    full_gen = toc("Full generation", start)
-    s = tokenizer.decode([t.item() for t in tokens])
-    print(s[skip:], flush=True)
-    print("------")
-    print(prompt_processing)
-    print(full_gen)
-
-
-def few_shot_generate(args):
-    def possible_end(s):
-        word = "[Instruction]"
-        for i in range(len(word) - 1, 0, -1):
-            if s[-i:] == word[:i]:
-                return 0
-        if s[-len(word):] == word:
-            return 1
-        return -1
-
-    def generate(question):
-        x = mx.array([[tokenizer.bos_id()] + tokenizer.encode(question)])
-        skip = 0
-        prompt_processing = None
-        tokens = []
-        start = tic()
-        for token in model.generate(x, args.temp):
-            tokens.append(token)
-
-            if len(tokens) == 1:
-                # Actually perform the computation to measure the prompt processing time
-                mx.eval(token)
-                prompt_processing = toc("Prompt processing", start)
-
-            if len(tokens) >= args.max_tokens:
-                break
-
-            mx.eval(tokens)
-            token_list = [t.item() for t in tokens]
-            s = tokenizer.decode(token_list)
-
-            end = possible_end(s)
-            if end == 0:
-                continue
-            if end == 1:
-                skip = len(s)
-                break
-
-            print(s[skip:], end="", flush=True)
-            skip = len(s)
-            if token_list[-1] == tokenizer.eos_id():
-                break
-
-        mx.eval(tokens)
-        full_gen = toc("Full generation", start)
-        s = tokenizer.decode([t.item() for t in tokens])
-        print(s[skip:], end="", flush=True)
-
-    print("[INFO] Loading few-shot examples from: {}".format(args.few_shot))
-    prompt = open(args.few_shot).read().strip()
-    while True:
-        question = input("Ask a question: ")
-        generate(prompt.replace("{}", question))
-        print()
-
-
-def sanitize_config(config, weights):
-    config.pop("model_type", None)
-    n_heads = config["n_heads"]
-    if "n_kv_heads" not in config:
-        config["n_kv_heads"] = n_heads
-    if "head_dim" not in config:
-        config["head_dim"] = config["dim"] // n_heads
-    if "hidden_dim" not in config:
-        config["hidden_dim"] = weights["layers.0.feed_forward.w1.weight"].shape[0]
-    if config.get("vocab_size", -1) < 0:
-        config["vocab_size"] = weights["output.weight"].shape[-1]
-    if "rope_theta" not in config:
-        config["rope_theta"] = 10000
-    unused = ["multiple_of", "ffn_dim_multiplier"]
-    for k in unused:
-        config.pop(k, None)
-    return config
-
-
-def load_model(model_path):
-    model_path = Path(model_path)
-
-    unsharded_weights_path = Path(model_path / "weights.npz")
-    if unsharded_weights_path.is_file():
-        print("[INFO] Loading model from {}.".format(unsharded_weights_path))
-        weights = mx.load(str(unsharded_weights_path))
-    else:
-        sharded_weights_glob = str(model_path / "weights.*.npz")
-        weight_files = glob.glob(sharded_weights_glob)
-        print("[INFO] Loading model from {}.".format(sharded_weights_glob))
-
-        if len(weight_files) == 0:
-            raise FileNotFoundError(
-                "No weights found in {}".format(model_path))
-
-        weights = {}
-        for wf in weight_files:
-            weights.update(mx.load(wf).items())
-
-    with open(model_path / "config.json", "r") as f:
-        config = sanitize_config(json.loads(f.read()), weights)
-        quantization = config.pop("quantization", None)
-    model = Llama(ModelArgs(**config))
-    if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
-    model.update(tree_unflatten(list(weights.items())))
-    tokenizer = SentencePieceProcessor(
-        model_file=str(model_path / "tokenizer.model"))
-    return model, tokenizer
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Llama inference script")
-    parser.add_argument(
-        "--model-path",
-        help="Path to the model weights and tokenizer",
-        default="mlx_model",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="The message to be processed by the model. Ignored when --few-shot is provided.",
-        default="In the beginning the Universe was created.",
-    )
-    parser.add_argument(
-        "--few-shot",
-        help="Read a few shot prompt from a file (as in `sample_prompt.txt`).",
-    )
-    parser.add_argument(
-        "--max-tokens", "-m", type=int, default=100, help="How many tokens to generate"
-    )
-    parser.add_argument(
-        "--write-every", type=int, default=1, help="After how many tokens to detokenize"
-    )
-    parser.add_argument(
-        "--temp", type=float, default=0.0, help="The sampling temperature"
-    )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-
-    args = parser.parse_args()
-
-    mx.random.seed(args.seed)
-
-    model, tokenizer = load_model(args.model_path)
-    if args.few_shot:
-        few_shot_generate(args)
-    else:
-        generate(args)
+    @property
+    def layers(self):
+        return self.model.layers

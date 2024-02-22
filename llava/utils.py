@@ -51,22 +51,22 @@ def map_vision_tower_weights(key: str, value: torch.Tensor) -> Tuple[str, torch.
 
 
 def map_language_model_weights(key: str, value: torch.Tensor) -> Tuple[str, torch.Tensor]:
-    key = key.replace('language_model.model.', 'language_model.')
-    key = key.replace('mlp.', 'feed_forward.')
-    key = key.replace("down_proj", "w2")
-    key = key.replace("up_proj", "w3")
-    key = key.replace("gate_proj", "w1")
-    key = key.replace("input_layernorm", "attention_norm")
-    key = key.replace("post_attention_layernorm", "ffn_norm")
-    key = key.replace("lm_head", "output")
+  #  key = key.replace('language_model.model.', 'language_model.')
+    # key = key.replace('mlp.', 'feed_forward.')
+   # key = key.replace("down_proj", "w2")
+   # key = key.replace("up_proj", "w3")
+   # key = key.replace("gate_proj", "w1")
+ #   key = key.replace("input_layernorm", "attention_norm")
+    #    key = key.replace("post_attention_layernorm", "ffn_norm")
+   # key = key.replace("lm_head", "output")
 
-    key = key.replace("embed_tokens", "tok_embeddings")
-    key = key.replace("self_attn", "attention")
+ #   key = key.replace("embed_tokens", "tok_embeddings")
+  #  key = key.replace("self_attn", "attention")
 
-    key = key.replace("q_proj", "wq")
-    key = key.replace("k_proj", "wk")
-    key = key.replace("v_proj", "wv")
-    key = key.replace("o_proj", "wo")
+ #   key = key.replace("q_proj", "wq")
+    #    key = key.replace("k_proj", "wk")
+    #    key = key.replace("v_proj", "wv")
+    #    key = key.replace("o_proj", "wo")
 
     return (key, value)
 

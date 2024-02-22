@@ -1,10 +1,10 @@
 from clip import CLIPVisionModel
-from llama import Llama
+from llama import LlamaModel
 from pathlib import Path
 import json
 import mlx.nn as nn
 import mlx.core as mx
-from typing import Any, Optional
+from typing import Any, Optional, Dict, Union
 
 
 from dataclasses import dataclass
@@ -23,16 +23,17 @@ class VisionConfig:
 
 @dataclass
 class LLMConfig:
-    dim: int
-    n_layers: int
-    head_dim: int
-    hidden_dim: int
-    n_heads: int
-    n_kv_heads: int
-    norm_eps: float
+    model_type: str
+    hidden_size: int
+    num_hidden_layers: int
+    intermediate_size: int
+    num_attention_heads: int
+    rms_norm_eps: float
     vocab_size: int
-    rope_theta: float
-    rope_traditional: bool = True
+    num_key_value_heads: int
+    rope_theta: float = 10000
+    rope_traditional: bool = False
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
 
 
 @dataclass
@@ -65,7 +66,7 @@ class LlavaMultiModalProjector(nn.Module):
 class LlavaModel(nn.Module):
     def __init__(self, config: LlaVAConfig):
         self.vision_tower = CLIPVisionModel(config=config.vision_config)
-        self.language_model = Llama(args=config.llm_config)
+        self.language_model = LlamaModel(args=config.llm_config)
         self.multi_modal_projector = LlavaMultiModalProjector(
             config=config.projection_config)
 
