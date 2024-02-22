@@ -236,7 +236,7 @@ class Encoder(nn.Module):
         self.layers = [EncoderLayer(config) for _ in range(config.num_hidden_layers)]
 
 
-class TextModel(nn.Module):
+class ClipTextModel(nn.Module):
     """Implements the text encoder transformer from CLIP."""
 
     def __init__(self, config: CLIPTextConfig):
@@ -302,7 +302,7 @@ class VisionEmbeddings(nn.Module):
         return embeddings
 
 
-class VisionModel(nn.Module):
+class ClipVisionModel(nn.Module):
     """Implements the vision encoder transformer from CLIP."""
 
     def __init__(self, config: CLIPVisionConfig):
@@ -326,8 +326,8 @@ class VisionModel(nn.Module):
 
 class CLIPModel(nn.Module):
     def __init__(self, config: CLIPConfig):
-        self.text_model = TextModel(config.text_config)
-        self.vision_model = VisionModel(config.vision_config)
+        self.text_model = ClipTextModel(config.text_config)
+        self.vision_model = ClipVisionModel(config.vision_config)
 
         text_embed_dim = config.text_config.hidden_size
         vision_embed_dim = config.vision_config.hidden_size
