@@ -6,7 +6,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -124,7 +124,7 @@ class Conv2d(nn.Module):
         return y
 
 
-class CLIPAttention(nn.Module):
+class Attention(nn.Module):
     def __init__(
         self,
         dims: int,
@@ -178,7 +178,7 @@ class CLIPAttention(nn.Module):
         return self.out_proj(values_hat)
 
 
-class CLIPMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self, config: CLIPTextConfig):
         super().__init__()
         self.config = config
@@ -192,18 +192,18 @@ class CLIPMLP(nn.Module):
         return x
 
 
-class CLIPEncoderLayer(nn.Module):
+class EncoderLayer(nn.Module):
     """The transformer encoder layer from CLIP."""
 
     def __init__(self, config: CLIPTextConfig):
         super().__init__()
         self.embed_dim = config.hidden_size
         # Add biases to the attention projections
-        self.self_attn = CLIPAttention(
+        self.self_attn = Attention(
             config.hidden_size, config.num_attention_heads, bias=True
         )
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
-        self.mlp = CLIPMLP(config)
+        self.mlp = MLP(config)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
 
     def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
@@ -215,7 +215,7 @@ class CLIPEncoderLayer(nn.Module):
         return x + y
 
 
-class CLIPTextEmbeddings(nn.Module):
+class TextEmbeddings(nn.Module):
     def __init__(self, config: CLIPTextConfig):
         super().__init__()
         embed_dim = config.hidden_size
@@ -231,20 +231,18 @@ class CLIPTextEmbeddings(nn.Module):
         return embeddings
 
 
-class CLIPEncoder(nn.Module):
+class Encoder(nn.Module):
     def __init__(self, config: CLIPTextConfig):
-        self.layers = [
-            CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)
-        ]
+        self.layers = [EncoderLayer(config) for _ in range(config.num_hidden_layers)]
 
 
-class CLIPTextModel(nn.Module):
+class TextModel(nn.Module):
     """Implements the text encoder transformer from CLIP."""
 
     def __init__(self, config: CLIPTextConfig):
         super().__init__()
-        self.embeddings = CLIPTextEmbeddings(config)
-        self.encoder = CLIPEncoder(config)
+        self.embeddings = TextEmbeddings(config)
+        self.encoder = Encoder(config)
         self.final_layer_norm = nn.LayerNorm(config.hidden_size)
 
     def __call__(self, x: mx.array) -> CLIPTextOutput:
@@ -262,7 +260,7 @@ class CLIPTextModel(nn.Module):
         )
 
 
-class CLIPVisionEmbeddings(nn.Module):
+class VisionEmbeddings(nn.Module):
     def __init__(self, config: CLIPVisionConfig):
         super().__init__()
         self.config = config
@@ -304,14 +302,14 @@ class CLIPVisionEmbeddings(nn.Module):
         return embeddings
 
 
-class CLIPVisionModel(nn.Module):
+class VisionModel(nn.Module):
     """Implements the vision encoder transformer from CLIP."""
 
     def __init__(self, config: CLIPVisionConfig):
         super().__init__()
-        self.embeddings = CLIPVisionEmbeddings(config)
+        self.embeddings = VisionEmbeddings(config)
         self.pre_layrnorm = nn.LayerNorm(config.hidden_size)
-        self.encoder = CLIPEncoder(config)
+        self.encoder = Encoder(config)
         self.post_layernorm = nn.LayerNorm(config.hidden_size)
 
     def __call__(self, x: mx.array) -> CLIPVisionOutput:
@@ -328,8 +326,8 @@ class CLIPVisionModel(nn.Module):
 
 class CLIPModel(nn.Module):
     def __init__(self, config: CLIPConfig):
-        self.text_model = CLIPTextModel(config.text_config)
-        self.vision_model = CLIPVisionModel(config.vision_config)
+        self.text_model = TextModel(config.text_config)
+        self.vision_model = VisionModel(config.vision_config)
 
         text_embed_dim = config.text_config.hidden_size
         vision_embed_dim = config.vision_config.hidden_size
