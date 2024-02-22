@@ -97,10 +97,39 @@ class LlavaModel(nn.Module):
     def from_pretrained(path: str):
         path = Path(path)
 
-        with open(path / "config.json", "r") as f:
-            config = json.load(f)
+        with open(path / "mlx_config.json", "r") as f:
+            model_config = json.load(f)
 
-        model = LlavaModel(config)
+        llava_mlx_config = LlaVAConfig(
+            llm_config=LLMConfig(
+                model_type='vicuna',
+                hidden_size=model_config['language_model']['hidden_size'],
+                num_hidden_layers=model_config['language_model']['num_hidden_layers'],
+                intermediate_size=model_config['language_model']['intermediate_size'],
+                num_attention_heads=model_config['language_model']['num_attention_heads'],
+                rms_norm_eps=model_config['language_model']['rms_norm_eps'],
+                vocab_size=model_config['language_model']['vocab_size'],
+                num_key_value_heads=model_config['language_model']['num_key_value_heads'],
+                rope_theta=model_config['language_model']['rope_theta'],
+                rope_traditional=model_config['language_model']['rope_traditional'],
+                rope_scaling=model_config['language_model']['rope_scaling'],
+            ),
+            vision_config=VisionConfig(
+                num_hidden_layers=model_config['vision_tower']['num_hidden_layers'],
+                hidden_size=model_config['vision_tower']['hidden_size'],
+                intermediate_size=model_config['vision_tower']['intermediate_size'],
+                num_attention_heads=model_config['vision_tower']['num_attention_heads'],
+                num_channels=model_config['vision_tower']['num_channels'],
+                image_size=model_config['vision_tower']['image_size'],
+                patch_size=model_config['vision_tower']['patch_size'],
+            ),
+            projection_config=ProjectionConfig(
+                in_features=model_config['multi_modal_projector']['in_features'],
+                out_features=model_config['multi_modal_projector']['out_features'],
+            )
+        )
+
+        model = LlavaModel(llava_mlx_config)
         model.load_weights(str(path / "weights.npz"))
 
         return model
