@@ -81,50 +81,6 @@ def clip_loss(logits: mx.array) -> mx.array:
     return (caption_loss + image_loss) / 2.0
 
 
-class Conv2d(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: Union[int, tuple],
-        stride: Union[int, tuple] = 1,
-        padding: Union[int, tuple] = 0,
-        bias: bool = True,
-    ):
-        super().__init__()
-
-        kernel_size, stride, padding = map(
-            lambda x: (x, x) if isinstance(x, int) else x,
-            (kernel_size, stride, padding),
-        )
-        scale = math.sqrt(1 / (in_channels * kernel_size[0] * kernel_size[1]))
-        self.weight = mx.random.uniform(
-            low=-scale,
-            high=scale,
-            shape=(out_channels, in_channels, *kernel_size),
-        )
-        if bias:
-            self.bias = mx.zeros((out_channels,))
-
-        self.padding = padding
-        self.stride = stride
-
-    def _extra_repr(self):
-        return (
-            f"{self.weight.shape[-1]}, {self.weight.shape[0]}, "
-            f"kernel_size={self.weight.shape[1:2]}, stride={self.stride}, "
-            f"padding={self.padding}, bias={'bias' in self}"
-        )
-
-    def __call__(self, x):
-        # pytorch conv2d expects the weight tensor to be of shape [out_channels, in_channels, kH, KW]
-        # mlx conv2d expects the weight tensor to be of shape [out_channels, kH, KW, in_channels]
-        y = mx.conv2d(x, self.weight.transpose(0, 2, 3, 1), self.stride, self.padding)
-        if "bias" in self:
-            y = y + self.bias
-        return y
-
-
 class Attention(nn.Module):
     def __init__(
         self,
@@ -271,7 +227,7 @@ class VisionEmbeddings(nn.Module):
 
         self.class_embedding = mx.zeros((config.hidden_size,))
 
-        self.patch_embedding = Conv2d(
+        self.patch_embedding = nn.Conv2d(
             in_channels=config.num_channels,
             out_channels=self.embed_dim,
             kernel_size=self.patch_size,
@@ -450,5 +406,16 @@ class CLIPModel(nn.Module):
 
     @staticmethod
     def sanitize(weights):
-        # Remove unused position_ids
-        return {k: v for k, v in weights.items() if "position_ids" not in k}
+        sanitized_weights = {}
+        for k, v in weights.items():
+            if "position_ids" in k:
+                # Remove unused position_ids
+                continue
+            elif "patch_embedding.weight" in k:
+                # pytorch conv2d expects the weight tensor to be of shape [out_channels, in_channels, kH, KW]
+                # mlx conv2d expects the weight tensor to be of shape [out_channels, kH, KW, in_channels]
+                sanitized_weights[k] = v.transpose(0, 2, 3, 1)
+            else:
+                sanitized_weights[k] = v
+
+        return sanitized_weights
