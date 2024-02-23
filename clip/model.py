@@ -277,7 +277,7 @@ class ClipVisionModel(nn.Module):
         x = self.embeddings(x)
         x = self.pre_layrnorm(x)
 
-        encoder_states = () if output_hidden_states else None
+        encoder_states = (x,) if output_hidden_states else None
 
         for l in self.encoder.layers:
             x = l(x, mask=None)
