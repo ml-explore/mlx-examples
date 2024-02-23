@@ -160,10 +160,7 @@ def load_dataset(args):
     return train, valid, test
 
 
-if __name__ == "__main__":
-    parser = build_parser()
-    args = parser.parse_args()
-
+def run_lora(args):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
@@ -246,3 +243,10 @@ if __name__ == "__main__":
             prompt=args.prompt,
             verbose=True,
         )
+
+
+if __name__ == "__main__":
+    parser = build_parser()
+    args = parser.parse_args()
+
+    run_lora(args)
