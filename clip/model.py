@@ -280,12 +280,10 @@ class ClipVisionModel(nn.Module):
         encoder_states = () if output_hidden_states else None
 
         for l in self.encoder.layers:
+            x = l(x, mask=None)
             if output_hidden_states:
                 encoder_states = encoder_states + (x,)
-            x = l(x, mask=None)
 
-        if output_hidden_states:
-            encoder_states = encoder_states + (x,)
         # Extract <CLS> token embedding
         pooler_output = self.post_layernorm(x[:, 0, :])
         return CLIPVisionOutput(
