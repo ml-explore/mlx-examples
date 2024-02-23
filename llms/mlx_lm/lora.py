@@ -7,7 +7,7 @@ import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .tuner.trainer import TrainingArgs, evaluate, train
+from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
 from .utils import generate, load
 
@@ -160,7 +160,7 @@ def load_dataset(args):
     return train, valid, test
 
 
-def run_lora(args):
+def run_lora(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
@@ -206,6 +206,7 @@ def run_lora(args):
             optimizer=opt,
             train_dataset=train_set,
             val_dataset=valid_set,
+            training_callback=training_callback,
         )
 
     # Load the LoRA adapter weights which we assume should exist by this point
