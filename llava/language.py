@@ -176,8 +176,13 @@ class Llama(nn.Module):
         self,
         inputs: mx.array,
         cache=None,
+        inputs_embeds=None,
     ):
-        h = self.embed_tokens(inputs)
+        # for passing merged input embeddings
+        if inputs_embeds is None:
+            h = self.embed_tokens(inputs)
+        else:
+            h = inputs_embeds
 
         mask = None
         if h.shape[1] > 1:
@@ -193,7 +198,7 @@ class Llama(nn.Module):
         return self.norm(h), cache
 
 
-class LlamaModel(nn.Module):
+class LanguageModel(nn.Module):
     def __init__(self, args: TextConfig):
         super().__init__()
         self.model_type = args.model_type
@@ -204,8 +209,9 @@ class LlamaModel(nn.Module):
         self,
         inputs: mx.array,
         cache=None,
+        inputs_embeds=None,
     ):
-        out, cache = self.model(inputs, cache)
+        out, cache = self.model(inputs, cache, inputs_embeds)
         return self.lm_head(out), cache
 
     @staticmethod

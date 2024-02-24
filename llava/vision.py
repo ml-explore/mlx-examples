@@ -4,7 +4,6 @@ import json
 import logging
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 import mlx.core as mx
@@ -197,29 +196,16 @@ class ClipVisionModel(nn.Module):
         pooler_output = self.post_layernorm(x[:, 0, :])
         return pooler_output, x, encoder_states
 
-    @staticmethod
-    def from_pretrained(path: str):
-        path = Path(path)
 
-        with open(path / "config.json", "r") as fid:
-            config_dict = json.load(fid)
-        vision_config = VisionConfig(**config_dict["vision_config"])
+class VisionModel(nn.Module):
+    def __init__(self, config: VisionConfig):
+        super().__init__()
+        self.vision_model = ClipVisionModel(config)
 
-        model = ClipVisionModel(vision_config)
-
-        weight_files = glob.glob(str(path / "*.safetensors"))
-        if not weight_files:
-            logging.error(f"No safetensors found in {path}")
-            raise FileNotFoundError(f"No safetensors found in {path}")
-
-        weights = {}
-        for wf in weight_files:
-            weights.update(mx.load(wf))
-
-        weights = model.sanitize(weights)
-        model.load_weights(list(weights.items()))
-        model.load_weights(weights)
-        return model
+    def __call__(
+        self, x: mx.array, output_hidden_states: Optional[bool] = None
+    ) -> mx.array:
+        return self.vision_model(x, output_hidden_states)
 
     @staticmethod
     def sanitize(weights):
