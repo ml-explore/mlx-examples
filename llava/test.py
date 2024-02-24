@@ -6,14 +6,18 @@ import requests
 import torch
 from PIL import Image
 from transformers import AutoProcessor, LlavaForConditionalGeneration
+from utils import get_model_path
 
 from llava import LlavaModel
 
-MODEL_PATH = "models/llava-hf/llava-1.5-7b-hf"
+MODEL_PATH = "llava-hf/llava-1.5-7b-hf"
+PROMPT = "USER: <image>\nWhat are these?\nASSISTANT:"
+IMAGE_FILE = "http://images.cocodataset.org/val2017/000000039769.jpg"
 
 
 def load_mlx_models(path):
-    model = LlavaModel.from_pretrained(path)
+    model_path = get_model_path(path)
+    model = LlavaModel.from_pretrained(model_path)
     model.eval()
     return model
 
@@ -32,12 +36,10 @@ class TestCLIP(unittest.TestCase):
         cls.proc = AutoProcessor.from_pretrained(MODEL_PATH)
 
     def test_image_features(self):
-        prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
-        image_file = "http://images.cocodataset.org/val2017/000000039769.jpg"
-        raw_image = Image.open(requests.get(image_file, stream=True).raw)
+        raw_image = Image.open(requests.get(IMAGE_FILE, stream=True).raw)
         vision_feature_layer = -2
         with torch.no_grad():
-            pixel_values = self.proc(prompt, raw_image, return_tensors="pt")[
+            pixel_values = self.proc(PROMPT, raw_image, return_tensors="pt")[
                 "pixel_values"
             ]
 
@@ -73,12 +75,10 @@ class TestCLIP(unittest.TestCase):
             )
 
     def test_merge_input_ids_with_image_features(self):
-        prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
-        image_file = "http://images.cocodataset.org/val2017/000000039769.jpg"
-        raw_image = Image.open(requests.get(image_file, stream=True).raw)
+        raw_image = Image.open(requests.get(IMAGE_FILE, stream=True).raw)
         vision_feature_layer = -2
         with torch.no_grad():
-            values = self.proc(prompt, raw_image, return_tensors="pt")
+            values = self.proc(PROMPT, raw_image, return_tensors="pt")
             pixel_values = values["pixel_values"]
             input_ids = values["input_ids"]
 

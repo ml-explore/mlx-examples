@@ -6,6 +6,7 @@ import mlx.nn as nn
 import requests
 from PIL import Image
 from transformers import AutoProcessor
+from utils import get_model_path
 
 from llava import LlavaModel
 
@@ -17,8 +18,8 @@ def parse_arguments():
     parser.add_argument(
         "--model",
         type=str,
-        default="models/llava-hf/llava-1.5-7b-hf",
-        help="Path to the model directory.",
+        default="llava-hf/llava-1.5-7b-hf",
+        help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
         "--image",
@@ -30,7 +31,7 @@ def parse_arguments():
         "--prompt",
         type=str,
         default="USER: <image>\nWhat are these?\nASSISTANT:",
-        help="Prompt to use for the model.",
+        help="Message to be processed by the model.",
     )
     parser.add_argument(
         "--max-tokens",
@@ -39,7 +40,7 @@ def parse_arguments():
         help="Maximum number of tokens to generate.",
     )
     parser.add_argument(
-        "--temperature", type=float, default=0.3, help="Temperature for sampling."
+        "--temp", type=float, default=0.3, help="Temperature for sampling."
     )
     return parser.parse_args()
 
@@ -66,7 +67,8 @@ def load_image(image_source):
 
 def initialize_model(model_path):
     processor = AutoProcessor.from_pretrained(model_path)
-    model = LlavaModel.from_pretrained(model_path)
+
+    model = LlavaModel.from_pretrained(get_model_path(model_path))
     return processor, model
 
 
@@ -115,7 +117,7 @@ def main():
     input_ids, pixel_values = prepare_inputs(processor, raw_image, args.prompt)
     print(args.prompt)
     generated_text = generate_text(
-        input_ids, pixel_values, model, processor, args.max_tokens, args.temperature
+        input_ids, pixel_values, model, processor, args.max_tokens, args.temp
     )
     print(generated_text)
 
