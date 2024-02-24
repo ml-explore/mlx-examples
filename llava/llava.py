@@ -1,56 +1,41 @@
-from clip import CLIPVisionModel
-from llama import LlamaModel
-from pathlib import Path
+import glob
+import inspect
 import json
-import mlx.nn as nn
-import mlx.core as mx
-from typing import Any, Optional, Dict, Union
-
-
+import logging
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
 
+import mlx.core as mx
+import mlx.nn as nn
+from llama import LlamaModel, TextConfig
 
-@dataclass
-class VisionConfig:
-    num_hidden_layers: int
-    hidden_size: int
-    intermediate_size: int
-    num_attention_heads: int
-    num_channels: int
-    image_size: int
-    patch_size: int
-
-
-@dataclass
-class LLMConfig:
-    model_type: str
-    hidden_size: int
-    num_hidden_layers: int
-    intermediate_size: int
-    num_attention_heads: int
-    rms_norm_eps: float
-    vocab_size: int
-    num_key_value_heads: int
-    rope_theta: float = 10000
-    rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-
-
-@dataclass
-class ProjectionConfig:
-    in_features: int
-    out_features: int
+from clip import ClipVisionModel, VisionConfig
 
 
 @dataclass
 class LlaVAConfig:
-    llm_config: Any
+    text_config: TextConfig
     vision_config: VisionConfig
-    projection_config: ProjectionConfig
+    ignore_index: int = -100
+    image_token_index: int = 32000
+    vision_feature_select_strategy: str = "default"
+    vision_feature_layer: int = -2
+    vocab_size: int = 32000
+
+    @classmethod
+    def from_dict(cls, params):
+        return cls(
+            **{
+                k: v
+                for k, v in params.items()
+                if k in inspect.signature(cls).parameters
+            }
+        )
 
 
 class LlavaMultiModalProjector(nn.Module):
-    def __init__(self, config: Any):
+    def __init__(self, config: LlaVAConfig):
         super().__init__()
         self.linear_1 = nn.Linear(config.in_features, config.out_features)
         self.gelu = nn.GELU()
@@ -65,14 +50,19 @@ class LlavaMultiModalProjector(nn.Module):
 
 class LlavaModel(nn.Module):
     def __init__(self, config: LlaVAConfig):
-        self.vision_tower = CLIPVisionModel(config=config.vision_config)
-        self.language_model = LlamaModel(args=config.llm_config)
+        self.vision_tower = ClipVisionModel(
+            config=VisionConfig.from_dict(config.vision_config)
+        )
+        self.language_model = LlamaModel(args=TextConfig.from_dict(config.text_config))
         self.multi_modal_projector = LlavaMultiModalProjector(
-            config=config.projection_config)
+            config=config.projection_config
+        )
 
-    def __call__(self,
-                 input_ids: Optional[mx.array] = None,
-                 pixel_values: Optional[mx.array] = None):
+    def __call__(
+        self,
+        input_ids: Optional[mx.array] = None,
+        pixel_values: Optional[mx.array] = None,
+    ):
         # TODO: add the forward pass
 
         if pixel_values is not None and input_ids.shape[1] != 1:
@@ -81,10 +71,11 @@ class LlavaModel(nn.Module):
             # TODO: this is not the correct output layer, but it's a placeholder
             selected_image_feature = image_outputs.pooler_output
 
-            image_features = self.multi_modal_projector(
-                selected_image_feature)
+            image_features = self.multi_modal_projector(selected_image_feature)
 
-    def _merge_input_ids_with_image_features(self, image_features, inputs_embeds, input_ids, attention_mask, labels):
+    def _merge_input_ids_with_image_features(
+        self, image_features, inputs_embeds, input_ids, attention_mask, labels
+    ):
         # TODO: https://github.com/huggingface/transformers/blob/4f09d0fd888dbf2660313f9715992822acfb99ce/src/transformers/models/llava/modeling_llava.py#L279
 
         special_image_token_mask = input_ids == self.config.special_tokens.image
@@ -97,39 +88,20 @@ class LlavaModel(nn.Module):
     def from_pretrained(path: str):
         path = Path(path)
 
-        with open(path / "mlx_config.json", "r") as f:
+        with open(path / "config.json", "r") as f:
             model_config = json.load(f)
 
-        llava_mlx_config = LlaVAConfig(
-            llm_config=LLMConfig(
-                model_type='vicuna',
-                hidden_size=model_config['language_model']['hidden_size'],
-                num_hidden_layers=model_config['language_model']['num_hidden_layers'],
-                intermediate_size=model_config['language_model']['intermediate_size'],
-                num_attention_heads=model_config['language_model']['num_attention_heads'],
-                rms_norm_eps=model_config['language_model']['rms_norm_eps'],
-                vocab_size=model_config['language_model']['vocab_size'],
-                num_key_value_heads=model_config['language_model']['num_key_value_heads'],
-                rope_theta=model_config['language_model']['rope_theta'],
-                rope_traditional=model_config['language_model']['rope_traditional'],
-                rope_scaling=model_config['language_model']['rope_scaling'],
-            ),
-            vision_config=VisionConfig(
-                num_hidden_layers=model_config['vision_tower']['num_hidden_layers'],
-                hidden_size=model_config['vision_tower']['hidden_size'],
-                intermediate_size=model_config['vision_tower']['intermediate_size'],
-                num_attention_heads=model_config['vision_tower']['num_attention_heads'],
-                num_channels=model_config['vision_tower']['num_channels'],
-                image_size=model_config['vision_tower']['image_size'],
-                patch_size=model_config['vision_tower']['patch_size'],
-            ),
-            projection_config=ProjectionConfig(
-                in_features=model_config['multi_modal_projector']['in_features'],
-                out_features=model_config['multi_modal_projector']['out_features'],
-            )
-        )
+        model_config = LlaVAConfig.from_dict(model_config)
+        model = LlavaModel(model_config)
+        weight_files = glob.glob(str(path / "*.safetensors"))
+        if not weight_files:
+            logging.error(f"No safetensors found in {path}")
+            raise FileNotFoundError(f"No safetensors found in {path}")
 
-        model = LlavaModel(llava_mlx_config)
-        model.load_weights(str(path / "weights.npz"))
+        weights = {}
+        for wf in weight_files:
+            weights.update(mx.load(wf))
 
+        weights = ClipVisionModel.sanitize(weights)
+        model.load_weights(list(weights.items()))
         return model
