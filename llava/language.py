@@ -1,14 +1,25 @@
+import inspect
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
-import inspect
-
 
 @dataclass
-class BaseModelArgs:
+class TextConfig:
+    model_type: str
+    hidden_size: int = 4096
+    num_hidden_layers: int = 32
+    intermediate_size: int = 11008
+    num_attention_heads: int = 32
+    rms_norm_eps: float = 1e-6
+    vocab_size: int = 32000
+    num_key_value_heads: int = None
+    rope_theta: float = 10000
+    rope_traditional: bool = False
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+
     @classmethod
     def from_dict(cls, params):
         return cls(
@@ -19,21 +30,6 @@ class BaseModelArgs:
             }
         )
 
-
-@dataclass
-class ModelArgs(BaseModelArgs):
-    model_type: str
-    hidden_size: int
-    num_hidden_layers: int
-    intermediate_size: int
-    num_attention_heads: int
-    rms_norm_eps: float
-    vocab_size: int
-    num_key_value_heads: int = None
-    rope_theta: float = 10000
-    rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
@@ -41,12 +37,10 @@ class ModelArgs(BaseModelArgs):
         if self.rope_scaling:
             required_keys = {"factor", "type"}
             if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(
-                    f"rope_scaling must contain keys {required_keys}")
+                raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
             if self.rope_scaling["type"] != "linear":
-                raise ValueError(
-                    "rope_scaling 'type' currently only supports 'linear'")
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
 
 
 class RMSNorm(nn.Module):
@@ -64,7 +58,7 @@ class RMSNorm(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: TextConfig):
         super().__init__()
 
         dim = args.hidden_size
@@ -106,8 +100,7 @@ class Attention(nn.Module):
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(
-            B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if self.repeats > 1:
             keys = mx.repeat(keys, self.repeats, axis=1)
@@ -126,8 +119,7 @@ class Attention(nn.Module):
         scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
         if mask is not None:
             scores += mask
-        scores = mx.softmax(scores.astype(mx.float32),
-                            axis=-1).astype(scores.dtype)
+        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
@@ -144,15 +136,14 @@ class MLP(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: TextConfig):
         super().__init__()
         self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
         self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.args = args
 
     def __call__(
@@ -169,7 +160,7 @@ class TransformerBlock(nn.Module):
 
 
 class Llama(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: TextConfig):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
@@ -185,13 +176,17 @@ class Llama(nn.Module):
         self,
         inputs: mx.array,
         cache=None,
+        inputs_embeds=None,
     ):
-        h = self.embed_tokens(inputs)
+        # for passing merged input embeddings
+        if inputs_embeds is None:
+            h = self.embed_tokens(inputs)
+        else:
+            h = inputs_embeds
 
         mask = None
         if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(
-                h.shape[1])
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
             mask = mask.astype(h.dtype)
 
         if cache is None:
@@ -203,8 +198,8 @@ class Llama(nn.Module):
         return self.norm(h), cache
 
 
-class LlamaModel(nn.Module):
-    def __init__(self, args: ModelArgs):
+class LanguageModel(nn.Module):
+    def __init__(self, args: TextConfig):
         super().__init__()
         self.model_type = args.model_type
         self.model = Llama(args)
@@ -214,8 +209,9 @@ class LlamaModel(nn.Module):
         self,
         inputs: mx.array,
         cache=None,
+        inputs_embeds=None,
     ):
-        out, cache = self.model(inputs, cache)
+        out, cache = self.model(inputs, cache, inputs_embeds)
         return self.lm_head(out), cache
 
     @staticmethod
