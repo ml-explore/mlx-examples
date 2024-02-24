@@ -61,7 +61,7 @@ class LlavaModel(nn.Module):
         self.vision_feature_layer = config.vision_feature_layer
         self.vision_feature_select_strategy = config.vision_feature_select_strategy
 
-    def __call__(
+    def get_input_embeddings(
         self,
         input_ids: Optional[mx.array] = None,
         pixel_values: Optional[mx.array] = None,
