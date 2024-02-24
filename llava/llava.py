@@ -138,6 +138,14 @@ class LlavaModel(nn.Module):
 
         return mx.array(final_embedding)
 
+    def __call__(self, input_ids: mx.array, pixel_values: mx.array, cache=None):
+        input_ids, pixel_values = self.get_input_embeddings(
+            input_ids, pixel_values)
+        logits, cache = self.language_model(
+            input_ids, cache=cache, inputs_embeds=input_ids
+        )
+        return logits, cache
+
     @staticmethod
     def from_pretrained(path: str):
         path = Path(path)
