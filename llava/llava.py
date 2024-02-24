@@ -102,14 +102,22 @@ class LlavaModel(nn.Module):
         batch_size, sequence_length = input_ids.shape
         special_image_token_mask = input_ids == self.config.image_token_index
         num_special_image_tokens = np.sum(special_image_token_mask, axis=-1)
+        # if no special image tokens found, return a warning
+        if np.all(num_special_image_tokens == 0):
+            logging.warning(
+                "No special image tokens found in the input. Please make sure to include <image> in your prompt."
+            )
+
         max_embed_dim = (
             np.max(num_special_image_tokens) * (num_image_patches - 1)
         ) + sequence_length
 
-        non_image_indices = np.where(input_ids != self.config.image_token_index)
+        non_image_indices = np.where(
+            input_ids != self.config.image_token_index)
 
         new_token_positions = (
-            np.cumsum((special_image_token_mask * (num_image_patches - 1) + 1), axis=-1)
+            np.cumsum((special_image_token_mask *
+                      (num_image_patches - 1) + 1), axis=-1)
             - 1
         )
         text_to_overwrite = new_token_positions[non_image_indices]
@@ -145,7 +153,8 @@ class LlavaModel(nn.Module):
             )
 
         if isinstance(model_config.text_config, dict):
-            model_config.text_config = TextConfig.from_dict(model_config.text_config)
+            model_config.text_config = TextConfig.from_dict(
+                model_config.text_config)
 
         model = LlavaModel(model_config)
         weight_files = glob.glob(str(path / "*.safetensors"))
