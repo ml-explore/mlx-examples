@@ -2,7 +2,7 @@
 
 import argparse
 
-from .api import convert
+from .utils import convert
 
 
 def configure_parser() -> argparse.ArgumentParser:
