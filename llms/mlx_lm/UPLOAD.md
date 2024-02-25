@@ -10,7 +10,7 @@ pip install --user --upgrade twine
 Generate the source distribution and wheel:
 
 ```
-python -m build -n
+python -m build
 ```
 
 > [!warning]
