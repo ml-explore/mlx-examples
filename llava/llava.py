@@ -69,13 +69,17 @@ class LlavaModel(nn.Module):
         if pixel_values is None:
             return self.language_model(input_ids)
 
+        # Get the input embeddings from the language model
         inputs_embeds = self.language_model.model.embed_tokens(input_ids)
+        # get the ouptut hidden states from the vision model
         _, _, hidden_states = self.vision_tower(
             pixel_values.transpose(0, 2, 3, 1), output_hidden_states=True
         )
+        # select the hidden states from the desired layer
         selected_image_feature = hidden_states[self.vision_feature_layer]
 
         if self.vision_feature_select_strategy == "default":
+            # default strategy is to select all the hidden states except the first one (CLS token?)
             selected_image_feature = selected_image_feature[:, 1:]
         elif self.vision_feature_select_strategy == "full":
             selected_image_feature = selected_image_feature
@@ -83,8 +87,9 @@ class LlavaModel(nn.Module):
             raise ValueError(
                 f"Unexpected select feature strategy: {self.vision_feature_select_strategy}"
             )
-
+        # pass image features through the multi-modal projector
         image_features = self.multi_modal_projector(selected_image_feature)
+        # insert special image tokens in the input_ids
         final_inputs_embeds = self._merge_input_ids_with_image_features(
             image_features, inputs_embeds, input_ids
         )
@@ -94,21 +99,25 @@ class LlavaModel(nn.Module):
     def _merge_input_ids_with_image_features(
         self, image_features, inputs_embeds, input_ids
     ):
+
         image_features = np.array(image_features)
         inputs_embeds = np.array(inputs_embeds)
         input_ids = np.array(input_ids)
 
         _, num_image_patches, embed_dim = image_features.shape
         batch_size, sequence_length = input_ids.shape
+
         special_image_token_mask = input_ids == self.config.image_token_index
         num_special_image_tokens = np.sum(special_image_token_mask, axis=-1)
+
         # if no special image tokens found, return a warning
         if np.all(num_special_image_tokens == 0):
             logging.warning(
                 "No special image tokens found in the input. Please make sure to include <image> in your prompt."
             )
 
-        max_embed_dim = (
+        # calculate the final sequence length. Will be the original sequence length + the # of image tokens to be inserted in.
+        final_sequence_length = (
             np.max(num_special_image_tokens) * (num_image_patches - 1)
         ) + sequence_length
 
@@ -123,7 +132,8 @@ class LlavaModel(nn.Module):
         text_to_overwrite = new_token_positions[non_image_indices]
 
         final_embedding = np.zeros(
-            (batch_size, max_embed_dim, embed_dim), dtype=inputs_embeds.dtype
+            (batch_size, final_sequence_length,
+             embed_dim), dtype=inputs_embeds.dtype
         )
 
         final_embedding[non_image_indices[0], text_to_overwrite, :] = inputs_embeds[
@@ -139,10 +149,10 @@ class LlavaModel(nn.Module):
         return mx.array(final_embedding)
 
     def __call__(self, input_ids: mx.array, pixel_values: mx.array, cache=None):
-        input_ids, pixel_values = self.get_input_embeddings(
+        input_embddings = self.get_input_embeddings(
             input_ids, pixel_values)
         logits, cache = self.language_model(
-            input_ids, cache=cache, inputs_embeds=input_ids
+            input_ids, cache=cache, inputs_embeds=input_embddings
         )
         return logits, cache
 
