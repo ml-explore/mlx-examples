@@ -160,7 +160,7 @@ def load_dataset(args):
     return train, valid, test
 
 
-def run_lora(args, training_callback: TrainingCallback = None):
+def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
@@ -250,4 +250,4 @@ if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
 
-    run_lora(args)
+    run(args)
