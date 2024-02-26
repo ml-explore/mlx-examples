@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -34,20 +34,13 @@ class LlaVAConfig:
         )
 
 
-def quick_gelu(x: mx.array) -> mx.array:
-    """
-    A fast GELU approximation https://github.com/hendrycks/GELUs
-    """
-    return x * mx.sigmoid(1.702 * x)
-
-
 class LlavaMultiModalProjector(nn.Module):
     def __init__(self, config: LlaVAConfig):
         super().__init__()
         self.linear_1 = nn.Linear(
             config.vision_config.hidden_size, config.text_config.hidden_size, bias=True
         )
-        self.gelu = quick_gelu
+        self.gelu = nn.GELU(approx='fast')
         self.linear_2 = nn.Linear(
             config.text_config.hidden_size, config.text_config.hidden_size, bias=True
         )

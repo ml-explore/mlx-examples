@@ -35,13 +35,6 @@ class VisionConfig:
         )
 
 
-def quick_gelu(x: mx.array) -> mx.array:
-    """
-    A fast GELU approximation https://github.com/hendrycks/GELUs
-    """
-    return x * mx.sigmoid(1.702 * x)
-
-
 class Attention(nn.Module):
     def __init__(
         self,
@@ -99,7 +92,7 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, config: VisionConfig):
         super().__init__()
-        self.activation_fn = quick_gelu
+        self.activation_fn = nn.GELU(approx='fast')
         self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
         self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
 
