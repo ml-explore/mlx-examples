@@ -34,13 +34,20 @@ class LlaVAConfig:
         )
 
 
+def quick_gelu(x: mx.array) -> mx.array:
+    """
+    A fast GELU approximation https://github.com/hendrycks/GELUs
+    """
+    return x * mx.sigmoid(1.702 * x)
+
+
 class LlavaMultiModalProjector(nn.Module):
     def __init__(self, config: LlaVAConfig):
         super().__init__()
         self.linear_1 = nn.Linear(
             config.vision_config.hidden_size, config.text_config.hidden_size, bias=True
         )
-        self.gelu = nn.GELU()
+        self.gelu = quick_gelu
         self.linear_2 = nn.Linear(
             config.text_config.hidden_size, config.text_config.hidden_size, bias=True
         )

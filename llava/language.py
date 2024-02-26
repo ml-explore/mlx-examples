@@ -37,10 +37,12 @@ class TextConfig:
         if self.rope_scaling:
             required_keys = {"factor", "type"}
             if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
+                raise ValueError(
+                    f"rope_scaling must contain keys {required_keys}")
 
             if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
+                raise ValueError(
+                    "rope_scaling 'type' currently only supports 'linear'")
 
 
 class RMSNorm(nn.Module):
@@ -58,16 +60,16 @@ class RMSNorm(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, args: TextConfig):
+    def __init__(self, config: TextConfig):
         super().__init__()
 
-        dim = args.hidden_size
-        self.n_heads = n_heads = args.num_attention_heads
-        self.n_kv_heads = n_kv_heads = args.num_key_value_heads
+        dim = config.hidden_size
+        self.n_heads = n_heads = config.num_attention_heads
+        self.n_kv_heads = n_kv_heads = config.num_key_value_heads
 
         self.repeats = n_heads // n_kv_heads
 
-        head_dim = args.hidden_size // n_heads
+        head_dim = config.hidden_size // n_heads
         self.scale = head_dim**-0.5
 
         self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=False)
@@ -76,14 +78,14 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
 
         rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
+            1 / config.rope_scaling["factor"]
+            if config.rope_scaling is not None and config.rope_scaling["type"] == "linear"
             else 1
         )
         self.rope = nn.RoPE(
             head_dim,
-            traditional=args.rope_traditional,
-            base=args.rope_theta,
+            traditional=config.rope_traditional,
+            base=config.rope_theta,
             scale=rope_scale,
         )
 
@@ -100,7 +102,8 @@ class Attention(nn.Module):
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(
+            B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if self.repeats > 1:
             keys = mx.repeat(keys, self.repeats, axis=1)
@@ -119,7 +122,8 @@ class Attention(nn.Module):
         scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
         if mask is not None:
             scores += mask
-        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
+        scores = mx.softmax(scores.astype(mx.float32),
+                            axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
@@ -136,15 +140,17 @@ class MLP(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, args: TextConfig):
+    def __init__(self, config: TextConfig):
         super().__init__()
-        self.num_attention_heads = args.num_attention_heads
-        self.hidden_size = args.hidden_size
-        self.self_attn = Attention(args)
-        self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.args = args
+        self.num_attention_heads = config.num_attention_heads
+        self.hidden_size = config.hidden_size
+        self.self_attn = Attention(config)
+        self.mlp = MLP(config.hidden_size, config.intermediate_size)
+        self.input_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps)
+        self.config = config
 
     def __call__(
         self,
@@ -160,17 +166,17 @@ class TransformerBlock(nn.Module):
 
 
 class Llama(nn.Module):
-    def __init__(self, args: TextConfig):
+    def __init__(self, config: TextConfig):
         super().__init__()
-        self.args = args
-        self.vocab_size = args.vocab_size
-        self.num_hidden_layers = args.num_hidden_layers
+        self.config = config
+        self.vocab_size = config.vocab_size
+        self.num_hidden_layers = config.num_hidden_layers
         assert self.vocab_size > 0
-        self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = [
-            TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
+            TransformerBlock(config=config) for _ in range(config.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def __call__(
         self,
@@ -186,7 +192,8 @@ class Llama(nn.Module):
 
         mask = None
         if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(
+                h.shape[1])
             mask = mask.astype(h.dtype)
 
         if cache is None:
@@ -199,11 +206,16 @@ class Llama(nn.Module):
 
 
 class LanguageModel(nn.Module):
-    def __init__(self, args: TextConfig):
+    def __init__(self, config: TextConfig):
         super().__init__()
-        self.model_type = args.model_type
-        self.model = Llama(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.model_type = config.model_type
+        if self.model_type != "llama":
+            raise ValueError(
+                f"Model type {self.model_type} not supported. Currently only 'llama' is supported"
+            )
+        self.model = Llama(config)
+        self.lm_head = nn.Linear(
+            config.hidden_size, config.vocab_size, bias=False)
 
     def __call__(
         self,
