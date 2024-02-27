@@ -1,5 +1,8 @@
 version: 2.1
 
+orbs:
+  apple: ml-explore/pr-approval@0.1.0
+ 
 jobs:
   linux_build_and_test:
     docker:
@@ -31,5 +34,7 @@ workflows:
     jobs:
       - hold:
           type: approval
+      - apple/authenticate:
+          context: pr-approval
       - linux_build_and_test:
           requires: [ hold ]
