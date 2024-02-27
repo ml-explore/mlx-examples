@@ -50,6 +50,12 @@ the Mistral model:
 python mistral.py --prompt "It is a truth universally acknowledged,"
 ```
 
+For a few-shot prompt example, run:
+
+```
+python mistral.py --few-shot sample_prompt.txt
+```
+
 Run `python mistral.py --help` for more details.
 
 [^1]: Refer to the [blog post](https://mistral.ai/news/announcing-mistral-7b/)
