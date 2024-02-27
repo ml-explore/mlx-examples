@@ -50,7 +50,7 @@ class Attention(nn.Module):
 
         self.repeats = self.n_heads // self.n_kv_heads
 
-        self.scale = self.args.head_dim**-0.5
+        self.scale = self.args.head_dim ** -0.5
 
         self.wq = nn.Linear(args.dim, args.n_heads * args.head_dim, bias=False)
         self.wk = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
@@ -59,10 +59,10 @@ class Attention(nn.Module):
         self.rope = nn.RoPE(args.head_dim, traditional=True, base=args.rope_theta)
 
     def __call__(
-        self,
-        x: mx.array,
-        mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+            self,
+            x: mx.array,
+            mask: Optional[mx.array] = None,
+            cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -118,10 +118,10 @@ class TransformerBlock(nn.Module):
         self.args = args
 
     def __call__(
-        self,
-        x: mx.array,
-        mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+            self,
+            x: mx.array,
+            mask: Optional[mx.array] = None,
+            cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
         r, cache = self.attention(self.attention_norm(x), mask, cache)
         h = x + r
@@ -143,9 +143,9 @@ class Mistral(nn.Module):
         self.output = nn.Linear(args.dim, args.vocab_size, bias=False)
 
     def __call__(
-        self,
-        inputs: mx.array,
-        cache=None,
+            self,
+            inputs: mx.array,
+            cache=None,
     ):
         h = self.tok_embeddings(inputs)
 
@@ -224,6 +224,16 @@ def generate(prompt: mx.array, model: Mistral, temp: Optional[float] = 0.0):
         yield y
 
 
+def possible_end(s):
+    word = "[Instruction]"
+    for i in range(len(word) - 1, 0, -1):
+        if s[-i:] == word[:i]:
+            return 0
+    if s[-len(word):] == word:
+        return 1
+    return -1
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mistral inference script")
     parser.add_argument(
@@ -234,8 +244,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--prompt",
-        help="The message to be processed by the model",
+        help="The message to be processed by the model. Ignored when --few-shot is provided.",
         default="In the beginning the Universe was created.",
+    )
+    parser.add_argument(
+        "--few-shot",
+        help="Read a few shot prompt from a file (as in `sample_prompt.txt`).",
     )
     parser.add_argument(
         "--max-tokens",
@@ -266,11 +280,27 @@ if __name__ == "__main__":
 
     print("[INFO] Starting generation...")
     tic = time.time()
-    print(args.prompt, end="", flush=True)
-    prompt = mx.array(tokenizer.encode(args.prompt))
+    if args.few_shot:
+        prompt = open(args.few_shot).read().strip()
+        question = input("Ask a question: ")
+        updated_prompt = prompt.replace("{}", question)
+        prompt = mx.array(tokenizer.encode(updated_prompt))
+    else:
+        print(args.prompt, end="", flush=True)
+        prompt = mx.array(tokenizer.encode(args.prompt))
     tokens = []
     for token, ntoks in zip(generate(prompt, model, args.temp), range(args.max_tokens)):
         tokens.append(token)
+        token_list = [t.item() for t in tokens]
+        s = tokenizer.decode(token_list)
+        end = possible_end(s)
+        if end == 1:
+            word = "[Instruction]"
+            num_tokens = len(tokens)
+            tokens = tokens[:num_tokens-len(tokenizer.encode(word))]
+            break
+        if token_list[-1] == tokenizer.eos_id:
+            break
         if ntoks == 0:
             mx.eval(tokens)
             toc = time.time()

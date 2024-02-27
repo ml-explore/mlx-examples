@@ -12,3 +12,4 @@ MLX Examples was developed with contributions from the following individuals:
 - Shunta Saito: Added support for PLaMo models.
 - Gabrijel Boduljak: Implemented `CLIP`.
 - Markus Enzweiler: Added the `cvae` examples.
+- Dan Hirlea: Added few-shot `sample_prompting` for Mistral models 
