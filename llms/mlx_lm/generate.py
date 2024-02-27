@@ -115,7 +115,14 @@ def main(args):
     formatter = colorprint_by_t0 if args.colorize else None
 
     generate(
-        model, tokenizer, prompt, args.temp, args.max_tokens, True, formatter=formatter, top_p=args.top_p
+        model,
+        tokenizer,
+        prompt,
+        args.temp,
+        args.max_tokens,
+        True,
+        formatter=formatter,
+        top_p=args.top_p,
     )
 
 
