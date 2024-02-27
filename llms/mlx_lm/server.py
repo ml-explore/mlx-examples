@@ -235,7 +235,7 @@ class APIHandler(BaseHTTPRequestHandler):
         text = _tokenizer.decode(tokens)
         return response_creator(response_id, requested_model, prompt, tokens, text)
 
-    def hanlde_stream(
+    def handle_stream(
         self,
         prompt: mx.array,
         response_id: str,
@@ -360,7 +360,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 create_chat_response,
             )
         else:
-            self.hanlde_stream(
+            self.handle_stream(
                 prompt,
                 chat_id,
                 requested_model,
@@ -411,7 +411,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 create_completion_response,
             )
         else:
-            self.hanlde_stream(
+            self.handle_stream(
                 prompt,
                 completion_id,
                 requested_model,
