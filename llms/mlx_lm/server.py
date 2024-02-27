@@ -11,7 +11,7 @@ import mlx.nn as nn
 import numpy as np
 from transformers import PreTrainedTokenizer
 
-from .utils import load
+from .utils import generate_step, load
 
 _model: Optional[nn.Module] = None
 _tokenizer: Optional[PreTrainedTokenizer] = None
@@ -242,18 +242,23 @@ class APIHandler(BaseHTTPRequestHandler):
         max_tokens: int,
         temperature: float,
         top_p: float,
+        repetition_penalty: Optional[float],
+        repetition_context_size: Optional[int],
         response_creator: Callable[[str, str, mx.array, List[int], str], dict],
     ):
         tokens = []
-        for token, _ in zip(
-            generate(
-                prompt,
-                _model,
-                temperature,
+        for (token, _), _ in zip(
+            generate_step(
+                prompt=prompt,
+                model=_model,
+                temp=temperature,
                 top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                repetition_context_size=repetition_context_size,
             ),
             range(max_tokens),
         ):
+            token = token.item()
             tokens.append(token)
             stop_condition = stopping_criteria(tokens, stop_id_sequences, eos_token_id)
             if stop_condition.stop_met:
@@ -274,6 +279,8 @@ class APIHandler(BaseHTTPRequestHandler):
         max_tokens: int,
         temperature: float,
         top_p: float,
+        repetition_penalty: Optional[float],
+        repetition_context_size: Optional[int],
         response_creator: Callable[[str, str, str], dict],
     ):
         self.send_response(200)
@@ -288,15 +295,18 @@ class APIHandler(BaseHTTPRequestHandler):
         # Buffer to store the last `max_stop_id_sequence_len` tokens to check for stop conditions before writing to the stream.
         stop_sequence_buffer = []
         REPLACEMENT_CHAR = "\ufffd"
-        for token, _ in zip(
-            generate(
-                prompt,
-                _model,
-                temperature,
+        for (token, _), _ in zip(
+            generate_step(
+                prompt=prompt,
+                model=_model,
+                temp=temperature,
                 top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                repetition_context_size=repetition_context_size,
             ),
             range(max_tokens),
         ):
+            token = token.item()
             tokens.append(token)
             stop_sequence_buffer.append(token)
             if len(stop_sequence_buffer) > max_stop_id_sequence_len:
@@ -367,6 +377,8 @@ class APIHandler(BaseHTTPRequestHandler):
         requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
+        repetition_penalty = body.get("repetition_penalty", 1.0)
+        repetition_context_size = body.get("repetition_context_size", 20)
         if not stream:
             return self.generate_response(
                 prompt,
@@ -377,6 +389,8 @@ class APIHandler(BaseHTTPRequestHandler):
                 max_tokens,
                 temperature,
                 top_p,
+                repetition_penalty,
+                repetition_context_size,
                 create_chat_response,
             )
         else:
@@ -389,6 +403,8 @@ class APIHandler(BaseHTTPRequestHandler):
                 max_tokens,
                 temperature,
                 top_p,
+                repetition_penalty,
+                repetition_context_size,
                 create_chat_chunk_response,
             )
 
@@ -412,6 +428,8 @@ class APIHandler(BaseHTTPRequestHandler):
         requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
+        repetition_penalty = body.get("repetition_penalty", 1.0)
+        repetition_context_size = body.get("repetition_context_size", 20)
         if not stream:
             return self.generate_response(
                 prompt,
@@ -422,6 +440,8 @@ class APIHandler(BaseHTTPRequestHandler):
                 max_tokens,
                 temperature,
                 top_p,
+                repetition_penalty,
+                repetition_context_size,
                 create_completion_response,
             )
         else:
@@ -434,6 +454,8 @@ class APIHandler(BaseHTTPRequestHandler):
                 max_tokens,
                 temperature,
                 top_p,
+                repetition_penalty,
+                repetition_context_size,
                 create_completion_chunk_response,
             )
 
