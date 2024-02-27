@@ -22,6 +22,11 @@ def setup_arg_parser():
         help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
+        "--adapter-file",
+        type=str,
+        help="Optional path for the trained adapter weights.",
+    )
+    parser.add_argument(
         "--trust-remote-code",
         action="store_true",
         help="Enable trusting remote code for tokenizer",
@@ -97,7 +102,9 @@ def main(args):
     if args.eos_token is not None:
         tokenizer_config["eos_token"] = args.eos_token
 
-    model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
+    model, tokenizer = load(
+        args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
+    )
 
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
@@ -113,7 +120,14 @@ def main(args):
     formatter = colorprint_by_t0 if args.colorize else None
 
     generate(
-        model, tokenizer, prompt, args.temp, args.max_tokens, True, formatter=formatter, top_p=args.top_p
+        model,
+        tokenizer,
+        prompt,
+        args.temp,
+        args.max_tokens,
+        True,
+        formatter=formatter,
+        top_p=args.top_p,
     )
 
 

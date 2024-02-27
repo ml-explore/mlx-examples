@@ -72,6 +72,27 @@ python -m mlx_lm.lora \
     --test
 ```
 
+### Generate
+
+1. Using the lora module for basic generation:
+
+```
+python -m mlx_lm.lora \
+    --model <path_to_model> \
+    --adapter-file <path_to_adapters.npz> \
+    --max-tokens 50 \
+    --prompt "<your_model_prompt>"
+```
+
+2. For a feature-rich generation experience, use mlx_lm.generate:
+
+```shell
+python -m mlx_lm.generate \
+    --model <path_to_model> \
+    --adapter-file <path_to_adapters.npz> \
+    --prompt "<your_model_prompt>"
+```
+
 ## Fuse and Upload
 
 You can generate a model fused with the low-rank adapters using the
