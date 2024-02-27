@@ -314,7 +314,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.wfile.write(f"data: [DONE]\n\n".encode())
         self.wfile.flush()
 
-    def handle_chat_completions(self, post_data):
+    def handle_chat_completions(self, post_data: bytes):
         body = json.loads(post_data.decode("utf-8"))
         chat_id = f"chatcmpl-{uuid.uuid4()}"
         if hasattr(_tokenizer, "apply_chat_template") and _tokenizer.chat_template:
@@ -374,7 +374,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 create_chat_chunk_response,
             )
 
-    def handle_completions(self, post_data):
+    def handle_completions(self, post_data: bytes):
         body = json.loads(post_data.decode("utf-8"))
         completion_id = f"cmpl-{uuid.uuid4()}"
         prompt_text = body["prompt"]
