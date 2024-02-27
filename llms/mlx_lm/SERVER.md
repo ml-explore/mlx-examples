@@ -61,3 +61,5 @@ curl localhost:8080/v1/chat/completions \
 
 - `top_p`: (Optional) A float specifying the nucleus sampling parameter.
   Defaults to `1.0`.
+- `repetition_penalty`: (Optional) Applies a penalty to repeated tokens. Defaults to `1.0`.
+- `repetition_context_size`: (Optional) The size of the context window for applying repetition penalty. Defaults to `20`.
