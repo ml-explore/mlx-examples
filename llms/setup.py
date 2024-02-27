@@ -1,15 +1,18 @@
 import sys
 from pathlib import Path
 
-import mlx_lm
-import pkg_resources
 from setuptools import setup
 
-with open(Path(__file__).parent / "mlx_lm/requirements.txt") as fid:
-    requirements = [str(r) for r in pkg_resources.parse_requirements(fid)]
+package_dir = Path(__file__).parent / "mlx_lm"
+with open(package_dir / "requirements.txt") as fid:
+    requirements = [l.strip() for l in fid.readlines()]
+
+sys.path.append(str(package_dir))
+from version import __version__
+
 setup(
     name="mlx-lm",
-    version=mlx_lm.__version__,
+    version=__version__,
     description="LLMs on Apple silicon with MLX and the Hugging Face Hub",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
