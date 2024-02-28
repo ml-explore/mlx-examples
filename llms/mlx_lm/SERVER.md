@@ -4,6 +4,10 @@ You use `mlx-lm` to make an HTTP API for generating text with any supported
 model. The HTTP API is intended to be similar to the [OpenAI chat
 API](https://platform.openai.com/docs/api-reference).
 
+> [!NOTE]  
+> The MLX LM server is not recommended for production as it only implements
+> basic security checks.
+
 Start the server with: 
 
 ```shell
@@ -61,3 +65,9 @@ curl localhost:8080/v1/chat/completions \
 
 - `top_p`: (Optional) A float specifying the nucleus sampling parameter.
   Defaults to `1.0`.
+
+- `repetition_penalty`: (Optional) Applies a penalty to repeated tokens.
+  Defaults to `1.0`.
+
+- `repetition_context_size`: (Optional) The size of the context window for
+  applying repetition penalty. Defaults to `20`.

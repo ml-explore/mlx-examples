@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import argparse
 
 import mlx.core as mx
@@ -8,6 +10,7 @@ DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
 DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.6
+DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
 
 
@@ -19,6 +22,11 @@ def setup_arg_parser():
         type=str,
         default="mlx_model",
         help="The path to the local model directory or Hugging Face repo.",
+    )
+    parser.add_argument(
+        "--adapter-file",
+        type=str,
+        help="Optional path for the trained adapter weights.",
     )
     parser.add_argument(
         "--trust-remote-code",
@@ -43,6 +51,9 @@ def setup_arg_parser():
     )
     parser.add_argument(
         "--temp", type=float, default=DEFAULT_TEMP, help="Sampling temperature"
+    )
+    parser.add_argument(
+        "--top-p", type=float, default=DEFAULT_TOP_P, help="Sampling top-p"
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
     parser.add_argument(
@@ -93,7 +104,9 @@ def main(args):
     if args.eos_token is not None:
         tokenizer_config["eos_token"] = args.eos_token
 
-    model, tokenizer = load(args.model, tokenizer_config=tokenizer_config)
+    model, tokenizer = load(
+        args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
+    )
 
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
@@ -109,7 +122,14 @@ def main(args):
     formatter = colorprint_by_t0 if args.colorize else None
 
     generate(
-        model, tokenizer, prompt, args.temp, args.max_tokens, True, formatter=formatter
+        model,
+        tokenizer,
+        prompt,
+        args.temp,
+        args.max_tokens,
+        True,
+        formatter=formatter,
+        top_p=args.top_p,
     )
 
 

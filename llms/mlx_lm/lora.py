@@ -7,9 +7,9 @@ import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .tuner.trainer import TrainingArgs, evaluate, train
+from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
-from .utils import generate, load
+from .utils import load
 
 
 def build_parser():
@@ -160,10 +160,7 @@ def load_dataset(args):
     return train, valid, test
 
 
-if __name__ == "__main__":
-    parser = build_parser()
-    args = parser.parse_args()
-
+def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
@@ -209,6 +206,7 @@ if __name__ == "__main__":
             optimizer=opt,
             train_dataset=train_set,
             val_dataset=valid_set,
+            training_callback=training_callback,
         )
 
     # Load the LoRA adapter weights which we assume should exist by this point
@@ -236,13 +234,13 @@ if __name__ == "__main__":
         print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
     if args.prompt is not None:
-        print("Generating")
-        model.eval()
-        generate(
-            model=model,
-            tokenizer=tokenizer,
-            temp=args.temp,
-            max_tokens=args.max_tokens,
-            prompt=args.prompt,
-            verbose=True,
+        raise NotImplementedError(
+            "Please use mlx_lm.generate with trained adapter for generation."
         )
+
+
+if __name__ == "__main__":
+    parser = build_parser()
+    args = parser.parse_args()
+
+    run(args)

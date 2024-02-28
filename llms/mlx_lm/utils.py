@@ -1,9 +1,12 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import copy
 import gc
 import glob
 import importlib
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
@@ -11,6 +14,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
+from mlx.utils import tree_flatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
@@ -111,6 +115,7 @@ def generate_step(
     temp: 0.0,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
+    top_p: float = 1.0,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -133,7 +138,26 @@ def generate_step(
         if temp == 0:
             token = mx.argmax(logits, axis=-1)
         else:
-            token = mx.random.categorical(logits * (1 / temp))
+            if top_p > 0 and top_p < 1.0:
+                if (
+                    logits.dtype == mx.bfloat16
+                ):  # workdaround for unable to load kernel contiguous_scan_inclusive_sum_bfloat16_bfloat16
+                    logits = logits.astype(mx.float32)
+                probs = mx.softmax(logits / temp, axis=-1)
+
+                sorted_probs = mx.sort(probs)[::-1]
+                sorted_indices = mx.argsort(probs)[::-1]
+                cumulative_probs = mx.cumsum(sorted_probs, axis=-1)
+
+                top_probs = mx.where(
+                    cumulative_probs > 1 - top_p,
+                    sorted_probs,
+                    mx.zeros_like(sorted_probs),
+                )
+                sorted_token = mx.random.categorical(mx.log(top_probs))
+                token = sorted_indices.squeeze(0)[sorted_token]
+            else:
+                token = mx.random.categorical(logits * (1 / temp))
 
         prob = softmax_logits[0, token]
         return token, prob
@@ -182,6 +206,7 @@ def generate(
     formatter: Callable = None,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
+    top_p: float = 1.0,
 ) -> str:
     """
     Generate text from the model.
@@ -218,6 +243,7 @@ def generate(
             temp,
             repetition_penalty,
             repetition_context_size,
+            top_p,
         ),
         range(max_tokens),
     ):
@@ -364,7 +390,7 @@ def load(
 
 def fetch_from_hub(
     model_path: Path, lazy: bool = False
-) -> Tuple[Dict, dict, PreTrainedTokenizer]:
+) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     model = load_model(model_path, lazy)
 
     config = AutoConfig.from_pretrained(model_path)
@@ -476,7 +502,7 @@ def save_weights(
         shard_name = shard_file_format.format(i + 1, shards_count)
         shard_path = save_path / shard_name
 
-        mx.save_safetensors(str(shard_path), shard)
+        mx.save_safetensors(str(shard_path), shard, metadata={"format": "mlx"})
 
         for weight_name in shard.keys():
             index_data["weight_map"][weight_name] = shard_name
@@ -493,3 +519,70 @@ def save_weights(
             f,
             indent=4,
         )
+
+
+def quantize_model(
+    model: nn.Module, config: dict, q_group_size: int, q_bits: int
+) -> Tuple:
+    """
+    Applies quantization to the model weights.
+
+    Args:
+        model (nn.Module): The model to be quantized.
+        config (dict): Model configuration.
+        q_group_size (int): Group size for quantization.
+        q_bits (int): Bits per weight for quantization.
+
+    Returns:
+        Tuple: Tuple containing quantized weights and config.
+    """
+    quantized_config = copy.deepcopy(config)
+
+    nn.QuantizedLinear.quantize_module(
+        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
+    )
+    quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+    quantized_weights = dict(tree_flatten(model.parameters()))
+
+    return quantized_weights, quantized_config
+
+
+def convert(
+    hf_path: str,
+    mlx_path: str = "mlx_model",
+    quantize: bool = False,
+    q_group_size: int = 64,
+    q_bits: int = 4,
+    dtype: str = "float16",
+    upload_repo: str = None,
+):
+    print("[INFO] Loading")
+    model_path = get_model_path(hf_path)
+    model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
+
+    weights = dict(tree_flatten(model.parameters()))
+    dtype = mx.float16 if quantize else getattr(mx, dtype)
+    weights = {k: v.astype(dtype) for k, v in weights.items()}
+
+    if quantize:
+        print("[INFO] Quantizing")
+        model.load_weights(list(weights.items()))
+        weights, config = quantize_model(model, config, q_group_size, q_bits)
+
+    if isinstance(mlx_path, str):
+        mlx_path = Path(mlx_path)
+
+    del model
+    save_weights(mlx_path, weights, donate_weights=True)
+
+    py_files = glob.glob(str(model_path / "*.py"))
+    for file in py_files:
+        shutil.copy(file, mlx_path)
+
+    tokenizer.save_pretrained(mlx_path)
+
+    with open(mlx_path / "config.json", "w") as fid:
+        json.dump(config, fid, indent=4)
+
+    if upload_repo is not None:
+        upload_to_hub(mlx_path, upload_repo, hf_path)
