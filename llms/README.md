@@ -46,7 +46,7 @@ You can convert models in the Python API with:
 ```python
 from mlx_lm import convert
 
-upload_repo = "mistralai/Mistral-7B-Instruct-v0.1"
+upload_repo = "mlx-community/My-Mistral-7B-v0.1-4bit"
 
 convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_repo=upload_repo)
 ```
