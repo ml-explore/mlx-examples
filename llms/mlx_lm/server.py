@@ -4,6 +4,7 @@ import argparse
 import json
 import time
 import uuid
+import warnings
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable, List, Optional
@@ -429,6 +430,7 @@ class APIHandler(BaseHTTPRequestHandler):
 def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler):
     server_address = (host, port)
     httpd = server_class(server_address, handler_class)
+    warnings.warn("Server is not recommended for production. It only implements basic security checks.")
     print(f"Starting httpd at {host} on port {port}...")
     httpd.serve_forever()
 

@@ -4,6 +4,8 @@ You use `mlx-lm` to make an HTTP API for generating text with any supported
 model. The HTTP API is intended to be similar to the [OpenAI chat
 API](https://platform.openai.com/docs/api-reference).
 
+NOTE: mlx-lm is not recommended for production. It only implements basic security checks.
+
 Start the server with: 
 
 ```shell
