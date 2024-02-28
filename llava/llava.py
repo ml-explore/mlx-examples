@@ -81,7 +81,6 @@ class LlavaModel(nn.Module):
         selected_image_feature = hidden_states[self.vision_feature_layer]
 
         if self.vision_feature_select_strategy == "default":
-            # default strategy is to select all the hidden states except the first one (CLS token?)
             selected_image_feature = selected_image_feature[:, 1:]
         elif self.vision_feature_select_strategy == "full":
             selected_image_feature = selected_image_feature
