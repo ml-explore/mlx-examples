@@ -356,40 +356,28 @@ class APIHandler(BaseHTTPRequestHandler):
         ]
         eos_token_id = _tokenizer.eos_token_id
         max_tokens = body.get("max_tokens", 100)
-        stream = body.get("stream", False)
         requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
         repetition_penalty = body.get("repetition_penalty", 1.0)
         repetition_context_size = body.get("repetition_context_size", 20)
-        if not stream:
-            return self.generate_response(
-                prompt,
-                chat_id,
-                requested_model,
-                stop_id_sequences,
-                eos_token_id,
-                max_tokens,
-                temperature,
-                top_p,
-                repetition_penalty,
-                repetition_context_size,
-                create_chat_response,
-            )
-        else:
-            self.handle_stream(
-                prompt,
-                chat_id,
-                requested_model,
-                stop_id_sequences,
-                eos_token_id,
-                max_tokens,
-                temperature,
-                top_p,
-                repetition_penalty,
-                repetition_context_size,
-                create_chat_chunk_response,
-            )
+
+        # Determine response type
+        stream = body.get("stream", False)
+        method = self.handle_stream if stream else self.generate_response
+        method(
+            prompt,
+            chat_id,
+            requested_model,
+            stop_id_sequences,
+            eos_token_id,
+            max_tokens,
+            temperature,
+            top_p,
+            repetition_penalty,
+            repetition_context_size,
+            create_chat_response,
+        )
 
     def handle_completions(self, body: dict):
         completion_id = f"cmpl-{uuid.uuid4()}"
@@ -406,40 +394,28 @@ class APIHandler(BaseHTTPRequestHandler):
         ]
         eos_token_id = _tokenizer.eos_token_id
         max_tokens = body.get("max_tokens", 100)
-        stream = body.get("stream", False)
         requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
         repetition_penalty = body.get("repetition_penalty", 1.0)
         repetition_context_size = body.get("repetition_context_size", 20)
-        if not stream:
-            return self.generate_response(
-                prompt,
-                completion_id,
-                requested_model,
-                stop_id_sequences,
-                eos_token_id,
-                max_tokens,
-                temperature,
-                top_p,
-                repetition_penalty,
-                repetition_context_size,
-                create_completion_response,
-            )
-        else:
-            self.handle_stream(
-                prompt,
-                completion_id,
-                requested_model,
-                stop_id_sequences,
-                eos_token_id,
-                max_tokens,
-                temperature,
-                top_p,
-                repetition_penalty,
-                repetition_context_size,
-                create_completion_chunk_response,
-            )
+
+        # Determine response type
+        stream = body.get("stream", False)
+        method = self.handle_stream if stream else self.generate_response
+        method(
+            prompt,
+            completion_id,
+            requested_model,
+            stop_id_sequences,
+            eos_token_id,
+            max_tokens,
+            temperature,
+            top_p,
+            repetition_penalty,
+            repetition_context_size,
+            create_completion_response,
+        )
 
 
 def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler):
