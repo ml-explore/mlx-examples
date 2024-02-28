@@ -1,11 +1,9 @@
 import argparse
-import os
+
 
 import mlx.core as mx
-import requests
-from PIL import Image
 from transformers import AutoProcessor
-from utils import get_model_path
+from utils import get_model_path, load_image, prepare_inputs
 
 from llava import LlavaModel
 
@@ -44,38 +42,11 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def load_image(image_source):
-    if image_source.startswith(("http://", "https://")):
-        try:
-            response = requests.get(image_source, stream=True)
-            response.raise_for_status()
-            return Image.open(response.raw)
-        except requests.HTTPError as e:
-            print(f"Failed to load image from URL: {e}")
-            return None
-    elif os.path.isfile(image_source):
-        try:
-            return Image.open(image_source)
-        except IOError as e:
-            print(f"Failed to load image from path: {e}")
-            return None
-    else:
-        print("The image source is neither a valid URL nor a file path.")
-        return None
-
-
 def initialize_model(model_path):
     processor = AutoProcessor.from_pretrained(model_path)
 
     model = LlavaModel.from_pretrained(get_model_path(model_path))
     return processor, model
-
-
-def prepare_inputs(processor, image, prompt):
-    inputs = processor(prompt, image, return_tensors="np")
-    pixel_values = mx.array(inputs["pixel_values"])
-    input_ids = mx.array(inputs["input_ids"])
-    return input_ids, pixel_values
 
 
 def sample(logits, temperature=0.0):

@@ -11,6 +11,7 @@ import mlx.nn as nn
 import numpy as np
 from language import LanguageModel, TextConfig
 from vision import VisionConfig, VisionModel
+from utils import get_model_path
 
 
 @dataclass
@@ -159,6 +160,7 @@ class LlavaModel(nn.Module):
 
     @staticmethod
     def from_pretrained(path: str):
+        path = get_model_path(path)
         path = Path(path)
 
         with open(path / "config.json", "r") as f:
