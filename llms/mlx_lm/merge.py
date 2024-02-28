@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 import yaml
 from mlx.utils import tree_flatten, tree_map
@@ -68,7 +69,7 @@ def slerp(t, w1, w2, eps=1e-5):
     return s1 * w1 + s2 * w2
 
 
-def merge_models(base_model, model, config):
+def merge_models(base_model: nn.Module, model: nn.Module, config: dict):
     method = config.get("method", None)
     if method != "slerp":
         raise ValueError(f"Merge method {method} not supported")
