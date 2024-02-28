@@ -234,7 +234,7 @@ class APIHandler(BaseHTTPRequestHandler):
         top_p: float,
         repetition_penalty: Optional[float],
         repetition_context_size: Optional[int],
-        response_creator: Callable[[str, str, mx.array, List[int], str], dict],
+        response_creator: Callable[[str, str, mx.array, list[int], str]],
     ):
         tokens = []
         for (token, _), _ in zip(
@@ -271,7 +271,7 @@ class APIHandler(BaseHTTPRequestHandler):
         top_p: float,
         repetition_penalty: Optional[float],
         repetition_context_size: Optional[int],
-        response_creator: Callable[[str, str, str], dict],
+        response_creator: Callable[[str, str, str]],
     ):
         self.send_response(200)
         self.send_header("Content-type", "text/event-stream")
