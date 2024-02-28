@@ -64,13 +64,6 @@ reply = generate_text(input_ids, pixel_values, model, processor, max_tokens, tem
 print(reply)
 ```
 
-
-
-The model output:
-
-```
-```
-
 [^1]:
     Refer to [LLaVA project webpage](https://llava-vl.github.io/) for more
     information.
