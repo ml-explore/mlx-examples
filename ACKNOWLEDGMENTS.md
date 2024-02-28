@@ -12,4 +12,3 @@ MLX Examples was developed with contributions from the following individuals:
 - Shunta Saito: Added support for PLaMo models.
 - Gabrijel Boduljak: Implemented `CLIP`.
 - Markus Enzweiler: Added the `cvae` examples.
-- Rasmus Kinnunen: Fixed a security hole in the `llms/mlx_lm` example
