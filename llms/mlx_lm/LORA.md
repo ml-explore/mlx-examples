@@ -72,6 +72,17 @@ python -m mlx_lm.lora \
     --test
 ```
 
+### Generate
+
+For generation use mlx_lm.generate:
+
+```shell
+python -m mlx_lm.generate \
+    --model <path_to_model> \
+    --adapter-file <path_to_adapters.npz> \
+    --prompt "<your_model_prompt>"
+```
+
 ## Fuse and Upload
 
 You can generate a model fused with the low-rank adapters using the
