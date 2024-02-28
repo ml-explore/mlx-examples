@@ -356,7 +356,7 @@ class APIHandler(BaseHTTPRequestHandler):
         stop_words = body.get("stop", [])
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
         stop_id_sequences = [
-            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
+            _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
         eos_token_id = _tokenizer.eos_token_id
