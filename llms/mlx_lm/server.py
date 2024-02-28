@@ -120,8 +120,14 @@ class APIHandler(BaseHTTPRequestHandler):
         self.body = json.loads(raw_body.decode())
         assert isinstance(self.body, dict), f"Request should be dict, but got {type(self.body)}"
 
+        # Extract request parameters from the body
         self.stream = self.body.get("stream", False)
         self.requested_model = self.body.get("model", "default_model")
+        self.max_tokens = self.body.get("max_tokens", 100)
+        self.temperature = self.body.get("temperature", 1.0)
+        self.top_p = self.body.get("top_p", 1.0)
+        self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
+        self.repetition_context_size = self.body.get("repetition_context_size", 20)
 
         self._set_headers(200)
         endpoints[self.path]()
@@ -177,23 +183,18 @@ class APIHandler(BaseHTTPRequestHandler):
         self,
         prompt: mx.array,
         stop_id_sequences: List[np.ndarray],
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: Optional[float],
-        repetition_context_size: Optional[int],
     ):
         tokens = []
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
                 model=_model,
-                temp=temperature,
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
-                repetition_context_size=repetition_context_size,
+                temp=self.temperature,
+                top_p=self.top_p,
+                repetition_penalty=self.repetition_penalty,
+                repetition_context_size=self.repetition_context_size,
             ),
-            range(max_tokens),
+            range(self.max_tokens),
         ):
             token = token.item()
             tokens.append(token)
@@ -217,11 +218,6 @@ class APIHandler(BaseHTTPRequestHandler):
         self,
         prompt: mx.array,
         stop_id_sequences: List[np.ndarray],
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: Optional[float],
-        repetition_context_size: Optional[int],
     ):
         self.send_response(200)
         self.send_header("Content-type", "text/event-stream")
@@ -237,12 +233,12 @@ class APIHandler(BaseHTTPRequestHandler):
             generate_step(
                 prompt=prompt,
                 model=_model,
-                temp=temperature,
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
-                repetition_context_size=repetition_context_size,
+                temp=self.temperature,
+                top_p=self.top_p,
+                repetition_penalty=self.repetition_penalty,
+                repetition_context_size=self.repetition_context_size,
             ),
-            range(max_tokens),
+            range(self.max_tokens),
         ):
             token = token.item()
             tokens.append(token)
@@ -314,21 +310,11 @@ class APIHandler(BaseHTTPRequestHandler):
             _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
-        max_tokens = body.get("max_tokens", 100)
-        temperature = body.get("temperature", 1.0)
-        top_p = body.get("top_p", 1.0)
-        repetition_penalty = body.get("repetition_penalty", 1.0)
-        repetition_context_size = body.get("repetition_context_size", 20)
 
         method = self.handle_stream if self.stream else self.generate_completion
         method(
             prompt,
             stop_id_sequences,
-            max_tokens,
-            temperature,
-            top_p,
-            repetition_penalty,
-            repetition_context_size,
         )
 
     def handle_completions(self):
@@ -350,21 +336,11 @@ class APIHandler(BaseHTTPRequestHandler):
             _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
-        max_tokens = body.get("max_tokens", 100)
-        temperature = body.get("temperature", 1.0)
-        top_p = body.get("top_p", 1.0)
-        repetition_penalty = body.get("repetition_penalty", 1.0)
-        repetition_context_size = body.get("repetition_context_size", 20)
 
         method = self.handle_stream if self.stream else self.generate_completion
         method(
             prompt,
             stop_id_sequences,
-            max_tokens,
-            temperature,
-            top_p,
-            repetition_penalty,
-            repetition_context_size,
         )
 
 
