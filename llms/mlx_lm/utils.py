@@ -355,7 +355,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 def load(
     path_or_hf_repo: str,
     tokenizer_config={},
-    adapter_file: str = None,
+    adapter_file: Optional[str] = None,
     lazy: bool = False,
 ) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
