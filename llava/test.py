@@ -74,6 +74,14 @@ class TestVisionTower(unittest.TestCase):
                 )
             )
 
+
+class TestLlaVA(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mx_llava = load_mlx_models(MODEL_PATH)
+        cls.hf_llava = load_hf_models(MODEL_PATH)
+        cls.proc = AutoProcessor.from_pretrained(MODEL_PATH)
+
     def test_merge_input_ids_with_image_features(self):
         raw_image = Image.open(requests.get(IMAGE_FILE, stream=True).raw)
         vision_feature_layer = -2
@@ -130,15 +138,7 @@ class TestVisionTower(unittest.TestCase):
                 )
             )
 
-
-class TestLlaVa(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.mx_llava = load_mlx_models(MODEL_PATH)
-        cls.hf_llava = load_hf_models(MODEL_PATH)
-        cls.proc = AutoProcessor.from_pretrained(MODEL_PATH)
-
-    def test_generated_token(self):
+    def test_generated_tokens(self):
         raw_image = Image.open(requests.get(IMAGE_FILE, stream=True).raw)
         with torch.no_grad():
             hf_inputs = self.proc(PROMPT, raw_image, return_tensors="pt")
