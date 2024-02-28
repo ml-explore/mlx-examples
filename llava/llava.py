@@ -40,7 +40,8 @@ class LlavaMultiModalProjector(nn.Module):
         self.linear_1 = nn.Linear(
             config.vision_config.hidden_size, config.text_config.hidden_size, bias=True
         )
-        self.gelu = nn.GELU(approx='fast')
+
+        self.gelu = nn.GELU()
         self.linear_2 = nn.Linear(
             config.text_config.hidden_size, config.text_config.hidden_size, bias=True
         )

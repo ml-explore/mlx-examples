@@ -1,7 +1,6 @@
 import unittest
 
 import mlx.core as mx
-import numpy as np
 import requests
 import torch
 from PIL import Image
@@ -28,7 +27,7 @@ def load_hf_models(path):
     return model
 
 
-class TestCLIP(unittest.TestCase):
+class TestVisionTower(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mx_llava = load_mlx_models(MODEL_PATH)
@@ -44,7 +43,8 @@ class TestCLIP(unittest.TestCase):
             ]
 
             hf_pixel_values = pixel_values
-            mx_pixel_values = mx.array(pixel_values.numpy()).transpose(0, 2, 3, 1)
+            mx_pixel_values = mx.array(
+                pixel_values.numpy()).transpose(0, 2, 3, 1)
 
             _, _, hidden_states = self.mx_llava.vision_tower(
                 mx_pixel_values,
@@ -83,7 +83,8 @@ class TestCLIP(unittest.TestCase):
             input_ids = values["input_ids"]
 
             hf_pixel_values = pixel_values
-            mx_pixel_values = mx.array(pixel_values.numpy()).transpose(0, 2, 3, 1)
+            mx_pixel_values = mx.array(
+                pixel_values.numpy()).transpose(0, 2, 3, 1)
 
             _, _, hidden_states = self.mx_llava.vision_tower(
                 mx_pixel_values,
@@ -126,6 +127,35 @@ class TestCLIP(unittest.TestCase):
                     mx_final_embedding,
                     mx.array(hf_final_embedding.numpy()),
                     atol=1e-1,
+                )
+            )
+
+
+class TestLlaVa(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mx_llava = load_mlx_models(MODEL_PATH)
+        cls.hf_llava = load_hf_models(MODEL_PATH)
+        cls.proc = AutoProcessor.from_pretrained(MODEL_PATH)
+
+    def test_generated_token(self):
+        raw_image = Image.open(requests.get(IMAGE_FILE, stream=True).raw)
+        with torch.no_grad():
+            hf_inputs = self.proc(PROMPT, raw_image, return_tensors="pt")
+            hf_outputs = self.hf_llava(**hf_inputs)
+            hf_logits = hf_outputs.logits
+
+            mx_inputs = self.proc(PROMPT, raw_image, return_tensors="np")
+            pixel_values = mx.array(mx_inputs["pixel_values"])
+            input_ids = mx.array(mx_inputs["input_ids"])
+
+            mx_logits, _ = self.mx_llava(input_ids, pixel_values)
+
+            self.assertTrue(
+                mx.allclose(
+                    mx_logits[:, -1, :].argmax(axis=-1),
+                    mx.array(hf_logits.numpy())[:, -1, :].argmax(axis=-1),
+                    atol=1e-2,
                 )
             )
 

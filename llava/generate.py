@@ -2,7 +2,6 @@ import argparse
 import os
 
 import mlx.core as mx
-import mlx.nn as nn
 import requests
 from PIL import Image
 from transformers import AutoProcessor
@@ -87,9 +86,9 @@ def sample(logits, temperature=0.0):
 
 
 def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature):
-    input_embeds = model.get_input_embeddings(input_ids, pixel_values)
-    logits, cache = model.language_model(
-        input_ids, cache=None, inputs_embeds=input_embeds
+
+    logits, cache = model(
+        input_ids, pixel_values
     )
     logits = logits[:, -1, :]
     y = sample(logits, temperature=temperature)
