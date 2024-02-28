@@ -203,7 +203,7 @@ def generate(
     temp: float = 0.0,
     max_tokens: int = 100,
     verbose: bool = False,
-    formatter: Callable = None,
+    formatter: Optional[Callable] = None,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
