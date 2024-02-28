@@ -19,7 +19,8 @@ class ModelArgs(BaseModelArgs):
     norm_eps: float
     vocab_size: int
     rope_theta: float = 10000
-    
+
+
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
         super().__init__()
@@ -32,6 +33,7 @@ class RMSNorm(nn.Module):
     def __call__(self, x):
         output = self._norm(x.astype(mx.float32)).astype(x.dtype)
         return self.weight * output
+
 
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -86,6 +88,7 @@ class Attention(nn.Module):
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.wo(output), (keys, values)
 
+
 class MLP(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -96,6 +99,7 @@ class MLP(nn.Module):
 
     def __call__(self, x) -> mx.array:
         return self.w2(nn.silu(self.w1(x)) * self.w3(x))
+
 
 class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -119,6 +123,7 @@ class TransformerBlock(nn.Module):
         r = self.feed_forward(self.ffn_norm(h))
         out = h + r
         return out, cache
+
 
 class Starcoder2Model(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -151,6 +156,7 @@ class Starcoder2Model(nn.Module):
             h, cache[e] = layer(h, mask, cache[e])
 
         return self.output(self.norm(h)), cache
+
 
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
