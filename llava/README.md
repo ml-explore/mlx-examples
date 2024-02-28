@@ -31,7 +31,7 @@ max_tokens, temperature = 128, 0.
 prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
 image = "http://images.cocodataset.org/val2017/000000039769.jpg"
 image = load_image(image)
-input_ids, pixel_values = prepare_inputs(prompt, image, processor)
+input_ids, pixel_values = prepare_inputs(processor, image, prompt)
 
 reply = generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature)
 
