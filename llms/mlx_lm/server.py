@@ -81,7 +81,6 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     return prompt.rstrip()
 
 
-def create_chat_response(chat_id, requested_model, prompt, tokens, text):
 def create_chat_response(
     chat_id: str,
     requested_model: str,
@@ -202,25 +201,24 @@ class APIHandler(BaseHTTPRequestHandler):
         self._set_headers(204)
 
     def do_POST(self):
-        if self.path == "/v1/chat/completions":
-            content_length = int(self.headers["Content-Length"])
-            post_data = self.rfile.read(content_length)
-            self._set_headers(200)
+        endpoints = {
+            "/v1/completions": self.handle_completions,
+            "/v1/chat/completions": self.handle_chat_completions,
+        }
 
-            response = self.handle_chat_completions(post_data)
-
-            self.wfile.write(json.dumps(response).encode("utf-8"))
-        elif self.path == "/v1/completions":
-            content_length = int(self.headers["Content-Length"])
-            post_data = self.rfile.read(content_length)
-            self._set_headers(200)
-
-            response = self.handle_completions(post_data)
-
-            self.wfile.write(json.dumps(response).encode("utf-8"))
-        else:
+        if self.path not in endpoints:
             self._set_headers(404)
             self.wfile.write(b"Not Found")
+            return
+
+        # Fetch and parse request body
+        content_length = int(self.headers["Content-Length"])
+        raw_body = self.rfile.read(content_length)
+        body = json.loads(raw_body.decode())
+        assert isinstance(body, dict), f"Request should be dict, but got {type(body)}"
+
+        self._set_headers(200)
+        endpoints[self.path](body)
 
     def generate_response(
         self,
@@ -336,8 +334,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.wfile.write(f"data: [DONE]\n\n".encode())
         self.wfile.flush()
 
-    def handle_chat_completions(self, post_data: bytes):
-        body = json.loads(post_data.decode("utf-8"))
+    def handle_chat_completions(self, body: dict):
         chat_id = f"chatcmpl-{uuid.uuid4()}"
         if hasattr(_tokenizer, "apply_chat_template") and _tokenizer.chat_template:
             prompt = _tokenizer.apply_chat_template(
@@ -396,8 +393,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 create_chat_chunk_response,
             )
 
-    def handle_completions(self, post_data: bytes):
-        body = json.loads(post_data.decode("utf-8"))
+    def handle_completions(self, body: dict):
         completion_id = f"cmpl-{uuid.uuid4()}"
         prompt_text = body["prompt"]
         prompt = _tokenizer.encode(prompt_text, return_tensors="np")
