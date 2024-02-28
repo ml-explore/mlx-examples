@@ -390,7 +390,7 @@ def load(
 
 def fetch_from_hub(
     model_path: Path, lazy: bool = False
-) -> Tuple[Dict, dict, PreTrainedTokenizer]:
+) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     model = load_model(model_path, lazy)
 
     config = AutoConfig.from_pretrained(model_path)
