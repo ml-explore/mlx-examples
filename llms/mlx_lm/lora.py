@@ -1,3 +1,4 @@
+import re
 import argparse
 import json
 import math
@@ -6,117 +7,53 @@ from pathlib import Path
 import mlx.optimizers as optim
 import numpy as np
 from mlx.utils import tree_flatten
-
+from types import SimpleNamespace
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
 from .utils import load
 
+import yaml
+
+yaml_loader = yaml.SafeLoader
+yaml_loader.add_implicit_resolver(
+    u'tag:yaml.org,2002:float',
+    re.compile(u'''^(?:
+     [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+    |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
+    |\\.[0-9_]+(?:[eE][-+][0-9]+)?
+    |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
+    |[-+]?\\.(?:inf|Inf|INF)
+    |\\.(?:nan|NaN|NAN))$''', re.X),
+    list(u'-+0123456789.'))
+
+
+CONFIG_DEFAULTS = {
+    "model": "mlx_model",
+    "max_tokens": 100,
+    "prompt": None,
+    "train": False,
+    "data": "data/",
+    "seed": 0,
+    "lora_layers": 16,
+    "batch_size": 4,
+    "iters": 100,
+    "val_batches": 25,
+    "learning_rate": 1e-5,
+    "steps_per_report": 10,
+    "steps_per_eval": 200,
+    "resume_adapter_file": None,
+    "adapter_file": "adapters.npz",
+    "save_every": 100,
+    "test": False,
+    "temp": 0.8,
+    "test_batches": 500,
+    "max_seq_length": 2048
+}
+
 
 def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
-    parser.add_argument(
-        "--model",
-        default="mlx_model",
-        help="The path to the local model directory or Hugging Face repo.",
-    )
-    # Generation args
-    parser.add_argument(
-        "--max-tokens",
-        "-m",
-        type=int,
-        default=100,
-        help="The maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--temp", type=float, default=0.8, help="The sampling temperature"
-    )
-    parser.add_argument(
-        "--prompt",
-        "-p",
-        type=str,
-        help="The prompt for generation",
-        default=None,
-    )
-
-    # Training args
-    parser.add_argument(
-        "--train",
-        action="store_true",
-        help="Do training",
-    )
-    parser.add_argument(
-        "--data",
-        type=str,
-        default="data/",
-        help="Directory with {train, valid, test}.jsonl files",
-    )
-    parser.add_argument(
-        "--lora-layers",
-        type=int,
-        default=16,
-        help="Number of layers to fine-tune",
-    )
-    parser.add_argument("--batch-size", type=int, default=4, help="Minibatch size.")
-    parser.add_argument(
-        "--iters", type=int, default=1000, help="Iterations to train for."
-    )
-    parser.add_argument(
-        "--val-batches",
-        type=int,
-        default=25,
-        help="Number of validation batches, -1 uses the entire validation set.",
-    )
-    parser.add_argument(
-        "--learning-rate", type=float, default=1e-5, help="Adam learning rate."
-    )
-    parser.add_argument(
-        "--steps-per-report",
-        type=int,
-        default=10,
-        help="Number of training steps between loss reporting.",
-    )
-    parser.add_argument(
-        "--steps-per-eval",
-        type=int,
-        default=200,
-        help="Number of training steps between validations.",
-    )
-    parser.add_argument(
-        "--resume-adapter-file",
-        type=str,
-        default=None,
-        help="Load path to resume training with the given adapter weights.",
-    )
-    parser.add_argument(
-        "--adapter-file",
-        type=str,
-        default="adapters.npz",
-        help="Save/load path for the trained adapter weights.",
-    )
-    parser.add_argument(
-        "--save-every",
-        type=int,
-        default=100,
-        help="Save the model every N iterations.",
-    )
-    parser.add_argument(
-        "--test",
-        action="store_true",
-        help="Evaluate on the test set after training",
-    )
-    parser.add_argument(
-        "--test-batches",
-        type=int,
-        default=500,
-        help="Number of test set batches, -1 uses the entire test set.",
-    )
-    parser.add_argument(
-        "--max-seq-length",
-        type=int,
-        default=2048,
-        help="Maximum sequence length.",
-    )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+    parser.add_argument('config')
     return parser
 
 
@@ -242,5 +179,8 @@ def run(args, training_callback: TrainingCallback = None):
 if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
-
-    run(args)
+    config = yaml.load(args.config, yaml_loader)
+    param_dict = {k: v for k, v in config["parameters"].items()}
+    param_dict.update({key: default for key, default in CONFIG_DEFAULTS.items()
+                       if key not in param_dict})
+    run(SimpleNamespace(**param_dict))
