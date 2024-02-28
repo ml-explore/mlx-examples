@@ -13,15 +13,34 @@ pip install -r requirements.txt
 
 ## Run
 
-You can use LlaVA model to ask questions about images.
+You can use LLaVA to ask questions about images.
 
-For example using the command line:
+For example, using the command line:
 
 ```bash
-python generate.py --model_path llava-hf/llava-1.5-7b-hf --image "http://images.cocodataset.org/val2017/000000039769.jpg" --prompt "USER: <image>\nWhat are these?\nASSISTANT:" --max_tokens 128 --temperature 0
+python generate.py \
+  --model llava-hf/llava-1.5-7b-hf \
+  --image "http://images.cocodataset.org/val2017/000000039769.jpg" \
+  --prompt "USER: <image>\nWhat are these?\nASSISTANT:" \
+  --max-tokens 128
 ```
 
-Or directly in Python:
+This uses the following image:
+
+![alt text](http://images.cocodataset.org/val2017/000000039769.jpg)
+ 
+And generates output similar to:
+
+```shell
+These are two cats, one of which is sleeping and the other one is awake.
+
+The sleeping cat is lying on a couch, while the awake cat is also on the couch,
+positioned near the sleeping cat. The couch appears to be red, and there is a
+remote control placed nearby. The cats are comfortably resting on the couch,
+enjoying each other's company.
+```
+
+You can also use LLaVA in Python:
 
 ```python
 from llava import LlavaModel
@@ -43,6 +62,13 @@ input_ids, pixel_values = prepare_inputs(processor, image, prompt)
 reply = generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature)
 
 print(reply)
+```
+
+
+
+The model output:
+
+```
 ```
 
 [^1]:
