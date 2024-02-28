@@ -74,17 +74,7 @@ python -m mlx_lm.lora \
 
 ### Generate
 
-1. Using the lora module for basic generation:
-
-```
-python -m mlx_lm.lora \
-    --model <path_to_model> \
-    --adapter-file <path_to_adapters.npz> \
-    --max-tokens 50 \
-    --prompt "<your_model_prompt>"
-```
-
-2. For a feature-rich generation experience, use mlx_lm.generate:
+For generation use mlx_lm.generate:
 
 ```shell
 python -m mlx_lm.generate \
