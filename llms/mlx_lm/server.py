@@ -176,16 +176,12 @@ class APIHandler(BaseHTTPRequestHandler):
     def generate_completion(
         self,
         prompt: mx.array,
-        response_id: str,
-        requested_model: str,
         stop_id_sequences: List[np.ndarray],
-        eos_token_id: int,
         max_tokens: int,
         temperature: float,
         top_p: float,
         repetition_penalty: Optional[float],
         repetition_context_size: Optional[int],
-        response_creator: Callable[[str, str, mx.array, list[int], str]],
     ):
         tokens = []
         for (token, _), _ in zip(
@@ -201,7 +197,9 @@ class APIHandler(BaseHTTPRequestHandler):
         ):
             token = token.item()
             tokens.append(token)
-            stop_condition = stopping_criteria(tokens, stop_id_sequences, eos_token_id)
+            stop_condition = stopping_criteria(
+                tokens, stop_id_sequences, _tokenizer.eos_token_id
+            )
             if stop_condition.stop_met:
                 if stop_condition.trim_length:
                     tokens = tokens[: -stop_condition.trim_length]
@@ -218,16 +216,12 @@ class APIHandler(BaseHTTPRequestHandler):
     def handle_stream(
         self,
         prompt: mx.array,
-        response_id: str,
-        requested_model: str,
         stop_id_sequences: List[np.ndarray],
-        eos_token_id: int,
         max_tokens: int,
         temperature: float,
         top_p: float,
         repetition_penalty: Optional[float],
         repetition_context_size: Optional[int],
-        response_creator: Callable[[str, str, str]],
     ):
         self.send_response(200)
         self.send_header("Content-type", "text/event-stream")
@@ -259,7 +253,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 stop_condition = stopping_criteria(
                     tokens,
                     stop_id_sequences,
-                    eos_token_id,
+                    _tokenizer.eos_token_id,
                 )
                 if stop_condition.stop_met:
                     if stop_condition.trim_length:
@@ -320,9 +314,7 @@ class APIHandler(BaseHTTPRequestHandler):
             _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
-        eos_token_id = _tokenizer.eos_token_id
         max_tokens = body.get("max_tokens", 100)
-        self.requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
         repetition_penalty = body.get("repetition_penalty", 1.0)
@@ -331,16 +323,12 @@ class APIHandler(BaseHTTPRequestHandler):
         method = self.handle_stream if self.stream else self.generate_completion
         method(
             prompt,
-            chat_id,
-            requested_model,
             stop_id_sequences,
-            eos_token_id,
             max_tokens,
             temperature,
             top_p,
             repetition_penalty,
             repetition_context_size,
-            create_chat_response,
         )
 
     def handle_completions(self):
@@ -362,9 +350,7 @@ class APIHandler(BaseHTTPRequestHandler):
             _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
-        eos_token_id = _tokenizer.eos_token_id
         max_tokens = body.get("max_tokens", 100)
-        requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
         repetition_penalty = body.get("repetition_penalty", 1.0)
@@ -373,16 +359,12 @@ class APIHandler(BaseHTTPRequestHandler):
         method = self.handle_stream if self.stream else self.generate_completion
         method(
             prompt,
-            completion_id,
-            requested_model,
             stop_id_sequences,
-            eos_token_id,
             max_tokens,
             temperature,
             top_p,
             repetition_penalty,
             repetition_context_size,
-            create_completion_response,
         )
 
 
