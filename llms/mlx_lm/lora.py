@@ -1,30 +1,34 @@
-import re
 import argparse
 import json
 import math
+import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import mlx.optimizers as optim
 import numpy as np
+import yaml
 from mlx.utils import tree_flatten
-from types import SimpleNamespace
+
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
 from .utils import load
 
-import yaml
-
 yaml_loader = yaml.SafeLoader
 yaml_loader.add_implicit_resolver(
-    u'tag:yaml.org,2002:float',
-    re.compile(u'''^(?:
+    "tag:yaml.org,2002:float",
+    re.compile(
+        """^(?:
      [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
     |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
     |\\.[0-9_]+(?:[eE][-+][0-9]+)?
     |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
     |[-+]?\\.(?:inf|Inf|INF)
-    |\\.(?:nan|NaN|NAN))$''', re.X),
-    list(u'-+0123456789.'))
+    |\\.(?:nan|NaN|NAN))$""",
+        re.X,
+    ),
+    list("-+0123456789."),
+)
 
 
 CONFIG_DEFAULTS = {
@@ -47,13 +51,13 @@ CONFIG_DEFAULTS = {
     "test": False,
     "temp": 0.8,
     "test_batches": 500,
-    "max_seq_length": 2048
+    "max_seq_length": 2048,
 }
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
-    parser.add_argument('config')
+    parser.add_argument("config")
     return parser
 
 
@@ -181,6 +185,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = yaml.load(args.config, yaml_loader)
     param_dict = {k: v for k, v in config["parameters"].items()}
-    param_dict.update({key: default for key, default in CONFIG_DEFAULTS.items()
-                       if key not in param_dict})
+    param_dict.update(
+        {
+            key: default
+            for key, default in CONFIG_DEFAULTS.items()
+            if key not in param_dict
+        }
+    )
     run(SimpleNamespace(**param_dict))
