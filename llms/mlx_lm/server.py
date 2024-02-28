@@ -86,10 +86,11 @@ class APIHandler(BaseHTTPRequestHandler):
     # System fingerprint is the same for all instances of the class
     system_fingerprint = f"fp_{uuid.uuid4()}"
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         """
         Create static request specific metadata
         """
+        super().__init__(*args, **kwargs)
         self.created = int(time.time())
 
     def _set_headers(self, status_code=200):
