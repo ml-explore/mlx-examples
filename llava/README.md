@@ -1,6 +1,7 @@
 # LLaVA
 
-An example of LLaVA: Large Language and Vission Assistant in MLX. LLlava is a multi-modal model that can generate text from images and text prompts. [^1]
+An example of LLaVA: Large Language and Vission Assistant in MLX. LLlava is a
+multi-modal model that can generate text from images and text prompts.[^1]
 
 ## Setup:
 
@@ -12,9 +13,7 @@ pip install -r requirements.txt
 
 ## Run
 
-You can use LlaVA model to ask questions about images.
-
-The python snippet below shows how to use the model to ask questions about an image.
+You can use LlaVA model to ask questions about images. For example:
 
 ```python
 from llava import LlavaModel
@@ -38,4 +37,5 @@ reply = generate_text(input_ids, pixel_values, model, processor, max_tokens, tem
 print(reply)
 ```
 
-[^1]: Please refer to original LlaVA library for more details: [https://github.com/haotian-liu/LLaVA](https://github.com/haotian-liu/LLaVA)
+[^1]: Refer to [LLaVA project webpage](https://llava-vl.github.io/) for more
+  information.
