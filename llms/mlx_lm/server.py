@@ -6,7 +6,7 @@ import time
 import uuid
 import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Callable, List, NamedTuple, Optional
+from typing import Callable, List, NamedTuple, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -81,106 +81,16 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     return prompt.rstrip()
 
 
-def create_chat_response(
-    chat_id: str,
-    requested_model: str,
-    prompt: str,
-    tokens: List[int],
-    text: str
-) -> dict:
-    response = {
-        "id": chat_id,
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": requested_model,
-        "system_fingerprint": f"fp_{uuid.uuid4()}",
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": text,
-                },
-                "logprobs": None,
-                "finish_reason": None,
-            }
-        ],
-        "usage": {
-            "prompt_tokens": len(prompt),
-            "completion_tokens": len(tokens),
-            "total_tokens": len(prompt) + len(tokens),
-        },
-    }
-    return response
-
-
-def create_completion_response(
-    completion_id: str,
-    requested_model: str,
-    prompt: str,
-    tokens: List[int],
-    text: str
-) -> dict:
-    response = {
-        "id": completion_id,
-        "object": "text_completion",
-        "created": int(time.time()),
-        "model": requested_model,
-        "system_fingerprint": f"fp_{uuid.uuid4()}",
-        "choices": [
-            {"text": text, "index": 0, "logprobs": None, "finish_reason": "length"}
-        ],
-        "usage": {
-            "prompt_tokens": len(prompt),
-            "completion_tokens": len(tokens),
-            "total_tokens": len(prompt) + len(tokens),
-        },
-    }
-    return response
-
-
-def create_chat_chunk_response(
-    chat_id: str,
-    requested_model: str,
-    text: str
-) -> dict:
-    response = {
-        "id": chat_id,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": requested_model,
-        "system_fingerprint": f"fp_{uuid.uuid4()}",
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"role": "assistant", "content": text},
-                "logprobs": None,
-                "finish_reason": None,
-            }
-        ],
-    }
-    return response
-
-
-def create_completion_chunk_response(
-    completion_id: str,
-    requested_model: str,
-    text: str
-) -> dict:
-    response = {
-        "id": completion_id,
-        "object": "text_completion",
-        "created": int(time.time()),
-        "choices": [
-            {"text": text, "index": 0, "logprobs": None, "finish_reason": None}
-        ],
-        "model": requested_model,
-        "system_fingerprint": f"fp_{uuid.uuid4()}",
-    }
-    return response
-
-
 class APIHandler(BaseHTTPRequestHandler):
+
+    # System fingerprint is the same for all instances of the class
+    system_fingerprint = f"fp_{uuid.uuid4()}"
+
+    def __init__(self):
+        """
+        Create static request specific metadata
+        """
+        self.created = int(time.time())
 
     def _set_headers(self, status_code=200):
         self.send_response(status_code)
@@ -207,13 +117,63 @@ class APIHandler(BaseHTTPRequestHandler):
         # Fetch and parse request body
         content_length = int(self.headers["Content-Length"])
         raw_body = self.rfile.read(content_length)
-        body = json.loads(raw_body.decode())
-        assert isinstance(body, dict), f"Request should be dict, but got {type(body)}"
+        self.body = json.loads(raw_body.decode())
+        assert isinstance(self.body, dict), f"Request should be dict, but got {type(self.body)}"
+
+        self.stream = self.body.get("stream", False)
+        self.requested_model = self.body.get("model", "default_model")
 
         self._set_headers(200)
-        endpoints[self.path](body)
+        endpoints[self.path]()
 
     def generate_response(
+        self,
+        text: str,
+        finish_reason: Union[str, None],
+        prompt_token_count: Optional[int] = None,
+        completion_token_count: Optional[int] = None,
+    ) -> dict:
+
+        # Static response
+        response = {
+            "id": self.request_id,
+            "system_fingerprint": self.system_fingerprint,
+            "object": self.object_type,
+            "model": self.requested_model,
+            "created": self.created,
+            "choices": [
+                {
+                    "index": 0,
+                    "logprobs": None,
+                    "finish_reason": finish_reason,
+                }
+            ]
+        }
+
+        if self.stream:
+            if not (isinstance(prompt_token_count, int) and isinstance(completion_token_count, int)):
+                raise ValueError("Response type is stream, but token counts not provided")
+
+            response["usage"] = {
+                "prompt_tokens": prompt_token_count,
+                "completion_tokens": completion_token_count,
+                "total_tokens": prompt_token_count + completion_token_count,
+            }
+
+        choice = response["choices"][0]
+
+        # Add dynamic response
+        if self.object_type.startswith("chat.completion"):
+            key_name = "delta" if self.stream else "message"
+            choice[key_name] = {"role": "assistant", "content": text}
+        elif self.object_type == "text_completion":
+            choice.update(text=text)
+        else:
+            ValueError(f"Unsupported response type: {self.object_type}")
+
+        return response
+
+    def generate_completion(
         self,
         prompt: mx.array,
         response_id: str,
@@ -248,7 +208,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 break
 
         text = _tokenizer.decode(tokens)
-        response = response_creator(response_id, requested_model, prompt, tokens, text)
+        response = self.generate_response(text, "stop", len(prompt), len(tokens))
         try:
             self.wfile.write(f"{response}\n\n".encode())
             self.wfile.flush()
@@ -310,6 +270,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 next_chunk = generated_text[current_generated_text_index:]
                 current_generated_text_index = len(generated_text)
 
+                response = self.generate_response(next_chunk, None)
                 response = response_creator(response_id, requested_model, next_chunk)
                 try:
                     self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
@@ -318,11 +279,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(e)
                     break
+
         # check is there any remaining text to send
         if stop_sequence_buffer:
             generated_text = _tokenizer.decode(tokens)
             next_chunk = generated_text[current_generated_text_index:]
-            response = response_creator(response_id, requested_model, next_chunk)
+            response = self.generate_response(next_chunk, "length")
             try:
                 self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
                 self.wfile.flush()
@@ -332,8 +294,15 @@ class APIHandler(BaseHTTPRequestHandler):
         self.wfile.write(f"data: [DONE]\n\n".encode())
         self.wfile.flush()
 
-    def handle_chat_completions(self, body: dict):
-        chat_id = f"chatcmpl-{uuid.uuid4()}"
+    def handle_chat_completions(self):
+
+        body = self.body
+        assert "messages" in body, "Request did not contain messages"
+
+        # Determine response type
+        self.request_id = f"chatcmpl-{uuid.uuid4()}"
+        self.object_type = "chat.completions.chunk" if self.stream else "chat.completions"
+
         if hasattr(_tokenizer, "apply_chat_template") and _tokenizer.chat_template:
             prompt = _tokenizer.apply_chat_template(
                 body["messages"],
@@ -354,15 +323,13 @@ class APIHandler(BaseHTTPRequestHandler):
         ]
         eos_token_id = _tokenizer.eos_token_id
         max_tokens = body.get("max_tokens", 100)
-        requested_model = body.get("model", "default_model")
+        self.requested_model = body.get("model", "default_model")
         temperature = body.get("temperature", 1.0)
         top_p = body.get("top_p", 1.0)
         repetition_penalty = body.get("repetition_penalty", 1.0)
         repetition_context_size = body.get("repetition_context_size", 20)
 
-        # Determine response type
-        stream = body.get("stream", False)
-        method = self.handle_stream if stream else self.generate_response
+        method = self.handle_stream if self.stream else self.generate_completion
         method(
             prompt,
             chat_id,
@@ -377,9 +344,17 @@ class APIHandler(BaseHTTPRequestHandler):
             create_chat_response,
         )
 
-    def handle_completions(self, body: dict):
-        completion_id = f"cmpl-{uuid.uuid4()}"
+    def handle_completions(self):
+
+        body = self.body
+        assert "prompt" in body, "Request did not contain a prompt"
+
+        # Determine response type
+        self.request_id = f"cmpl-{uuid.uuid4()}"
+        self.object_type = "text_completion"
+
         prompt_text = body["prompt"]
+
         prompt = _tokenizer.encode(prompt_text, return_tensors="np")
         prompt = mx.array(prompt[0])
         stop_words = body.get("stop", [])
@@ -396,9 +371,7 @@ class APIHandler(BaseHTTPRequestHandler):
         repetition_penalty = body.get("repetition_penalty", 1.0)
         repetition_context_size = body.get("repetition_context_size", 20)
 
-        # Determine response type
-        stream = body.get("stream", False)
-        method = self.handle_stream if stream else self.generate_response
+        method = self.handle_stream if self.stream else self.generate_completion
         method(
             prompt,
             completion_id,
