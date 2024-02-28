@@ -5,9 +5,8 @@ import json
 import time
 import uuid
 import warnings
-from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Callable, List, Optional
+from typing import Callable, List, NamedTuple, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -26,7 +25,9 @@ def load_model(model_path: str, adapter_file: Optional[str] = None):
     _model, _tokenizer = load(model_path, adapter_file=adapter_file)
 
 
-StopCondition = namedtuple("StopCondition", ["stop_met", "trim_length"])
+class StopCondition(NamedTuple):
+    stop_met: bool
+    trim_length: int
 
 
 def stopping_criteria(
