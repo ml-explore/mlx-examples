@@ -277,9 +277,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        max_stop_id_sequence_len = (
-            max(len(seq) for seq in stop_id_sequences) if stop_id_sequences else 0
-        )
+        max_stop_id_sequence_len = max(stop_id_sequences, key=len) if stop_id_sequences else 0
         tokens = []
         current_generated_text_index = 0
         # Buffer to store the last `max_stop_id_sequence_len` tokens to check for stop conditions before writing to the stream.
