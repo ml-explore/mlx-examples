@@ -60,7 +60,7 @@ def stopping_criteria(
     return StopCondition(stop_met=False, trim_length=0)
 
 
-def convert_chat(messages: any, role_mapping: Optional[dict] = None):
+def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     default_role_mapping = {
         "system_prompt": "A chat between a curious user and an artificial intelligence assistant. The assistant follows the given rules no matter what.",
         "system": "ASSISTANT's RULE: ",
@@ -82,6 +82,13 @@ def convert_chat(messages: any, role_mapping: Optional[dict] = None):
 
 
 def create_chat_response(chat_id, requested_model, prompt, tokens, text):
+def create_chat_response(
+    chat_id: str,
+    requested_model: str,
+    prompt: str,
+    tokens: List[int],
+    text: str
+) -> dict:
     response = {
         "id": chat_id,
         "object": "chat.completion",
@@ -105,12 +112,17 @@ def create_chat_response(chat_id, requested_model, prompt, tokens, text):
             "total_tokens": len(prompt) + len(tokens),
         },
     }
-
     return response
 
 
-def create_completion_response(completion_id, requested_model, prompt, tokens, text):
-    return {
+def create_completion_response(
+    completion_id: str,
+    requested_model: str,
+    prompt: str,
+    tokens: List[int],
+    text: str
+) -> dict:
+    response = {
         "id": completion_id,
         "object": "text_completion",
         "created": int(time.time()),
@@ -125,9 +137,14 @@ def create_completion_response(completion_id, requested_model, prompt, tokens, t
             "total_tokens": len(prompt) + len(tokens),
         },
     }
+    return response
 
 
-def create_chat_chunk_response(chat_id, requested_model, next_chunk):
+def create_chat_chunk_response(
+    chat_id: str,
+    requested_model: str,
+    text: str
+) -> dict:
     response = {
         "id": chat_id,
         "object": "chat.completion.chunk",
@@ -137,7 +154,7 @@ def create_chat_chunk_response(chat_id, requested_model, next_chunk):
         "choices": [
             {
                 "index": 0,
-                "delta": {"role": "assistant", "content": next_chunk},
+                "delta": {"role": "assistant", "content": text},
                 "logprobs": None,
                 "finish_reason": None,
             }
@@ -146,17 +163,22 @@ def create_chat_chunk_response(chat_id, requested_model, next_chunk):
     return response
 
 
-def create_completion_chunk_response(completion_id, requested_model, next_chunk):
-    return {
+def create_completion_chunk_response(
+    completion_id: str,
+    requested_model: str,
+    text: str
+) -> dict:
+    response = {
         "id": completion_id,
         "object": "text_completion",
         "created": int(time.time()),
         "choices": [
-            {"text": next_chunk, "index": 0, "logprobs": None, "finish_reason": None}
+            {"text": text, "index": 0, "logprobs": None, "finish_reason": None}
         ],
         "model": requested_model,
         "system_fingerprint": f"fp_{uuid.uuid4()}",
     }
+    return response
 
 
 class APIHandler(BaseHTTPRequestHandler):
