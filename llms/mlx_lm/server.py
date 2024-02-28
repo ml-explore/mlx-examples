@@ -271,7 +271,6 @@ class APIHandler(BaseHTTPRequestHandler):
                 current_generated_text_index = len(generated_text)
 
                 response = self.generate_response(next_chunk, None)
-                response = response_creator(response_id, requested_model, next_chunk)
                 try:
                     self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
                     self.wfile.flush()
