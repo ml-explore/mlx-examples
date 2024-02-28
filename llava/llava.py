@@ -10,8 +10,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from language import LanguageModel, TextConfig
-from vision import VisionConfig, VisionModel
 from utils import get_model_path
+from vision import VisionConfig, VisionModel
 
 
 @dataclass
@@ -100,58 +100,51 @@ class LlavaModel(nn.Module):
     def _merge_input_ids_with_image_features(
         self, image_features, inputs_embeds, input_ids
     ):
+        image_token_index = self.config.image_token_index
+        num_images, num_image_patches, embed_dim = image_features.shape
 
-        image_features = np.array(image_features)
-        inputs_embeds = np.array(inputs_embeds)
-        input_ids = np.array(input_ids)
+        # Positions of <image> tokens in `input_ids` and assume batch size is 1
+        image_positions = [
+            idx
+            for idx, token_id in enumerate(input_ids[0])
+            if token_id == image_token_index
+        ]
 
-        _, num_image_patches, embed_dim = image_features.shape
-        batch_size, sequence_length = input_ids.shape
-
-        special_image_token_mask = input_ids == self.config.image_token_index
-        num_special_image_tokens = np.sum(special_image_token_mask, axis=-1)
-
-        # if no special image tokens found, return a warning
-        if np.all(num_special_image_tokens == 0):
-            logging.warning(
-                "No special image tokens found in the input. Please make sure to include <image> in your prompt."
+        if len(image_positions) != num_images:
+            raise ValueError(
+                f"The input provided to the model is incorrect. The number of image tokens is {len(image_positions)}, but the number of images given to the model is {num_images}."
             )
 
-        # calculate the final sequence length. Will be the original sequence length + the # of image tokens to be inserted in.
-        final_sequence_length = (
-            np.max(num_special_image_tokens) * (num_image_patches - 1)
-        ) + sequence_length
+        text_segments = []
+        start_idx = 0
 
-        non_image_indices = np.where(
-            input_ids != self.config.image_token_index)
+        for position in image_positions:
+            text_segments.append(inputs_embeds[:, start_idx:position])
+            start_idx = position + 1
 
-        new_token_positions = (
-            np.cumsum((special_image_token_mask *
-                      (num_image_patches - 1) + 1), axis=-1)
-            - 1
+        if start_idx < inputs_embeds.shape[1]:
+            text_segments.append(inputs_embeds[:, start_idx:])
+
+        # Reshape image feature from (num_images, num_image_patches, embed_dim) to (num_images*num_image_patches, embed_dim)
+        image_embeddings = image_features.reshape(-1, image_features.shape[-1])
+
+        final_embeddings = []
+        for i, text_segment in enumerate(text_segments):
+            final_embeddings.append(text_segment[0])
+            if i < len(image_positions):
+                # Add a slice of image embeddings corresponding to the current position.
+                # This effectively replaces one <image> token with its associated num_image_patches embeddings.
+                final_embeddings.append(image_embeddings[i : i + num_image_patches + 1])
+
+        # This creates a final embeding in shape (1, num_image_patches*num_images + sequence_len, embed_dim) representing the merged sequence of text and image embeddings.
+        final_embeddings = mx.concatenate(final_embeddings, axis=0).reshape(
+            1, -1, embed_dim
         )
-        text_to_overwrite = new_token_positions[non_image_indices]
 
-        final_embedding = np.zeros(
-            (batch_size, final_sequence_length,
-             embed_dim), dtype=inputs_embeds.dtype
-        )
-
-        final_embedding[non_image_indices[0], text_to_overwrite, :] = inputs_embeds[
-            non_image_indices
-        ]
-
-        image_to_overwrite = np.all(final_embedding == 0, axis=-1)
-        reshaped_image_features = image_features.reshape(-1, embed_dim)
-        final_embedding[image_to_overwrite, :] = reshaped_image_features[
-            : np.sum(image_to_overwrite)
-        ]
-
-        return mx.array(final_embedding)
+        return final_embeddings
 
     def __call__(self, input_ids: mx.array, pixel_values: mx.array, cache=None):
-        input_embddings = self.get_input_embeddings(
-            input_ids, pixel_values)
+        input_embddings = self.get_input_embeddings(input_ids, pixel_values)
         logits, cache = self.language_model(
             input_ids, cache=cache, inputs_embeds=input_embddings
         )
@@ -173,8 +166,7 @@ class LlavaModel(nn.Module):
             )
 
         if isinstance(model_config.text_config, dict):
-            model_config.text_config = TextConfig.from_dict(
-                model_config.text_config)
+            model_config.text_config = TextConfig.from_dict(model_config.text_config)
 
         model = LlavaModel(model_config)
         weight_files = glob.glob(str(path / "*.safetensors"))
