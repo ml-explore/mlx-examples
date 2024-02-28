@@ -255,7 +255,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 break
 
         text = _tokenizer.decode(tokens)
-        return response_creator(response_id, requested_model, prompt, tokens, text)
+        response = response_creator(response_id, requested_model, prompt, tokens, text)
+        try:
+            self.wfile.write(f"{response}\n\n".encode())
+            self.wfile.flush()
+        except Exception as error:
+            print(error)
 
     def handle_stream(
         self,
