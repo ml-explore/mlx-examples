@@ -143,9 +143,18 @@ def train(
 ):
     print(f"Starting training..., iters: {args.iters}")
 
+    def check_checkpoints_path(adapter_file):
+        checkpoints_path = "checkpoints"
+        if os.path.dirname(adapter_file):
+            checkpoints_path = os.path.join(os.path.dirname(adapter_file), "checkpoints")
+
+        if not os.path.exists(checkpoints_path):
+            os.makedirs(checkpoints_path)
+
+        return checkpoints_path
+
     # Create checkpoints directory if it does not exist
-    if not os.path.exists("checkpoints"):
-        os.makedirs("checkpoints")
+    adapter_path = check_checkpoints_path(args.adapter_file)
 
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
@@ -241,7 +250,7 @@ def train(
 
         # Save adapter weights if needed
         if (it + 1) % args.steps_per_save == 0:
-            checkpoint_adapter_file = f"checkpoints/{it + 1}_{args.adapter_file}"
+            checkpoint_adapter_file = f"{adapter_path}/{it + 1}_{os.path.basename(args.adapter_file)}"
             save_adapter(model=model, adapter_file=checkpoint_adapter_file)
             print(
                 f"Iter {it + 1}: Saved adapter weights to {os.path.join(checkpoint_adapter_file)}."
