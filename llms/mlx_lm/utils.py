@@ -506,8 +506,6 @@ def save_weights(
         for weight_name in shard.keys():
             index_data["weight_map"][weight_name] = shard_name
         del shard
-        print("SHRD DEL")
-        time.sleep(5)
 
     index_data["weight_map"] = {
         k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
