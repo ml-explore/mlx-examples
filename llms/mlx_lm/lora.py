@@ -40,7 +40,7 @@ CONFIG_DEFAULTS = {
     "seed": 0,
     "lora_layers": 16,
     "batch_size": 4,
-    "iters": 100,
+    "iters": 1000,
     "val_batches": 25,
     "learning_rate": 1e-5,
     "steps_per_report": 10,
@@ -183,7 +183,9 @@ def run(args, training_callback: TrainingCallback = None):
 if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
-    config = yaml.load(args.config, yaml_loader)
+    print("Loading configuration file", args.config)
+    with open(args.config, "r") as file:
+        config = yaml.load(file, yaml_loader)
     param_dict = {k: v for k, v in config["parameters"].items()}
     param_dict.update(
         {
