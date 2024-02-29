@@ -32,43 +32,43 @@ parameters:
     "model": "...", #defaults to "mlx_model"
       
     #The maximum number of tokens to generate  
-    "max_tokens": 100,
+    "max_tokens": 100
     
     #The sampling temperature
-    "temp": 0.8, 
+    "temp": 0.8,
     
     #The prompt for generation
-    "prompt": "...",
+    "prompt": "..."
       
     #Whether or not to train (boolean)
-    "train": false, #defaults to false
+    "train": false #defaults to false
     
     #Directory with {train, valid, test}.jsonl files
-    "data": "...", #defaults to "data/"
+    "data": "..." #defaults to "data/"
       
     #The PRNG seed
-    "seed": 0,
+    "seed": 0
     
     #Number of layers to fine-tune
-    "lora_layers": 16,
+    "lora_layers": 16
     
     #Minibatch size.
-    "batch_size": 4,
+    "batch_size": 4
     
     #Iterations to train for.
-    "iters": 100,
+    "iters": 100
     
     #Number of validation batches, -1 uses the entire validation set.
-    "val_batches": 25,
+    "val_batches": 25
     
     #Adam learning rate.
-    "learning_rate": 1e-5,
+    "learning_rate": 1e-5
     
     #Number of training steps between loss reporting.
-    "steps_per_report": 10,
+    "steps_per_report": 10
     
     #Number of training steps between validations.
-    "steps_per_eval": 200,
+    "steps_per_eval": 200
     
     #Load path to resume training with the given adapter weights.
     "resume_adapter_file": "...",
@@ -77,13 +77,13 @@ parameters:
     "adapter_file": "[..]", #defaults to "adapters.npz"
       
     #Save the model every N iterations.  
-    "save_every": 100,
+    "save_every": 100
     
     #Evaluate on the test set after training
-    "test": false|true, #defaults to false
+    "test": true #defaults to false
     
     #Number of test set batches, -1 uses the entire test set.
-    "test_batches": 500,
+    "test_batches": 500
     
     #Maximum sequence length.
     "max_seq_length": 2048
@@ -109,7 +109,7 @@ For example, to fine-tune a Mistral 7B you can use:
 ```yaml
 parameters:
     "model": "mistralai/Mistral-7B-v0.1"
-    [...]
+    "train": true
 ```
 .
 
