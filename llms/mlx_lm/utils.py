@@ -362,7 +362,7 @@ def load(
     Load the model and tokenizer from a given path or a huggingface repository.
 
     Args:
-        model_path (Path): The path or the huggingface repository to load the model from.
+        path_or_hf_repo (Path): The path or the huggingface repository to load the model from.
         tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
             Defaults to an empty dictionary.
         adapter_file (str, optional): Path to the adapter file. If provided, applies LoRA layers to the model.
