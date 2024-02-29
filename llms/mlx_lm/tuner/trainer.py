@@ -1,6 +1,6 @@
-import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -143,17 +143,15 @@ def train(
 ):
     print(f"Starting training..., iters: {args.iters}")
 
-    def check_checkpoints_path(adapter_file):
-        checkpoints_path = "checkpoints"
-        if os.path.dirname(adapter_file):
-            checkpoints_path = os.path.join(
-                os.path.dirname(adapter_file), "checkpoints"
-            )
+    def check_checkpoints_path(adapter_file) -> str:
+        checkpoints_path = Path("checkpoints")
+        if Path(adapter_file).parent:
+            checkpoints_path = Path(adapter_file).parent / "checkpoints"
 
-        if not os.path.exists(checkpoints_path):
-            os.makedirs(checkpoints_path)
+        if not checkpoints_path.exists():
+            checkpoints_path.mkdir(parents=True)
 
-        return checkpoints_path
+        return str(checkpoints_path)
 
     # Create checkpoints directory if it does not exist
     adapter_path = check_checkpoints_path(args.adapter_file)
@@ -253,16 +251,16 @@ def train(
         # Save adapter weights if needed
         if (it + 1) % args.steps_per_save == 0:
             checkpoint_adapter_file = (
-                f"{adapter_path}/{it + 1}_{os.path.basename(args.adapter_file)}"
+                f"{adapter_path}/{it + 1}_{Path(args.adapter_file).name}"
             )
             save_adapter(model=model, adapter_file=checkpoint_adapter_file)
             print(
-                f"Iter {it + 1}: Saved adapter weights to {os.path.join(checkpoint_adapter_file)}."
+                f"Iter {it + 1}: Saved adapter weights to {checkpoint_adapter_file}."
             )
 
     # save final adapter weights
     save_adapter(model=model, adapter_file=args.adapter_file)
-    print(f"Saved final adapter weights to {os.path.join(args.adapter_file)}.")
+    print(f"Saved final adapter weights to {args.adapter_file}.")
 
 
 def save_adapter(
