@@ -143,7 +143,7 @@ def train(
 ):
     print(f"Starting training..., iters: {args.iters}")
 
-    def check_checkpoints_path(adapter_file) -> str:
+    def checkpoints_path(adapter_file) -> str:
         checkpoints_path = Path("checkpoints")
         if Path(adapter_file).parent:
             checkpoints_path = Path(adapter_file).parent / "checkpoints"
@@ -153,7 +153,7 @@ def train(
         return str(checkpoints_path)
 
     # Create checkpoints directory if it does not exist
-    adapter_path = check_checkpoints_path(args.adapter_file)
+    adapter_path = checkpoints_path(args.adapter_file)
 
     # Create value and grad function for loss
     loss_value_and_grad = nn.value_and_grad(model, loss)
