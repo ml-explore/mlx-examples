@@ -146,7 +146,9 @@ def train(
     def check_checkpoints_path(adapter_file):
         checkpoints_path = "checkpoints"
         if os.path.dirname(adapter_file):
-            checkpoints_path = os.path.join(os.path.dirname(adapter_file), "checkpoints")
+            checkpoints_path = os.path.join(
+                os.path.dirname(adapter_file), "checkpoints"
+            )
 
         if not os.path.exists(checkpoints_path):
             os.makedirs(checkpoints_path)
@@ -250,7 +252,9 @@ def train(
 
         # Save adapter weights if needed
         if (it + 1) % args.steps_per_save == 0:
-            checkpoint_adapter_file = f"{adapter_path}/{it + 1}_{os.path.basename(args.adapter_file)}"
+            checkpoint_adapter_file = (
+                f"{adapter_path}/{it + 1}_{os.path.basename(args.adapter_file)}"
+            )
             save_adapter(model=model, adapter_file=checkpoint_adapter_file)
             print(
                 f"Iter {it + 1}: Saved adapter weights to {os.path.join(checkpoint_adapter_file)}."
