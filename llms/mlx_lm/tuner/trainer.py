@@ -148,8 +148,7 @@ def train(
         if Path(adapter_file).parent:
             checkpoints_path = Path(adapter_file).parent / "checkpoints"
 
-        if not checkpoints_path.exists():
-            checkpoints_path.mkdir(parents=True)
+        checkpoints_path.mkdir(parents=True, exist_ok=True)
 
         return str(checkpoints_path)
 
