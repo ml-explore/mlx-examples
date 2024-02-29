@@ -57,7 +57,7 @@ def _get_classes(config: dict):
     return arch.Model, arch.ModelArgs
 
 
-def get_model_path(path_or_hf_repo: str) -> Path:
+def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path:
     """
     Ensures the model is available locally. If the path does not exist locally,
     it is downloaded from the Hugging Face Hub.
@@ -73,6 +73,7 @@ def get_model_path(path_or_hf_repo: str) -> Path:
         model_path = Path(
             snapshot_download(
                 repo_id=path_or_hf_repo,
+                revision=revision,
                 allow_patterns=[
                     "*.json",
                     "*.safetensors",
@@ -555,9 +556,10 @@ def convert(
     q_bits: int = 4,
     dtype: str = "float16",
     upload_repo: str = None,
+    revision: Optional[str] = None,
 ):
     print("[INFO] Loading")
-    model_path = get_model_path(hf_path)
+    model_path = get_model_path(hf_path, revision=revision)
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))
