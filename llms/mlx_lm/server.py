@@ -248,7 +248,7 @@ class APIHandler(BaseHTTPRequestHandler):
         text = _tokenizer.decode(tokens)
         response = self.generate_response(text, "stop", len(prompt), len(tokens))
 
-        self.wfile.write(f"{response}\n\n".encode())
+        self.wfile.write(f"{json.dumps(response)}\n\n".encode())
         self.wfile.flush()
 
     def handle_stream(
