@@ -90,8 +90,8 @@ class APIHandler(BaseHTTPRequestHandler):
         """
         Create static request specific metadata
         """
-        super().__init__(*args, **kwargs)
         self.created = int(time.time())
+        super().__init__(*args, **kwargs)
 
     def _set_headers(self, status_code=200):
         self.send_response(status_code)
@@ -157,9 +157,9 @@ class APIHandler(BaseHTTPRequestHandler):
             ]
         }
 
-        if self.stream:
+        if not self.stream:
             if not (isinstance(prompt_token_count, int) and isinstance(completion_token_count, int)):
-                raise ValueError("Response type is stream, but token counts not provided")
+                raise ValueError("Response type is complete, but token counts not provided")
 
             response["usage"] = {
                 "prompt_tokens": prompt_token_count,
