@@ -93,16 +93,21 @@ class APIHandler(BaseHTTPRequestHandler):
         self.created = int(time.time())
         super().__init__(*args, **kwargs)
 
-    def _set_headers(self, status_code=200):
+    def _set_completion_headers(self, status_code: int = 200):
         self.send_response(status_code)
         self.send_header("Content-type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "*")
         self.send_header("Access-Control-Allow-Headers", "*")
-        self.end_headers()
+
+    def _set_stream_headers(self, status_code: int = 200):
+        self.send_response(status_code)
+        self.send_header("Content-type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
 
     def do_OPTIONS(self):
-        self._set_headers(204)
+        self._set_completion_headers(204)
+        self.end_headers()
 
     def do_POST(self):
         """
@@ -114,7 +119,8 @@ class APIHandler(BaseHTTPRequestHandler):
         }
 
         if self.path not in endpoints:
-            self._set_headers(404)
+            self._set_completion_headers(404)
+            self.end_headers()
             self.wfile.write(b"Not Found")
             return
 
@@ -133,7 +139,10 @@ class APIHandler(BaseHTTPRequestHandler):
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
 
-        self._set_headers(200)
+        # Send header type
+        self._set_stream_headers(200) if self.stream else self._set_completion_headers(200)
+        self.end_headers()
+
         endpoints[self.path]()
 
     def generate_response(
@@ -257,10 +266,6 @@ class APIHandler(BaseHTTPRequestHandler):
             stop_id_sequences (List[np.ndarray]):
                 A list of stop words passed to the stopping_criteria function
         """
-        self.send_response(200)
-        self.send_header("Content-type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
         max_stop_id_sequence_len = max(stop_id_sequences, key=len) if stop_id_sequences else 0
         tokens = []
         current_generated_text_index = 0
