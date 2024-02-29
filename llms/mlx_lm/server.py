@@ -247,11 +247,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
         text = _tokenizer.decode(tokens)
         response = self.generate_response(text, "stop", len(prompt), len(tokens))
-        try:
-            self.wfile.write(f"{response}\n\n".encode())
-            self.wfile.flush()
-        except Exception as error:
-            print(error)
+
+        self.wfile.write(f"{response}\n\n".encode())
+        self.wfile.flush()
 
     def handle_stream(
         self,
@@ -266,12 +264,14 @@ class APIHandler(BaseHTTPRequestHandler):
             stop_id_sequences (List[np.ndarray]):
                 A list of stop words passed to the stopping_criteria function
         """
-        max_stop_id_sequence_len = max(stop_id_sequences, key=len) if stop_id_sequences else 0
         tokens = []
         current_generated_text_index = 0
-        # Buffer to store the last `max_stop_id_sequence_len` tokens to check for stop conditions before writing to the stream.
+
+        max_stop_id_sequence_len = max(stop_id_sequences, key=len) if stop_id_sequences else 0
+        # Buffer to store the last `max_stop_id_sequence_len` tokens
+        # to check for stop conditions before writing to the stream.
         stop_sequence_buffer = []
-        REPLACEMENT_CHAR = "\ufffd"
+
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
@@ -286,42 +286,43 @@ class APIHandler(BaseHTTPRequestHandler):
             token = token.item()
             tokens.append(token)
             stop_sequence_buffer.append(token)
-            if len(stop_sequence_buffer) > max_stop_id_sequence_len:
-                if REPLACEMENT_CHAR in _tokenizer.decode(token):
-                    continue
-                stop_condition = stopping_criteria(
-                    tokens,
-                    stop_id_sequences,
-                    _tokenizer.eos_token_id,
-                )
-                if stop_condition.stop_met:
-                    if stop_condition.trim_length:
-                        tokens = tokens[: -stop_condition.trim_length]
-                    break
-                # This is a workaround because the llama tokenizer emits spaces when decoding token by token.
-                generated_text = _tokenizer.decode(tokens)
-                next_chunk = generated_text[current_generated_text_index:]
-                current_generated_text_index = len(generated_text)
 
-                response = self.generate_response(next_chunk, None)
-                try:
-                    self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-                    self.wfile.flush()
-                    stop_sequence_buffer = []
-                except Exception as e:
-                    print(e)
-                    break
+            # Continue generating tokens until buffer is as large as the longest stop_id_sequence
+            if len(stop_sequence_buffer) <= max_stop_id_sequence_len:
+                continue
+
+            # Continue until unicode character is fully generated
+            if "\ufffd" in _tokenizer.decode(token):
+                continue
+
+            stop_condition = stopping_criteria(
+                tokens,
+                stop_id_sequences,
+                _tokenizer.eos_token_id,
+            )
+            if stop_condition.stop_met:
+                if stop_condition.trim_length:
+                    tokens = tokens[: -stop_condition.trim_length]
+                break
+
+            # Workaround for llama tokenizer emitting spaces when decoding token by token.
+            generated_text = _tokenizer.decode(tokens)
+            new_text = generated_text[current_generated_text_index:]
+            current_generated_text_index = len(generated_text)
+
+            response = self.generate_response(new_text, None)
+            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+            self.wfile.flush()
+            stop_sequence_buffer = []
 
         # check is there any remaining text to send
         if stop_sequence_buffer:
             generated_text = _tokenizer.decode(tokens)
             next_chunk = generated_text[current_generated_text_index:]
             response = self.generate_response(next_chunk, "length")
-            try:
-                self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-                self.wfile.flush()
-            except Exception as e:
-                print(e)
+
+            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+            self.wfile.flush()
 
         self.wfile.write(f"data: [DONE]\n\n".encode())
         self.wfile.flush()
