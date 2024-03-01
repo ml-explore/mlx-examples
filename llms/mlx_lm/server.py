@@ -15,14 +15,8 @@ from transformers import PreTrainedTokenizer
 
 from .utils import generate_step, load
 
-_model: Optional[nn.Module] = None
-_tokenizer: Optional[PreTrainedTokenizer] = None
-
-
-def load_model(model_path: str, adapter_file: Optional[str] = None):
-    global _model
-    global _tokenizer
-    _model, _tokenizer = load(model_path, adapter_file=adapter_file)
+MODEL: nn.Module
+TOKENIZER: PreTrainedTokenizer
 
 
 class StopCondition(NamedTuple):
@@ -33,7 +27,7 @@ class StopCondition(NamedTuple):
 def stopping_criteria(
     tokens: List[int],
     stop_id_sequences: List[np.ndarray],
-    eos_token_id: int,
+    eos_token_id: Union[int, None],
 ) -> StopCondition:
     """
     Determines whether the token generation should stop based on predefined conditions.
@@ -42,7 +36,7 @@ def stopping_criteria(
         tokens (List[int]): The current sequence of generated tokens.
         stop_id_sequences (List[np.ndarray]): A list of numpy arrays, each representing a sequence of token IDs.
             If the end of the `tokens` list matches any of these sequences, the generation should stop.
-        eos_token_id (int): The token ID that represents the end-of-sequence. If the last token in `tokens` matches this,
+        eos_token_id (Union[int, None]): The token ID that represents the end-of-sequence. If the last token in `tokens` matches this,
             the generation should stop.
 
     Returns:
@@ -226,7 +220,7 @@ class APIHandler(BaseHTTPRequestHandler):
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
-                model=_model,
+                model=MODEL,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
@@ -237,14 +231,14 @@ class APIHandler(BaseHTTPRequestHandler):
             token = token.item()
             tokens.append(token)
             stop_condition = stopping_criteria(
-                tokens, stop_id_sequences, _tokenizer.eos_token_id
+                tokens, stop_id_sequences, TOKENIZER.eos_token_id
             )
             if stop_condition.stop_met:
                 if stop_condition.trim_length:
                     tokens = tokens[: -stop_condition.trim_length]
                 break
 
-        text = _tokenizer.decode(tokens)
+        text = TOKENIZER.decode(tokens)
         response = self.generate_response(text, "stop", len(prompt), len(tokens))
 
         response_json = json.dumps(response).encode()
@@ -283,7 +277,7 @@ class APIHandler(BaseHTTPRequestHandler):
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
-                model=_model,
+                model=MODEL,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
@@ -300,13 +294,13 @@ class APIHandler(BaseHTTPRequestHandler):
                 continue
 
             # Continue until unicode character is fully generated
-            if "\ufffd" in _tokenizer.decode(token):
+            if "\ufffd" in TOKENIZER.decode(token):
                 continue
 
             stop_condition = stopping_criteria(
                 tokens,
                 stop_id_sequences,
-                _tokenizer.eos_token_id,
+                TOKENIZER.eos_token_id,
             )
             if stop_condition.stop_met:
                 if stop_condition.trim_length:
@@ -314,7 +308,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 break
 
             # Workaround for llama tokenizer emitting spaces when decoding token by token.
-            generated_text = _tokenizer.decode(tokens)
+            generated_text = TOKENIZER.decode(tokens)
             new_text = generated_text[current_generated_text_index:]
             current_generated_text_index = len(generated_text)
 
@@ -325,7 +319,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # check is there any remaining text to send
         if stop_sequence_buffer:
-            generated_text = _tokenizer.decode(tokens)
+            generated_text = TOKENIZER.decode(tokens)
             next_chunk = generated_text[current_generated_text_index:]
             response = self.generate_response(next_chunk, "length")
 
@@ -346,8 +340,8 @@ class APIHandler(BaseHTTPRequestHandler):
         self.request_id = f"chatcmpl-{uuid.uuid4()}"
         self.object_type = "chat.completions.chunk" if self.stream else "chat.completions"
 
-        if hasattr(_tokenizer, "apply_chat_template") and _tokenizer.chat_template:
-            prompt = _tokenizer.apply_chat_template(
+        if hasattr(TOKENIZER, "apply_chat_template") and TOKENIZER.chat_template:
+            prompt = TOKENIZER.apply_chat_template(
                 body["messages"],
                 tokenize=True,
                 add_generation_prompt=True,
@@ -355,13 +349,13 @@ class APIHandler(BaseHTTPRequestHandler):
             )
         else:
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
-            prompt = _tokenizer.encode(prompt, return_tensors="np")
+            prompt = TOKENIZER.encode(prompt, return_tensors="np")
 
         prompt = mx.array(prompt[0])
         stop_words = body.get("stop", [])
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
         stop_id_sequences = [
-            _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
+            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
 
@@ -384,12 +378,12 @@ class APIHandler(BaseHTTPRequestHandler):
 
         prompt_text = body["prompt"]
 
-        prompt = _tokenizer.encode(prompt_text, return_tensors="np")
+        prompt = TOKENIZER.encode(prompt_text, return_tensors="np")
         prompt = mx.array(prompt[0])
         stop_words = body.get("stop", [])
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
         stop_id_sequences = [
-            _tokenizer.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
+            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
             for stop_word in stop_words
         ]
 
@@ -438,6 +432,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    load_model(args.model, adapter_file=args.adapter_file)
+    MODEL, TOKENIZER = load(args.model, adapter_file=args.adapter_file)
 
     run(args.host, args.port)
