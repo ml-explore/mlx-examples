@@ -1,5 +1,5 @@
 mlx>=0.4
 numpy
-git+https://github.com/huggingface/transformers.git
+transformers>=4.38.0
 protobuf
 pyyaml

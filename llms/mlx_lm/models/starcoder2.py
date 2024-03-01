@@ -179,10 +179,10 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         if not self.model.args.tie_word_embeddings:
+            return self.lm_head(out), cache
+        else:
             out = out @ self.model.embed_tokens.weight.T
             return out, cache
-        else:
-            return self.lm_head(out), cache
 
     @property
     def layers(self):
