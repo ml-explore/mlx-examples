@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import copy
-import gc
 import glob
 import importlib
 import json
@@ -494,7 +493,7 @@ def save_weights(
     # necessary ones
     if donate_weights:
         weights.clear()
-        gc.collect()
+        del weights
 
     for i in range(len(shards)):
         shard = shards[i]
@@ -507,7 +506,6 @@ def save_weights(
         for weight_name in shard.keys():
             index_data["weight_map"][weight_name] = shard_name
         del shard
-        gc.collect()
 
     index_data["weight_map"] = {
         k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
