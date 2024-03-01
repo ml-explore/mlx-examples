@@ -31,6 +31,7 @@ Some more useful examples are listed below.
 ### Multimodal models
 
 - Joint text and image embeddings with [CLIP](clip).
+- Text generation from image and text inputs with [LLaVA](llava).
 
 ### Other Models 
 
