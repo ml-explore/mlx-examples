@@ -97,10 +97,9 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc = nn.Linear(dim, hidden_dim, bias=True)
         self.c_proj = nn.Linear(hidden_dim, dim, bias=True)
-        self.act = nn.Linear(dim, hidden_dim, bias=True)
 
-    def __call__(self, x) -> mx.array:
-        return self.c_proj(nn.gelu(self.c_fc(x)) * self.act(x))
+    def __call__(self, x):
+        return self.c_proj(nn.gelu(self.c_fc(x)))
 
 
 class TransformerBlock(nn.Module):
@@ -111,10 +110,11 @@ class TransformerBlock(nn.Module):
 
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layer_norm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layer_norm = LayerNorm(
+        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = LayerNorm(
             args.hidden_size, eps=args.rms_norm_eps
         )
+        self.args = args
 
     def __call__(
         self,
@@ -122,9 +122,9 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.self_attn(self.input_layer_norm(x), mask, cache)
+        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
-        r = self.mlp(self.post_attention_layer_norm(h))
+        r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
         return out, cache
 
@@ -141,7 +141,6 @@ class Starcoder2Model(nn.Module):
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
 
     def __call__(
         self,
@@ -161,7 +160,7 @@ class Starcoder2Model(nn.Module):
         for e, layer in enumerate(self.layers):
             h, cache[e] = layer(h, mask, cache[e])
 
-        return self.output(self.norm(h)), cache
+        return self.norm(h), cache
 
 
 class Model(nn.Module):
