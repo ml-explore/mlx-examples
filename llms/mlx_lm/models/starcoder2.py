@@ -96,12 +96,12 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
-        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        self.c_fc = nn.Linear(dim, hidden_dim, bias=False)
+        self.c_proj = nn.Linear(hidden_dim, dim, bias=False)
+        self.act = nn.Linear(dim, hidden_dim, bias=False)
 
     def __call__(self, x) -> mx.array:
-        return self.w2(nn.gelu(self.w1(x)) * self.w3(x))
+        return self.c_proj(nn.gelu(self.c_fc(x)) * self.act(x))
 
 
 class TransformerBlock(nn.Module):
@@ -166,8 +166,8 @@ class Starcoder2Model(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.model_type = args.model_type
         self.model = Starcoder2Model(args)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -175,9 +175,4 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
-        return out, cache
-
-    @property
-    def layers(self):
-        return self.model.layers
+        return self.lm_head(out), cache
