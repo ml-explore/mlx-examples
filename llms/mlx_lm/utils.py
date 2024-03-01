@@ -64,6 +64,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
 
     Args:
         path_or_hf_repo (str): The local path or Hugging Face repository ID of the model.
+        revision (str, optional): An optional Git revision id which can be a branch name, a tag, or a commit hash.
 
     Returns:
         Path: The path to the model.
