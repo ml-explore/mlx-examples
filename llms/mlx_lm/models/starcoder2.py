@@ -135,7 +135,7 @@ class Starcoder2Model(nn.Module):
         self.vocab_size = args.vocab_size
         self.num_hidden_layers = args.num_hidden_layers
         assert self.vocab_size > 0
-        self.tok_embeddings = nn.Embedding(args.vocab_size, args.hidden_size)
+        self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
@@ -147,7 +147,7 @@ class Starcoder2Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        h = self.tok_embeddings(inputs)
+        h = self.embed_tokens(inputs)
 
         mask = None
         if h.shape[1] > 1:
