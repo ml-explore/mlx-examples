@@ -5,6 +5,7 @@ import glob
 import json
 import shutil
 from pathlib import Path
+from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -109,7 +110,7 @@ def merge_models(base_model: nn.Module, model: nn.Module, config: dict):
 def merge(
     config: str,
     mlx_path: str = "mlx_model",
-    upload_repo: str = None,
+    upload_repo: Optional[str] = None,
 ):
     with open(config, "r") as fid:
         merge_conf = yaml.safe_load(fid)
@@ -117,7 +118,7 @@ def merge(
 
     model_paths = merge_conf.get("models", [])
     if len(model_paths) < 2:
-        raise ValueError(f"Expected at least 2 models, got {len(models)}.")
+        raise ValueError(f"Expected at least 2 models, got {len(model_paths)}.")
 
     # Load all models
     base_hf_path = model_paths[0]
@@ -125,9 +126,9 @@ def merge(
     base_model, base_config, tokenizer = fetch_from_hub(base_path, lazy=True)
     models = []
     for mp in model_paths[1:]:
-        model, config, _ = fetch_from_hub(get_model_path(mp), lazy=True)
+        model, model_config, _ = fetch_from_hub(get_model_path(mp), lazy=True)
         base_type = base_config["model_type"]
-        model_type = config["model_type"]
+        model_type = model_config["model_type"]
         if base_type != model_type:
             raise ValueError(
                 f"Can only merge models of the same type,"
