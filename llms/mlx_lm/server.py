@@ -6,7 +6,7 @@ import time
 import uuid
 import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Callable, List, NamedTuple, Optional, Union
+from typing import Callable, List, Literal, NamedTuple, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -139,7 +139,7 @@ class APIHandler(BaseHTTPRequestHandler):
     def generate_response(
         self,
         text: str,
-        finish_reason: Union[str, None],
+        finish_reason: Union[Literal["length", "stop"], None],
         prompt_token_count: Optional[int] = None,
         completion_token_count: Optional[int] = None,
     ) -> dict:
