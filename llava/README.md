@@ -22,44 +22,38 @@ python generate.py \
   --model llava-hf/llava-1.5-7b-hf \
   --image "http://images.cocodataset.org/val2017/000000039769.jpg" \
   --prompt "USER: <image>\nWhat are these?\nASSISTANT:" \
-  --max-tokens 128
+  --max-tokens 128 \
+  --temp 0
 ```
 
 This uses the following image:
 
 ![alt text](http://images.cocodataset.org/val2017/000000039769.jpg)
  
-And generates output similar to:
+And generates the output:
 
 ```
-These are two cats, one of which is sleeping and the other one is awake.
-
-The sleeping cat is lying on a couch, while the awake cat is also on the couch,
-positioned near the sleeping cat. The couch appears to be red, and there is a
-remote control placed nearby. The cats are comfortably resting on the couch,
-enjoying each other's company.
+These are two cats lying on a pink couch.
 ```
 
 You can also use LLaVA in Python:
 
 ```python
-from llava import LlavaModel
-from transformers import AutoProcessor
 from utils import load_image, prepare_inputs
-from generate import generate_text
-model_path = 'llava-hf/llava-1.5-7b-hf'
+from generate import load_model, generate_text
 
-processor = AutoProcessor.from_pretrained(model_path)
-model = LlavaModel.from_pretrained(model_path)
+processor, model = load_model("llava-hf/llava-1.5-7b-hf")
 
-max_tokens, temperature = 128, 0.
+max_tokens, temperature = 128, 0.0
 
 prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
 image = "http://images.cocodataset.org/val2017/000000039769.jpg"
 image = load_image(image)
 input_ids, pixel_values = prepare_inputs(processor, image, prompt)
 
-reply = generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature)
+reply = generate_text(
+    input_ids, pixel_values, model, processor, max_tokens, temperature
+)
 
 print(reply)
 ```

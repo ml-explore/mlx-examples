@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import unittest
 
 import mlx.core as mx
@@ -43,8 +45,7 @@ class TestVisionTower(unittest.TestCase):
             ]
 
             hf_pixel_values = pixel_values
-            mx_pixel_values = mx.array(
-                pixel_values.numpy()).transpose(0, 2, 3, 1)
+            mx_pixel_values = mx.array(pixel_values.numpy()).transpose(0, 2, 3, 1)
 
             _, _, hidden_states = self.mx_llava.vision_tower(
                 mx_pixel_values,
@@ -91,8 +92,7 @@ class TestLlaVA(unittest.TestCase):
             input_ids = values["input_ids"]
 
             hf_pixel_values = pixel_values
-            mx_pixel_values = mx.array(
-                pixel_values.numpy()).transpose(0, 2, 3, 1)
+            mx_pixel_values = mx.array(pixel_values.numpy()).transpose(0, 2, 3, 1)
 
             _, _, hidden_states = self.mx_llava.vision_tower(
                 mx_pixel_values,

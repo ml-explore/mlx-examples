@@ -1,7 +1,6 @@
-import glob
+# Copyright © 2024 Apple Inc.
+
 import inspect
-import json
-import logging
 import math
 from dataclasses import dataclass
 from typing import Optional
@@ -92,7 +91,7 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, config: VisionConfig):
         super().__init__()
-        self.activation_fn = nn.GELU(approx='fast')
+        self.activation_fn = nn.GELU(approx="fast")
         self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
         self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
 
@@ -109,11 +108,9 @@ class EncoderLayer(nn.Module):
         self.self_attn = Attention(
             config.hidden_size, config.num_attention_heads, bias=True
         )
-        self.layer_norm1 = nn.LayerNorm(
-            self.embed_dim, eps=config.layer_norm_eps)
+        self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
         self.mlp = MLP(config)
-        self.layer_norm2 = nn.LayerNorm(
-            self.embed_dim, eps=config.layer_norm_eps)
+        self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
 
     def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
         y = self.layer_norm1(x)
@@ -127,8 +124,7 @@ class EncoderLayer(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, config: VisionConfig):
         super().__init__()
-        self.layers = [EncoderLayer(config)
-                       for _ in range(config.num_hidden_layers)]
+        self.layers = [EncoderLayer(config) for _ in range(config.num_hidden_layers)]
 
 
 class VisionEmbeddings(nn.Module):
@@ -151,14 +147,12 @@ class VisionEmbeddings(nn.Module):
 
         self.num_patches = (self.image_size // self.patch_size) ** 2
         self.num_positions = self.num_patches + 1
-        self.position_embedding = nn.Embedding(
-            self.num_positions, self.embed_dim)
+        self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
 
     def __call__(self, x: mx.array) -> mx.array:
         batch_size = x.shape[0]
         patch_embeddings = self.patch_embedding(x)
-        patch_embeddings = mx.flatten(
-            patch_embeddings, start_axis=1, end_axis=2)
+        patch_embeddings = mx.flatten(patch_embeddings, start_axis=1, end_axis=2)
         embed_dim = patch_embeddings.shape[-1]
         cls_embeddings = mx.broadcast_to(
             self.class_embedding, (batch_size, 1, embed_dim)
@@ -218,8 +212,10 @@ class VisionModel(nn.Module):
                 # Remove unused position_ids
                 continue
             elif "patch_embedding.weight" in k:
-                # pytorch conv2d expects the weight tensor to be of shape [out_channels, in_channels, kH, KW]
-                # mlx conv2d expects the weight tensor to be of shape [out_channels, kH, KW, in_channels]
+                # PyTorch conv2d weight tensors have shape:
+                #   [out_channels, in_channels, kH, KW]
+                # MLX conv2d expects the weight be of shape:
+                #   [out_channels, kH, KW, in_channels]
                 sanitized_weights[k] = v.transpose(0, 2, 3, 1)
             else:
                 sanitized_weights[k] = v

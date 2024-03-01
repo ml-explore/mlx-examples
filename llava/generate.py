@@ -1,5 +1,7 @@
-import argparse
+# Copyright © 2024 Apple Inc.
 
+import argparse
+import codecs
 
 import mlx.core as mx
 from transformers import AutoProcessor
@@ -42,7 +44,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def initialize_model(model_path):
+def load_model(model_path):
     processor = AutoProcessor.from_pretrained(model_path)
 
     model = LlavaModel.from_pretrained(get_model_path(model_path))
@@ -58,14 +60,12 @@ def sample(logits, temperature=0.0):
 
 def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature):
 
-    logits, cache = model(
-        input_ids, pixel_values
-    )
+    logits, cache = model(input_ids, pixel_values)
     logits = logits[:, -1, :]
     y = sample(logits, temperature=temperature)
     tokens = [y.item()]
 
-    for _ in range(max_tokens):
+    for n in range(max_tokens - 1):
         logits, cache = model.language_model(y[None], cache=cache)
         logits = logits[:, -1, :]
         y = sample(logits, temperature)
@@ -79,13 +79,14 @@ def generate_text(input_ids, pixel_values, model, processor, max_tokens, tempera
 
 def main():
     args = parse_arguments()
-    raw_image = load_image(args.image)
-    if raw_image is None:
-        return
+    image = load_image(args.image)
+    processor, model = load_model(args.model)
 
-    processor, model = initialize_model(args.model)
-    input_ids, pixel_values = prepare_inputs(processor, raw_image, args.prompt)
-    print(args.prompt)
+    prompt = codecs.decode(args.prompt, "unicode_escape")
+
+    input_ids, pixel_values = prepare_inputs(processor, image, prompt)
+
+    print(prompt)
     generated_text = generate_text(
         input_ids, pixel_values, model, processor, args.max_tokens, args.temp
     )

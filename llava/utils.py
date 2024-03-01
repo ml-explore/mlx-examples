@@ -1,9 +1,12 @@
-from pathlib import Path
-from huggingface_hub import snapshot_download
+# Copyright © 2024 Apple Inc.
+
 import os
-import requests
-from PIL import Image
+from pathlib import Path
+
 import mlx.core as mx
+import requests
+from huggingface_hub import snapshot_download
+from PIL import Image
 
 
 def get_model_path(path_or_hf_repo: str) -> Path:
@@ -35,23 +38,28 @@ def get_model_path(path_or_hf_repo: str) -> Path:
 
 
 def load_image(image_source):
+    """
+    Helper function to load an image from either
+    a URL or file.
+    """
     if image_source.startswith(("http://", "https://")):
         try:
             response = requests.get(image_source, stream=True)
             response.raise_for_status()
             return Image.open(response.raw)
-        except requests.HTTPError as e:
-            print(f"Failed to load image from URL: {e}")
-            return None
+        except Exception as e:
+            raise ValueError(
+                f"Failed to load image from URL: {image_source} with error {e}"
+            )
     elif os.path.isfile(image_source):
         try:
             return Image.open(image_source)
         except IOError as e:
-            print(f"Failed to load image from path: {e}")
-            return None
+            raise ValueError(f"Failed to load image {image_source} with error: {e}")
     else:
-        print("The image source is neither a valid URL nor a file path.")
-        return None
+        raise ValueError(
+            f"The image {image_source} must be a valid URL or existing file."
+        )
 
 
 def prepare_inputs(processor, image, prompt):

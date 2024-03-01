@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import inspect
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
@@ -37,12 +39,10 @@ class TextConfig:
         if self.rope_scaling:
             required_keys = {"factor", "type"}
             if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(
-                    f"rope_scaling must contain keys {required_keys}")
+                raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
             if self.rope_scaling["type"] != "linear":
-                raise ValueError(
-                    "rope_scaling 'type' currently only supports 'linear'")
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
 
 
 class RMSNorm(nn.Module):
@@ -79,7 +79,8 @@ class Attention(nn.Module):
 
         rope_scale = (
             1 / config.rope_scaling["factor"]
-            if config.rope_scaling is not None and config.rope_scaling["type"] == "linear"
+            if config.rope_scaling is not None
+            and config.rope_scaling["type"] == "linear"
             else 1
         )
         self.rope = nn.RoPE(
@@ -102,8 +103,7 @@ class Attention(nn.Module):
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(
-            B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if self.repeats > 1:
             keys = mx.repeat(keys, self.repeats, axis=1)
@@ -122,8 +122,7 @@ class Attention(nn.Module):
         scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
         if mask is not None:
             scores += mask
-        scores = mx.softmax(scores.astype(mx.float32),
-                            axis=-1).astype(scores.dtype)
+        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
@@ -146,10 +145,10 @@ class TransformerBlock(nn.Module):
         self.hidden_size = config.hidden_size
         self.self_attn = Attention(config)
         self.mlp = MLP(config.hidden_size, config.intermediate_size)
-        self.input_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps)
+            config.hidden_size, eps=config.rms_norm_eps
+        )
         self.config = config
 
     def __call__(
@@ -192,8 +191,7 @@ class Llama(nn.Module):
 
         mask = None
         if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(
-                h.shape[1])
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
             mask = mask.astype(h.dtype)
 
         if cache is None:
@@ -214,8 +212,7 @@ class LanguageModel(nn.Module):
                 f"Model type {self.model_type} not supported. Currently only 'llama' is supported"
             )
         self.model = Llama(config)
-        self.lm_head = nn.Linear(
-            config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -232,7 +229,3 @@ class LanguageModel(nn.Module):
         return {
             k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
         }
-
-    @property
-    def layers(self):
-        return self.model.layers
