@@ -292,6 +292,23 @@ class UNetModel(nn.Module):
             config.block_out_channels[0] * 4,
         )
 
+        if config.addition_embed_type == "text_time":
+            self.add_time_proj = nn.SinusoidalPositionalEncoding(
+                config.addition_time_embed_dim,
+                max_freq=1,
+                min_freq=math.exp(
+                    -math.log(10000)
+                    + 2 * math.log(10000) / config.addition_time_embed_dim
+                ),
+                scale=1.0,
+                cos_first=True,
+                full_turns=False,
+            )
+            self.add_embedding = TimestepEmbedding(
+                config.projection_class_embeddings_input_dim,
+                config.block_out_channels[0] * 4,
+            )
+
         # Make the downsampling blocks
         block_channels = [config.block_out_channels[0]] + list(
             config.block_out_channels
@@ -308,7 +325,7 @@ class UNetModel(nn.Module):
                 resnet_groups=config.norm_num_groups,
                 add_downsample=(i < len(config.block_out_channels) - 1),
                 add_upsample=False,
-                add_cross_attention=(i < len(config.block_out_channels) - 1),
+                add_cross_attention="CrossAttn" in config.down_block_types[i],
             )
             for i, (in_channels, out_channels) in enumerate(
                 zip(block_channels, block_channels[1:])
@@ -357,7 +374,7 @@ class UNetModel(nn.Module):
                 resnet_groups=config.norm_num_groups,
                 add_downsample=False,
                 add_upsample=(i > 0),
-                add_cross_attention=(i < len(config.block_out_channels) - 1),
+                add_cross_attention="CrossAttn" in config.up_block_types[i],
             )
             for i, (in_channels, out_channels, prev_out_channels) in reversed(
                 list(
@@ -380,10 +397,26 @@ class UNetModel(nn.Module):
             padding=(config.conv_out_kernel - 1) // 2,
         )
 
-    def __call__(self, x, timestep, encoder_x, attn_mask=None, encoder_attn_mask=None):
+    def __call__(
+        self,
+        x,
+        timestep,
+        encoder_x,
+        attn_mask=None,
+        encoder_attn_mask=None,
+        text_time=None,
+    ):
         # Compute the time embeddings
         temb = self.timesteps(timestep).astype(x.dtype)
         temb = self.time_embedding(temb)
+
+        # Add the extra text_time conditioning
+        if text_time is not None:
+            text_emb, time_ids = text_time
+            emb = self.add_time_proj(time_ids).flatten(1)
+            emb = mx.concatenate([text_emb, emb], axis=-1)
+            emb = self.add_embedding(emb)
+            temb = temb + emb
 
         # Preprocess the input
         x = self.conv_in(x)
