@@ -8,6 +8,7 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from textwrap import dedent
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import mlx.core as mx
@@ -437,23 +438,25 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
-    card.text = f"""
-# {upload_repo}
-This model was converted to MLX format from [`{hf_path}`]().
-Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
-## Use with mlx
+    card.text = dedent(
+        f"""
+        # {upload_repo}
+        This model was converted to MLX format from [`{hf_path}`]().
+        Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+        ## Use with mlx
 
-```bash
-pip install mlx-lm
-```
+        ```bash
+        pip install mlx-lm
+        ```
 
-```python
-from mlx_lm import load, generate
+        ```python
+        from mlx_lm import load, generate
 
-model, tokenizer = load("{upload_repo}")
-response = generate(model, tokenizer, prompt="hello", verbose=True)
-```
-"""
+        model, tokenizer = load("{upload_repo}")
+        response = generate(model, tokenizer, prompt="hello", verbose=True)
+        ```
+        """
+    )
     card.save(os.path.join(path, "README.md"))
 
     logging.set_verbosity_info()
