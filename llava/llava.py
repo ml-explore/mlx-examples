@@ -1,7 +1,8 @@
+# Copyright © 2024 Apple Inc.
+
 import glob
 import inspect
 import json
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -9,8 +10,8 @@ from typing import Optional
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+from huggingface_hub import snapshot_download
 from language import LanguageModel, TextConfig
-from utils import get_model_path
 from vision import VisionConfig, VisionModel
 
 
@@ -41,7 +42,6 @@ class LlavaMultiModalProjector(nn.Module):
         self.linear_1 = nn.Linear(
             config.vision_config.hidden_size, config.text_config.hidden_size, bias=True
         )
-
         self.gelu = nn.GELU()
         self.linear_2 = nn.Linear(
             config.text_config.hidden_size, config.text_config.hidden_size, bias=True
@@ -73,11 +73,13 @@ class LlavaModel(nn.Module):
 
         # Get the input embeddings from the language model
         inputs_embeds = self.language_model.model.embed_tokens(input_ids)
-        # get the ouptut hidden states from the vision model
-        _, _, hidden_states = self.vision_tower(
+
+        # Get the ouptut hidden states from the vision model
+        *_, hidden_states = self.vision_tower(
             pixel_values.transpose(0, 2, 3, 1), output_hidden_states=True
         )
-        # select the hidden states from the desired layer
+
+        # Select the hidden states from the desired layer
         selected_image_feature = hidden_states[self.vision_feature_layer]
 
         if self.vision_feature_select_strategy == "default":
@@ -86,15 +88,17 @@ class LlavaModel(nn.Module):
             selected_image_feature = selected_image_feature
         else:
             raise ValueError(
-                f"Unexpected select feature strategy: {self.vision_feature_select_strategy}"
+                "Unexpected feature selection strategy: "
+                f"{self.vision_feature_select_strategy}"
             )
-        # pass image features through the multi-modal projector
+
+        # Pass image features through the multi-modal projector
         image_features = self.multi_modal_projector(selected_image_feature)
-        # insert special image tokens in the input_ids
+
+        # Insert special image tokens in the input_ids
         final_inputs_embeds = self._merge_input_ids_with_image_features(
             image_features, inputs_embeds, input_ids
         )
-
         return final_inputs_embeds
 
     def _merge_input_ids_with_image_features(
@@ -103,16 +107,13 @@ class LlavaModel(nn.Module):
         image_token_index = self.config.image_token_index
         num_images, num_image_patches, embed_dim = image_features.shape
 
-        # Positions of <image> tokens in `input_ids` and assume batch size is 1
-        image_positions = [
-            idx
-            for idx, token_id in enumerate(input_ids[0])
-            if token_id == image_token_index
-        ]
+        # Positions of <image> tokens in input_ids, assuming batch size is 1
+        image_positions = np.where(input_ids[0] == image_token_index)[0].tolist()
 
         if len(image_positions) != num_images:
             raise ValueError(
-                f"The input provided to the model is incorrect. The number of image tokens is {len(image_positions)}, but the number of images given to the model is {num_images}."
+                f"The number of image tokens ({len(image_positions)}) does not "
+                f" match the number of image inputs ({num_images})."
             )
 
         text_segments = []
@@ -122,26 +123,13 @@ class LlavaModel(nn.Module):
             text_segments.append(inputs_embeds[:, start_idx:position])
             start_idx = position + 1
 
-        if start_idx < inputs_embeds.shape[1]:
-            text_segments.append(inputs_embeds[:, start_idx:])
+        image_embeddings = mx.split(image_features, image_features.shape[0])
+        final_embeddings = [v for p in zip(text_segments, image_embeddings) for v in p]
+        final_embeddings += [inputs_embeds[:, start_idx:]]
 
-        # Reshape image feature from (num_images, num_image_patches, embed_dim) to (num_images*num_image_patches, embed_dim)
-        image_embeddings = image_features.reshape(-1, image_features.shape[-1])
-
-        final_embeddings = []
-        for i, text_segment in enumerate(text_segments):
-            final_embeddings.append(text_segment[0])
-            if i < len(image_positions):
-                # Add a slice of image embeddings corresponding to the current position.
-                # This effectively replaces one <image> token with its associated num_image_patches embeddings.
-                final_embeddings.append(image_embeddings[i : i + num_image_patches + 1])
-
-        # This creates a final embeding in shape (1, num_image_patches*num_images + sequence_len, embed_dim) representing the merged sequence of text and image embeddings.
-        final_embeddings = mx.concatenate(final_embeddings, axis=0).reshape(
-            1, -1, embed_dim
-        )
-
-        return final_embeddings
+        # Create a final embedding of shape
+        # (1, num_image_patches*num_images + sequence_len, embed_dim)
+        return mx.concatenate(final_embeddings, axis=1)
 
     def __call__(self, input_ids: mx.array, pixel_values: mx.array, cache=None):
         input_embddings = self.get_input_embeddings(input_ids, pixel_values)
@@ -151,38 +139,41 @@ class LlavaModel(nn.Module):
         return logits, cache
 
     @staticmethod
-    def from_pretrained(path: str):
-        path = get_model_path(path)
-        path = Path(path)
+    def from_pretrained(path_or_hf_repo: str):
+        path = Path(path_or_hf_repo)
+        if not path.exists():
+            path = Path(
+                snapshot_download(
+                    repo_id=path_or_hf_repo,
+                    allow_patterns=[
+                        "*.json",
+                        "*.safetensors",
+                        "*.py",
+                        "tokenizer.model",
+                        "*.tiktoken",
+                    ],
+                )
+            )
 
         with open(path / "config.json", "r") as f:
             model_config = json.load(f)
 
         model_config = LlaVAConfig.from_dict(model_config)
 
-        if isinstance(model_config.vision_config, dict):
-            model_config.vision_config = VisionConfig.from_dict(
-                model_config.vision_config
-            )
-
-        if isinstance(model_config.text_config, dict):
-            model_config.text_config = TextConfig.from_dict(model_config.text_config)
+        model_config.vision_config = VisionConfig.from_dict(model_config.vision_config)
+        model_config.text_config = TextConfig.from_dict(model_config.text_config)
 
         model = LlavaModel(model_config)
         weight_files = glob.glob(str(path / "*.safetensors"))
         if not weight_files:
-            logging.error(f"No safetensors found in {path}")
             raise FileNotFoundError(f"No safetensors found in {path}")
 
         weights = {}
         for wf in weight_files:
             weights.update(mx.load(wf))
 
-        if hasattr(VisionModel, "sanitize"):
-            weights = VisionModel.sanitize(weights)
-
-        if hasattr(VisionModel, "sanitize"):
-            weights = LanguageModel.sanitize(weights)
+        weights = VisionModel.sanitize(weights)
+        weights = LanguageModel.sanitize(weights)
 
         model.load_weights(list(weights.items()))
         return model

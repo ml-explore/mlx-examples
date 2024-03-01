@@ -39,8 +39,7 @@ These are two cats lying on a pink couch.
 You can also use LLaVA in Python:
 
 ```python
-from utils import load_image, prepare_inputs
-from generate import load_model, generate_text
+from generate import load_model, prepare_inputs, generate_text
 
 processor, model = load_model("llava-hf/llava-1.5-7b-hf")
 
@@ -48,7 +47,6 @@ max_tokens, temperature = 128, 0.0
 
 prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
 image = "http://images.cocodataset.org/val2017/000000039769.jpg"
-image = load_image(image)
 input_ids, pixel_values = prepare_inputs(processor, image, prompt)
 
 reply = generate_text(

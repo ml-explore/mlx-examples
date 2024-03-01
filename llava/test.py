@@ -7,7 +7,6 @@ import requests
 import torch
 from PIL import Image
 from transformers import AutoProcessor, LlavaForConditionalGeneration
-from utils import get_model_path
 
 from llava import LlavaModel
 
@@ -17,8 +16,7 @@ IMAGE_FILE = "http://images.cocodataset.org/val2017/000000039769.jpg"
 
 
 def load_mlx_models(path):
-    model_path = get_model_path(path)
-    model = LlavaModel.from_pretrained(model_path)
+    model = LlavaModel.from_pretrained(path)
     model.eval()
     return model
 
@@ -76,7 +74,7 @@ class TestVisionTower(unittest.TestCase):
             )
 
 
-class TestLlaVA(unittest.TestCase):
+class TestLlava(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mx_llava = load_mlx_models(MODEL_PATH)
