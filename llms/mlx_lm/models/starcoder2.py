@@ -51,10 +51,10 @@ class Attention(nn.Module):
         head_dim = args.hidden_size // args.num_attention_heads
         self.scale = head_dim**-0.5
 
-        self.wq = nn.Linear(dim, n_heads * head_dim, bias=True)
-        self.wk = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.wv = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.wo = nn.Linear(n_heads * head_dim, dim, bias=True)
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=True)
+        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
+        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=True)
         self.rope = nn.RoPE(head_dim, traditional=True, base=args.rope_theta)
 
     def __call__(
@@ -65,15 +65,19 @@ class Attention(nn.Module):
     ) -> mx.array:
         B, L, D = x.shape
 
-        queries, keys, values = self.wq(x), self.wk(x), self.wv(x)
+        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
-        keys = mx.repeat(keys, self.repeats, axis=1)
-        values = mx.repeat(values, self.repeats, axis=1)
+        def repeat(a):
+            a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
+            return a.reshape([B, self.n_heads, L, -1])
+
+        if self.repeats > 1:
+            keys, values = map(repeat, (keys, values))
 
         if cache is not None:
             key_cache, value_cache = cache
@@ -90,7 +94,7 @@ class Attention(nn.Module):
             scores += mask
         scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.wo(output), (keys, values)
+        return self.o_proj(output), (keys, values)
 
 
 class MLP(nn.Module):
