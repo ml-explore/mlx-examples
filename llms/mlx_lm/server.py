@@ -18,6 +18,7 @@ from .utils import generate_step, load
 MODEL: nn.Module
 TOKENIZER: PreTrainedTokenizer
 
+SYSTEM_FINGERPRINT: str = f"fp_{uuid.uuid4()}"
 
 class StopCondition(NamedTuple):
     stop_met: bool
@@ -76,9 +77,6 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
 
 
 class APIHandler(BaseHTTPRequestHandler):
-
-    # System fingerprint is the same for all instances of the class
-    system_fingerprint = f"fp_{uuid.uuid4()}"
 
     def __init__(self, *args, **kwargs):
         """
@@ -167,7 +165,7 @@ class APIHandler(BaseHTTPRequestHandler):
         # Static response
         response = {
             "id": self.request_id,
-            "system_fingerprint": self.system_fingerprint,
+            "system_fingerprint": SYSTEM_FINGERPRINT,
             "object": self.object_type,
             "model": self.requested_model,
             "created": self.created,
