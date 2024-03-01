@@ -253,9 +253,7 @@ def train(
                 f"{adapter_path}/{it + 1}_{Path(args.adapter_file).name}"
             )
             save_adapter(model=model, adapter_file=checkpoint_adapter_file)
-            print(
-                f"Iter {it + 1}: Saved adapter weights to {checkpoint_adapter_file}."
-            )
+            print(f"Iter {it + 1}: Saved adapter weights to {checkpoint_adapter_file}.")
 
     # save final adapter weights
     save_adapter(model=model, adapter_file=args.adapter_file)
