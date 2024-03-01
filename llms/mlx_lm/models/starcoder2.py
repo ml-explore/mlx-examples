@@ -168,7 +168,6 @@ class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.model = Starcoder2Model(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
 
     def __call__(
         self,
@@ -176,4 +175,9 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        return self.lm_head(out), cache
+        out = out @ self.model.embed_tokens.weight.T
+        return out, cache
+
+    @property
+    def layers(self):
+        return self.model.layers
