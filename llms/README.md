@@ -48,7 +48,7 @@ from mlx_lm import convert
 
 upload_repo = "mistralai/Mistral-7B-Instruct-v0.1"
 
-convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_repo=upload_repo)
+convert("mistralai/Mistral-7B-v0.1", quantize=True, upload_repo=upload_repo, revision="main")
 ```
 
 This will generate a 4-bit quantized Mistral-7B and upload it to the
