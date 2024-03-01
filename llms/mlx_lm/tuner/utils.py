@@ -29,7 +29,7 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         "llama",
         "phi",
         "mixtral",
-        "stablelm_epoch",
+        "stablelm",
         "qwen2",
         "gemma",
     ]:
