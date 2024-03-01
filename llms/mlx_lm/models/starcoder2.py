@@ -170,7 +170,7 @@ class Model(nn.Module):
         self.model = Starcoder2Model(args)
         # This is for 15B starcoder2 since it doesn't tie word embeddings
         if not args.tie_word_embeddings:
-            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
+            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
