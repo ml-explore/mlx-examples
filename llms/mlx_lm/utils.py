@@ -126,6 +126,7 @@ def generate_step(
         temp (float): The temperature for sampling, if 0 the argmax is used.
         repetition_penalty (float, optional): The penalty factor for repeating tokens.
         repetition_context_size (int, optional): The number of tokens to consider for repetition penalty (default 20).
+        top_p (float, optional): Nulceus sampling, higher means model considers more less likely words
 
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
