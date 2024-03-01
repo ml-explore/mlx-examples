@@ -141,7 +141,6 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Send header type
         self._set_stream_headers(200) if self.stream else self._set_completion_headers(200)
-        self.end_headers()
 
         endpoints[self.path]()
 
@@ -248,7 +247,13 @@ class APIHandler(BaseHTTPRequestHandler):
         text = _tokenizer.decode(tokens)
         response = self.generate_response(text, "stop", len(prompt), len(tokens))
 
-        self.wfile.write(f"{json.dumps(response)}\n\n".encode())
+        response_json = json.dumps(response).encode()
+
+        # Send an additional Content-Length header when it is known
+        self.send_header("Content-Length", str(len(response_json)))
+        self.end_headers()
+
+        self.wfile.write(response_json)
         self.wfile.flush()
 
     def handle_stream(
@@ -264,6 +269,9 @@ class APIHandler(BaseHTTPRequestHandler):
             stop_id_sequences (List[np.ndarray]):
                 A list of stop words passed to the stopping_criteria function
         """
+        # No additional headers are needed, call end_headers
+        self.end_headers()
+
         tokens = []
         current_generated_text_index = 0
 
