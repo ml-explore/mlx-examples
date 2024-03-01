@@ -51,10 +51,10 @@ class Attention(nn.Module):
         head_dim = args.hidden_size // args.num_attention_heads
         self.scale = head_dim**-0.5
 
-        self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
-        self.wk = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
-        self.wv = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
-        self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
+        self.wq = nn.Linear(dim, n_heads * head_dim, bias=True)
+        self.wk = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
+        self.wv = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
+        self.wo = nn.Linear(n_heads * head_dim, dim, bias=True)
         self.rope = nn.RoPE(head_dim, traditional=True, base=args.rope_theta)
 
     def __call__(
@@ -96,9 +96,9 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
-        self.c_fc = nn.Linear(dim, hidden_dim, bias=False)
-        self.c_proj = nn.Linear(hidden_dim, dim, bias=False)
-        self.act = nn.Linear(dim, hidden_dim, bias=False)
+        self.c_fc = nn.Linear(dim, hidden_dim, bias=True)
+        self.c_proj = nn.Linear(hidden_dim, dim, bias=True)
+        self.act = nn.Linear(dim, hidden_dim, bias=True)
 
     def __call__(self, x) -> mx.array:
         return self.c_proj(nn.gelu(self.c_fc(x)) * self.act(x))
@@ -140,7 +140,7 @@ class Starcoder2Model(nn.Module):
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = RMSNorm(args.hidden_size, eps=args.norm_eps)
-        self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
 
     def __call__(
         self,
@@ -167,7 +167,7 @@ class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.model = Starcoder2Model(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
 
     def __call__(
         self,
