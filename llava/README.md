@@ -1,9 +1,9 @@
 # LLaVA
 
-An example of LLaVA: Large Language and Vission Assistant in MLX. LLlava is a
-multi-modal model that can generate text from images and text prompts.[^1]
+An example of LLaVA: Large Language and Vision Assistant in MLX.[^1] LLlava is
+a multimodal model that can generate text given combined image and text inputs.
 
-## Setup:
+## Setup
 
 Install the dependencies:
 
@@ -31,7 +31,7 @@ This uses the following image:
  
 And generates output similar to:
 
-```shell
+```
 These are two cats, one of which is sleeping and the other one is awake.
 
 The sleeping cat is lying on a couch, while the awake cat is also on the couch,
