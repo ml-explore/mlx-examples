@@ -23,6 +23,7 @@ class ModelArgs(BaseModelArgs):
     norm_type: str = "layer_norm"
     vocab_size: int = 49152
     rope_theta: float = 100000
+    tie_word_embeddings: bool = True
 
     def __post_init__(self):
         if self.num_key_value_heads is None:
@@ -167,6 +168,7 @@ class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.model = Starcoder2Model(args)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
 
     def __call__(
         self,
@@ -174,8 +176,11 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
-        return out, cache
+        if not self.model.args.tie_word_embeddings:
+            out = out @ self.model.embed_tokens.weight.T
+            return out, cache
+        else:
+            return self.lm_head(out), cache
 
     @property
     def layers(self):
