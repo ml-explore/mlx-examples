@@ -131,10 +131,23 @@ class APIHandler(BaseHTTPRequestHandler):
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
 
+        # Get stop id sequences, if provided
+        stop_words = self.body.get("stop", [])
+        stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
+        stop_id_sequences = [
+            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
+            for stop_word in stop_words
+        ]
+
         # Send header type
         self._set_stream_headers(200) if self.stream else self._set_completion_headers(200)
 
-        endpoints[self.path]()
+        # Call endpoint specific method
+        prompt = endpoints[self.path]()
+
+        # Call method based on response type
+        method = self.handle_stream if self.stream else self.generate_completion
+        method(prompt, stop_id_sequences)
 
     def generate_response(
         self,
@@ -327,9 +340,12 @@ class APIHandler(BaseHTTPRequestHandler):
         self.wfile.write(f"data: [DONE]\n\n".encode())
         self.wfile.flush()
 
-    def handle_chat_completions(self):
+    def handle_chat_completions(self) -> mx.array:
         """
         Handle a chat completion request
+
+        Returns:
+            mx.array: A mx.array of the tokenized prompt from the request body
         """
         body = self.body
         assert "messages" in body, "Request did not contain messages"
@@ -349,47 +365,23 @@ class APIHandler(BaseHTTPRequestHandler):
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
             prompt = TOKENIZER.encode(prompt, return_tensors="np")
 
-        prompt = mx.array(prompt[0])
-        stop_words = body.get("stop", [])
-        stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
-        stop_id_sequences = [
-            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
-            for stop_word in stop_words
-        ]
+        return mx.array(prompt[0])
 
-        method = self.handle_stream if self.stream else self.generate_completion
-        method(
-            prompt,
-            stop_id_sequences,
-        )
-
-    def handle_completions(self):
+    def handle_completions(self) -> mx.array:
         """
         Handle a text completion request
-        """
-        body = self.body
-        assert "prompt" in body, "Request did not contain a prompt"
 
+        Returns:
+            mx.array: A mx.array of the tokenized prompt from the request body
+        """
         # Determine response type
         self.request_id = f"cmpl-{uuid.uuid4()}"
         self.object_type = "text_completion"
 
-        prompt_text = body["prompt"]
-
+        assert "prompt" in self.body, "Request did not contain a prompt"
+        prompt_text = self.body["prompt"]
         prompt = TOKENIZER.encode(prompt_text, return_tensors="np")
-        prompt = mx.array(prompt[0])
-        stop_words = body.get("stop", [])
-        stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
-        stop_id_sequences = [
-            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
-            for stop_word in stop_words
-        ]
-
-        method = self.handle_stream if self.stream else self.generate_completion
-        method(
-            prompt,
-            stop_id_sequences,
-        )
+        return mx.array(prompt[0])
 
 
 def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler):
