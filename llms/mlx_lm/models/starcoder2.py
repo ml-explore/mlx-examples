@@ -111,8 +111,8 @@ class TransformerBlock(nn.Module):
         self.n_heads = args.num_attention_heads
         self.attention = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.attention_norm = RMSNorm(args.hidden_size, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.hidden_size, eps=args.norm_eps)
+        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.args = args
 
     def __call__(
