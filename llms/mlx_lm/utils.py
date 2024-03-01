@@ -112,7 +112,7 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
-    temp: 0.0,
+    temp: float = 0.0,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
