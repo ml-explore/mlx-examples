@@ -6,6 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .layers import LayerNorm
 
 
 @dataclass
@@ -19,22 +20,16 @@ class ModelArgs(BaseModelArgs):
     max_position_embeddings: int = 16384
     norm_eps: float = None
     rms_norm_eps: float = 1e-5
+    norm_type: str = "layer_norm"
     vocab_size: int = 49152
     rope_theta: float = 100000
 
+    def __post_init__(self):
+        if self.num_key_value_heads is None:
+            self.num_key_value_heads = self.num_attention_heads
 
-class RMSNorm(nn.Module):
-    def __init__(self, hidden_sizes: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((hidden_sizes,))
-        self.eps = eps
-
-    def _norm(self, x):
-        return x * mx.rsqrt(x.square().mean(-1, keephidden_sizes=True) + self.eps)
-
-    def __call__(self, x):
-        output = self._norm(x.astype(mx.float32)).astype(x.dtype)
-        return self.weight * output
+        if self.norm_eps is None:
+            self.norm_eps = self.rms_norm_eps
 
 
 class Attention(nn.Module):
@@ -113,11 +108,13 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.hidden_size = args.hidden_size
         self.n_heads = args.num_attention_heads
-        self.attention = Attention(args)
+
+        self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.args = args
+        self.input_layer_norm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layer_norm = LayerNorm(
+            args.hidden_size, eps=args.rms_norm_eps
+        )
 
     def __call__(
         self,
@@ -125,9 +122,9 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attention(self.attention_norm(x), mask, cache)
+        r, cache = self.self_attn(self.input_layer_norm(x), mask, cache)
         h = x + r
-        r = self.feed_forward(self.ffn_norm(h))
+        r = self.mlp(self.post_attention_layer_norm(h))
         out = h + r
         return out, cache
 
@@ -143,7 +140,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.norm_eps)
+        self.norm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
 
     def __call__(
