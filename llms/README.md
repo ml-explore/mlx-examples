@@ -127,17 +127,18 @@ Most
 [Phi-2](https://huggingface.co/models?library=transformers,safetensors&other=phi&sort=trending),
 and
 [Mixtral](https://huggingface.co/models?library=transformers,safetensors&other=mixtral&sort=trending)
+[Starcoder2](https://huggingface.co/models?library=transformers,safetensors&other=starcoder2&sort=trending)
 style models should work out of the box.
 
 For some models (such as `Qwen` and `plamo`) the tokenizer requires you to
 enable the `trust_remote_code` option. You can do this by passing
 `--trust-remote-code` in the command line. If you don't specify the flag
 explicitly, you will be prompted to trust remote code in the terminal when
-running the model. 
+running the model.
 
 For `Qwen` models you must also specify the `eos_token`. You can do this by
 passing `--eos-token "<|endoftext|>"` in the command
-line. 
+line.
 
 These options can also be set in the Python API. For example:
 
