@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from functools import partial
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-
+from .layers import LayerNorm
 
 @dataclass
 class ModelArgs(BaseModelArgs):
@@ -19,7 +18,7 @@ class ModelArgs(BaseModelArgs):
     vocab_size: int = 49152
     intermediate_size: int = 12288
     max_position_embeddings: int = 16384
-    norm_epsilon: float = 1e-5
+    norm_epsilon: float = 1e-05
     rope_theta: float = 10000
     rope_traditional: bool = False
     attention_dropout: int = 0.0
@@ -41,11 +40,11 @@ class Starcoder2Attention(nn.Module):
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
-        self.head_dim = head_dim = args.hidden_size // self.n_heads
+        self.head_dim = head_dim = args.hidden_size // n_heads
 
-        self.repeats = self.n_heads // n_kv_heads
+        self.repeats = n_heads // n_kv_heads
 
-        self.scale = self.head_dim**-0.5
+        self.scale = head_dim**-0.5
 
         self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=True)
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
@@ -90,7 +89,7 @@ class Starcoder2Attention(nn.Module):
         scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
         if mask is not None:
             scores += mask
-        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
+        scores = mx.softmax(scores, axis=-1).astype(values.dtype)
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
@@ -112,8 +111,8 @@ class TransformerBlock(nn.Module):
         self.hidden_size = args.hidden_size
         self.self_attn = Starcoder2Attention(args)
         self.mlp = Starcoder2MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
-        self.post_attention_layernorm = nn.LayerNorm(
+        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.post_attention_layernorm = LayerNorm(
             args.hidden_size, eps=args.norm_epsilon
         )
         self.args = args
@@ -142,7 +141,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.norm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
 
     def __call__(
         self,
@@ -150,7 +149,6 @@ class Starcoder2Model(nn.Module):
         cache=None,
     ):
         h = self.embed_tokens(inputs)
-        h = h * (self.args.hidden_size**0.5)
 
         mask = None
         if h.shape[1] > 1:
@@ -186,10 +184,8 @@ class Model(nn.Module):
         out, cache = self.model(inputs, cache)
 
         if not self.tie_word_embeddings:
-            # If tie_word_embeddings is False, apply linear transformation to obtain predictions
             return self.lm_head(out), cache
         else:
-            # If tie_word_embeddings is True, perform matrix multiplication for predictions
             out = out @ self.model.embed_tokens.weight.T
             return out, cache
 
