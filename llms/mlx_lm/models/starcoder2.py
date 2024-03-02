@@ -69,9 +69,9 @@ class Starcoder2Attention(nn.Module):
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, self.n_heads, -1).transponse(0, 2, 1, 3)
-        keys = keys.reshape(B, L, self.n_kv_heads, -1).transponse(0, 2, 1, 3)
-        values = values.reshape(B, L, self.n_kv_heads, -1).transponse(0, 2, 1, 3)
+        queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
+        keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if self.repeats > 1:
             keys = mx.repeat(keys, self.repeats, axis=1)
