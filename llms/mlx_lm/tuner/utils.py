@@ -32,6 +32,7 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
         "stablelm_epoch",
         "qwen2",
         "gemma",
+        "starcoder2",
     ]:
         check_lora_layers(len(model.model.layers))
 
