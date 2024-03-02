@@ -101,7 +101,7 @@ class Starcoder2MLP(nn.Module):
         self.c_fc = nn.Linear(dim, hidden_dim, bias=True)
         self.c_proj = nn.Linear(hidden_dim, dim, bias=True)
 
-    def __call_(self, x) -> mx.array:
+    def __call__(self, x) -> mx.array:
         return self.c_proj(nn.gelu(self.c_fc(x)))
 
 
