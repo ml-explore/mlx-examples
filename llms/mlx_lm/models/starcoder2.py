@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Dict, Optional, Tuple, Union
 
-import logger
-
 import mlx.core as mx
 import mlx.nn as nn
 
@@ -14,14 +12,12 @@ class ModelArgs(BaseModelArgs):
     model_type: str
     hidden_size: int
     num_hidden_layers: int
-    intermediate_size: int = 12288
+    sliding_window: int
     num_attention_heads: int
-    head_dim: int
-    rms_norm_eps: float
-    vocab_size: int = 49152
     num_key_value_heads: int = None
+    vocab_size: int = 49152
+    intermediate_size: int = 12288
     max_position_embeddings: int = 16384
-    sliding_window: int = 4096
     norm_epsilon: float = 1e-5
     rope_theta: float = 10000
     rope_traditional: bool = False
@@ -29,22 +25,7 @@ class ModelArgs(BaseModelArgs):
     residual_dropout: int = 0.0
     embedding_dropout: int = 0.0
     use_bias: bool = True
-
-@partial(mx.compile, shapeless=True)
-def rms_norm(x, weight, eps):
-    x = x.astype(mx.float32)
-    x = x * mx.rsqrt(x.square().mean(-1, keepdims=True) + eps)
-    return (1.0 + weight) * x.astype(weight.dtype)
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((dims, ))
-        self.eps = eps
-
-    def __call__(self, x):
-        return rms_norm(x, self.weight, self.epx)
+    tie_word_embeddings: bool = True
 
 class Starcoder2Attention(nn.Module):
     """
@@ -52,17 +33,9 @@ class Starcoder2Attention(nn.Module):
     and "Generating Long Sequences with Sparse Transformers".
     """
 
-    def __init__(self, args: ModelArgs, layer_idx: Optional[int] = None):
+    def __init__(self, args: ModelArgs):
         super().__init__()
         self.config = args
-        self.layer_idx = layer_idx
-        if layer_idx is None:
-            logger.warning_once(
-                f"Instantiating {self.__class__.__name__} without passing a `layer_idx` is not recommended and will "
-                "lead to errors during the forward call if caching is used. Please make sure to provide a `layer_idx` "
-                "when creating this class."
-            )
-
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
@@ -120,7 +93,7 @@ class Starcoder2Attention(nn.Module):
         return self.o_proj(output), (keys, values)
 
 
-class Starcode2MLP(nn.Module):
+class Starcoder2MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
         self.c_fc = nn.Linear(dim, hidden_dim, bias=True)
@@ -136,9 +109,9 @@ class TransformerBlock(nn.Module):
         self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
         self.self_attn = Starcoder2Attention(args)
-        self.mlp = Starcode2MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.mlp = Starcoder2MLP(args.hidden_size, args.intermediate_size)
+        self.input_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.post_attention_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
         self.args = args
 
     def __call__(
@@ -165,7 +138,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
 
     def __call__(
         self,
@@ -194,7 +167,9 @@ class Model(nn.Module):
         super().__init__()
         self.model_type = args.model_type
         self.model = Starcoder2Model(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.tie_word_embeddings = args.tie_word_embeddings
+        if not args.tie_word_embeddings:
+            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -202,7 +177,12 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        return self.lm_head(out), cache
+
+        if not self.tie_word_embeddings:
+            return self.lm_head(out), cache
+        else:
+            out = out @ self.model.embed_tokens.weight.T
+            return out, cache
 
     @property
     def layers(self):
