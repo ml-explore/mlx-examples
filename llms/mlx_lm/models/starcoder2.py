@@ -168,6 +168,9 @@ class Model(nn.Module):
         self.model_type = args.model_type
         self.model = Starcoder2Model(args)
         self.tie_word_embeddings = args.tie_word_embeddings
+
+        # If tie_word_embeddings is False, tie (share) the embedding weights with lm_head
+        # Source: https://github.com/huggingface/transformers/blob/main/src/transformers/models/starcoder2/modeling_starcoder2.py#L1071
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
@@ -179,8 +182,10 @@ class Model(nn.Module):
         out, cache = self.model(inputs, cache)
 
         if not self.tie_word_embeddings:
+            # If tie_word_embeddings is False, apply linear transformation to obtain predictions
             return self.lm_head(out), cache
         else:
+            # If tie_word_embeddings is True, perform matrix multiplication for predictions
             out = out @ self.model.embed_tokens.weight.T
             return out, cache
 
