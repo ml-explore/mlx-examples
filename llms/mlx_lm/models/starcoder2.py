@@ -154,7 +154,7 @@ class Starcoder2Model(nn.Module):
 
         mask = None
         if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.creative_additive_causal_mask(h.shape[1])
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
             mask = mask.astype(h.dtype)
 
         if cache is None:
