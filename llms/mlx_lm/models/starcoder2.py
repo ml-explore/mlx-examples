@@ -7,6 +7,7 @@ import mlx.nn as nn
 from .base import BaseModelArgs
 from .layers import LayerNorm
 
+
 @dataclass
 class ModelArgs(BaseModelArgs):
     model_type: str
