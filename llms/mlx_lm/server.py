@@ -34,7 +34,7 @@ def stopping_criteria(
 
     Args:
         tokens (List[int]): The current sequence of generated tokens.
-        stop_id_sequences (List[List[[int]]): A list of numpy arrays, each representing a sequence of token IDs.
+        stop_id_sequences (List[List[[int]]): A list of integer lists, each representing a sequence of token IDs.
             If the end of the `tokens` list matches any of these sequences, the generation should stop.
         eos_token_id (Union[int, None]): The token ID that represents the end-of-sequence. If the last token in `tokens` matches this,
             the generation should stop.
