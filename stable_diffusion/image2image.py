@@ -26,6 +26,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sd = StableDiffusion()
+    sd.ensure_models_are_loaded()
 
     # Read the image
     img = Image.open(args.image)

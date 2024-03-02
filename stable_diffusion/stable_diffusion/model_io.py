@@ -289,6 +289,7 @@ def load_autoencoder(key: str = _DEFAULT_MODEL, float16: bool = False):
             block_out_channels=config["block_out_channels"],
             layers_per_block=config["layers_per_block"],
             norm_num_groups=config["norm_num_groups"],
+            scaling_factor=config["scaling_factor"],
         )
     )
 

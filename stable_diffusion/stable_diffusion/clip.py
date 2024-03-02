@@ -78,6 +78,12 @@ class CLIPTextModel(nn.Module):
                 config.model_dims, config.projection_dim, bias=False
             )
 
+    def _get_mask(self, N, dtype):
+        indices = mx.arange(N)
+        mask = indices[:, None] < indices[None]
+        mask = mask.astype(dtype) * (-6e4 if dtype == mx.float16 else -1e9)
+        return mask
+
     def __call__(self, x):
         # Extract some shapes
         B, N = x.shape
@@ -88,7 +94,7 @@ class CLIPTextModel(nn.Module):
         x = x + self.position_embedding.weight[:N]
 
         # Compute the features from the transformer
-        mask = nn.MultiHeadAttention.create_additive_causal_mask(N, x.dtype)
+        mask = self._get_mask(N, x.dtype)
         hidden_states = []
         for l in self.layers:
             x = l(x, mask)

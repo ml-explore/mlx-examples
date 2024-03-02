@@ -7,23 +7,32 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from stable_diffusion import StableDiffusion
+from stable_diffusion import StableDiffusion, StableDiffusionXL
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate images from a textual prompt using stable diffusion"
     )
     parser.add_argument("prompt")
+    parser.add_argument("--model", choices=["sd", "sdxl"], default="sdxl")
     parser.add_argument("--n_images", type=int, default=4)
-    parser.add_argument("--steps", type=int, default=50)
-    parser.add_argument("--cfg", type=float, default=7.5)
+    parser.add_argument("--steps", type=int)
+    parser.add_argument("--cfg", type=float)
     parser.add_argument("--negative_prompt", default="")
     parser.add_argument("--n_rows", type=int, default=1)
     parser.add_argument("--decoding_batch_size", type=int, default=1)
     parser.add_argument("--output", default="out.png")
     args = parser.parse_args()
 
-    sd = StableDiffusion()
+    if args.model == "sdxl":
+        sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=True)
+        args.cfg = args.cfg or 0.0
+        args.steps = args.steps or 2
+    else:
+        sd = StableDiffusion("stabilityai/stable-diffusion-2-1-base")
+        args.cfg = args.cfg or 7.5
+        args.steps = args.steps or 50
+    sd.ensure_models_are_loaded()
 
     # Generate the latent vectors using diffusion
     latents = sd.generate_latents(

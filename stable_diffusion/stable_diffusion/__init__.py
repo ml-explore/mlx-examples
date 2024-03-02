@@ -13,7 +13,7 @@ from .model_io import (
     load_tokenizer,
     load_unet,
 )
-from .sampler import SimpleEulerSampler
+from .sampler import SimpleEulerAncestralSampler, SimpleEulerSampler
 
 
 class StableDiffusion:
@@ -22,9 +22,14 @@ class StableDiffusion:
         self.diffusion_config = load_diffusion_config(model)
         self.unet = load_unet(model, float16)
         self.text_encoder = load_text_encoder(model, float16)
-        self.autoencoder = load_autoencoder(model, float16)
+        self.autoencoder = load_autoencoder(model, False)
         self.sampler = SimpleEulerSampler(self.diffusion_config)
         self.tokenizer = load_tokenizer(model)
+
+    def ensure_models_are_loaded(self):
+        mx.eval(self.unet.parameters())
+        mx.eval(self.text_encoder.parameters())
+        mx.eval(self.autoencoder.parameters())
 
     def _tokenize(self, tokenizer, text: str, negative_text: Optional[str] = None):
         # Tokenize the text
@@ -167,6 +172,9 @@ class StableDiffusion:
 class StableDiffusionXL(StableDiffusion):
     def __init__(self, model: str = _DEFAULT_MODEL, float16: bool = False):
         super().__init__(model, float16)
+
+        self.sampler = SimpleEulerAncestralSampler(self.diffusion_config)
+
         self.text_encoder_1 = self.text_encoder
         self.tokenizer_1 = self.tokenizer
         del self.tokenizer, self.text_encoder
@@ -181,6 +189,12 @@ class StableDiffusionXL(StableDiffusion):
             merges_key="tokenizer_2_merges",
             vocab_key="tokenizer_2_vocab",
         )
+
+    def ensure_models_are_loaded(self):
+        mx.eval(self.unet.parameters())
+        mx.eval(self.text_encoder_1.parameters())
+        mx.eval(self.text_encoder_2.parameters())
+        mx.eval(self.autoencoder.parameters())
 
     def _get_text_conditioning(
         self,
