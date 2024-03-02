@@ -10,7 +10,6 @@ from typing import Callable, List, Literal, NamedTuple, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 from transformers import PreTrainedTokenizer
 
 from .utils import generate_step, load
@@ -27,7 +26,7 @@ class StopCondition(NamedTuple):
 
 def stopping_criteria(
     tokens: List[int],
-    stop_id_sequences: List[np.ndarray],
+    stop_id_sequences: List[List[int]],
     eos_token_id: Union[int, None],
 ) -> StopCondition:
     """
@@ -35,7 +34,7 @@ def stopping_criteria(
 
     Args:
         tokens (List[int]): The current sequence of generated tokens.
-        stop_id_sequences (List[np.ndarray]): A list of numpy arrays, each representing a sequence of token IDs.
+        stop_id_sequences (List[List[[int]]): A list of numpy arrays, each representing a sequence of token IDs.
             If the end of the `tokens` list matches any of these sequences, the generation should stop.
         eos_token_id (Union[int, None]): The token ID that represents the end-of-sequence. If the last token in `tokens` matches this,
             the generation should stop.
@@ -49,7 +48,7 @@ def stopping_criteria(
 
     for stop_ids in stop_id_sequences:
         if len(tokens) >= len(stop_ids):
-            if np.array_equal(tokens[-len(stop_ids) :], stop_ids):
+            if tokens[-len(stop_ids):] == stop_ids:
                 return StopCondition(stop_met=True, trim_length=len(stop_ids))
 
     return StopCondition(stop_met=False, trim_length=0)
@@ -135,7 +134,7 @@ class APIHandler(BaseHTTPRequestHandler):
         stop_words = self.body.get("stop", [])
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
         stop_id_sequences = [
-            TOKENIZER.encode(stop_word, return_tensors="np", add_special_tokens=False)[0]
+            TOKENIZER.encode(stop_word, add_special_tokens=False)
             for stop_word in stop_words
         ]
 
@@ -217,14 +216,14 @@ class APIHandler(BaseHTTPRequestHandler):
     def generate_completion(
         self,
         prompt: mx.array,
-        stop_id_sequences: List[np.ndarray],
+        stop_id_sequences: List[List[int]],
     ):
         """
         Generate a response to a prompt and send it to the client in a single batch
 
         Args:
             prompt (mx.array): The prompt, in token form inside of a mlx array
-            stop_id_sequences (List[np.ndarray]):
+            stop_id_sequences (List[List[int]]):
                 A list of stop words passed to the stopping_criteria function
         """
         tokens = []
@@ -264,14 +263,14 @@ class APIHandler(BaseHTTPRequestHandler):
     def handle_stream(
         self,
         prompt: mx.array,
-        stop_id_sequences: List[np.ndarray],
+        stop_id_sequences: List[List[int]],
     ):
         """
         Generate response to prompt and foward it to the client using a Server Sent Events (SSE) stream
 
         Args:
             prompt (mx.array): The prompt, in token form inside of a mlx array
-            stop_id_sequences (List[np.ndarray]):
+            stop_id_sequences (List[List[int]]):
                 A list of stop words passed to the stopping_criteria function
         """
         # No additional headers are needed, call end_headers
@@ -280,7 +279,7 @@ class APIHandler(BaseHTTPRequestHandler):
         tokens = []
         current_generated_text_index = 0
 
-        max_stop_id_sequence_len = max(stop_id_sequences, key=len) if stop_id_sequences else 0
+        max_stop_id_sequence_len = len(max(stop_id_sequences, default=[]))
         # Buffer to store the last `max_stop_id_sequence_len` tokens
         # to check for stop conditions before writing to the stream.
         stop_sequence_buffer = []
@@ -359,13 +358,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 body["messages"],
                 tokenize=True,
                 add_generation_prompt=True,
-                return_tensors="np",
             )
         else:
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
-            prompt = TOKENIZER.encode(prompt, return_tensors="np")
+            prompt = TOKENIZER.encode(prompt)
 
-        return mx.array(prompt[0])
+        return mx.array(prompt)
 
     def handle_completions(self) -> mx.array:
         """
@@ -380,8 +378,8 @@ class APIHandler(BaseHTTPRequestHandler):
 
         assert "prompt" in self.body, "Request did not contain a prompt"
         prompt_text = self.body["prompt"]
-        prompt = TOKENIZER.encode(prompt_text, return_tensors="np")
-        return mx.array(prompt[0])
+        prompt = TOKENIZER.encode(prompt_text)
+        return mx.array(prompt)
 
 
 def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler):
