@@ -7,6 +7,7 @@ import mlx.nn as nn
 
 from .base import BaseModelArgs
 
+
 @dataclass
 class ModelArgs(BaseModelArgs):
     model_type: str
@@ -26,6 +27,7 @@ class ModelArgs(BaseModelArgs):
     embedding_dropout: int = 0.0
     use_bias: bool = True
     tie_word_embeddings: bool = True
+
 
 class Starcoder2Attention(nn.Module):
     """
@@ -111,17 +113,19 @@ class TransformerBlock(nn.Module):
         self.self_attn = Starcoder2Attention(args)
         self.mlp = Starcoder2MLP(args.hidden_size, args.intermediate_size)
         self.input_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
-        self.post_attention_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.post_attention_layernorm = nn.LayerNorm(
+            args.hidden_size, eps=args.norm_epsilon
+        )
         self.args = args
 
     def __call__(
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None
+        cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
         r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
-        h  = x + r
+        h = x + r
         r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
         return out, cache
