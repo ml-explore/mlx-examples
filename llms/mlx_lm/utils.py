@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import copy
-import gc
 import glob
 import importlib
 import json
@@ -9,6 +8,7 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from textwrap import dedent
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import mlx.core as mx
@@ -57,13 +57,14 @@ def _get_classes(config: dict):
     return arch.Model, arch.ModelArgs
 
 
-def get_model_path(path_or_hf_repo: str) -> Path:
+def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path:
     """
     Ensures the model is available locally. If the path does not exist locally,
     it is downloaded from the Hugging Face Hub.
 
     Args:
         path_or_hf_repo (str): The local path or Hugging Face repository ID of the model.
+        revision (str, optional): A revision id which can be a branch name, a tag, or a commit hash.
 
     Returns:
         Path: The path to the model.
@@ -73,6 +74,7 @@ def get_model_path(path_or_hf_repo: str) -> Path:
         model_path = Path(
             snapshot_download(
                 repo_id=path_or_hf_repo,
+                revision=revision,
                 allow_patterns=[
                     "*.json",
                     "*.safetensors",
@@ -439,23 +441,25 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
-    card.text = f"""
-# {upload_repo}
-This model was converted to MLX format from [`{hf_path}`]().
-Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
-## Use with mlx
+    card.text = dedent(
+        f"""
+        # {upload_repo}
+        This model was converted to MLX format from [`{hf_path}`]().
+        Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+        ## Use with mlx
 
-```bash
-pip install mlx-lm
-```
+        ```bash
+        pip install mlx-lm
+        ```
 
-```python
-from mlx_lm import load, generate
+        ```python
+        from mlx_lm import load, generate
 
-model, tokenizer = load("{upload_repo}")
-response = generate(model, tokenizer, prompt="hello", verbose=True)
-```
-"""
+        model, tokenizer = load("{upload_repo}")
+        response = generate(model, tokenizer, prompt="hello", verbose=True)
+        ```
+        """
+    )
     card.save(os.path.join(path, "README.md"))
 
     logging.set_verbosity_info()
@@ -495,7 +499,7 @@ def save_weights(
     # necessary ones
     if donate_weights:
         weights.clear()
-        gc.collect()
+        del weights
 
     for i in range(len(shards)):
         shard = shards[i]
@@ -503,12 +507,11 @@ def save_weights(
         shard_name = shard_file_format.format(i + 1, shards_count)
         shard_path = save_path / shard_name
 
-        mx.save_safetensors(str(shard_path), shard)
+        mx.save_safetensors(str(shard_path), shard, metadata={"format": "mlx"})
 
         for weight_name in shard.keys():
             index_data["weight_map"][weight_name] = shard_name
         del shard
-        gc.collect()
 
     index_data["weight_map"] = {
         k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
@@ -556,9 +559,10 @@ def convert(
     q_bits: int = 4,
     dtype: str = "float16",
     upload_repo: str = None,
+    revision: Optional[str] = None,
 ):
     print("[INFO] Loading")
-    model_path = get_model_path(hf_path)
+    model_path = get_model_path(hf_path, revision=revision)
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))

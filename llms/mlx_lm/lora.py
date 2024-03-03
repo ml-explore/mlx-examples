@@ -9,7 +9,7 @@ from mlx.utils import tree_flatten
 
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
-from .utils import generate, load
+from .utils import load
 
 
 def build_parser():
@@ -234,15 +234,8 @@ def run(args, training_callback: TrainingCallback = None):
         print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
     if args.prompt is not None:
-        print("Generating")
-        model.eval()
-        generate(
-            model=model,
-            tokenizer=tokenizer,
-            temp=args.temp,
-            max_tokens=args.max_tokens,
-            prompt=args.prompt,
-            verbose=True,
+        raise NotImplementedError(
+            "Please use mlx_lm.generate with trained adapter for generation."
         )
 
 
