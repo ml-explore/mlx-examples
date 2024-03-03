@@ -18,19 +18,11 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     num_key_value_heads: int = None
     max_position_embeddings: int = 16384
-    norm_eps: float = None
-    rms_norm_eps: float = 1e-5
+    norm_epsilon: float = 1e-5
     norm_type: str = "layer_norm"
     vocab_size: int = 49152
     rope_theta: float = 100000
     tie_word_embeddings: bool = True
-
-    def __post_init__(self):
-        if self.num_key_value_heads is None:
-            self.num_key_value_heads = self.num_attention_heads
-
-        if self.norm_eps is None:
-            self.norm_eps = self.rms_norm_eps
 
 
 class Attention(nn.Module):
@@ -111,9 +103,9 @@ class TransformerBlock(nn.Module):
 
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
         self.post_attention_layernorm = LayerNorm(
-            args.hidden_size, eps=args.rms_norm_eps
+            args.hidden_size, eps=args.norm_epsilon
         )
         self.args = args
 
@@ -141,7 +133,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = LayerNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
 
     def __call__(
         self,
