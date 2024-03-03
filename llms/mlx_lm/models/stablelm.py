@@ -128,7 +128,6 @@ class DecoderLayer(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.self_attn = Attention(config=config)
-        self.input_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.mlp = MLP(config.hidden_size, config.intermediate_size)
         self.input_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.post_attention_layernorm = LayerNorm(
