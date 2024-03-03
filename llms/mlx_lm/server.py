@@ -160,13 +160,6 @@ def create_completion_chunk_response(completion_id, requested_model, next_chunk)
 
 class APIHandler(BaseHTTPRequestHandler):
 
-    def __init__(self, *args, **kwargs):
-        # Prevent exposing local directory by deleting HEAD and GET methods
-        delattr(self, "do_HEAD")
-        delattr(self, "do_GET")
-
-        super().__init__(*args, **kwargs)
-
     def _set_headers(self, status_code=200):
         self.send_response(status_code)
         self.send_header("Content-type", "application/json")
