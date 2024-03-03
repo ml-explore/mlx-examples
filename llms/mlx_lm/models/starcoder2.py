@@ -51,7 +51,7 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=True)
-        self.rope = nn.RoPE(head_dim, traditional=True, base=args.rope_theta)
+        self.rope = nn.RoPE(head_dim, traditional=False, base=args.rope_theta)
 
     def __call__(
         self,
