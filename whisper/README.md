@@ -63,9 +63,9 @@ def run_convert(config):
 
 def run_multi_convert(mod):
     configs = (
-        f"--torch-name-or-path {mod} --mlx-path mlx-models/{mod}_fp16",
-        f"--torch-name-or-path {mod} --dtype float32 --mlx-path mlx-models/{mod}_fp32",
-        f"--torch-name-or-path {mod} -q --q_bits 4 --mlx-path mlx-models/{mod}_quantized_4bits"
+        f"--torch-name-or-path {mod} --mlx-path mlx_models/{mod}_fp16",
+        f"--torch-name-or-path {mod} --dtype float32 --mlx-path mlx_models/{mod}_fp32",
+        f"--torch-name-or-path {mod} -q --q_bits 4 --mlx-path mlx_models/{mod}_quantized_4bits"
     )
     for config in configs:
         run_convert(config)
