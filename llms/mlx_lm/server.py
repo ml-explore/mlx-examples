@@ -300,7 +300,7 @@ class APIHandler(BaseHTTPRequestHandler):
             stop_sequence_buffer.append(token)
 
             # Continue generating tokens until buffer is as large as the longest stop_id_sequence
-            if len(stop_sequence_buffer) <= max_stop_id_sequence_len:
+            if len(stop_sequence_buffer) < max_stop_id_sequence_len:
                 continue
 
             # Continue until unicode character is fully generated
