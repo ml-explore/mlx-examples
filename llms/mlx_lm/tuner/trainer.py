@@ -62,7 +62,7 @@ def default_loss(model, inputs, targets, lengths):
 
 def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
     # Sort by length:
-    idx = sorted(range(len(dataset)), key=lambda idx: dataset[idx])
+    idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))
 
     # Make the batches:
     batch_idx = [
