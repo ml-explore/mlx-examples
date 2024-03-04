@@ -39,8 +39,20 @@ To generate a 4-bit quantized model, use `-q`. For a full list of options:
 python convert.py --help
 ```
 
-By default, the conversion script will make the directory `mlx_models/tiny`
-and save the converted `weights.npz` and `config.json` there.
+By default, the conversion script will make the directory `mlx_models`
+and save the converted `weights.npz` and `config.json` there. Note that
+this does not automatically save different versions in this folder.
+However, the downloaded models are cached for future use. 
+
+Consider a scripted run (e.g. BASH, zsh) like the below example to stream-line filemaking:
+
+```
+model="tiny.en"
+python convert.py --torch-name-or-path ${model} --dtype float16 --mlx-path mlx_models/${model}_fp16
+python convert.py --torch-name-or-path ${model} --dtype float32 --mlx-path mlx_models/${model}_fp32
+python convert.py --torch-name-or-path ${model} -q --q_bits 4 --mlx-path mlx_models/${model}_quantized_4bits
+```
+Another solution would be to implement a loop that executes those commands for each of a list of Models. 
 
 ### Run
 
