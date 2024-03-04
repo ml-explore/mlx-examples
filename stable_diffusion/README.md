@@ -46,7 +46,9 @@ sd = StableDiffusion()
 #
 # Because MLX is lazily evaluated iterating over this generator doesn't
 # actually perform the computation until mx.eval() is called.
-latent_generator = sd.generate_latents("A photo of an astronaut riding a horse on Mars.")
+latent_generator = sd.generate_latents(
+    "A photo of an astronaut riding a horse on Mars."
+)
 
 # Here we are evaluating each diffusion step but we could also evaluate
 # once at the end.
@@ -58,8 +60,8 @@ for x_t in latent_generator:
 im = sd.decode(x_t)
 ```
 
-The above is almost line for line the implementation of the `txt2image.py`
-script in the root of the repository. You can use the script as follows:
+The above is essentially the implementation of the `txt2image.py` script in the
+root of the repository. You can use the script as follows:
 
 
 ```shell
@@ -92,7 +94,7 @@ python image2image.py --strength 0.5 original.png 'A lit fireplace'
 > [!Note]
 > `image2image.py` will automatically downsample your input image to guarantee
 > that its dimensions are divisible by 64. If you want full control of this
-> process, resize your image prior to using the script.*
+> process, resize your image prior to using the script.
 
 Performance
 -----------
