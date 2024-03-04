@@ -4,6 +4,7 @@ import argparse
 
 import mlx.core as mx
 import numpy as np
+from mlx.nn import QuantizedLinear
 from PIL import Image
 from tqdm import tqdm
 
@@ -21,15 +22,26 @@ if __name__ == "__main__":
     parser.add_argument("--negative_prompt", default="")
     parser.add_argument("--n_rows", type=int, default=1)
     parser.add_argument("--decoding_batch_size", type=int, default=1)
+    parser.add_argument("--no-float16", dest="float16", action="store_false")
+    parser.add_argument("--quantize", "-q", action="store_true")
     parser.add_argument("--output", default="out.png")
     args = parser.parse_args()
 
     if args.model == "sdxl":
-        sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=True)
+        sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=args.float16)
+        if args.quantize:
+            QuantizedLinear.quantize_module(sd.text_encoder_1)
+            QuantizedLinear.quantize_module(sd.text_encoder_2)
+            QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 0.0
         args.steps = args.steps or 2
     else:
-        sd = StableDiffusion("stabilityai/stable-diffusion-2-1-base")
+        sd = StableDiffusion(
+            "stabilityai/stable-diffusion-2-1-base", float16=args.float16
+        )
+        if args.quantize:
+            QuantizedLinear.quantize_module(sd.text_encoder)
+            QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 7.5
         args.steps = args.steps or 50
     sd.ensure_models_are_loaded()

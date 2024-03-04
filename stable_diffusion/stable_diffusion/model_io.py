@@ -5,10 +5,8 @@ from functools import partial
 from typing import Optional
 
 import mlx.core as mx
-import numpy as np
 from huggingface_hub import hf_hub_download
 from mlx.utils import tree_unflatten
-from safetensors import safe_open as safetensor_open
 
 from .clip import CLIPTextModel
 from .config import AutoencoderConfig, CLIPTextModelConfig, DiffusionConfig, UNetConfig
@@ -47,10 +45,6 @@ _MODELS = {
         "tokenizer_merges": "tokenizer/merges.txt",
     },
 }
-
-
-def _from_numpy(x):
-    return mx.array(np.ascontiguousarray(x))
 
 
 def map_unet_weights(key, value):
