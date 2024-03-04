@@ -181,6 +181,8 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     while True:
+
+        # Keep the free cache from getting too big
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
@@ -239,6 +241,16 @@ def generate(
     skip = 0
     REPLACEMENT_CHAR = "\ufffd"
 
+    def set_cache_limit():
+        # Get the cache size from the model
+        # and set a limit to keep memory in check
+        _, cache = model(mx.array([[0]]))
+        cache_size = max_tokens * sum(c.nbytes for _, c in tree_flatten(cache))
+        cache_size += 10 * 2**20  # buffer
+        mx.metal.set_cache_limit(cache_size)
+
+    set_cache_limit()
+
     for (token, prob), n in zip(
         generate_step(
             prompt_tokens,
@@ -280,6 +292,9 @@ def generate(
         gen_tps = (token_count - 1) / gen_time
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        p = mx.metal.get_peak_memory() / 2**20
+        c = mx.metal.get_cache_memory() / 2**20
+        print(f"Memory Peak: {p:.3f} Cache: {c:.3f}")
 
     return token_string
 
