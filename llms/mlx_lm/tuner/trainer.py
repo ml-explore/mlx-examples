@@ -41,6 +41,10 @@ class TrainingArgs:
         default="adapter.npz",
         metadata={"help": "Save/load path for the trained adapter weights."},
     )
+    grad_checkpoint: bool = field(
+        default=False,
+        metadata={"help": "Use gradient checkpointing to reduce memory use."},
+    )
 
 
 def default_loss(model, inputs, targets, lengths):
@@ -163,6 +167,10 @@ def train(
 
     # Create checkpoints directory if it does not exist
     adapter_path = checkpoints_path(args.adapter_file)
+
+    if args.grad_checkpoint:
+        for l in model.layers:
+            l.forward = nn.utils.checkpoint(l, l.forward)
 
     state = [model.state, optimizer.state]
 

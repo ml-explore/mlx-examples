@@ -117,7 +117,7 @@ class TransformerBlock(nn.Module):
         self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.args = args
 
-    def __call__(
+    def forward(
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
@@ -159,7 +159,7 @@ class LlamaModel(nn.Module):
             cache = [None] * len(self.layers)
 
         for e, layer in enumerate(self.layers):
-            h, cache[e] = layer(h, mask, cache[e])
+            h, cache[e] = layer.forward(h, mask, cache[e])
 
         return self.norm(h), cache
 

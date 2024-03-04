@@ -146,6 +146,11 @@ def build_parser():
         help="A YAML configuration file with the training options",
     )
     parser.add_argument("--seed", type=int, help="The PRNG seed")
+        "--grad-checkpoint",
+        action="store_true",
+        help="Use gradient checkpointing to reduce memory use.",
+    )
+    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
     return parser
 
 
@@ -222,6 +227,7 @@ def run(args, training_callback: TrainingCallback = None):
         steps_per_save=args.save_every,
         adapter_file=args.adapter_file,
         max_seq_length=args.max_seq_length,
+        grad_checkpoint=args.grad_checkpoint,
     )
     if args.train:
         print("Training")
