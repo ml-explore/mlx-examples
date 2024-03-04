@@ -181,8 +181,6 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     while True:
-
-        # Keep the free cache from getting too big
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
@@ -282,9 +280,6 @@ def generate(
         gen_tps = (token_count - 1) / gen_time
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
-        p = mx.metal.get_peak_memory() / 2**20
-        c = mx.metal.get_cache_memory() / 2**20
-        print(f"Memory Peak: {p:.3f} Cache: {c:.3f}")
 
     return token_string
 

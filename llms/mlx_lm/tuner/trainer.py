@@ -67,8 +67,6 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
 
     while True:
         indices = np.random.permutation(len(batch_idx))
-
-        # Collect batches from dataset
         for i in indices:
             # Encode batch
             batch = [tokenizer.encode(dataset[j]) for j in batch_idx[i]]
@@ -81,7 +79,7 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
                     "Consider pre-splitting your data to save memory."
                 )
 
-            # Pad to the nearest multiple of 32 or the maximum length
+            # Pad to the nearest multiple of 8 or the maximum length
             pad_to = 8
             max_length_in_batch = pad_to * ((max(lengths) + pad_to - 1) // pad_to)
             max_length_in_batch = min(max_length_in_batch, max_seq_length)
