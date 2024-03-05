@@ -105,7 +105,7 @@ class APIHandler(BaseHTTPRequestHandler):
         Respond to a POST request from a client
         """
         endpoints = {
-            "/v1/completions": self.handle_completions,
+            "/v1/completions": self.handle_text_completions,
             "/v1/chat/completions": self.handle_chat_completions,
         }
 
@@ -145,7 +145,7 @@ class APIHandler(BaseHTTPRequestHandler):
         prompt = endpoints[self.path]()
 
         # Call method based on response type
-        method = self.handle_stream if self.stream else self.generate_completion
+        method = self.handle_stream if self.stream else self.handle_completion
         method(prompt, stop_id_sequences)
 
     def generate_response(
@@ -213,7 +213,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         return response
 
-    def generate_completion(
+    def handle_completion(
         self,
         prompt: mx.array,
         stop_id_sequences: List[List[int]],
@@ -365,7 +365,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         return mx.array(prompt)
 
-    def handle_completions(self) -> mx.array:
+    def handle_text_completions(self) -> mx.array:
         """
         Handle a text completion request
 
