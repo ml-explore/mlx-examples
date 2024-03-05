@@ -303,7 +303,8 @@ class APIHandler(BaseHTTPRequestHandler):
             if len(stop_sequence_buffer) < max_stop_id_sequence_len:
                 continue
 
-            # Continue until unicode character is fully generated
+            # "\ufffd" is used to indicate to the tokenizer, that subsequent characters
+            # should be combined into a single unicode character
             if "\ufffd" in TOKENIZER.decode(token):
                 continue
 
