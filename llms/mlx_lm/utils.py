@@ -551,31 +551,31 @@ def quantize_model(
 
 
 def update_config(
-    config: dict, 
-    upload_repo: Optional[str] = None, 
-    config_path: Optional[Union[str, Path]] = None, 
-    indent: int=4, 
-    **kwargs
+    config: dict,
+    upload_repo: Optional[str] = None,
+    config_path: Optional[Union[str, Path]] = None,
+    indent: int = 4,
+    **kwargs,
 ) -> dict:
     """Update the model configuration and save config to the ``config_path`` (if provided).
 
-    If ``upload_repo`` is provided, sets ``upload_repo`` as the value of 
+    If ``upload_repo`` is provided, sets ``upload_repo`` as the value of
     ``_name_or_path`` key.
-    
+
     The final configuration will be sorted for better readability.
 
     Args:
         config (dict): The model configuration.
-        upload_repo (Optional[str], optional): Name of the HF repo to upload to. 
+        upload_repo (Optional[str], optional): Name of the HF repo to upload to.
                                                 Defaults to None.
-        config_path (Optional[Union[str, Path]], optional): Model configuration file path. 
+        config_path (Optional[Union[str, Path]], optional): Model configuration file path.
                                                 Defaults to None.
-        indent (int, optional): Number of spaces to indent the json output with. 
+        indent (int, optional): Number of spaces to indent the json output with.
                                                 Defaults to 4.
 
     Returns:
         dict: The updated model configuration.
-    """    
+    """
     # update the config with the given kwargs (if any)
     config = config.update(kwargs)
     # update the config with the upload_repo as the _name_or_path
@@ -587,7 +587,7 @@ def update_config(
     if config_path is not None:
         with open(config_path, "w") as fid:
             json.dump(config, fid, indent=indent)
-    
+
     return config
 
 

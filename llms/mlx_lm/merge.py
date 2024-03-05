@@ -13,11 +13,11 @@ import yaml
 from mlx.utils import tree_flatten, tree_map
 
 from .utils import (
-    fetch_from_hub, 
-    get_model_path, 
-    save_weights, 
-    upload_to_hub, 
+    fetch_from_hub,
+    get_model_path,
+    save_weights,
     update_config,
+    upload_to_hub,
 )
 
 

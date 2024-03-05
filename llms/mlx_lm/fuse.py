@@ -10,11 +10,11 @@ from mlx.utils import tree_flatten, tree_unflatten
 from .tuner.lora import LoRALinear
 from .tuner.utils import apply_lora_layers, dequantize
 from .utils import (
-    fetch_from_hub, 
-    get_model_path, 
-    save_weights, 
-    upload_to_hub, 
+    fetch_from_hub,
+    get_model_path,
+    save_weights,
     update_config,
+    upload_to_hub,
 )
 
 
@@ -108,7 +108,9 @@ def main() -> None:
                 "Must provide original Hugging Face repo to upload local model."
             )
         # update the config with the upload_repo as the value of "_name_or_path" key
-        config = update_config(config, upload_repo=args.upload_repo, config_path=config_path)
+        config = update_config(
+            config, upload_repo=args.upload_repo, config_path=config_path
+        )
         upload_to_hub(args.save_path, args.upload_repo, hf_path)
 
 
