@@ -12,7 +12,13 @@ import numpy as np
 import yaml
 from mlx.utils import tree_flatten, tree_map
 
-from .utils import fetch_from_hub, get_model_path, save_weights, upload_to_hub
+from .utils import (
+    fetch_from_hub, 
+    get_model_path, 
+    save_weights, 
+    upload_to_hub, 
+    update_config,
+)
 
 
 def configure_parser() -> argparse.ArgumentParser:
@@ -150,10 +156,15 @@ def merge(
 
     tokenizer.save_pretrained(mlx_path)
 
-    with open(mlx_path / "config.json", "w") as fid:
-        json.dump(base_config, fid, indent=4)
+    # with open(mlx_path / "config.json", "w") as fid:
+    #     json.dump(base_config, fid, indent=4)
+    config_path = mlx_path / "config.json"
+    # update (sort) and save config
+    config = update_config(config, config_path=config_path)
 
     if upload_repo is not None:
+        # update the config with the upload_repo as the value of "_name_or_path" key
+        config = update_config(config, upload_repo=upload_repo, config_path=config_path)
         upload_to_hub(mlx_path, upload_repo, base_hf_path)
 
 

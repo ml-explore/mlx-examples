@@ -9,7 +9,13 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 from .tuner.lora import LoRALinear
 from .tuner.utils import apply_lora_layers, dequantize
-from .utils import fetch_from_hub, get_model_path, save_weights, upload_to_hub
+from .utils import (
+    fetch_from_hub, 
+    get_model_path, 
+    save_weights, 
+    upload_to_hub, 
+    update_config,
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -87,8 +93,11 @@ def main() -> None:
     if args.de_quantize:
         config.pop("quantization", None)
 
-    with open(save_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
+    # with open(save_path / "config.json", "w") as fid:
+    #     json.dump(config, fid, indent=4)
+    config_path = save_path / "config.json"
+    # update (sort) and save config
+    config = update_config(config, config_path=config_path)
 
     if args.upload_repo is not None:
         hf_path = args.hf_path or (
@@ -98,6 +107,8 @@ def main() -> None:
             raise ValueError(
                 "Must provide original Hugging Face repo to upload local model."
             )
+        # update the config with the upload_repo as the value of "_name_or_path" key
+        config = update_config(config, upload_repo=args.upload_repo, config_path=config_path)
         upload_to_hub(args.save_path, args.upload_repo, hf_path)
 
 
