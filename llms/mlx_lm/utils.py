@@ -550,6 +550,47 @@ def quantize_model(
     return quantized_weights, quantized_config
 
 
+def update_config(
+    config: dict, 
+    upload_repo: Optional[str] = None, 
+    config_path: Optional[Union[str, Path]] = None, 
+    indent: int=4, 
+    **kwargs
+) -> dict:
+    """Update the model configuration and save config to the ``config_path`` (if provided).
+
+    If ``upload_repo`` is provided, sets ``upload_repo`` as the value of 
+    ``_name_or_path`` key.
+    
+    The final configuration will be sorted for better readability.
+
+    Args:
+        config (dict): The model configuration.
+        upload_repo (Optional[str], optional): Name of the HF repo to upload to. 
+                                                Defaults to None.
+        config_path (Optional[Union[str, Path]], optional): Model configuration file path. 
+                                                Defaults to None.
+        indent (int, optional): Number of spaces to indent the json output with. 
+                                                Defaults to 4.
+
+    Returns:
+        dict: The updated model configuration.
+    """    
+    # update the config with the given kwargs (if any)
+    config = config.update(kwargs)
+    # update the config with the upload_repo as the _name_or_path
+    if upload_repo is not None:
+        config["_name_or_path"] = upload_repo
+    # sort the config for better readability
+    config = dict(sorted(config.items()))
+    # write the updated config to the config_path (if provided)
+    if config_path is not None:
+        with open(config_path, "w") as fid:
+            json.dump(config, fid, indent=indent)
+    
+    return config
+
+
 def convert(
     hf_path: str,
     mlx_path: str = "mlx_model",
@@ -585,8 +626,13 @@ def convert(
 
     tokenizer.save_pretrained(mlx_path)
 
-    with open(mlx_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
+    # with open(mlx_path / "config.json", "w") as fid:
+    #     json.dump(config, fid, indent=4)
+    config_path = mlx_path / "config.json"
+    # update (sort) and save config
+    config = update_config(config, config_path=config_path)
 
     if upload_repo is not None:
+        # update the config with the upload_repo as the value of "_name_or_path" key
+        config = update_config(config, upload_repo=upload_repo, config_path=config_path)
         upload_to_hub(mlx_path, upload_repo, hf_path)
