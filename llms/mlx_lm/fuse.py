@@ -93,8 +93,6 @@ def main() -> None:
     if args.de_quantize:
         config.pop("quantization", None)
 
-    # with open(save_path / "config.json", "w") as fid:
-    #     json.dump(config, fid, indent=4)
     config_path = save_path / "config.json"
     # update (sort) and save config
     config = update_config(config, config_path=config_path)

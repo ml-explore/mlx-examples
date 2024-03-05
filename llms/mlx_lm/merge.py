@@ -156,8 +156,6 @@ def merge(
 
     tokenizer.save_pretrained(mlx_path)
 
-    # with open(mlx_path / "config.json", "w") as fid:
-    #     json.dump(base_config, fid, indent=4)
     config_path = mlx_path / "config.json"
     # update (sort) and save config
     config = update_config(config, config_path=config_path)
