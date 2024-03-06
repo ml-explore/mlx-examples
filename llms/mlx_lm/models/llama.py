@@ -43,8 +43,6 @@ class Attention(nn.Module):
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        self.repeats = n_heads // n_kv_heads
-
         head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
 
@@ -93,7 +91,6 @@ class Attention(nn.Module):
         output = mx.fast.scaled_dot_product_attention(
             queries, keys, values, scale=self.scale, mask=mask
         )
-
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
