@@ -278,7 +278,9 @@ if __name__ == "__main__":
             config = yaml.load(file, yaml_loader)
         param_dict = {k: v for k, v in config["parameters"].items()}
         # Use parameters from command-line arguments
-        param_dict.update({arg: value for arg, value in args.__dict__.items()})
+        param_dict.update(
+            {arg: value for arg, value in args.__dict__.items() if value is not None}
+        )
         # Update defaults for unspecified parameters
         param_dict.update(
             {
