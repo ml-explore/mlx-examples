@@ -59,7 +59,6 @@ def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
     parser.add_argument(
         "--model",
-        default="mlx_model",
         help="The path to the local model directory or Hugging Face repo.",
     )
     # Generation args
@@ -67,18 +66,16 @@ def build_parser():
         "--max-tokens",
         "-m",
         type=int,
-        default=100,
         help="The maximum number of tokens to generate",
     )
     parser.add_argument(
-        "--temp", type=float, default=0.8, help="The sampling temperature"
+        "--temp", type=float, help="The sampling temperature"
     )
     parser.add_argument(
         "--prompt",
         "-p",
         type=str,
         help="The prompt for generation",
-        default=None,
     )
 
     # Training args
@@ -90,56 +87,48 @@ def build_parser():
     parser.add_argument(
         "--data",
         type=str,
-        default="data/",
         help="Directory with {train, valid, test}.jsonl files",
     )
     parser.add_argument(
         "--lora-layers",
         type=int,
-        default=16,
         help="Number of layers to fine-tune",
     )
-    parser.add_argument("--batch-size", type=int, default=4, help="Minibatch size.")
+    parser.add_argument("--batch-size", type=int, help="Minibatch size.")
     parser.add_argument(
-        "--iters", type=int, default=1000, help="Iterations to train for."
+        "--iters", type=int, help="Iterations to train for."
     )
     parser.add_argument(
         "--val-batches",
         type=int,
-        default=25,
         help="Number of validation batches, -1 uses the entire validation set.",
     )
     parser.add_argument(
-        "--learning-rate", type=float, default=1e-5, help="Adam learning rate."
+        "--learning-rate", type=float, help="Adam learning rate."
     )
     parser.add_argument(
         "--steps-per-report",
         type=int,
-        default=10,
         help="Number of training steps between loss reporting.",
     )
     parser.add_argument(
         "--steps-per-eval",
         type=int,
-        default=200,
         help="Number of training steps between validations.",
     )
     parser.add_argument(
         "--resume-adapter-file",
         type=str,
-        default=None,
         help="Load path to resume training with the given adapter weights.",
     )
     parser.add_argument(
         "--adapter-file",
         type=str,
-        default="adapters.npz",
         help="Save/load path for the trained adapter weights.",
     )
     parser.add_argument(
         "--save-every",
         type=int,
-        default=100,
         help="Save the model every N iterations.",
     )
     parser.add_argument(
@@ -150,13 +139,11 @@ def build_parser():
     parser.add_argument(
         "--test-batches",
         type=int,
-        default=500,
         help="Number of test set batches, -1 uses the entire test set.",
     )
     parser.add_argument(
         "--max-seq-length",
         type=int,
-        default=2048,
         help="Maximum sequence length.",
     )
     parser.add_argument(
@@ -165,7 +152,7 @@ def build_parser():
         default=None,
         help="A YAML configuration file with the training options",
     )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+    parser.add_argument("--seed", type=int, help="The PRNG seed")
     return parser
 
 
