@@ -14,11 +14,11 @@ possible.
  
    You can also run the formatters manually as follows:
  
-     ```
+     ```bash
      clang-format -i file.cpp
      ```
  
-     ```
+     ```bash
      black file.py
      ```
  
