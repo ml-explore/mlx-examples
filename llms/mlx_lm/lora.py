@@ -160,7 +160,7 @@ def build_parser():
         help="Maximum sequence length.",
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-    parser.add_argument("config")
+    parser.add_argument("config", nargs="?")
     return parser
 
 
