@@ -1,0 +1,24 @@
+# Allow users to automatically tag themselves to issues
+#
+# Usage:
+#  - a github user (a member of the repo) needs to comment
+#    with "#self-assign" on an issue to self-assigned the issue.
+#---------------------------------------------------------------
+
+name: Self-assign
+on:
+  issue_comment:
+    types: created
+jobs:
+  one:
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event.comment.body == '#take' ||
+       github.event.comment.body == '#self-assign')
+    steps:
+      - run: |
+          echo "Assigning issue ${{ github.event.issue.number }} to ${{ github.event.comment.user.login }}"
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -d '{"assignees": ["${{ github.event.comment.user.login }}"]}' \
+                  https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/assignees
+          echo "Done 🔥 "
