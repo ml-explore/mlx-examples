@@ -141,8 +141,10 @@ class APIHandler(BaseHTTPRequestHandler):
         ]
 
         # Send header type
-        self._set_stream_headers(200) if self.stream else self._set_completion_headers(
-            200
+        (
+            self._set_stream_headers(200)
+            if self.stream
+            else self._set_completion_headers(200)
         )
 
         # Call endpoint specific method
