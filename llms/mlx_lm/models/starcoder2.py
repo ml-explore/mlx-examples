@@ -1,6 +1,5 @@
-import math
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -158,7 +157,7 @@ class Model(nn.Module):
         super().__init__()
         self.model_type = args.model_type
         self.model = Starcoder2Model(args)
-        # This is for 15B starcoder2 since it doesn't tie word embeddings
+        # For 15B starcoder2 and fine-tuned models which don't tie word embeddings
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
