@@ -341,7 +341,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
             # If the end of tokens overlaps with a stop sequence
             # Generate new tokens until we know if the stop sequence is hit or not
-            if any((sequence_overlap(tokens, sequence) for sequence in stop_id_sequences)):
+            if any(
+                (sequence_overlap(tokens, sequence) for sequence in stop_id_sequences)
+            ):
                 continue
 
             # Workaround for llama tokenizer emitting spaces when decoding token by token.
