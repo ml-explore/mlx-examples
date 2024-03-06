@@ -8,7 +8,7 @@ import uuid
 import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Dict, List, Literal, NamedTuple, Optional, Union
+from typing import Dict, List, Literal, NamedTuple, Optional, Sequence, Union
 
 import mlx.core as mx
 
@@ -52,6 +52,26 @@ def stopping_criteria(
                 return StopCondition(stop_met=True, trim_length=len(stop_ids))
 
     return StopCondition(stop_met=False, trim_length=0)
+
+
+def sequence_overlap(s1: Sequence, s2: Sequence) -> int:
+    """
+    Check how much overlap two sequences have.
+        Only checks the end of s1 overlapping the start of s2
+
+    Args:
+        s1 (Sequence): The first sequence, which end is checked
+        s2 (Sequence): The second sequence, which beginning is checked
+
+    Returns:
+        int: The amount of overlap between s1 and s2
+    """
+    # Count down from the length of the smaller list -> Checks for larger overlaps first
+    for index in range(min(len(s1), len(s1)), 0, -1):
+        # Check if they have index amount of overlap
+        if s1[-index:] == s2[:index]:
+            return index
+    return 0
 
 
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
@@ -476,12 +496,9 @@ class APIHandler(BaseHTTPRequestHandler):
         detokenizer.reset()
         tokens = []
 
-        max_stop_id_sequence_len = len(max(stop_id_sequences, default=[]))
-        # Buffer to store the last `max_stop_id_sequence_len` tokens
-        # to check for stop conditions before writing to the stream.
-        stop_sequence_buffer = []
         stop_sequence_suffix = None
         logging.debug(f"Starting stream:")
+
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
@@ -496,11 +513,6 @@ class APIHandler(BaseHTTPRequestHandler):
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
-            stop_sequence_buffer.append(token)
-
-            # Continue generating tokens until buffer is as large as the longest stop_id_sequence
-            if len(stop_sequence_buffer) < max_stop_id_sequence_len:
-                continue
 
             stop_condition = stopping_criteria(
                 tokens,
@@ -514,11 +526,17 @@ class APIHandler(BaseHTTPRequestHandler):
                     )
                 break
 
+            # If the end of tokens overlaps with a stop sequence
+            # Generate new tokens until we know if the stop sequence is hit or not
+            if any(
+                (sequence_overlap(tokens, sequence) for sequence in stop_id_sequences)
+            ):
+                continue
+
             new_text = detokenizer.last_segment
             response = self.generate_response(new_text, None)
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
             self.wfile.flush()
-            stop_sequence_buffer = []
 
         # check is there any remaining text to send
         if stop_sequence_buffer:
@@ -528,9 +546,6 @@ class APIHandler(BaseHTTPRequestHandler):
                 else detokenizer.last_segment[: -len(stop_sequence_suffix)]
             )
             response = self.generate_response(next_chunk, "length")
-
-            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-            self.wfile.flush()
 
         if self.stream_options is not None and self.stream_options["include_usage"]:
             response = self.completion_usage_response(len(prompt), len(tokens))
