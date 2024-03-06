@@ -470,6 +470,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         repo_id=upload_repo,
         repo_type="model",
     )
+    print(f"Upload successful, go to https://huggingface.co/{upload_repo} for details.")
 
 
 def save_weights(
