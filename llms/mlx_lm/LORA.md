@@ -24,7 +24,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 ## Run
 
 The main command is `mlx_lm.lora`. It can take a path to a YAML file with training parameters as an optional, positional 
-argument.  See [example](examples/lora_config.yaml) for the YAML format.  
+argument.  See [example YAML](examples/lora_config.yaml) for the format.  
 
 For example:
 
