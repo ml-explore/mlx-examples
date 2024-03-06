@@ -40,50 +40,16 @@ python convert.py --help
 ```
 
 By default, the conversion script will make the directory `mlx_models`
-and save the converted `weights.npz` and `config.json` there. Note that
-this does not automatically save different versions in this folder.
-However, the downloaded models are cached for future use. 
+and save the converted `weights.npz` and `config.json` there. 
 
-Consider a scripted run (e.g. BASH, zsh) like the below example to stream-line filemaking:
-
- Here's a Python script that acts as a wrapper for calling `convert.py` with different parameters:
-
-```import sys
-import subprocess
-
-def run_convert(config):
-    cmd = ['python', 'convert.py'] + config.split()
-    try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
-        print(f'Running convert.py with parameter {config}:')
-        print(output)
-    except subprocess.CalledProcessError as e:
-        print(f'Error running convert.py with parameter {config}:')
-        print(e.output)
-
-def run_multi_convert(mod):
-    configs = (
-        f"--torch-name-or-path {mod} --mlx-path mlx_models/{mod}_fp16",
-        f"--torch-name-or-path {mod} --dtype float32 --mlx-path mlx_models/{mod}_fp32",
-        f"--torch-name-or-path {mod} -q --q_bits 4 --mlx-path mlx_models/{mod}_quantized_4bits"
-    )
-    for config in configs:
-        run_convert(config)
-
-if __name__ == '__main__':
-    # Check if models are provided, otherwise use default set
-    if len(sys.argv) > 1:
-        models = sys.argv[1:]
-    else:
-        models = ['tiny', 'tiny.en', 'small', 'small.en', 'medium', 'medium.en']  
-
-    for mod in models:
-        run_multi_convert(mod)
+Each time it is run, `convert.py` will overwrite any model in the provided path. To save
+different models, make sure to set `--mlx-path` to a unique directory for each converted model. For example:
+```BASH
+model="tiny"
+python convert.py --torch-name-or-path ${model} --mlx-path mlx_models/${model}_fp16
+python convert.py --torch-name-or-path ${model} --dtype float32 --mlx-path mlx_models/${model}_fp32
+python convert.py --torch-name-or-path ${model} -q --q_bits 4 --mlx-path mlx_models/${model}_quantized_4bits
 ```
-
-Save the above script as `wrapper.py`, and replace the default parameter list (`params`) with the 
-desired set of strings to pass to `convert.py`. If no arguments are provided when calling 
-`wrapper.py`, it will use the default parameters instead.
 
 ### Run
 
