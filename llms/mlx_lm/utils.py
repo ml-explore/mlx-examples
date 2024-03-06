@@ -114,7 +114,7 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
-    temp: 0.0,
+    temp: float = 0.0,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
@@ -128,6 +128,7 @@ def generate_step(
         temp (float): The temperature for sampling, if 0 the argmax is used.
         repetition_penalty (float, optional): The penalty factor for repeating tokens.
         repetition_context_size (int, optional): The number of tokens to consider for repetition penalty (default 20).
+        top_p (float, optional): Nulceus sampling, higher means model considers more less likely words
 
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
@@ -205,7 +206,7 @@ def generate(
     temp: float = 0.0,
     max_tokens: int = 100,
     verbose: bool = False,
-    formatter: Callable = None,
+    formatter: Optional[Callable] = None,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
@@ -357,14 +358,14 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 def load(
     path_or_hf_repo: str,
     tokenizer_config={},
-    adapter_file: str = None,
+    adapter_file: Optional[str] = None,
     lazy: bool = False,
 ) -> Tuple[nn.Module, PreTrainedTokenizer]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
 
     Args:
-        model_path (Path): The path or the huggingface repository to load the model from.
+        path_or_hf_repo (Path): The path or the huggingface repository to load the model from.
         tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
             Defaults to an empty dictionary.
         adapter_file (str, optional): Path to the adapter file. If provided, applies LoRA layers to the model.
