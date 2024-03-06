@@ -23,73 +23,23 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 ## Run
 
-The main command is `mlx_lm.lora`. The argument is a YAML file with the training parameters 
-in the following format:
+The main command is `mlx_lm.lora`. It can take a path to a YAML file with training parameters as an optional, positional 
+argument.  See [example](examples/lora_config.yaml) for the YAML format.  
 
-```yaml
-parameters:
-    #The path to the local model directory or Hugging Face repo.
-    "model": "...", #defaults to "mlx_model"
-      
-    #The maximum number of tokens to generate  
-    "max_tokens": 100
-    
-    #The sampling temperature
-    "temp": 0.8,
-    
-    #The prompt for generation
-    "prompt": "..."
-      
-    #Whether or not to train (boolean)
-    "train": false #defaults to false
-    
-    #Directory with {train, valid, test}.jsonl files
-    "data": "..." #defaults to "data/"
-      
-    #The PRNG seed
-    "seed": 0
-    
-    #Number of layers to fine-tune
-    "lora_layers": 16
-    
-    #Minibatch size.
-    "batch_size": 4
-    
-    #Iterations to train for.
-    "iters": 100
-    
-    #Number of validation batches, -1 uses the entire validation set.
-    "val_batches": 25
-    
-    #Adam learning rate.
-    "learning_rate": 1e-5
-    
-    #Number of training steps between loss reporting.
-    "steps_per_report": 10
-    
-    #Number of training steps between validations.
-    "steps_per_eval": 200
-    
-    #Load path to resume training with the given adapter weights.
-    "resume_adapter_file": "...",
-      
-    #Save/load path for the trained adapter weights.
-    "adapter_file": "[..]", #defaults to "adapters.npz"
-      
-    #Save the model every N iterations.  
-    "save_every": 100
-    
-    #Evaluate on the test set after training
-    "test": true #defaults to false
-    
-    #Number of test set batches, -1 uses the entire test set.
-    "test_batches": 500
-    
-    #Maximum sequence length.
-    "max_seq_length": 2048
+For example:
+
+```shell
+python -m mlx_lm.lora /path/to/config.yaml
 ```
 
-Note, the `model` parameter can be any compatible Hugging
+Otherwise, the parameters are specified as command-line options.  If both are provided the corresponding command-line 
+option values are used.  To see a full list of command-line options run:
+
+```shell
+python -m mlx_lm.lora --help
+```
+
+Note, in the following the `--model` argument can be any compatible Hugging
 Face repo or a local path to a converted model. 
 
 ### Fine-tune
@@ -97,34 +47,40 @@ Face repo or a local path to a converted model.
 To fine-tune a model use:
 
 ```shell
-python -m mlx_lm.lora <path_to_configuration>
+python -m mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --data <path_to_data> \
+    --iters 600
 ```
 
-The `data` parameter must specify a path to a `train.jsonl`, `valid.jsonl`
-when the `train` parameter is True and a path to a `test.jsonl` when the `test` parameter 
-is False. For more details on the data format see the section on [Data](#Data).
+The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
+when using `--train` and a path to a `test.jsonl` when using `--test`. For more
+details on the data format see the section on [Data](#Data).
 
-For example, to fine-tune a Mistral 7B you can use:
+For example, to fine-tune a Mistral 7B you can use `--model
+mistralai/Mistral-7B-v0.1`.
 
-```yaml
-parameters:
-    "model": "mistralai/Mistral-7B-v0.1"
-    "train": true
-```
-.
-
-If the `model` parameter points to a quantized model, then the training will use QLoRA,
+If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
 By default, the adapter weights are saved in `adapters.npz`. You can specify
-the output location with the `adapter_file` parameter.
+the output location with `--adapter-file`.
 
-You can resume fine-tuning with an existing adapter with the 
-`resume_adapter_file` parameter. 
+You can resume fine-tuning with an existing adapter with
+`--resume-adapter-file <path_to_adapters.npz>`. 
 
 ### Evaluate
 
-To compute test set perplexity set the `test` parameter to True
+To compute test set perplexity use:
+
+```shell
+python -m mlx_lm.lora \
+    --model <path_to_model> \
+    --adapter-file <path_to_adapters.npz> \
+    --data <path_to_data> \
+    --test
+```
 
 ### Generate
 
