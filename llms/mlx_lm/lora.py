@@ -159,8 +159,13 @@ def build_parser():
         default=2048,
         help="Maximum sequence length.",
     )
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=None,
+        help="A YAML configuration file with the training options",
+    )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-    parser.add_argument("config", nargs="?")
     return parser
 
 
@@ -286,18 +291,20 @@ def run(args, training_callback: TrainingCallback = None):
 if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
-    print("Loading configuration file", args.config)
-    with open(args.config, "r") as file:
-        config = yaml.load(file, yaml_loader)
-    param_dict = {k: v for k, v in config["parameters"].items()}
-    # Use parameters from command-line arguments
-    param_dict.update({arg: value for arg, value in args.__dict__.items()})
-    # Update defaults for unspecified parameters
-    param_dict.update(
-        {
-            key: default
-            for key, default in CONFIG_DEFAULTS.items()
-            if key not in param_dict
-        }
-    )
-    run(SimpleNamespace(**param_dict))
+    if args.config:
+        print("Loading configuration file", args.config)
+        with open(args.config, "r") as file:
+            config = yaml.load(file, yaml_loader)
+        param_dict = {k: v for k, v in config["parameters"].items()}
+        # Use parameters from command-line arguments
+        param_dict.update({arg: value for arg, value in args.__dict__.items()})
+        # Update defaults for unspecified parameters
+        param_dict.update(
+            {
+                key: default
+                for key, default in CONFIG_DEFAULTS.items()
+                if key not in param_dict
+            }
+        )
+        args = SimpleNamespace(**param_dict)
+    run(args)

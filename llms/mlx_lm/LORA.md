@@ -23,24 +23,26 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 ## Run
 
-The main command is `mlx_lm.lora`. It can take a path to a YAML file with training parameters as an optional, positional 
-argument.  See [example YAML](examples/lora_config.yaml) for the format.  
-
-For example:
-
-```shell
-python -m mlx_lm.lora /path/to/config.yaml
-```
-
-Otherwise, the parameters are specified as command-line options.  If both are provided the corresponding command-line 
-option values are used.  To see a full list of command-line options run:
+The main command is `mlx_lm.lora`. To see a full list of command-line options run:
 
 ```shell
 python -m mlx_lm.lora --help
 ```
 
 Note, in the following the `--model` argument can be any compatible Hugging
-Face repo or a local path to a converted model. 
+Face repo or a local path to a converted model.
+
+It can also take a -c/--config option that is the path to a YAML file with training parameters.  
+See [example YAML](examples/lora_config.yaml) for the format.  
+
+For example:
+
+```shell
+python -m mlx_lm.lora --config /path/to/config.yaml
+```
+
+Otherwise, the parameters are specified as command-line options.  If both are provided the corresponding command-line 
+option values are used.  
 
 ### Fine-tune
 
