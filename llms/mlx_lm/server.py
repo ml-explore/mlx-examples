@@ -6,7 +6,7 @@ import time
 import uuid
 import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Callable, List, Literal, NamedTuple, Optional, Union
+from typing import List, Literal, NamedTuple, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -18,6 +18,7 @@ MODEL: nn.Module
 TOKENIZER: PreTrainedTokenizer
 
 SYSTEM_FINGERPRINT: str = f"fp_{uuid.uuid4()}"
+
 
 class StopCondition(NamedTuple):
     stop_met: bool
@@ -48,7 +49,7 @@ def stopping_criteria(
 
     for stop_ids in stop_id_sequences:
         if len(tokens) >= len(stop_ids):
-            if tokens[-len(stop_ids):] == stop_ids:
+            if tokens[-len(stop_ids) :] == stop_ids:
                 return StopCondition(stop_met=True, trim_length=len(stop_ids))
 
     return StopCondition(stop_met=False, trim_length=0)
@@ -76,7 +77,6 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
 
 
 class APIHandler(BaseHTTPRequestHandler):
-
     def __init__(self, *args, **kwargs):
         """
         Create static request specific metadata
@@ -119,7 +119,9 @@ class APIHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers["Content-Length"])
         raw_body = self.rfile.read(content_length)
         self.body = json.loads(raw_body.decode())
-        assert isinstance(self.body, dict), f"Request should be dict, but got {type(self.body)}"
+        assert isinstance(
+            self.body, dict
+        ), f"Request should be dict, but got {type(self.body)}"
 
         # Extract request parameters from the body
         self.stream = self.body.get("stream", False)
@@ -139,7 +141,9 @@ class APIHandler(BaseHTTPRequestHandler):
         ]
 
         # Send header type
-        self._set_stream_headers(200) if self.stream else self._set_completion_headers(200)
+        self._set_stream_headers(200) if self.stream else self._set_completion_headers(
+            200
+        )
 
         # Call endpoint specific method
         prompt = endpoints[self.path]()
@@ -187,12 +191,17 @@ class APIHandler(BaseHTTPRequestHandler):
                     "logprobs": None,
                     "finish_reason": finish_reason,
                 }
-            ]
+            ],
         }
 
         if not self.stream:
-            if not (isinstance(prompt_token_count, int) and isinstance(completion_token_count, int)):
-                raise ValueError("Response type is complete, but token counts not provided")
+            if not (
+                isinstance(prompt_token_count, int)
+                and isinstance(completion_token_count, int)
+            ):
+                raise ValueError(
+                    "Response type is complete, but token counts not provided"
+                )
 
             response["usage"] = {
                 "prompt_tokens": prompt_token_count,
@@ -337,7 +346,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
             self.wfile.flush()
 
-        self.wfile.write(f"data: [DONE]\n\n".encode())
+        self.wfile.write("data: [DONE]\n\n".encode())
         self.wfile.flush()
 
     def handle_chat_completions(self) -> mx.array:
@@ -352,7 +361,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Determine response type
         self.request_id = f"chatcmpl-{uuid.uuid4()}"
-        self.object_type = "chat.completions.chunk" if self.stream else "chat.completions"
+        self.object_type = (
+            "chat.completions.chunk" if self.stream else "chat.completions"
+        )
 
         if hasattr(TOKENIZER, "apply_chat_template") and TOKENIZER.chat_template:
             prompt = TOKENIZER.apply_chat_template(
