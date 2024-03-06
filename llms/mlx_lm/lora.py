@@ -68,9 +68,7 @@ def build_parser():
         type=int,
         help="The maximum number of tokens to generate",
     )
-    parser.add_argument(
-        "--temp", type=float, help="The sampling temperature"
-    )
+    parser.add_argument("--temp", type=float, help="The sampling temperature")
     parser.add_argument(
         "--prompt",
         "-p",
@@ -95,17 +93,13 @@ def build_parser():
         help="Number of layers to fine-tune",
     )
     parser.add_argument("--batch-size", type=int, help="Minibatch size.")
-    parser.add_argument(
-        "--iters", type=int, help="Iterations to train for."
-    )
+    parser.add_argument("--iters", type=int, help="Iterations to train for.")
     parser.add_argument(
         "--val-batches",
         type=int,
         help="Number of validation batches, -1 uses the entire validation set.",
     )
-    parser.add_argument(
-        "--learning-rate", type=float, help="Adam learning rate."
-    )
+    parser.add_argument("--learning-rate", type=float, help="Adam learning rate.")
     parser.add_argument(
         "--steps-per-report",
         type=int,
