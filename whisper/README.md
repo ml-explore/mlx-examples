@@ -42,9 +42,11 @@ python convert.py --help
 By default, the conversion script will make the directory `mlx_models`
 and save the converted `weights.npz` and `config.json` there. 
 
-Each time it is run, `convert.py` will overwrite any model in the provided path. To save
-different models, make sure to set `--mlx-path` to a unique directory for each converted model. For example:
-```BASH
+Each time it is run, `convert.py` will overwrite any model in the provided
+path. To save different models, make sure to set `--mlx-path` to a unique
+directory for each converted model. For example:
+
+```bash
 model="tiny"
 python convert.py --torch-name-or-path ${model} --mlx-path mlx_models/${model}_fp16
 python convert.py --torch-name-or-path ${model} --dtype float32 --mlx-path mlx_models/${model}_fp32
