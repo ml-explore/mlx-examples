@@ -6,8 +6,22 @@ from mlx.utils import tree_unflatten
 
 from .lora import LoRALinear
 
+MODELS_WITH_k_AND_P = [
+    "llama",
+    "mistral",
+    "mixtral",
+    "gemma",
+    "phi",
+    "plamo",
+    "qwen2",
+    "stablelm",
+    "starcoder2",
+]
 
-def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
+
+def linear_to_lora_layers(
+    model: nn.Module, num_lora_layers: int, lora_all_linear: bool = False
+):
     """
     Convert some of the models linear layers to lora layers.
 
@@ -43,6 +57,9 @@ def linear_to_lora_layers(model: nn.Module, num_lora_layers: int):
                 l.block_sparse_moe.gate = LoRALinear.from_linear(
                     l.block_sparse_moe.gate
                 )
+            if model.model_type in MODELS_WITH_k_AND_P and lora_all_linear:
+                l.self_attn.k_proj = LoRALinear.from_linear(l.self_attn.k_proj)
+                l.self_attn.o_proj = LoRALinear.from_linear(l.self_attn.o_proj)
     elif model.model_type == "olmo":
         check_lora_layers(len(model.model.transformer.blocks))
 

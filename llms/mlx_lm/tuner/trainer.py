@@ -13,6 +13,10 @@ class TrainingArgs:
     lora_layers: int = field(
         default=16, metadata={"help": "Number of layers to fine-tune"}
     )
+    lora_all_linear: bool = field(
+        default=False,
+        metadata={"help": "Use LoRA on all linear transformer block layers"},
+    )
     batch_size: int = field(default=4, metadata={"help": "Minibatch size."})
     iters: int = field(default=100, metadata={"help": "Iterations to train for."})
     val_batches: int = field(

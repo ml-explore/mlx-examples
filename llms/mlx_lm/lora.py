@@ -74,6 +74,13 @@ def build_parser():
     )
 
     # Training args
+    # Generation args
+    parser.add_argument(
+        "--lora-all-linear",
+        "-l",
+        action="store_true",
+        help="Use LoRA on all linear transformer block layers",
+    )
     parser.add_argument(
         "--train",
         action="store_true",
@@ -196,7 +203,7 @@ def run(args, training_callback: TrainingCallback = None):
     # Freeze all layers
     model.freeze()
     # Convert linear layers to lora layers and unfreeze in the process
-    linear_to_lora_layers(model, args.lora_layers)
+    linear_to_lora_layers(model, args.lora_layers, args.lora_all_linear)
 
     p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
     print(f"Total parameters {p:.3f}M")
