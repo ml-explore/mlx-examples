@@ -49,7 +49,7 @@ workflows:
         pattern: "^(?!pull/)[-\\w]+$"
         value: << pipeline.git.branch >>
     jobs:
-      - mac_build_and_test
+      - mlx_lm_build_and_test
       - linux_build_and_test
 
   prb:
