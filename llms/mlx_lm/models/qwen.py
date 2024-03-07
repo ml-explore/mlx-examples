@@ -141,8 +141,7 @@ class QwenModel(nn.Module):
         for e, layer in enumerate(self.h):
             x, cache[e] = layer(x, mask, cache[e])
 
-        x = self.ln_f(x[:, T - 1 : T, :])
-        return x, cache
+        return self.ln_f(x), cache
 
 
 class Model(nn.Module):
@@ -162,3 +161,7 @@ class Model(nn.Module):
     ) -> Tuple[mx.array, mx.array]:
         y, cache = self.transformer(x, mask, cache)
         return self.lm_head(y), cache
+
+    @property
+    def layers(self):
+        return self.transformer.h
