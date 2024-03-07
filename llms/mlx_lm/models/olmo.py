@@ -24,7 +24,6 @@ class ModelArgs(BaseModelArgs):
     n_heads: int
     vocab_size: int
     embedding_size: int
-    model_type: str
     rope_theta: float = 10000
     rope_traditional: bool = False
     mlp_ratio: int = 4
