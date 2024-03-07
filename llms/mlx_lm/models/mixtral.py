@@ -13,7 +13,6 @@ from .layers import RMSNorm
 class ModelArgs(BaseModelArgs):
     model_type: str
     vocab_size: int = 32000
-    max_position_embeddings: int = 4096 * 32
     hidden_size: int = 4096
     intermediate_size: int = 14336
     num_hidden_layers: int = 32
@@ -38,7 +37,6 @@ class MixtralAttention(nn.Module):
         self.num_heads = args.num_attention_heads
         self.head_dim = self.hidden_size // self.num_heads
         self.num_key_value_heads = args.num_key_value_heads
-        self.max_position_embeddings = args.max_position_embeddings
         self.rope_theta = args.rope_theta
 
         self.repeats = self.num_heads // self.num_key_value_heads

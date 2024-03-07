@@ -18,7 +18,7 @@ class ModelArgs(BaseModelArgs):
     head_dim: int
     rms_norm_eps: float
     vocab_size: int
-    num_key_value_heads: int = None
+    num_key_value_heads: int
     rope_theta: float = 10000
     rope_traditional: bool = False
 
