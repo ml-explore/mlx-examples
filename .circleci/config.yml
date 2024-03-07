@@ -32,7 +32,6 @@ jobs:
             pip install --upgrade pip
             pip install unittest-xml-reporting
             cd llms/
-            pip install -r requirements.txt
             pip install -e .
       - run:
           name: Run Python tests
