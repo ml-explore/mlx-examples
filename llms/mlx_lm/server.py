@@ -67,7 +67,7 @@ def sequence_overlap(s1: Sequence, s2: Sequence) -> int:
         int: The amount of overlap between s1 and s2
     """
     # Count down from the length of the smaller list -> Checks for larger overlaps first
-    for index in range(min(len(s1), len(s1)), 0, -1):
+    for index in range(min(len(s1), len(s2)), 0, -1):
         # Check if they have index amount of overlap
         if s1[-index:] == s2[:index]:
             return index
