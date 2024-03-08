@@ -1,0 +1,2 @@
+matplotlib
+opencv-python
