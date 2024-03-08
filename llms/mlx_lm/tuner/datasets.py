@@ -55,7 +55,7 @@ class PromptCompletionDataset(Dataset):
         self._tokenizer = tokenizer
 
     def __getitem__(self, idx: int):
-        data = self._data[idx][self._key]
+        data = self._data[idx]
         prompt = data["prompt"]
         completion = data["completion"]
         text = self._tokenizer.apply_chat_template(
