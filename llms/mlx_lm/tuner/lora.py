@@ -10,7 +10,7 @@ class LoRALinear(nn.Module):
         linear: nn.Linear,
         r: int = 8,
         lora_alpha: float = 16,
-        lora_dropout: float = 0.05,
+        lora_dropout: float = 0.0,
         scale: float = 10.0,
     ):
         # TODO remove when input_dims and output_dims are attributes
