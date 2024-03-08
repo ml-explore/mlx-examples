@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from transformers import PreTrainedTokenizer
+
 
 class Dataset:
     """
@@ -24,9 +26,44 @@ class Dataset:
         return len(self._data)
 
 
-def load_dataset(args):
+class ChatDataset(Dataset):
+    """
+    A dataset for chat data in the format of {"messages": [...]}
+    https://platform.openai.com/docs/guides/fine-tuning/example-format
+    """
+
+    def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
+        super().__init__(path, key="messages")
+        self._tokenizer = tokenizer
+        self._texts = []
+        for data in self._data:
+            messages = data[self._key]
+            text = self._tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            self._texts.append(text)
+
+    def __getitem__(self, idx: int):
+        return self._texts[idx]
+
+
+def detect_dataset_type(file_path: Path, tokenizer: PreTrainedTokenizer):
+    with open(file_path, "r") as fid:
+        first_line = next(fid)
+        first_obj = json.loads(first_line)
+
+    if "messages" in first_obj:
+        return ChatDataset(file_path, tokenizer)
+    else:
+        return Dataset(file_path)
+
+
+def load_dataset(args, tokenizer: PreTrainedTokenizer):
     names = ("train", "valid", "test")
-    train, valid, test = (Dataset(Path(args.data) / f"{n}.jsonl") for n in names)
+    data_path = Path(args.data)
+    train, valid, test = (
+        detect_dataset_type(data_path / f"{n}.jsonl", tokenizer) for n in names
+    )
     if args.train and len(train) == 0:
         raise ValueError(
             "Training set not found or empty. Must provide training set for fine-tuning."
