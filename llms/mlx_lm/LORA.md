@@ -23,14 +23,24 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 ## Run
 
-The main command is `mlx_lm.lora`. To see a full list of options run:
+The main command is `mlx_lm.lora`. To see a full list of command-line options run:
 
 ```shell
 python -m mlx_lm.lora --help
 ```
 
 Note, in the following the `--model` argument can be any compatible Hugging
-Face repo or a local path to a converted model. 
+Face repo or a local path to a converted model.
+
+You can also specify a YAML config with `-c`/`--config`. For more on the format see the
+[example YAML](examples/lora_config.yaml). For example:
+
+```shell
+python -m mlx_lm.lora --config /path/to/config.yaml
+```
+
+If command-line flags are also used, they will override the corresponding
+values in the config.
 
 ### Fine-tune
 
@@ -74,7 +84,7 @@ python -m mlx_lm.lora \
 
 ### Generate
 
-For generation use mlx_lm.generate:
+For generation use `mlx_lm.generate`:
 
 ```shell
 python -m mlx_lm.generate \
