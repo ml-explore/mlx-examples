@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -23,6 +23,8 @@ class CLIPTextModelConfig:
     num_heads: int = 16
     max_length: int = 77
     vocab_size: int = 49408
+    projection_dim: Optional[int] = None
+    hidden_act: str = "quick_gelu"
 
 
 @dataclass
@@ -38,6 +40,21 @@ class UNetConfig:
     num_attention_heads: Tuple[int] = (5, 10, 20, 20)
     cross_attention_dim: Tuple[int] = (1024,) * 4
     norm_num_groups: int = 32
+    down_block_types: Tuple[str] = (
+        "CrossAttnDownBlock2D",
+        "CrossAttnDownBlock2D",
+        "CrossAttnDownBlock2D",
+        "DownBlock2D",
+    )
+    up_block_types: Tuple[str] = (
+        "UpBlock2D",
+        "CrossAttnUpBlock2D",
+        "CrossAttnUpBlock2D",
+        "CrossAttnUpBlock2D",
+    )
+    addition_embed_type: Optional[str] = None
+    addition_time_embed_dim: Optional[int] = None
+    projection_class_embeddings_input_dim: Optional[int] = None
 
 
 @dataclass
