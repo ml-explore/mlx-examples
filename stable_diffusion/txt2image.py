@@ -24,7 +24,9 @@ if __name__ == "__main__":
     parser.add_argument("--decoding_batch_size", type=int, default=1)
     parser.add_argument("--no-float16", dest="float16", action="store_false")
     parser.add_argument("--quantize", "-q", action="store_true")
+    parser.add_argument("--preload-models", action="store_true")
     parser.add_argument("--output", default="out.png")
+    parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
     if args.model == "sdxl":
@@ -44,7 +46,8 @@ if __name__ == "__main__":
             QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 7.5
         args.steps = args.steps or 50
-    sd.ensure_models_are_loaded()
+    if args.preload_models:
+        sd.ensure_models_are_loaded()
 
     # Generate the latent vectors using diffusion
     latents = sd.generate_latents(
@@ -57,11 +60,24 @@ if __name__ == "__main__":
     for x_t in tqdm(latents, total=args.steps):
         mx.eval(x_t)
 
+    # The following is not necessary but it may help in memory
+    # constrained systems by reusing the memory kept by the unet and the text
+    # encoders.
+    if args.model == "sdxl":
+        del sd.text_encoder_1
+        del sd.text_encoder_2
+    else:
+        del sd.text_encoder
+    del sd.unet
+    del sd.sampler
+    peak_mem_unet = mx.metal.get_peak_memory() / 1024**3
+
     # Decode them into images
     decoded = []
     for i in tqdm(range(0, args.n_images, args.decoding_batch_size)):
         decoded.append(sd.decode(x_t[i : i + args.decoding_batch_size]))
         mx.eval(decoded[-1])
+    peak_mem_overall = mx.metal.get_peak_memory() / 1024**3
 
     # Arrange them on a grid
     x = mx.concatenate(decoded, axis=0)
@@ -74,3 +90,8 @@ if __name__ == "__main__":
     # Save them to disc
     im = Image.fromarray(np.array(x))
     im.save(args.output)
+
+    # Report the peak memory used during generation
+    if args.verbose:
+        print(f"Peak memory used for the unet: {peak_mem_unet:.3f}GB")
+        print(f"Peak memory used overall:      {peak_mem_overall:.3f}GB")
