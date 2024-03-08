@@ -32,7 +32,6 @@ class Attention(nn.Module):
         self.num_heads = config.num_attention_heads
         self.head_dim = self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
-        self.repeats = self.num_heads // self.num_key_value_heads
         self.rope_theta = config.rope_theta
         self.partial_rotary_factor = config.partial_rotary_factor
 
@@ -82,10 +81,6 @@ class Attention(nn.Module):
             B, L, self.num_key_value_heads, self.head_dim
         ).transpose(0, 2, 1, 3)
 
-        if self.repeats > 1:
-            keys = mx.repeat(keys, self.repeats, axis=1)
-            values = mx.repeat(values, self.repeats, axis=1)
-
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
             key_cache, value_cache = cache
@@ -102,14 +97,11 @@ class Attention(nn.Module):
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores = scores + mask
-
-        scores = mx.softmax(scores, axis=-1).astype(values.dtype)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-
-        return self.o_proj(values_hat), (keys, values)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=scale, mask=mask
+        ).astype(values.dtype)
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        return self.o_proj(output), (keys, values)
 
 
 class MLP(nn.Module):
