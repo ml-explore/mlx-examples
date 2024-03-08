@@ -166,7 +166,7 @@ def run(args, training_callback: TrainingCallback = None):
     print_trainable_parameters(model)
 
     print("Loading datasets")
-    train_set, valid_set, test_set = load_dataset(args)
+    train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
     # Resume training the given adapters.
     if args.resume_adapter_file is not None:
