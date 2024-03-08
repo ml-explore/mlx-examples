@@ -2,8 +2,8 @@ import argparse
 import json
 import math
 import re
+import types
 from pathlib import Path
-from types import SimpleNamespace
 
 import mlx.optimizers as optim
 import numpy as np
@@ -33,8 +33,6 @@ yaml_loader.add_implicit_resolver(
 
 CONFIG_DEFAULTS = {
     "model": "mlx_model",
-    "max_tokens": 100,
-    "prompt": None,
     "train": False,
     "data": "data/",
     "seed": 0,
@@ -49,7 +47,6 @@ CONFIG_DEFAULTS = {
     "adapter_file": "adapters.npz",
     "save_every": 100,
     "test": False,
-    "temp": 0.8,
     "test_batches": 500,
     "max_seq_length": 2048,
 }
@@ -272,30 +269,19 @@ def run(args, training_callback: TrainingCallback = None):
 if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
-    if args.config:
-        print("Loading configuration file", args.config)
-        with open(args.config, "r") as file:
+    config = args.config
+    args = vars(args)
+    if config:
+        print("Loading configuration file", config)
+        with open(config, "r") as file:
             config = yaml.load(file, yaml_loader)
-        param_dict = {k: v for k, v in config["parameters"].items()}
-        # Use parameters from command-line arguments
-        param_dict.update(
-            {arg: value for arg, value in args.__dict__.items() if value is not None}
-        )
-        # Update defaults for unspecified parameters
-        param_dict.update(
-            {
-                key: default
-                for key, default in CONFIG_DEFAULTS.items()
-                if key not in param_dict
-            }
-        )
-        args = SimpleNamespace(**param_dict)
-    else:
-        args.__dict__.update(
-            {
-                arg: CONFIG_DEFAULTS[arg]
-                for arg, value in args.__dict__.items()
-                if value is None and arg != "config"
-            }
-        )
-    run(args)
+        # Prefer parameters from command-line arguments
+        for k, v in config.items():
+            if not args.get(k, None):
+                args[k] = v
+
+    # Update defaults for unspecified parameters
+    for k, v in CONFIG_DEFAULTS.items():
+        if not args.get(k, None):
+            args[k] = v
+    run(types.SimpleNamespace(**args))

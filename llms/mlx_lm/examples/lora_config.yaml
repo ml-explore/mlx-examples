@@ -1,60 +1,50 @@
-parameters:
-    #The path to the local model directory or Hugging Face repo.
-    "model": "/path/to/mlx_model", #defaults to "mlx_model"
+# The path to the local model directory or Hugging Face repo.
+model: "mlx_model"
 
-    #The maximum number of tokens to generate
-    "max_tokens": 100
+# Whether or not to train (boolean)
+train: true
 
-    #The sampling temperature
-    "temp": 0.8,
+# Directory with {train, valid, test}.jsonl files
+data: "/path/to/training/data"
 
-    #The prompt for generation
-    "prompt": "..."
+# The PRNG seed
+seed: 0
 
-    #Whether or not to train (boolean)
-    "train": false #defaults to false
+# Number of layers to fine-tune
+lora_layers: 16
 
-    #Directory with {train, valid, test}.jsonl files
-    "data": "/path/to/training/data" #defaults to "data/"
+# Minibatch size.
+batch_size: 4
 
-    #The PRNG seed
-    "seed": 0
+# Iterations to train for.
+iters: 100
 
-    #Number of layers to fine-tune
-    "lora_layers": 16
+# Number of validation batches, -1 uses the entire validation set.
+val_batches: 25
 
-    #Minibatch size.
-    "batch_size": 4
+# Adam learning rate.
+learning_rate: 1e-5
 
-    #Iterations to train for.
-    "iters": 100
+# Number of training steps between loss reporting.
+steps_per_report: 10
 
-    #Number of validation batches, -1 uses the entire validation set.
-    "val_batches": 25
+# Number of training steps between validations.
+steps_per_eval: 200
 
-    #Adam learning rate.
-    "learning_rate": 1e-5
+# Load path to resume training with the given adapter weights.
+resume_adapter_file: null
 
-    #Number of training steps between loss reporting.
-    "steps_per_report": 10
+# Save/load path for the trained adapter weights.
+adapter_file: "adapters.npz"
 
-    #Number of training steps between validations.
-    "steps_per_eval": 200
+# Save the model every N iterations.
+save_every: 100
 
-    #Load path to resume training with the given adapter weights.
-    "resume_adapter_file": "/path/to/previous_adapter.npz",
+# Evaluate on the test set after training
+test: false
 
-    #Save/load path for the trained adapter weights.
-    "adapter_file": "/path/to/adapter.npz", #defaults to "adapters.npz"
+# Number of test set batches, -1 uses the entire test set.
+test_batches: 500
 
-    #Save the model every N iterations.
-    "save_every": 100
-
-    #Evaluate on the test set after training
-    "test": true #defaults to false
-
-    #Number of test set batches, -1 uses the entire test set.
-    "test_batches": 500
-
-    #Maximum sequence length.
-    "max_seq_length": 2048
+# Maximum sequence length.
+max_seq_length: 2048
