@@ -290,4 +290,12 @@ if __name__ == "__main__":
             }
         )
         args = SimpleNamespace(**param_dict)
+    else:
+        args.__dict__.update(
+            {
+                arg: CONFIG_DEFAULTS[arg]
+                for arg, value in args.__dict__.items()
+                if value is None and arg != "config"
+            }
+        )
     run(args)
