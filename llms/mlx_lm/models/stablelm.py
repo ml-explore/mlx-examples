@@ -99,7 +99,7 @@ class Attention(nn.Module):
         scale = math.sqrt(1 / queries.shape[-1])
         output = mx.fast.scaled_dot_product_attention(
             queries, keys, values, scale=scale, mask=mask
-        )
+        ).astype(values.dtype)
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
