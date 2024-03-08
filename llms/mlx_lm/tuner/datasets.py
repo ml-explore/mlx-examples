@@ -35,16 +35,13 @@ class ChatDataset(Dataset):
     def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
         super().__init__(path, key="messages")
         self._tokenizer = tokenizer
-        self._texts = []
-        for data in self._data:
-            messages = data[self._key]
-            text = self._tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            self._texts.append(text)
 
     def __getitem__(self, idx: int):
-        return self._texts[idx]
+        messages = self._data[idx][self._key]
+        text = self._tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return text
 
 
 class PromptCompletionDataset(Dataset):
@@ -56,22 +53,20 @@ class PromptCompletionDataset(Dataset):
     def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
         super().__init__(path, key=None)
         self._tokenizer = tokenizer
-        self._texts = []
-        for data in self._data:
-            prompt = data["prompt"]
-            completion = data["completion"]
-            text = self._tokenizer.apply_chat_template(
-                [
-                    {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": completion},
-                ],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-            self._texts.append(text)
 
     def __getitem__(self, idx: int):
-        return self._texts[idx]
+        data = self._data[idx][self._key]
+        prompt = data["prompt"]
+        completion = data["completion"]
+        text = self._tokenizer.apply_chat_template(
+            [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": completion},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        return text
 
 
 def create_dataset(file_path: Path, tokenizer: PreTrainedTokenizer = None):
