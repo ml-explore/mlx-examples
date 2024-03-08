@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -6,21 +7,9 @@ from mlx.utils import tree_unflatten
 
 from .lora import LoRALinear
 
-MODELS_WITH_k_AND_P = [
-    "llama",
-    "mistral",
-    "mixtral",
-    "gemma",
-    "phi",
-    "plamo",
-    "qwen2",
-    "stablelm",
-    "starcoder2",
-]
-
 
 def linear_to_lora_layers(
-    model: nn.Module, num_lora_layers: int, lora_all_linear: bool = False
+    model: nn.Module, num_lora_layers: int, lora_parameters: Dict = None
 ):
     """
     Convert some of the models linear layers to lora layers.
@@ -51,15 +40,28 @@ def linear_to_lora_layers(
         check_lora_layers(len(model.model.layers))
 
         for l in model.model.layers[len(model.model.layers) - num_lora_layers :]:
-            l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
-            l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
+            if lora_parameters:
+                lora_rank = lora_parameters.get("lora_rank", 8)
+                lora_alpha = lora_parameters.get("lora_alpha", 16)
+                for attn_key in lora_parameters.get(
+                    "lora_layer_keys", ["q_proj", "v_proj"]
+                ):
+                    setattr(
+                        l.self_attn,
+                        attn_key,
+                        LoRALinear.from_linear(
+                            getattr(l.self_attn, attn_key),
+                            r=lora_rank,
+                            lora_alpha=lora_alpha,
+                        ),
+                    )
+            else:
+                l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
+                l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
             if hasattr(l, "block_sparse_moe"):
                 l.block_sparse_moe.gate = LoRALinear.from_linear(
                     l.block_sparse_moe.gate
                 )
-            if model.model_type in MODELS_WITH_k_AND_P and lora_all_linear:
-                l.self_attn.k_proj = LoRALinear.from_linear(l.self_attn.k_proj)
-                l.self_attn.o_proj = LoRALinear.from_linear(l.self_attn.o_proj)
     elif model.model_type == "olmo":
         check_lora_layers(len(model.model.transformer.blocks))
 
