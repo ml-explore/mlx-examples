@@ -36,3 +36,12 @@ To determine the model layer names, we suggest either:
 
 To add LoRA support edit
 [`mlx_lm/tuner/utils.py`](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/tuner/utils.py#L27-L60)
+
+Finally, add a test for the new modle type to the [model
+tests](https://github.com/ml-explore/mlx-examples/blob/main/llms/tests/test_models.py).
+
+From the `llms/` directory, you can run the tests with:
+
+```shell
+python -m unittest discover tests/
+```

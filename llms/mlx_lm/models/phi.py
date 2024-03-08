@@ -11,7 +11,7 @@ from .layers import LayerNorm
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    model_type: str
+    model_type: str = "phi"
     max_position_embeddings: int = 2048
     vocab_size: int = 51200
     hidden_size: int = 2560
