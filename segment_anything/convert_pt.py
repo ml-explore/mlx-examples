@@ -82,7 +82,7 @@ def pt2mlx(torch_weights):
             v = v.transpose(0, 2, 3, 1)
         if k in {
             "mask_decoder.output_upscaling.layers.0.weight",
-            "mask_decoder.output_upscaling.layers.3.weight"
+            "mask_decoder.output_upscaling.layers.3.weight",
         }:
             v = v.transpose(1, 2, 3, 0)
         mlx_weights[k] = v
@@ -93,20 +93,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Meta SAM weights to MLX")
     parser.add_argument(
         "--pt-path",
+        default="models/pt_models/sam_vit_h_4b8939.pth",
         type=str,
-        default="openai/clip-vit-base-patch32",
-        help="Hugging Face repository name.",
+        help="Path to save downloaded PyTorch checkpoints.",
     )
     parser.add_argument(
         "--mlx-path",
         type=str,
-        default="mlx_model",
+        default="models/mlx_models",
         help="Path to save the MLX model.",
     )
     args = parser.parse_args()
 
-    torch_path = args.pt_path
-    mlx_path = Path(args.mlx_path)
+    torch_path = Path(args.pt_path)
+    mlx_path = Path(args.mlx_path) / torch_path.stem
     mlx_path.mkdir(parents=True, exist_ok=True)
 
     print("Loading")
