@@ -16,7 +16,7 @@ python scripts/convert_pt.py --pt-path=models/pt_models/[sam_vit_b_01ec64.pth | 
 ```
 The `safetensors` weights are generated under `models/mlx_models`
 
-## Get Started
+## Run
 
 See examples `notebooks/predictor_example.ipynb` and `notebooks/automatic_mask_generator_example.ipynb` to try Segment Anything Model with MLX.
 

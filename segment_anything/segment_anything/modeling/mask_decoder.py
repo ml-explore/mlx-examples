@@ -194,6 +194,7 @@ class MLP(nn.Module):
         return x
 
 
+# TODO: Naive implem. Replace when mlx.nn support conv_transpose
 class ConvTranspose2d(nn.Module):
     def __init__(
         self,

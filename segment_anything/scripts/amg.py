@@ -1,11 +1,14 @@
 import argparse
 import json
 import os
+import sys
 from typing import Any, Dict, List
 
 import cv2
-from automatic_mask_generator import SamAutomaticMaskGenerator
-from build_sam import sam_model_registry
+
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 
 parser = argparse.ArgumentParser(
     description=(
