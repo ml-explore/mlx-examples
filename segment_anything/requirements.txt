@@ -1,3 +1,4 @@
 matplotlib
 opencv-python
-torch  # for checkpoint conversion
+torch
+torchvision
