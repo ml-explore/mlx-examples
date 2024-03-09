@@ -413,10 +413,3 @@ class PatchEmbed(nn.Module):
     def __call__(self, x: mx.array) -> mx.array:
         x = self.proj(x)
         return x
-
-
-if __name__ == "__main__":
-    encoder = ImageEncoderViT()
-    x = mx.random.normal([2, 1024, 1024, 3])
-    y = encoder(x)
-    print(y.shape)

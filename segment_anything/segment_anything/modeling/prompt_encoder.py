@@ -229,22 +229,3 @@ class PositionEmbeddingRandom(nn.Module):
         coords[:, :, 0] = coords[:, :, 0] / image_size[1]
         coords[:, :, 1] = coords[:, :, 1] / image_size[0]
         return self._pe_encoding(coords.astype(mx.float32))  # B x N x C
-
-
-if __name__ == "__main__":
-    encoder = PromptEncoder(
-        embed_dim=64,
-        image_embedding_size=[32, 24],
-        input_image_size=[128, 96],
-        mask_in_chans=16,
-    )
-    bs = 3
-    y1, y2 = encoder(
-        points=(
-            mx.random.randint(low=0, high=20, shape=[bs, 1, 2]),
-            mx.ones(shape=[bs, 1]),
-        ),
-        boxes=mx.random.randint(low=0, high=20, shape=[bs, 4]),
-        masks=None,
-    )
-    print(y1.shape, y2.shape)

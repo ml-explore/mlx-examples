@@ -19,3 +19,8 @@ The `safetensors` weights are generated under `models/mlx_models`
 ## Get Started
 
 See examples `notebooks/predictor_example.ipynb` and `notebooks/automatic_mask_generator_example.ipynb` to try Segment Anything Model with MLX.
+
+One can also generate masks from command line:
+```bash
+python scripts/amg.py --checkpoint <path/to/checkpoint> --model-type <model_type> --input <image_or_folder> --output <path/to/output>
+```
