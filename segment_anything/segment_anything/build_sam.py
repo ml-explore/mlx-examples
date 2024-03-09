@@ -3,7 +3,13 @@ from functools import partial
 import mlx.core as mx
 import mlx.nn as nn
 
-from .modeling import ImageEncoderViT, MaskDecoder, PromptEncoder, Sam, TwoWayTransformer
+from .modeling import (
+    ImageEncoderViT,
+    MaskDecoder,
+    PromptEncoder,
+    Sam,
+    TwoWayTransformer,
+)
 
 
 def build_sam_vit_h(checkpoint=None):

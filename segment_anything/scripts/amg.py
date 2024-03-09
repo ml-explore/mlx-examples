@@ -4,7 +4,6 @@ import os
 from typing import Any, Dict, List
 
 import cv2
-
 from automatic_mask_generator import SamAutomaticMaskGenerator
 from build_sam import sam_model_registry
 
@@ -47,7 +46,9 @@ parser.add_argument(
     help="The path to the SAM checkpoint to use for mask generation.",
 )
 
-parser.add_argument("--device", type=str, default="cuda", help="The device to run generation on.")
+parser.add_argument(
+    "--device", type=str, default="cuda", help="The device to run generation on."
+)
 
 parser.add_argument(
     "--convert-to-rle",
@@ -198,7 +199,9 @@ def main(args: argparse.Namespace) -> None:
         targets = [args.input]
     else:
         targets = [
-            f for f in os.listdir(args.input) if not os.path.isdir(os.path.join(args.input, f))
+            f
+            for f in os.listdir(args.input)
+            if not os.path.isdir(os.path.join(args.input, f))
         ]
         targets = [os.path.join(args.input, f) for f in targets]
 

@@ -1,10 +1,10 @@
-import numpy as np
-import torch
-
 import math
 from copy import deepcopy
 from itertools import product
 from typing import Any, Dict, Generator, ItemsView, List, Tuple
+
+import numpy as np
+import torch
 
 
 class MaskData:
@@ -161,13 +161,13 @@ def calculate_stability_score(
     # COMMENT OUT DTYPE CASTING FOR COREML
     intersections = (
         (masks > (mask_threshold + threshold_offset))
-        .sum(-1)  #, dtype=torch.int16)
-        .sum(-1)  #, dtype=torch.int32)
+        .sum(-1, dtype=torch.int16)
+        .sum(-1, dtype=torch.int32)
     )
     unions = (
         (masks > (mask_threshold - threshold_offset))
-        .sum(-1)  #, dtype=torch.int16)
-        .sum(-1)  #, dtype=torch.int32)
+        .sum(-1, dtype=torch.int16)
+        .sum(-1, dtype=torch.int32)
     )
     return intersections / unions
 
