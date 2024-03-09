@@ -134,3 +134,4 @@ dmypy.json
 
 # .DS_Store files
 .DS_Store
+stable_diffusion/output

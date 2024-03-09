@@ -1,6 +1,8 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
+from datetime import datetime
+import os
 
 import mlx.core as mx
 import numpy as np
@@ -11,6 +13,8 @@ from tqdm import tqdm
 from stable_diffusion import StableDiffusion, StableDiffusionXL
 
 if __name__ == "__main__":
+    # get current timestamp
+    startTime = datetime.now()
     parser = argparse.ArgumentParser(
         description="Generate images from a textual prompt using stable diffusion"
     )
@@ -89,9 +93,17 @@ if __name__ == "__main__":
 
     # Save them to disc
     im = Image.fromarray(np.array(x))
-    im.save(args.output)
+    dir = "./output"
+    # make sure folder exists
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    # format current time to filename
+    filename = datetime.now().strftime("%Y%H%M%d%m%S")
+    im.save(dir + "/" + filename + ".png")    
 
     # Report the peak memory used during generation
     if args.verbose:
         print(f"Peak memory used for the unet: {peak_mem_unet:.3f}GB")
         print(f"Peak memory used overall:      {peak_mem_overall:.3f}GB")
+    print(f"Time: {(datetime.now() - startTime).seconds}s")
+    
