@@ -32,7 +32,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="out.png")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
-
+    print(f"args: {args}")
+    
     if args.model == "sdxl":
         sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=args.float16)
         if args.quantize:
