@@ -4,9 +4,11 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Iterable
 
-import mlx.core as mlx
+import mlx.core as mx
+from mlx.utils import tree_flatten
 from sentencepiece import SentencePieceProcessor
-from utils import get_model_path
+
+from .utils import get_model_path, load_model
 
 
 class TokenType(IntEnum):
@@ -16,6 +18,11 @@ class TokenType(IntEnum):
     USER_DEFINED = 4
     UNUSED = 5
     BYTE = 6
+
+
+class GGMLFileType(IntEnum):
+    GGML_TYPE_F16 = 1
+    GGML_TYPE_Q4_0 = 2
 
 
 class SentencePieceVocab:
@@ -119,24 +126,141 @@ def load_weights(model_path: str):
     return weights
 
 
-# TODO add metadata for vocab https://github.com/ggerganov/llama.cpp/blob/master/convert.py#L1090-L1092
+model_path = get_model_path("mistralai/Mistral-7B-v0.1")
+
+# model = load_model(model_path)
+weights = load_weights(model_path)
+
+with open(model_path / "config.json", "r") as f:
+    config = json.load(f)
+
+# weights = dict(tree_flatten(model.parameters()))
+
+# rename weights for gguf format
+weights = {translate_weight_names(k): v for k, v in weights.items()}
 
 
-# load model and vocab
-# load config
-# check if quantized
-# check if 4 bit quant, if not raise error for only support 4 bit quant for now
-# add metadata for arch
-# if not quant, write metadata to fp16
-# if quant, write metadata to 4 bit quant
-# write metadata for vocab
+if not (model_path / "tokenizer.model").exists():
+    raise ValueError("Tokenizer model not found")
 
-weights = load_weights("mlx-community/Mistral-7B-v0.1-hf-4bit-mlx")
-config = json.load(open("mlx-community/Mistral-7B-v0.1-hf-4bit-mlx/config.json"))
-vocab = SentencePieceVocab.load(
-    "mlx-community/Mistral-7B-v0.1-hf-4bit-mlx/tokenizer.json"
+vocab = SentencePieceVocab.load(model_path / "tokenizer.model")
+
+metadata = {
+    "general.name": "llama",
+    "llama.context_length": (
+        mx.array(config["max_position_embeddings"], dtype=mx.uint32)
+        if config.get("max_position_embeddings") is not None
+        else None
+    ),
+    "llama.embedding_length": (
+        mx.array(config["hidden_size"], dtype=mx.uint32)
+        if config.get("hidden_size") is not None
+        else None
+    ),
+    "llama.block_count": (
+        mx.array(config["num_hidden_layers"], dtype=mx.uint32)
+        if config.get("num_hidden_layers") is not None
+        else None
+    ),
+    "llama.feed_forward_length": (
+        mx.array(config["intermediate_size"], dtype=mx.uint32)
+        if config.get("intermediate_size") is not None
+        else None
+    ),
+    "llama.rope.dimension_count": (
+        mx.array(
+            config["hidden_size"] // config["num_attention_heads"], dtype=mx.uint32
+        )
+        if config.get("hidden_size") is not None
+        and config.get("num_attention_heads") is not None
+        else None
+    ),
+    "llama.attention.head_count": (
+        mx.array(config["num_attention_heads"], dtype=mx.uint32)
+        if config.get("num_attention_heads") is not None
+        else None
+    ),
+    "llama.attention.head_count_kv": (
+        mx.array(
+            config.get("num_key_value_heads", config["num_attention_heads"]),
+            dtype=mx.uint32,
+        )
+        if config.get("num_attention_heads") is not None
+        else None
+    ),
+    "llama.expert_count": (
+        mx.array(config.get("num_local_experts", None), dtype=mx.uint32)
+        if config.get("num_local_experts") is not None
+        else None
+    ),
+    "llama.expert_used_count": (
+        mx.array(config.get("num_experts_per_tok", None), dtype=mx.uint32)
+        if config.get("num_experts_per_tok") is not None
+        else None
+    ),
+    "llama.attention.layer_norm_rms_epsilon": (
+        mx.array(config.get("rms_norm_eps", 1e-05))
+    ),
+    "llama.rope.freq_base": (
+        mx.array(config.get("rope_theta", 10000), dtype=mx.float32)
+    ),
+}
+rope_scaling = config.get("rope_scaling")
+
+if rope_scaling is not None and (typ := rope_scaling.get("type")):
+    rope_factor = rope_scaling.get("factor")
+    f_rope_scale = rope_factor
+    if typ == "linear":
+        rope_scaling_type = "linear"
+        metadata["llama.rope.scaling.type"] = rope_scaling_type
+        metadata["llama.rope.scaling.factor"] = mx.array(f_rope_scale)
+
+# add quantization metadata
+quantization = config.get("quantization", None)
+metadata["general.file_type"] = mx.array(
+    (GGMLFileType.GGML_TYPE_Q4_0 if quantization else GGMLFileType.GGML_TYPE_F16).value,
+    dtype=mx.uint32,
+)
+metadata["general.quantization_version"] = mx.array(
+    (GGMLFileType.GGML_TYPE_Q4_0 if quantization else GGMLFileType.GGML_TYPE_F16).value,
+    dtype=mx.uint32,
 )
 
-print(weights.keys())
-print(config)
-print(vocab.all_tokens()[:10])
+metadata["general.name"] = "mistralai/Mistral-7B-v0.1"
+metadata["general.architecture"] = "llama"
+metadata["general.alignment"] = mx.array(32, dtype=mx.uint32)
+# add metadata for vocab
+metadata["tokenizer.ggml.model"] = "llama"
+tokens = []
+scores = []
+toktypes = []
+
+for text, score, toktype in vocab.all_tokens():
+    tokens.append(text)
+    scores.append(score)
+    toktypes.append(toktype.value)
+
+assert len(tokens) == vocab.vocab_size
+
+metadata["tokenizer.ggml.tokens"] = tokens
+metadata["tokenizer.ggml.scores"] = mx.array(scores, dtype=mx.float32)
+metadata["tokenizer.ggml.token_type"] = mx.array(toktypes, dtype=mx.uint32)
+
+metadata["tokenizer.ggml.bos_token_id"] = mx.array(
+    vocab.sentencepiece_tokenizer.bos_id(), dtype=mx.uint32
+)
+metadata["tokenizer.ggml.eos_token_id"] = mx.array(
+    vocab.sentencepiece_tokenizer.eos_id(), dtype=mx.uint32
+)
+metadata["tokenizer.ggml.unknown_token_id"] = mx.array(
+    vocab.sentencepiece_tokenizer.unk_id(), dtype=mx.uint32
+)
+
+metadata = {k: v for k, v in metadata.items() if v is not None}
+
+weights = {
+    k: v.astype(mx.float32).astype(mx.float16) if v.dtype == mx.bfloat16 else v
+    for k, v in weights.items()
+}
+
+mx.save_gguf("mlx_model.gguf", weights, metadata)
