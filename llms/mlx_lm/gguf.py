@@ -288,4 +288,6 @@ weights = {
     for k, v in weights.items()
 }
 
+weights = {k: v.astype(mx.float32) if "norm" in k else v for k, v in weights.items()}
+
 mx.save_gguf("mlx_model.gguf", weights, metadata)
