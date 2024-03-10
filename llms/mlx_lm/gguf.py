@@ -1,4 +1,3 @@
-import glob
 import re
 from enum import IntEnum
 from pathlib import Path

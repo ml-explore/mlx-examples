@@ -3,7 +3,6 @@ import glob
 import json
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Union
 
 from mlx.utils import tree_flatten, tree_unflatten
 
