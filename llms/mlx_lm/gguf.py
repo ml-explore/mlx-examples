@@ -134,7 +134,32 @@ weights = load_weights(model_path)
 with open(model_path / "config.json", "r") as f:
     config = json.load(f)
 
-# weights = dict(tree_flatten(model.parameters()))
+
+def permute(weights, n_head, n_head_kv=None):
+    if n_head_kv is not None and n_head != n_head_kv:
+        n_head = n_head_kv
+
+    reshaped = weights.reshape(
+        n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:]
+    )
+    swapped = reshaped.swapaxes(1, 2)
+    final_shape = weights.shape
+    return swapped.reshape(final_shape)
+
+
+_weights = {}
+
+# https://github.com/ggerganov/llama.cpp/blob/master/convert.py#L1182 seems relate to llama.cpp's multihead attention
+for k, v in weights.items():
+    if "self_attn.q_proj.weight" in k:
+        v = permute(v, config["num_attention_heads"], config["num_attention_heads"])
+
+    if "self_attn.k_proj.weight" in k:
+        v = permute(v, config["num_attention_heads"], config["num_key_value_heads"])
+
+    _weights[k] = v
+
+weights = _weights
 
 # rename weights for gguf format
 weights = {translate_weight_names(k): v for k, v in weights.items()}
