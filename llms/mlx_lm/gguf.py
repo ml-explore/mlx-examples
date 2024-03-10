@@ -1,5 +1,6 @@
 import glob
 import json
+import re
 from enum import IntEnum
 from pathlib import Path
 from typing import Iterable
@@ -25,78 +26,101 @@ class GGMLFileType(IntEnum):
     GGML_TYPE_Q4_0 = 2
 
 
-class SentencePieceVocab:
-    def __init__(self, fname_tokenizer: Path, fname_added_tokens: Path | None) -> None:
-        self.sentencepiece_tokenizer = SentencePieceProcessor(str(fname_tokenizer))
-        added_tokens: dict[str, int]
-        if fname_added_tokens is not None:
-            added_tokens = json.load(open(fname_added_tokens, encoding="utf-8"))
-        else:
-            added_tokens = {}
+class HfVocab:
+    def __init__(
+        self, fname_tokenizer: Path, fname_added_tokens: Path | None = None
+    ) -> None:
+        try:
+            from transformers import AutoTokenizer
+        except ImportError as e:
+            raise ImportError(
+                "To use HfVocab, please install the `transformers` package. "
+                "You can install it with `pip install transformers`."
+            ) from e
 
-        vocab_size: int = self.sentencepiece_tokenizer.vocab_size()
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            fname_tokenizer,
+            cache_dir=fname_tokenizer,
+            local_files_only=True,
+        )
 
-        new_tokens = {
-            id: piece for piece, id in added_tokens.items() if id >= vocab_size
+        self.added_tokens_list = []
+        self.added_tokens_dict = dict()
+        self.added_tokens_ids = set()
+
+        for tok, tokidx in sorted(
+            self.tokenizer.get_added_vocab().items(), key=lambda x: x[1]
+        ):
+            if tokidx >= self.tokenizer.vocab_size:
+                self.added_tokens_list.append(tok)
+                self.added_tokens_dict[tok] = tokidx
+                self.added_tokens_ids.add(tokidx)
+
+        self.specials = {
+            tok: self.tokenizer.get_vocab()[tok]
+            for tok in self.tokenizer.all_special_tokens
         }
-        expected_new_ids = list(range(vocab_size, vocab_size + len(new_tokens)))
-        actual_new_ids = sorted(new_tokens.keys())
+        self.special_ids = set(self.tokenizer.all_special_ids)
 
-        if expected_new_ids != actual_new_ids:
-            raise ValueError(
-                f"Expected new token IDs {expected_new_ids} to be sequential; got {actual_new_ids}"
-            )
-
-        # Token pieces that were added to the base vocabulary.
-        self.added_tokens_dict = added_tokens
-        self.added_tokens_list = [new_tokens[id] for id in actual_new_ids]
-        self.vocab_size_base = vocab_size
+        self.vocab_size_base = self.tokenizer.vocab_size
         self.vocab_size = self.vocab_size_base + len(self.added_tokens_list)
+
         self.fname_tokenizer = fname_tokenizer
         self.fname_added_tokens = fname_added_tokens
 
-    def sentencepiece_tokens(self) -> Iterable[tuple[bytes, float, TokenType]]:
-        tokenizer = self.sentencepiece_tokenizer
-        for i in range(tokenizer.vocab_size()):
-            piece = tokenizer.id_to_piece(i)
-            text: bytes = piece.encode("utf-8")
-            score: float = tokenizer.get_score(i)
+    def hf_tokens(self) -> Iterable[tuple[bytes, float, TokenType]]:
+        reverse_vocab = {
+            id: encoded_tok for encoded_tok, id in self.tokenizer.get_vocab().items()
+        }
 
-            toktype = TokenType.NORMAL
-            if tokenizer.is_unknown(i):
-                toktype = TokenType.UNKNOWN
-            if tokenizer.is_control(i):
-                toktype = TokenType.CONTROL
+        for token_id in range(self.vocab_size_base):
+            if token_id in self.added_tokens_ids:
+                continue
 
-            # NOTE: I think added_tokens are user defined.
-            # ref: https://github.com/google/sentencepiece/blob/master/src/sentencepiece_model.proto
-            # if tokenizer.is_user_defined(i): toktype = TokenType.USER_DEFINED
+            token_text = reverse_vocab[token_id].encode("utf-8")
 
-            if tokenizer.is_unused(i):
-                toktype = TokenType.UNUSED
-            if tokenizer.is_byte(i):
-                toktype = TokenType.BYTE
+            yield token_text, self.get_token_score(token_id), self.get_token_type(
+                token_id, token_text, self.special_ids
+            )
 
-            yield text, score, toktype
+    def get_token_type(
+        self, token_id: int, token_text: bytes, special_ids: set[int]
+    ) -> TokenType:
+        if re.fullmatch(rb"<0x[0-9A-Fa-f]{2}>", token_text):
+            return TokenType.BYTE
+
+        return TokenType.CONTROL if token_id in special_ids else TokenType.NORMAL
+
+    def get_token_score(self, token_id: int) -> float:
+        return -1000.0
 
     def added_tokens(self) -> Iterable[tuple[bytes, float, TokenType]]:
         for text in self.added_tokens_list:
-            score = -1000.0
-            yield text.encode("utf-8"), score, TokenType.USER_DEFINED
+            if text in self.specials:
+                toktype = self.get_token_type(
+                    self.specials[text], b"", self.special_ids
+                )
+                score = self.get_token_score(self.specials[text])
+            else:
+                toktype = TokenType.USER_DEFINED
+                score = -1000.0
+
+            yield text.encode("utf-8"), score, toktype
+
+    def has_newline_token(self):
+        return "<0x0A>" in self.tokenizer.vocab or "\n" in self.tokenizer.vocab
 
     def all_tokens(self) -> Iterable[tuple[bytes, float, TokenType]]:
-        yield from self.sentencepiece_tokens()
+        yield from self.hf_tokens()
         yield from self.added_tokens()
 
     def __repr__(self) -> str:
-        return f"<SentencePieceVocab with {self.vocab_size_base} base tokens and {len(self.added_tokens_list)} added tokens>"
+        return f"<HfVocab with {self.vocab_size_base} base tokens and {len(self.added_tokens_list)} added tokens>"
 
     @staticmethod
-    def load(path: Path) -> "SentencePieceVocab":
+    def load(path: Path) -> "HfVocab":
         added_tokens_path = path.parent / "added_tokens.json"
-        return SentencePieceVocab(
-            path, added_tokens_path if added_tokens_path.exists() else None
-        )
+        return HfVocab(path, added_tokens_path if added_tokens_path.exists() else None)
 
 
 def translate_weight_names(name):
@@ -104,6 +128,22 @@ def translate_weight_names(name):
     name = name.replace("mlp.gate_proj", "ffn_gate")
     name = name.replace("mlp.down_proj", "ffn_down")
     name = name.replace("mlp.up_proj", "ffn_up")
+    # for mixtral gate
+    name = name.replace("block_sparse_moe.gate", "ffn_gate_inp")
+    # for mixtral experts ffns
+    pattern = r"block_sparse_moe\.experts\.(\d+)\.w1\.weight"
+    replacement = r"ffn_gate.\1.weight"
+    name = re.sub(pattern, replacement, name)
+    pattern = r"block_sparse_moe\.experts\.(\d+)\.w2\.weight"
+    replacement = r"ffn_down.\1.weight"
+    name = re.sub(pattern, replacement, name)
+    pattern = r"block_sparse_moe\.experts\.(\d+)\.w3\.weight"
+    replacement = r"ffn_up.\1.weight"
+    name = re.sub(pattern, replacement, name)
+    # name = name.replace("block_sparse_moe.experts.0.w1.weight", "ffn_gate.0.weight")
+    # name = name.replace("w2", "ffn_down")
+    # name = name.replace("w3", "ffn_up")
+
     name = name.replace("self_attn.q_proj", "attn_q")
     name = name.replace("self_attn.k_proj", "attn_k")
     name = name.replace("self_attn.v_proj", "attn_v")
@@ -126,10 +166,12 @@ def load_weights(model_path: str):
     return weights
 
 
-model_path = get_model_path("mistralai/Mistral-7B-v0.1")
+model_path = get_model_path("mzbac/Kunpeng-4x7B-mistral")
 
-# model = load_model(model_path)
-weights = load_weights(model_path)
+model = load_model(model_path)
+weights = dict(tree_flatten(model.parameters()))
+
+# weights = load_weights(model_path)
 
 with open(model_path / "config.json", "r") as f:
     config = json.load(f)
@@ -165,10 +207,10 @@ weights = _weights
 weights = {translate_weight_names(k): v for k, v in weights.items()}
 
 
-if not (model_path / "tokenizer.model").exists():
-    raise ValueError("Tokenizer model not found")
+if not (model_path / "tokenizer.json").exists():
+    raise ValueError("Tokenizer json not found")
 
-vocab = SentencePieceVocab.load(model_path / "tokenizer.model")
+vocab = HfVocab.load(model_path)
 
 metadata = {
     "general.name": "llama",
@@ -225,9 +267,13 @@ metadata = {
     ),
     "llama.attention.layer_norm_rms_epsilon": (
         mx.array(config.get("rms_norm_eps", 1e-05))
+        if config.get("rms_norm_eps") is not None
+        else None
     ),
     "llama.rope.freq_base": (
         mx.array(config.get("rope_theta", 10000), dtype=mx.float32)
+        if config.get("rope_theta") is not None
+        else None
     ),
 }
 rope_scaling = config.get("rope_scaling")
@@ -242,6 +288,7 @@ if rope_scaling is not None and (typ := rope_scaling.get("type")):
 
 # add quantization metadata
 quantization = config.get("quantization", None)
+
 metadata["general.file_type"] = mx.array(
     (GGMLFileType.GGML_TYPE_Q4_0 if quantization else GGMLFileType.GGML_TYPE_F16).value,
     dtype=mx.uint32,
@@ -251,7 +298,7 @@ metadata["general.quantization_version"] = mx.array(
     dtype=mx.uint32,
 )
 
-metadata["general.name"] = "mistralai/Mistral-7B-v0.1"
+metadata["general.name"] = config.get("_name_or_path", "llama").split("/")[-1]
 metadata["general.architecture"] = "llama"
 metadata["general.alignment"] = mx.array(32, dtype=mx.uint32)
 # add metadata for vocab
@@ -272,13 +319,13 @@ metadata["tokenizer.ggml.scores"] = mx.array(scores, dtype=mx.float32)
 metadata["tokenizer.ggml.token_type"] = mx.array(toktypes, dtype=mx.uint32)
 
 metadata["tokenizer.ggml.bos_token_id"] = mx.array(
-    vocab.sentencepiece_tokenizer.bos_id(), dtype=mx.uint32
+    vocab.tokenizer.bos_token_id, dtype=mx.uint32
 )
 metadata["tokenizer.ggml.eos_token_id"] = mx.array(
-    vocab.sentencepiece_tokenizer.eos_id(), dtype=mx.uint32
+    vocab.tokenizer.eos_token_id, dtype=mx.uint32
 )
 metadata["tokenizer.ggml.unknown_token_id"] = mx.array(
-    vocab.sentencepiece_tokenizer.unk_id(), dtype=mx.uint32
+    vocab.tokenizer.unk_token_id, dtype=mx.uint32
 )
 
 metadata = {k: v for k, v in metadata.items() if v is not None}
