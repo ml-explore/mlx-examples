@@ -110,7 +110,7 @@ class StableDiffusion:
         seed=None,
     ):
         # Set the PRNG state
-        seed = seed or int(time.time())
+        seed = int(time.time()) if seed is None else seed
         mx.random.seed(seed)
 
         # Get the text conditioning
@@ -140,7 +140,7 @@ class StableDiffusion:
         seed=None,
     ):
         # Set the PRNG state
-        seed = seed or int(time.time())
+        seed = int(time.time()) if seed is None else seed
         mx.random.seed(seed)
 
         # Define the num steps and start step
@@ -238,7 +238,7 @@ class StableDiffusionXL(StableDiffusion):
         seed=None,
     ):
         # Set the PRNG state
-        seed = seed or int(time.time())
+        seed = int(time.time()) if seed is None else seed
         mx.random.seed(seed)
 
         # Get the text conditioning
