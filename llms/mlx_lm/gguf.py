@@ -101,11 +101,7 @@ class HfVocab:
 
 
 def translate_weight_names(name):
-    # Translate weight names from the original model to the desired format
     name = name.replace("model.layers.", "blk.")
-    name = name.replace("mlp.gate_proj", "ffn_gate")
-    name = name.replace("mlp.down_proj", "ffn_down")
-    name = name.replace("mlp.up_proj", "ffn_up")
     # for mixtral gate
     name = name.replace("block_sparse_moe.gate", "ffn_gate_inp")
     # for mixtral experts ffns
@@ -119,6 +115,9 @@ def translate_weight_names(name):
     replacement = r"ffn_up.\1.weight"
     name = re.sub(pattern, replacement, name)
 
+    name = name.replace("mlp.gate_proj", "ffn_gate")
+    name = name.replace("mlp.down_proj", "ffn_down")
+    name = name.replace("mlp.up_proj", "ffn_up")
     name = name.replace("self_attn.q_proj", "attn_q")
     name = name.replace("self_attn.k_proj", "attn_k")
     name = name.replace("self_attn.v_proj", "attn_v")
