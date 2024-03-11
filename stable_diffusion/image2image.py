@@ -46,12 +46,10 @@ if __name__ == "__main__":
         if args.quantize:
             QuantizedLinear.quantize_module(sd.text_encoder)
             QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
-    args.cfg = args.cfg or 7.5
-    args.steps = args.steps or 50
+        args.cfg = args.cfg or 7.5
+        args.steps = args.steps or 50
     if args.preload_models:
         sd.ensure_models_are_loaded()
-    args.cfg = args.cfg or 0.0
-    args.steps = args.steps or 2
 
     # Read the image
     img = Image.open(args.image)
@@ -113,4 +111,3 @@ if __name__ == "__main__":
     if args.verbose:
         print(f"Peak memory used for the unet: {peak_mem_unet:.3f}GB")
         print(f"Peak memory used overall:      {peak_mem_overall:.3f}GB")
-
