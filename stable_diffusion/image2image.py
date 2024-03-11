@@ -9,7 +9,6 @@ from tqdm import tqdm
 
 from stable_diffusion import StableDiffusion, StableDiffusionXL
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate images from an image and a textual prompt using stable diffusion"
