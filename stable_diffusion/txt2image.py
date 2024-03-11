@@ -19,7 +19,7 @@ if __name__ == "__main__":
         description="Generate images from a textual prompt using stable diffusion"
     )
     parser.add_argument("prompt")
-    parser.add_argument("--model", choices=["sd", "sdxl"], default="sdxl")
+    parser.add_argument("--model", choices=["sd", "sdxl", "xl"], default="sdxl")
     parser.add_argument("--n_images", type=int, default=4)
     parser.add_argument("--steps", type=int)
     parser.add_argument("--cfg", type=float)
@@ -41,6 +41,14 @@ if __name__ == "__main__":
             QuantizedLinear.quantize_module(sd.text_encoder_2)
             QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 0.0
+        args.steps = args.steps or 2
+    elif args.model == "xl":
+        sd = StableDiffusionXL("stabilityai/stable-diffusion-xl-base-1.0", float16=args.float16)
+        if args.quantize:
+            QuantizedLinear.quantize_module(sd.text_encoder_1)
+            QuantizedLinear.quantize_module(sd.text_encoder_2)
+            QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
+        args.cfg = args.cfg or 1.0
         args.steps = args.steps or 2
     else:
         sd = StableDiffusion(
@@ -68,7 +76,7 @@ if __name__ == "__main__":
     # The following is not necessary but it may help in memory
     # constrained systems by reusing the memory kept by the unet and the text
     # encoders.
-    if args.model == "sdxl":
+    if args.model == "sdxl" or args.model == "xl":
         del sd.text_encoder_1
         del sd.text_encoder_2
     else:

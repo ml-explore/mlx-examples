@@ -32,6 +32,22 @@ _MODELS = {
         "tokenizer_2_vocab": "tokenizer_2/vocab.json",
         "tokenizer_2_merges": "tokenizer_2/merges.txt",
     },
+    # See https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0 for the model details and license
+    "stabilityai/stable-diffusion-xl-base-1.0": {
+        "unet_config": "unet/config.json",
+        "unet": "unet/diffusion_pytorch_model.safetensors",
+        "text_encoder_config": "text_encoder/config.json",
+        "text_encoder": "text_encoder/model.safetensors",
+        "text_encoder_2_config": "text_encoder_2/config.json",
+        "text_encoder_2": "text_encoder_2/model.safetensors",
+        "vae_config": "vae/config.json",
+        "vae": "vae/diffusion_pytorch_model.safetensors",
+        "diffusion_config": "scheduler/scheduler_config.json",
+        "tokenizer_vocab": "tokenizer/vocab.json",
+        "tokenizer_merges": "tokenizer/merges.txt",
+        "tokenizer_2_vocab": "tokenizer_2/vocab.json",
+        "tokenizer_2_merges": "tokenizer_2/merges.txt",
+    },
     # See https://huggingface.co/stabilityai/stable-diffusion-2-1-base for the model details and license
     "stabilityai/stable-diffusion-2-1-base": {
         "unet_config": "unet/config.json",
