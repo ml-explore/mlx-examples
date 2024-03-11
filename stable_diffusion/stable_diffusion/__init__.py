@@ -288,6 +288,10 @@ class StableDiffusionXL(StableDiffusion):
         conditioning, pooled_conditioning = self._get_text_conditioning(
             text, n_images, cfg_weight, negative_text
         )
+        text_time = (
+            pooled_conditioning,
+            mx.array([[512, 512, 0, 0, 512, 512.0]] * len(pooled_conditioning)),
+        )
 
         # Get the latents from the input image and add noise according to the
         # start time.
@@ -302,4 +306,5 @@ class StableDiffusionXL(StableDiffusion):
             conditioning,
             num_steps,
             cfg_weight,
+            text_time=text_time
         )
