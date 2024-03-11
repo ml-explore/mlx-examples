@@ -301,10 +301,5 @@ class StableDiffusionXL(StableDiffusion):
 
         # Perform the denoising loop
         yield from self._denoising_loop(
-            x_T,
-            start_step,
-            conditioning,
-            num_steps,
-            cfg_weight,
-            text_time=text_time
+            x_T, start_step, conditioning, num_steps, cfg_weight, text_time=text_time
         )
