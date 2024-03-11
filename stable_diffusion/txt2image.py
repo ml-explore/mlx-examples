@@ -99,7 +99,7 @@ if __name__ == "__main__":
     if not os.path.exists(dir):
         os.makedirs(dir)
     # format current time to filename
-    filename = datetime.now().strftime("%Y%H%M%d%m%S")
+    filename = datetime.now().strftime("%Y%m%d%H%M%S")
     im.save(dir + "/" + filename + ".png")    
 
     # Report the peak memory used during generation
