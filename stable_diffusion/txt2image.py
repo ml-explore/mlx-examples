@@ -94,17 +94,19 @@ if __name__ == "__main__":
 
     # Save them to disc
     im = Image.fromarray(np.array(x))
-    dir = "./output"
+    dir =  f"{os.path.dirname(os.path.realpath(__file__))}/output"
     # make sure folder exists
     if not os.path.exists(dir):
         os.makedirs(dir)
     # format current time to filename
     filename = datetime.now().strftime("%Y%m%d%H%M%S")
-    im.save(dir + "/" + filename + ".png")    
+    filepath = dir + "/" + filename + ".png"
+    im.save(filepath)    
 
     # Report the peak memory used during generation
     if args.verbose:
         print(f"Peak memory used for the unet: {peak_mem_unet:.3f}GB")
         print(f"Peak memory used overall:      {peak_mem_overall:.3f}GB")
+    print(f"File: {filepath}")
     print(f"Time: {(datetime.now() - startTime).seconds}s")
     
