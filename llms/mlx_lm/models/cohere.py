@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from functools import partial
 
 import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import ln_norm
 
 
 @dataclass
@@ -16,15 +16,29 @@ class ModelArgs(BaseModelArgs):
     intermediate_size: int
     num_attention_heads: int
     num_key_value_heads: int
-    logit_scale: float
-    norm_epsilon: float = 1e-5
-    vocab_size: int = 256000
-    rope_theta: float = 8000000.0
-    tie_word_embeddings: bool = True
+    rope_theta: float
+    vocab_size: int
+    tie_word_embeddings: bool
+    layer_norm_eps: float = 1e-05
+    logit_scale: float = 0.0625
     attention_bias: bool = False
 
+
+@partial(mx.compile, shapeless=True)
+def ln_norm(x, eps, weight=None, bias=None):
+    t = x.dtype
+    x = x.astype(mx.float32)
+    means = mx.mean(x, axis=-1, keepdims=True)
+    var = mx.var(x, axis=-1, keepdims=True)
+    x = (x - means) * mx.rsqrt(var + eps)
+    x = x.astype(t)
+    h = weight * x
+    if bias is not None:
+        h = h + bias.astype(mx.float32)
+    return h
+
 class LayerNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5, bias: bool = False):
+    def __init__(self, dims: int, eps: float = 1e-5, bias= None):
         super().__init__()
         self.bias = mx.zeros((dims,)) if bias else None
         self.weight = mx.ones((dims,))
@@ -36,7 +50,7 @@ class LayerNorm(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         if "weight" in self:
-            return ln_norm(x, self.eps, self.weight, self.bias)
+            return ln_norm(x, self.eps, self.weight)
         else:
             return ln_norm(x, self.eps)
 
@@ -114,7 +128,7 @@ class TransformerBlock(nn.Module):
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
         self.input_layernorm = LayerNorm(
-            args.hidden_size, eps=args.norm_epsilon,
+            args.hidden_size, eps=args.layer_norm_eps,
         )
         self.args = args
 
@@ -124,10 +138,11 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
-        h = x + r
-        r = self.mlp(h)
-        out = h + r
+        r = x
+        h = self.input_layernorm(x)
+        h_attn, cache = self.self_attn(h, mask, cache)
+        h_mlp = self.mlp(h)
+        out = r + h_attn + h_mlp
         return out, cache
 
 
@@ -142,7 +157,7 @@ class CohereModel(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.norm = LayerNorm(args.hidden_size, eps=args.layer_norm_eps)
 
     def __call__(
         self,
@@ -187,6 +202,13 @@ class Model(nn.Module):
             out = out @ self.model.embed_tokens.weight.T
             out = out * self.model.args.logit_scale
             return out, cache
+
+    @staticmethod
+    def sanitize(weights):
+        # Remove unused precomputed rotary freqs
+        return {
+            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
+        }
 
     @property
     def layers(self):
