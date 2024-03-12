@@ -136,14 +136,53 @@ correct format.
 
 For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
-loader expects a `test.jsonl` in the data directory. Each line in the `*.jsonl`
-file should look like:
+loader expects a `test.jsonl` in the data directory. 
 
-```
-{"text": "This is an example for the model."}
-```
+Currently, `*.jsonl` files support three data formats, namely conversations format, 
+prompt completion pair format, and text format. The differences among these formats 
+are as follows:
+
+- conversations
+  
+  ```jsonl
+  {"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Hello."}, {"role": "assistant", "content": "How can I assistant you today."}]}
+  ```
+
+- prompt completion pair
+  
+  ```jsonl
+  {"prompt": "What is the capital of France?", "completion": "Paris."}
+  ```
+
+- Text
+
+  ```jsonl
+  {"text": "This is an example for the model."}
+  ```
 
 Note, other keys will be ignored by the loader.
+
+For conversations and prompt completion pair, Hugging Face [Chat Templates](https://huggingface.co/blog/chat-templates)
+are used to assemble the corresponding text content. This assembly method will prioritize 
+using the base model's chat-templates definition. If the base model does not define a 
+corresponding template, then Hugging Face will assemble using some default chat-templates. 
+For example, the text form of the aforementioned conversations assembled with Hugging Face's 
+default format is:
+
+```text
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+Hello.<|im_end|>
+<|im_start|>assistant
+How can I assistant you today.<|im_end|>
+```
+
+Note, the default chat-template of Hugging Face's version may vary.
+
+If you are unsure of which format of the dataset you should use, it is recommended to use 
+either conversations or prompt completion pair format. If you have specific requirements for 
+the format of the dataset, you can use the Text format to assemble any content yourself.
 
 ## Memory Issues
 
