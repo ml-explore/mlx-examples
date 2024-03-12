@@ -5,7 +5,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
+from .layers import ln_norm
 
 
 @dataclass
@@ -16,12 +16,29 @@ class ModelArgs(BaseModelArgs):
     intermediate_size: int
     num_attention_heads: int
     num_key_value_heads: int
+    logit_scale: float
     norm_epsilon: float = 1e-5
-    logit_scale: 0.0625
-    vocab_size: int = 49152
+    vocab_size: int = 256000
     rope_theta: float = 8000000.0
     tie_word_embeddings: bool = True
-    vocab_size=256000
+    attention_bias: bool = False
+
+class LayerNorm(nn.Module):
+    def __init__(self, dims: int, eps: float = 1e-5, bias: bool = False):
+        super().__init__()
+        self.bias = mx.zeros((dims,)) if bias else None
+        self.weight = mx.ones((dims,))
+        self.eps = eps
+        self.dims = dims
+
+    def _extra_repr(self):
+        return f"{self.dims}, eps={self.eps}, affine={'weight' in self}"
+
+    def __call__(self, x: mx.array) -> mx.array:
+        if "weight" in self:
+            return ln_norm(x, self.eps, self.weight, self.bias)
+        else:
+            return ln_norm(x, self.eps)
 
 
 class Attention(nn.Module):
@@ -36,10 +53,12 @@ class Attention(nn.Module):
         head_dim = args.hidden_size // args.num_attention_heads
         self.scale = head_dim**-0.5
 
-        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=True)
-        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=True)
+        attetion_bias = args.attention_bias
+
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=attetion_bias)
+        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attetion_bias)
+        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attetion_bias)
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attetion_bias)
         self.rope = nn.RoPE(head_dim, traditional=False, base=args.rope_theta)
 
     def __call__(
@@ -78,11 +97,12 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
-        self.c_fc = nn.Linear(dim, hidden_dim, bias=True)
-        self.c_proj = nn.Linear(hidden_dim, dim, bias=True)
+        self.gate_proj= nn.Linear(dim, hidden_dim, bias=False)
+        self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
 
     def __call__(self, x):
-        return self.c_proj(nn.silu(self.c_fc(x)))
+        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
 class TransformerBlock(nn.Module):
@@ -93,9 +113,8 @@ class TransformerBlock(nn.Module):
 
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
-        self.post_attention_layernorm = LayerNorm(
-            args.hidden_size, eps=args.norm_epsilon
+        self.input_layernorm = LayerNorm(
+            args.hidden_size, eps=args.norm_epsilon,
         )
         self.args = args
 
@@ -107,7 +126,7 @@ class TransformerBlock(nn.Module):
     ) -> mx.array:
         r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
-        r = self.mlp(self.post_attention_layernorm(h))
+        r = self.mlp(h)
         out = h + r
         return out, cache
 
@@ -161,9 +180,12 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         if not self.model.args.tie_word_embeddings:
-            return self.lm_head(out), cache
+            out = self.lm_head(out)
+            out = out * self.model.args.logit_scale
+            return out, cache
         else:
             out = out @ self.model.embed_tokens.weight.T
+            out = out * self.model.args.logit_scale
             return out, cache
 
     @property
