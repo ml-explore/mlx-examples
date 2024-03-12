@@ -49,9 +49,11 @@ test_batches: 500
 # Maximum sequence length.
 max_seq_length: 2048
 
-#LoRA parameters (the values below are the defaults but can be changed)
-#These can only be specified in a YAML config file
+# LoRA parameters can only be specified in a config file
 lora_parameters:
-  lora_layer_keys: ["q_proj", "v_proj"] #Which attention layer keys to apply LoRA to
-  lora_rank: 8
-  lora_alpha: 16
+  # The layer keys to apply LoRA to.
+  # These will be applied for the last lora_layers
+  keys: ["self_attn.q_proj", "self_attn.v_proj"]
+  rank: 8
+  alpha: 16.0
+  scale: 10.0

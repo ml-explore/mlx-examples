@@ -9,7 +9,9 @@ from .lora import LoRALinear
 
 
 def linear_to_lora_layers(
-    model: nn.Module, num_lora_layers: int, lora_parameters: Dict = None
+    model: nn.Module,
+    num_lora_layers: int,
+    config: Dict,
 ):
     """
     Convert some of the models linear layers to lora layers.
@@ -18,16 +20,28 @@ def linear_to_lora_layers(
         model (nn.Module): The neural network model.
         num_lora_layers (int): The number of blocks to convert to lora layers
         starting from the last layer.
+        config (dict): More configuration parameters for LoRA, including the
+          rank, alpha, scale, and optional layer keys.
     """
 
-    def check_lora_layers(num_model):
-        if num_lora_layers > num_model:
-            raise ValueError(
-                f"Requested {num_lora_layers} LoRA layers "
-                f"but the model only has {num_model} layers."
-            )
+    num_layers = len(model.layers)
+    if num_lora_layers > num_layers:
+        raise ValueError(
+            f"Requested {num_lora_layers} LoRA layers "
+            f"but the model only has {num_layers} layers."
+        )
 
-    if model.model_type in [
+    to_lora = lambda lin: LoRALinear.from_linear(
+        lin, r=config["rank"], alpha=config["alpha"], scale=config["scale"]
+    )
+
+    # If the lora_parameters are set, we assume the keys
+    # are correct for the given model
+
+    keys = config.get("keys", None)
+    if keys is not None:
+        keys = set(keys)
+    elif model.model_type in [
         "mistral",
         "llama",
         "phi",
@@ -37,47 +51,20 @@ def linear_to_lora_layers(
         "gemma",
         "starcoder2",
     ]:
-        check_lora_layers(len(model.model.layers))
-
-        for l in model.model.layers[len(model.model.layers) - num_lora_layers :]:
-            if lora_parameters:
-                lora_rank = lora_parameters.get("lora_rank", 8)
-                lora_alpha = lora_parameters.get("lora_alpha", 16)
-                for attn_key in lora_parameters.get(
-                    "lora_layer_keys", ["q_proj", "v_proj"]
-                ):
-                    setattr(
-                        l.self_attn,
-                        attn_key,
-                        LoRALinear.from_linear(
-                            getattr(l.self_attn, attn_key),
-                            r=lora_rank,
-                            lora_alpha=lora_alpha,
-                        ),
-                    )
-            else:
-                l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
-                l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
-            if hasattr(l, "block_sparse_moe"):
-                l.block_sparse_moe.gate = LoRALinear.from_linear(
-                    l.block_sparse_moe.gate
-                )
+        keys = set(["self_attn.q_proj", "self_attn.v_proj"])
+        if model.model_type == "mixtral":
+            keys.add(["block_sparse_moe.gate"])
     elif model.model_type == "olmo":
-        check_lora_layers(len(model.model.transformer.blocks))
-
-        for l in model.model.transformer.blocks[
-            len(model.model.transformer.blocks) - num_lora_layers :
-        ]:
-            l.att_proj = LoRALinear.from_linear(l.att_proj)
+        keys = set(["att_proj"])
     elif model.model_type == "phi-msft":
-        check_lora_layers(len(model.transformer.h))
-
-        for l in model.transformer.h[len(model.transformer.h) - num_lora_layers :]:
-            l.mixer.Wqkv = LoRALinear.from_linear(l.mixer.Wqkv)
-            l.moe.gate = LoRALinear.from_linear(l.moe.gate)
-
+        keys = set(["mixer.Wqkv", "moe.gate"])
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
+
+    for l in model.layers[num_layers - num_lora_layers :]:
+        modules = l.named_modules()
+        lora_layers = [(k, to_lora(m)) for k, m in l.named_modules() if k in keys]
+        l.update_modules(tree_unflatten(lora_layers))
 
 
 def apply_lora_layers(model: nn.Module, adapter_file: str) -> nn.Module:

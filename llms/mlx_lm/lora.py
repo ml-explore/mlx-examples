@@ -49,6 +49,7 @@ CONFIG_DEFAULTS = {
     "test": False,
     "test_batches": 500,
     "max_seq_length": 2048,
+    "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
 }
 
 
@@ -58,7 +59,6 @@ def build_parser():
         "--model",
         help="The path to the local model directory or Hugging Face repo.",
     )
-    # Generation args
     parser.add_argument(
         "--max-tokens",
         "-m",
