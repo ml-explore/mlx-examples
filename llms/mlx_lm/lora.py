@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import argparse
 import json
 import math
@@ -74,7 +76,6 @@ def build_parser():
     )
 
     # Training args
-    # Generation args
     parser.add_argument(
         "--train",
         action="store_true",
