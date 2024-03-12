@@ -164,8 +164,8 @@ Note, other keys will be ignored by the loader.
 
 For conversations and prompt completion pair, Hugging Face [Chat Templates](https://huggingface.co/blog/chat-templates)
 are used to assemble the corresponding text content. This assembly method will prioritize 
-using the base model's chat-templates definition. If the base model does not define a 
-corresponding template, then Hugging Face will assemble using some default chat-templates. 
+using the foundation model's chat-templates definition. If the foundation model does not define a 
+chat-template, then Hugging Face will assemble using some default chat-templates. 
 For example, the text form of the aforementioned conversations assembled with Hugging Face's 
 default format is:
 
