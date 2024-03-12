@@ -11,13 +11,13 @@ from .base import BaseModelArgs
 @dataclass
 class ModelArgs(BaseModelArgs):
     model_type: str
-    hidden_size: int
-    num_hidden_layers: int
-    intermediate_size: int
-    num_attention_heads: int
-    num_key_value_heads: int
-    rope_theta: float
-    vocab_size: int
+    hidden_size: int = 8192
+    num_hidden_layers: int = 40
+    intermediate_size: int = 22528
+    num_attention_heads: int = 64
+    num_key_value_heads: int = 64
+    rope_theta: float = 8000000.0
+    vocab_size: int = 256000
     tie_word_embeddings: bool = True
     layer_norm_eps: float = 1e-05
     logit_scale: float = 0.0625
@@ -32,13 +32,13 @@ def ln_norm(x, eps, weight=None, bias=None):
     var = mx.var(x, axis=-1, keepdims=True)
     x = (x - means) * mx.rsqrt(var + eps)
     x = x.astype(t)
-    h = weight * x
+    h = weight.astype(mx.float32) * x
     if bias is not None:
         h = h + bias.astype(mx.float32)
     return h
 
 class LayerNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5, bias= None):
+    def __init__(self, dims: int, eps: float = 1e-5, bias=False):
         super().__init__()
         self.bias = mx.zeros((dims,)) if bias else None
         self.weight = mx.ones((dims,))
@@ -73,6 +73,7 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attetion_bias)
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attetion_bias)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attetion_bias)
+
         self.rope = nn.RoPE(head_dim, traditional=False, base=args.rope_theta)
 
     def __call__(
@@ -138,12 +139,10 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r = x
         h = self.input_layernorm(x)
-        h_attn, cache = self.self_attn(h, mask, cache)
-        h_mlp = self.mlp(h)
-        out = r + h_attn + h_mlp
-        return out, cache
+        attn_h, cache = self.self_attn(h, mask, cache)
+        ff_h = self.mlp(h)
+        return attn_h + ff_h + x, cache
 
 
 class CohereModel(nn.Module):
@@ -185,8 +184,6 @@ class Model(nn.Module):
         super().__init__()
         self.model_type = args.model_type
         self.model = CohereModel(args)
-        if not args.tie_word_embeddings:
-            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -194,21 +191,9 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        if not self.model.args.tie_word_embeddings:
-            out = self.lm_head(out)
-            out = out * self.model.args.logit_scale
-            return out, cache
-        else:
-            out = out @ self.model.embed_tokens.weight.T
-            out = out * self.model.args.logit_scale
-            return out, cache
-
-    @staticmethod
-    def sanitize(weights):
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
+        out = out @ self.model.embed_tokens.weight.T
+        out = out * self.model.args.logit_scale
+        return out, cache
 
     @property
     def layers(self):
