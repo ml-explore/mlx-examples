@@ -18,7 +18,7 @@ class ModelArgs(BaseModelArgs):
     num_key_value_heads: int
     rope_theta: float
     vocab_size: int
-    tie_word_embeddings: bool
+    tie_word_embeddings: bool = True
     layer_norm_eps: float = 1e-05
     logit_scale: float = 0.0625
     attention_bias: bool = False
