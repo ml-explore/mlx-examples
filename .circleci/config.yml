@@ -61,5 +61,7 @@ workflows:
           type: approval
       - apple/authenticate:
           context: pr-approval
+      - mlx_lm_build_and_test:
+          requires: [ hold ]
       - linux_build_and_test:
           requires: [ hold ]
