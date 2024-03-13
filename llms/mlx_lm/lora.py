@@ -217,27 +217,29 @@ def run(args, training_callback: TrainingCallback = None):
     if args.resume_adapter_file is not None:
         print(f"Loading pretrained adapters from {args.resume_adapter_file}")
         model.load_weights(args.resume_adapter_file, strict=False)
-    # init training args
-    trainingArgs = TrainingArgs(
-        batch_size=args.batch_size,
-        iters=args.iters,
-        val_batches=args.val_batches,
-        steps_per_report=args.steps_per_report,
-        steps_per_eval=args.steps_per_eval,
-        steps_per_save=args.save_every,
-        adapter_file=args.adapter_file,
-        max_seq_length=args.max_seq_length,
-        grad_checkpoint=args.grad_checkpoint,
-    )
+
     if args.train:
         print("Training")
+        # init training args
+        training_args = TrainingArgs(
+            batch_size=args.batch_size,
+            iters=args.iters,
+            val_batches=args.val_batches,
+            steps_per_report=args.steps_per_report,
+            steps_per_eval=args.steps_per_eval,
+            steps_per_save=args.save_every,
+            adapter_file=args.adapter_file,
+            max_seq_length=args.max_seq_length,
+            grad_checkpoint=args.grad_checkpoint,
+        )
+
         model.train()
         opt = optim.Adam(learning_rate=args.learning_rate)
         # Train model
         train(
             model=model,
             tokenizer=tokenizer,
-            args=trainingArgs,
+            args=training_args,
             optimizer=opt,
             train_dataset=train_set,
             val_dataset=valid_set,
