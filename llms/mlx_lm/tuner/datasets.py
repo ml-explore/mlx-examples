@@ -77,8 +77,13 @@ def create_dataset(file_path: Path, tokenizer: PreTrainedTokenizer = None):
         return ChatDataset(file_path, tokenizer)
     elif "prompt" in first_obj and "completion" in first_obj:
         return PromptCompletionDataset(file_path, tokenizer)
-    else:
+    elif "text" in first_obj:
         return Dataset(file_path)
+    else:
+        raise ValueError(
+            "Unsupported data format, please check the [supported "
+            "formats](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data)."
+        )
 
 
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
