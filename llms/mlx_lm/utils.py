@@ -319,11 +319,12 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         weights.update(mx.load(wf))
 
     model_class, model_args_class = _get_classes(config=config)
-    if hasattr(model_class, "sanitize"):
-        weights = model_class.sanitize(weights)
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
+
+    if hasattr(model, "sanitize"):
+        weights = model.sanitize(weights)
 
     if quantization is not None:
         # for legacy models that don't have lm_head quant due to non-32 dims

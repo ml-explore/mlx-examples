@@ -129,6 +129,47 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_qwen2_tie_word_embeddings_without_lm_head_weight(self):
+        from mlx_lm.models import qwen2
+
+        args = qwen2.ModelArgs(
+            model_type="qwen2",
+            hidden_size=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=4,
+            rms_norm_eps=1e-5,
+            vocab_size=10_000,
+            tie_word_embeddings=True,
+        )
+        model = qwen2.Model(args)
+        weights = {"model.embed_tokens.weight": "some_value"}
+        sanitized_weights = model.sanitize(weights)
+        self.assertIn("lm_head.weight", sanitized_weights)
+        self.assertEqual(sanitized_weights["lm_head.weight"], "some_value")
+
+    def test_qwen2_tie_word_embeddings_with_lm_head_weight(self):
+        from mlx_lm.models import qwen2
+
+        weights = {
+            "model.embed_tokens.weight": "some_value",
+            "lm_head.weight": "existing_value",
+        }
+        args = qwen2.ModelArgs(
+            model_type="qwen2",
+            hidden_size=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=4,
+            rms_norm_eps=1e-5,
+            vocab_size=10_000,
+            tie_word_embeddings=True,
+        )
+        model = qwen2.Model(args)
+        sanitized_weights = model.sanitize(weights)
+        self.assertIn("lm_head.weight", sanitized_weights)
+        self.assertEqual(sanitized_weights["lm_head.weight"], "existing_value")
+
     def test_qwen(self):
         from mlx_lm.models import qwen
 
@@ -193,6 +234,47 @@ class TestModels(unittest.TestCase):
         self.model_test_runner(
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
+
+    def test_starcoder2_tie_word_embeddings_without_lm_head_weight(self):
+        from mlx_lm.models import starcoder2
+
+        args = starcoder2.ModelArgs(
+            model_type="starcoder2",
+            hidden_size=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            tie_word_embeddings=True,
+        )
+        model = starcoder2.Model(args)
+        weights = {"model.embed_tokens.weight": "some_value"}
+        sanitized_weights = model.sanitize(weights)
+        self.assertIn("lm_head.weight", sanitized_weights)
+        self.assertEqual(sanitized_weights["lm_head.weight"], "some_value")
+
+    def test_starcoder2_tie_word_embeddings_with_lm_head_weight(self):
+
+        from mlx_lm.models import starcoder2
+
+        args = starcoder2.ModelArgs(
+            model_type="starcoder2",
+            hidden_size=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            tie_word_embeddings=True,
+        )
+        model = starcoder2.Model(args)
+        weights = {
+            "model.embed_tokens.weight": "some_value",
+            "lm_head.weight": "existing_value",
+        }
+
+        sanitized_weights = model.sanitize(weights)
+        self.assertIn("lm_head.weight", sanitized_weights)
+        self.assertEqual(sanitized_weights["lm_head.weight"], "existing_value")
 
 
 if __name__ == "__main__":
