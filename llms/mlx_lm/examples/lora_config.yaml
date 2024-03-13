@@ -49,7 +49,7 @@ test_batches: 500
 max_seq_length: 2048
 
 # Use gradient checkpointing to reduce memory use.
-gradient_checkpoint: false
+grad_checkpoint: false
 
 # LoRA parameters can only be specified in a config file
 lora_parameters:
