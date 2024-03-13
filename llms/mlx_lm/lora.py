@@ -194,6 +194,17 @@ def load_dataset(args):
     return train, valid, test
 
 
+def print_trainable_parameters(model):
+    total_p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
+    trainable_p = (
+        sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
+    )
+    print(
+        f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
+        f"({trainable_p:.3f}M/{total_p:.3f}M)"
+    )
+
+
 def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
@@ -205,10 +216,7 @@ def run(args, training_callback: TrainingCallback = None):
     # Convert linear layers to lora layers and unfreeze in the process
     linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
 
-    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
-    print(f"Total parameters {p:.3f}M")
-    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
-    print(f"Trainable parameters {p:.3f}M")
+    print_trainable_parameters(model)
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args)
