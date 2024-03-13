@@ -145,7 +145,7 @@ def build_parser():
         default=None,
         help="A YAML configuration file with the training options",
     )
-    parser.add_argument("--seed", type=int, help="The PRNG seed")
+    parser.add_argument(
         "--grad-checkpoint",
         action="store_true",
         help="Use gradient checkpointing to reduce memory use.",

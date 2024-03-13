@@ -11,6 +11,22 @@ import numpy as np
 from mlx.utils import tree_flatten
 
 
+def grad_checkpoint(layer):
+    """
+    Update all instances of type(layer) to use gradient checkpointing.
+    """
+    fn = type(layer).__call__
+
+    def checkpointed_fn(model, *args, **kwargs):
+        def inner_fn(params, *args, **kwargs):
+            model.update(params)
+            return fn(model, *args, **kwargs)
+
+        return mx.checkpoint(inner_fn)(model.trainable_parameters(), *args, **kwargs)
+
+    type(layer).__call__ = checkpointed_fn
+
+
 @dataclass
 class TrainingArgs:
     lora_layers: int = field(
@@ -169,8 +185,7 @@ def train(
     adapter_path = checkpoints_path(args.adapter_file)
 
     if args.grad_checkpoint:
-        for l in model.layers:
-            l.forward = nn.utils.checkpoint(l, l.forward)
+        grad_checkpoint(model.layers[0])
 
     state = [model.state, optimizer.state]
 
