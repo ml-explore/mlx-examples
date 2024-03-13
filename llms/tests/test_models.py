@@ -254,7 +254,6 @@ class TestModels(unittest.TestCase):
         self.assertEqual(sanitized_weights["lm_head.weight"], "some_value")
 
     def test_starcoder2_tie_word_embeddings_with_lm_head_weight(self):
-
         from mlx_lm.models import starcoder2
 
         args = starcoder2.ModelArgs(
@@ -275,6 +274,17 @@ class TestModels(unittest.TestCase):
         sanitized_weights = model.sanitize(weights)
         self.assertIn("lm_head.weight", sanitized_weights)
         self.assertEqual(sanitized_weights["lm_head.weight"], "existing_value")
+
+    def test_cohere(self):
+        from mlx_lm.models import cohere
+
+        args = cohere.ModelArgs(
+            model_type="cohere",
+        )
+        model = cohere.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
 
 
 if __name__ == "__main__":
