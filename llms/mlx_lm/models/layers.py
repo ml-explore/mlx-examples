@@ -43,20 +43,21 @@ def ln_norm(x, eps, weight=None, bias=None):
     var = mx.var(x, axis=-1, keepdims=True)
 
     # Normalize the input tensor
-    normalized = (x - means) * mx.rsqrt(var + eps)
-    normalized = normalized.astype(t)
+    x = (x - means) * mx.rsqrt(var + eps)
+    x = x.astype(t)
 
     # Apply weight and bias if provided
     if weight is not None:
-        normalized = normalized * weight.astype(mx.float32)
+        x = x * weight
     if bias is not None:
-        normalized = normalized + bias.astype(mx.float32)
-        
-    return normalized
+        x = x + bias
+    return x
 
 
 class LayerNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5, affine: bool = True, bias: bool = True):
+    def __init__(
+        self, dims: int, eps: float = 1e-5, affine: bool = True, bias: bool = True
+    ):
         super().__init__()
         self.eps = eps
         self.dims = dims
