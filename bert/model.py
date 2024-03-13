@@ -8,32 +8,7 @@ import mlx.nn as nn
 import numpy
 import numpy as np
 from mlx.utils import tree_unflatten
-from transformers import BertTokenizer
-
-
-@dataclass
-class ModelArgs:
-    dim: int = 768
-    num_attention_heads: int = 12
-    num_hidden_layers: int = 12
-    vocab_size: int = 30522
-    attention_probs_dropout_prob: float = 0.1
-    hidden_dropout_prob: float = 0.1
-    layer_norm_eps: float = 1e-12
-    max_position_embeddings: int = 512
-
-
-model_configs = {
-    "bert-base-uncased": ModelArgs(),
-    "bert-base-cased": ModelArgs(),
-    "bert-large-uncased": ModelArgs(
-        dim=1024, num_attention_heads=16, num_hidden_layers=24
-    ),
-    "bert-large-cased": ModelArgs(
-        dim=1024, num_attention_heads=16, num_hidden_layers=24
-    ),
-}
-
+from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizerBase
 
 class TransformerEncoderLayer(nn.Module):
     """
@@ -86,14 +61,14 @@ class TransformerEncoder(nn.Module):
 
 
 class BertEmbeddings(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config):
         super().__init__()
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.dim)
-        self.token_type_embeddings = nn.Embedding(2, config.dim)
+        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.token_type_embeddings = nn.Embedding(2, config.hidden_size)
         self.position_embeddings = nn.Embedding(
-            config.max_position_embeddings, config.dim
+            config.max_position_embeddings, config.hidden_size
         )
-        self.norm = nn.LayerNorm(config.dim, eps=config.layer_norm_eps)
+        self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def __call__(self, input_ids: mx.array, token_type_ids: mx.array) -> mx.array:
         words = self.word_embeddings(input_ids)
@@ -107,15 +82,15 @@ class BertEmbeddings(nn.Module):
 
 
 class Bert(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config):
         super().__init__()
         self.embeddings = BertEmbeddings(config)
         self.encoder = TransformerEncoder(
             num_layers=config.num_hidden_layers,
-            dims=config.dim,
+            dims=config.hidden_size,
             num_heads=config.num_attention_heads,
         )
-        self.pooler = nn.Linear(config.dim, config.dim)
+        self.pooler = nn.Linear(config.hidden_size, config.hidden_sizem)
 
     def __call__(
         self,
@@ -134,15 +109,17 @@ class Bert(nn.Module):
         return y, mx.tanh(self.pooler(y[:, 0]))
 
 
-def load_model(bert_model: str, weights_path: str) -> Tuple[Bert, BertTokenizer]:
+def load_model(bert_model: str, weights_path: str) -> Tuple[Bert, PreTrainedTokenizerBase]:
     if not Path(weights_path).exists():
         raise ValueError(f"No model weights found in {weights_path}")
-
+    
+    config = AutoConfig.from_pretrained(bert_model)
+    
     # create and update the model
-    model = Bert(model_configs[bert_model])
+    model = Bert(config)
     model.load_weights(weights_path)
 
-    tokenizer = BertTokenizer.from_pretrained(bert_model)
+    tokenizer = AutoTokenizer.from_pretrained(bert_model)
 
     return model, tokenizer
 
