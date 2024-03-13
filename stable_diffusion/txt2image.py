@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--quantize", "-q", action="store_true")
     parser.add_argument("--preload-models", action="store_true")
     parser.add_argument("--output", default="out.png")
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     print(f"args: {args}")
@@ -68,6 +69,7 @@ if __name__ == "__main__":
         n_images=args.n_images,
         cfg_weight=args.cfg,
         num_steps=args.steps,
+        seed=args.seed,
         negative_text=args.negative_prompt,
     )
     for x_t in tqdm(latents, total=args.steps):

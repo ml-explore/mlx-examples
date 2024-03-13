@@ -48,3 +48,12 @@ test_batches: 500
 
 # Maximum sequence length.
 max_seq_length: 2048
+
+# LoRA parameters can only be specified in a config file
+lora_parameters:
+  # The layer keys to apply LoRA to.
+  # These will be applied for the last lora_layers
+  keys: ["self_attn.q_proj", "self_attn.v_proj"]
+  rank: 8
+  alpha: 16.0
+  scale: 10.0
