@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple
-from functools import partial
 
 import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .layers import LayerNorm
 
 
 @dataclass
@@ -22,37 +22,7 @@ class ModelArgs(BaseModelArgs):
     layer_norm_eps: float = 1e-05
     logit_scale: float = 0.0625
     attention_bias: bool = False
-
-
-@partial(mx.compile, shapeless=True)
-def ln_norm(x, eps, weight=None, bias=None):
-    t = x.dtype
-    x = x.astype(mx.float32)
-    means = mx.mean(x, axis=-1, keepdims=True)
-    var = mx.var(x, axis=-1, keepdims=True)
-    x = (x - means) * mx.rsqrt(var + eps)
-    x = x.astype(t)
-    h = weight.astype(mx.float32) * x
-    if bias is not None:
-        h = h + bias.astype(mx.float32)
-    return h
-
-class LayerNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5, bias=False):
-        super().__init__()
-        self.bias = mx.zeros((dims,)) if bias else None
-        self.weight = mx.ones((dims,))
-        self.eps = eps
-        self.dims = dims
-
-    def _extra_repr(self):
-        return f"{self.dims}, eps={self.eps}, affine={'weight' in self}"
-
-    def __call__(self, x: mx.array) -> mx.array:
-        if "weight" in self:
-            return ln_norm(x, self.eps, self.weight)
-        else:
-            return ln_norm(x, self.eps)
+    layer_norm_bias: bool = False
 
 
 class Attention(nn.Module):
@@ -112,7 +82,7 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
-        self.gate_proj= nn.Linear(dim, hidden_dim, bias=False)
+        self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
         self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
         self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
 
@@ -129,7 +99,7 @@ class TransformerBlock(nn.Module):
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
         self.input_layernorm = LayerNorm(
-            args.hidden_size, eps=args.layer_norm_eps,
+            args.hidden_size, eps=args.layer_norm_eps, bias=args.layer_norm_bias
         )
         self.args = args
 
@@ -156,7 +126,9 @@ class CohereModel(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = LayerNorm(args.hidden_size, eps=args.layer_norm_eps)
+        self.norm = LayerNorm(
+            args.hidden_size, eps=args.layer_norm_eps, bias=args.layer_norm_bias
+        )
 
     def __call__(
         self,
