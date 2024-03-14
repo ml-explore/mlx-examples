@@ -75,17 +75,17 @@ class TestLora(unittest.TestCase):
             "layer3.weight": MagicMock(size=2e6),
         }
 
-        config_16bits = {"quantization": {"bits": 16}}
-        expected_output_16bits = "Trainable parameters: 75.000% (3.000M/4.000M)\n"
-        lora.print_trainable_parameters(model, config_16bits)
-        self.assertEqual(self.capturedOutput.getvalue(), expected_output_16bits)
+        config_8bits = {"quantization": {"bits": 8}}
+        expected_output_8bits = "Trainable parameters: 50.000% (3.000M/6.000M)\n"
+        lora.print_trainable_parameters(model, config_8bits)
+        self.assertEqual(self.capturedOutput.getvalue(), expected_output_8bits)
         self.capturedOutput.truncate(0)
         self.capturedOutput.seek(0)
 
-        config_8bits = {"quantization": {"bits": 4}}
-        expected_output_8bits = "Trainable parameters: 30.000% (3.000M/10.000M)\n"
-        lora.print_trainable_parameters(model, config_8bits)
-        self.assertEqual(self.capturedOutput.getvalue(), expected_output_8bits)
+        config_4bits = {"quantization": {"bits": 4}}
+        expected_output_4bits = "Trainable parameters: 30.000% (3.000M/10.000M)\n"
+        lora.print_trainable_parameters(model, config_4bits)
+        self.assertEqual(self.capturedOutput.getvalue(), expected_output_4bits)
         self.capturedOutput.truncate(0)
         self.capturedOutput.seek(0)
 
