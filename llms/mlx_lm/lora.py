@@ -61,19 +61,6 @@ def build_parser():
         "--model",
         help="The path to the local model directory or Hugging Face repo.",
     )
-    parser.add_argument(
-        "--max-tokens",
-        "-m",
-        type=int,
-        help="The maximum number of tokens to generate",
-    )
-    parser.add_argument("--temp", type=float, help="The sampling temperature")
-    parser.add_argument(
-        "--prompt",
-        "-p",
-        type=str,
-        help="The prompt for generation",
-    )
 
     # Training args
     parser.add_argument(
