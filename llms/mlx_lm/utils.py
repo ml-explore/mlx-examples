@@ -553,6 +553,29 @@ def quantize_model(
     return quantized_weights, quantized_config
 
 
+def save_config(
+    config: dict,
+    config_path: Union[str, Path],
+) -> None:
+    """Save the model configuration to the ``config_path``.
+
+    The final configuration will be sorted before saving for better readability.
+
+    Args:
+        config (dict): The model configuration.
+        config_path (Union[str, Path]): Model configuration file path.
+    """
+    # Clean unused keys
+    config.pop("_name_or_path", None)
+
+    # sort the config for better readability
+    config = dict(sorted(config.items()))
+
+    # write the updated config to the config_path (if provided)
+    with open(config_path, "w") as fid:
+        json.dump(config, fid, indent=4)
+
+
 def convert(
     hf_path: str,
     mlx_path: str = "mlx_model",
@@ -588,8 +611,7 @@ def convert(
 
     tokenizer.save_pretrained(mlx_path)
 
-    with open(mlx_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
+    save_config(config, config_path=mlx_path / "config.json")
 
     if upload_repo is not None:
         upload_to_hub(mlx_path, upload_repo, hf_path)
