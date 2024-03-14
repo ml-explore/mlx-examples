@@ -5,6 +5,15 @@ from typing import Any, Dict, Literal, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+import torch
+import torch.nn as nn
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
+    GenerationConfig,
+    PreTrainedModel,
+)
 
 from .base import BaseModelArgs
 from .layers import LayerNorm, RMSNorm
@@ -12,7 +21,9 @@ from .layers import LayerNorm, RMSNorm
 ##************************************************************************##
 ## INFO:
 ## - paper: https://arxiv.org/abs/2403.07815
-## - model: https://huggingface.co/elinas/chronos-13b
+## - model:
+##   - https://huggingface.co/amazon/chronos-t5-large
+##   - https://huggingface.co/elinas/chronos-13b
 ## - repo: https://github.com/amazon-science/chronos-forecasting
 ##
 ## Notes:
@@ -61,6 +72,10 @@ class ModelArgs(BaseModelArgs):
         if self.tokenizer_class == "MeanScaleUniformBins":
             return MeanScaleUniformBins(**self.tokenizer_kwargs, config=self)
         raise ValueError
+
+
+# Define ChronosConfig as in original implementation
+ChronosConfig = ModelArgs
 
 
 class ChronosTokenizer:
@@ -125,7 +140,9 @@ class ChronosTokenizer:
 
 # TODO: convert into mlx compatible code
 class MeanScaleUniformBins(ChronosTokenizer):
-    def __init__(self, low_limit: float, high_limit: float, config: ModelArgs) -> None:
+    def __init__(
+        self, low_limit: float, high_limit: float, config: ChronosConfig
+    ) -> None:
         self.config = config
         self.centers = np.linspace(
             low_limit,
@@ -155,13 +172,21 @@ class MeanScaleUniformBins(ChronosTokenizer):
                 *context.shape[:-1],
                 self.config.context_length - length,
             )
-            padding = torch.full(size=padding_size, fill_value=torch.nan)
-            context = torch.concat((padding, context), dim=-1)
+            # TODO: check if
+            # - torch.full == mx.full
+            # - torch.nan == mx.nan
+            # - torch.concat == mx.concatenate
+            padding = mx.full(size=padding_size, fill_value=mx.nan)
+            context = mx.concatenate((padding, context), dim=-1)
 
-        attention_mask = ~torch.isnan(context)
-        scale = torch.nansum(
-            torch.abs(context) * attention_mask, dim=-1
-        ) / torch.nansum(attention_mask, dim=-1)
+        # TODO: check if
+        # - torch.isnan == mx.isnan
+        # - torch.abs == mx.abs
+        # - torch.nansum == mx.nansum?? (np.nansum)
+        attention_mask = ~mx.isnan(context)
+        scale = torch.nansum(mx.abs(context) * attention_mask, dim=-1) / torch.nansum(
+            attention_mask, dim=-1
+        )
         scale[~(scale > 0)] = 1.0
         scaled_context = context / scale.unsqueeze(dim=-1)
         token_ids = (
@@ -181,14 +206,12 @@ class MeanScaleUniformBins(ChronosTokenizer):
                 (batch_size, 1), fill_value=self.config.eos_token_id
             )
             token_ids = torch.concat((token_ids, eos_tokens), dim=1)
-            eos_mask = torch.full((batch_size, 1), fill_value=True)
+            eos_mask = mx.full((batch_size, 1), fill_value=True)
             attention_mask = torch.concat((attention_mask, eos_mask), dim=1)
 
         return token_ids, attention_mask, scale
 
-    def output_transform(
-        self, samples: torch.Tensor, scale: torch.Tensor
-    ) -> torch.Tensor:
+    def output_transform(self, samples: torch.Tensor, scale: mx.array) -> mx.array:
         scale_unsqueezed = scale.unsqueeze(-1).unsqueeze(-1)
         indices = torch.clamp(
             samples - self.config.n_special_tokens,
@@ -290,7 +313,7 @@ def left_pad_and_stack_1D(tensors: List[mx.array]):
             size=(max_len - len(c),), fill_value=torch.nan, device=c.device
         )
         padded.append(torch.concat((padding, c), dim=-1))
-    return torch.stack(padded)
+    return mx.stack(padded)
 
 
 # TODO: convert into mlx compatible code
@@ -326,7 +349,7 @@ class ChronosPipeline:
         top_k: Optional[int] = None,
         top_p: Optional[float] = None,
         limit_prediction_length: bool = True,
-    ) -> torch.Tensor:
+    ) -> mx.array:
         """
         Get forecasts for the given time series.
 
