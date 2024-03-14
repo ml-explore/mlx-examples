@@ -15,8 +15,8 @@ from mlx.utils import tree_flatten, tree_map
 from .utils import (
     fetch_from_hub,
     get_model_path,
-    save_weights,
     save_config,
+    save_weights,
     upload_to_hub,
 )
 

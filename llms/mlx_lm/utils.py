@@ -554,7 +554,7 @@ def save_config(
     config: dict,
     config_path: Union[str, Path],
     upload_repo: Optional[str] = None,
-    indent: int = 4
+    indent: int = 4,
 ) -> None:
     """Save the model configuration to the ``config_path``.
 
