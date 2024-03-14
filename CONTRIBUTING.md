@@ -12,14 +12,24 @@ possible.
    This should install hooks for running `black` and `clang-format` to ensure
    consistent style for C++ and python code.
  
-   You can also run the formatters manually as follows:
+   You can also run the formatters manually as follows on individual files:
  
-     ```
+     ```sh
      clang-format -i file.cpp
      ```
  
-     ```
+     ```sh
      black file.py
+     ```
+
+    or,
+
+     ```sh
+     # single file
+     pre-commit run --files file1.py 
+
+     # specific files
+     pre-commit run --files file1.py file2.py
      ```
  
    or run `pre-commit run --all-files` to check all files in the repo.
