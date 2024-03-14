@@ -54,24 +54,19 @@ def stopping_criteria(
     return StopCondition(stop_met=False, trim_length=0)
 
 
-def sequence_overlap(s1: Sequence, s2: Sequence) -> int:
+def sequence_overlap(s1: Sequence, s2: Sequence) -> bool:
     """
-    Check how much overlap two sequences have.
-        Only checks the end of s1 overlapping the start of s2
+    Checks if s1 has overlap with s2
 
     Args:
         s1 (Sequence): The first sequence, which end is checked
         s2 (Sequence): The second sequence, which beginning is checked
 
     Returns:
-        int: The amount of overlap between s1 and s2
+        bool: If the two sequences have overlap
     """
-    # Count down from the length of the smaller list -> Checks for larger overlaps first
-    for index in range(min(len(s1), len(s2)), 0, -1):
-        # Check if they have index amount of overlap
-        if s1[-index:] == s2[:index]:
-            return index
-    return 0
+    max_overlap = min(len(s1), len(s2))
+    return any(s1[-i:] == s2[:i] for i in range(1, max_overlap))
 
 
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
