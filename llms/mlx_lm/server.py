@@ -438,11 +438,12 @@ if __name__ == "__main__":
         help="Enable trusting remote code for tokenizer",
     )
     args = parser.parse_args()
-    
+
     # Building tokenizer_config
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
 
-
-    MODEL, TOKENIZER = load(args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config)
+    MODEL, TOKENIZER = load(
+        args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
+    )
 
     run(args.host, args.port)
