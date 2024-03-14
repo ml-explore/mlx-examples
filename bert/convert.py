@@ -1,7 +1,7 @@
 import argparse
 
 import numpy
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoModel
 
 
 
