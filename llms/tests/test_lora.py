@@ -1,13 +1,22 @@
 # Copyright © 2024 Apple Inc.
 
+import sys
 import unittest
+from io import StringIO
+from unittest.mock import MagicMock
 
 import mlx.core as mx
 from mlx.utils import tree_flatten
-from mlx_lm import tuner, utils
+from mlx_lm import lora, tuner
 
 
 class TestLora(unittest.TestCase):
+    def setUp(self):
+        self.capturedOutput = StringIO()
+        sys.stdout = self.capturedOutput
+
+    def tearDown(self):
+        sys.stdout = sys.__stdout__
 
     def test_to_lora(self):
         from mlx_lm.models import llama
@@ -46,6 +55,69 @@ class TestLora(unittest.TestCase):
 
         params["keys"] = ["self_attn.k_proj"]
         check_config(params)
+
+    def test_quantized_print_trainable_parameters(self):
+        model = MagicMock()
+        model.parameters.return_value = {
+            "layer1.weight": MagicMock(size=1e6),
+            "layer1.biases": MagicMock(
+                size=2e6,
+            ),
+            "layer1.scales": MagicMock(
+                size=2e6,
+            ),
+            "layer3.weight": MagicMock(size=2e6),
+            "lora_a": MagicMock(size=3e6),
+            "lora_b": MagicMock(size=4e6),
+        }
+        model.trainable_parameters.return_value = {
+            "layer1.weight": MagicMock(size=1e6),
+            "layer3.weight": MagicMock(size=2e6),
+        }
+
+        config_16bits = {"quantization": {"bits": 16}}
+        expected_output_16bits = "Trainable parameters: 75.000% (3.000M/4.000M)\n"
+        lora.print_trainable_parameters(model, config_16bits)
+        self.assertEqual(self.capturedOutput.getvalue(), expected_output_16bits)
+        self.capturedOutput.truncate(0)
+        self.capturedOutput.seek(0)
+
+        config_8bits = {"quantization": {"bits": 4}}
+        expected_output_8bits = "Trainable parameters: 30.000% (3.000M/10.000M)\n"
+        lora.print_trainable_parameters(model, config_8bits)
+        self.assertEqual(self.capturedOutput.getvalue(), expected_output_8bits)
+        self.capturedOutput.truncate(0)
+        self.capturedOutput.seek(0)
+
+    def test_print_trainable_parameters(self):
+        model = MagicMock()
+        model.parameters.return_value = {
+            "layer1.weight": MagicMock(
+                size=4e6,
+            ),
+            "layer3.weight": MagicMock(
+                size=2e6,
+            ),
+            "lora_a": MagicMock(
+                size=3e6,
+            ),
+            "lora_b": MagicMock(
+                size=4e6,
+            ),
+        }
+        model.trainable_parameters.return_value = {
+            "layer1.weight": MagicMock(
+                size=1e6,
+            ),
+            "layer3.weight": MagicMock(
+                size=2e6,
+            ),
+        }
+
+        config = {}
+        expected_output = "Trainable parameters: 50.000% (3.000M/6.000M)\n"
+        lora.print_trainable_parameters(model, config)
+        self.assertEqual(self.capturedOutput.getvalue(), expected_output)
 
 
 if __name__ == "__main__":
