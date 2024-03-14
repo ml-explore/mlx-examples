@@ -432,8 +432,18 @@ if __name__ == "__main__":
         default=8080,
         help="Port for the HTTP server (default: 8080)",
     )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Enable trusting remote code for tokenizer",
+    )
     args = parser.parse_args()
 
-    MODEL, TOKENIZER = load(args.model, adapter_file=args.adapter_file)
+    # Building tokenizer_config
+    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
+
+    MODEL, TOKENIZER = load(
+        args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
+    )
 
     run(args.host, args.port)
