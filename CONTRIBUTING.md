@@ -14,17 +14,17 @@ possible.
  
    You can also run the formatters manually as follows on individual files:
  
-     ```sh
+     ```bash
      clang-format -i file.cpp
      ```
  
-     ```sh
+     ```bash
      black file.py
      ```
 
-    or,
+     or,
 
-     ```sh
+     ```bash
      # single file
      pre-commit run --files file1.py 
 

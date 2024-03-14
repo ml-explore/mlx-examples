@@ -83,3 +83,23 @@ class SimpleEulerSampler:
         x_t_prev = x_t_prev * (sigma_prev.square() + 1).rsqrt()
 
         return x_t_prev
+
+
+class SimpleEulerAncestralSampler(SimpleEulerSampler):
+    def step(self, eps_pred, x_t, t, t_prev):
+        sigma = self.sigmas(t).astype(eps_pred.dtype)
+        sigma_prev = self.sigmas(t_prev).astype(eps_pred.dtype)
+
+        sigma2 = sigma.square()
+        sigma_prev2 = sigma_prev.square()
+        sigma_up = (sigma_prev2 * (sigma2 - sigma_prev2) / sigma2).sqrt()
+        sigma_down = (sigma_prev2 - sigma_up**2).sqrt()
+
+        dt = sigma_down - sigma
+        x_t_prev = (sigma2 + 1).sqrt() * x_t + eps_pred * dt
+        noise = mx.random.normal(x_t_prev.shape).astype(x_t_prev.dtype)
+        x_t_prev = x_t_prev + noise * sigma_up
+
+        x_t_prev = x_t_prev * (sigma_prev2 + 1).rsqrt()
+
+        return x_t_prev

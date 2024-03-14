@@ -1,0 +1,61 @@
+# The path to the local model directory or Hugging Face repo.
+model: "mlx_model"
+# Whether or not to train (boolean)
+train: true
+
+# Directory with {train, valid, test}.jsonl files
+data: "/path/to/training/data"
+
+# The PRNG seed
+seed: 0
+
+# Number of layers to fine-tune
+lora_layers: 16
+
+# Minibatch size.
+batch_size: 4
+
+# Iterations to train for.
+iters: 100
+
+# Number of validation batches, -1 uses the entire validation set.
+val_batches: 25
+
+# Adam learning rate.
+learning_rate: 1e-5
+
+# Number of training steps between loss reporting.
+steps_per_report: 10
+
+# Number of training steps between validations.
+steps_per_eval: 200
+
+# Load path to resume training with the given adapter weights.
+resume_adapter_file: null
+
+# Save/load path for the trained adapter weights.
+adapter_file: "adapters.npz"
+
+# Save the model every N iterations.
+save_every: 100
+
+# Evaluate on the test set after training
+test: false
+
+# Number of test set batches, -1 uses the entire test set.
+test_batches: 500
+
+# Maximum sequence length.
+max_seq_length: 2048
+
+# Use gradient checkpointing to reduce memory use.
+grad_checkpoint: false
+
+# LoRA parameters can only be specified in a config file
+lora_parameters:
+  # The layer keys to apply LoRA to.
+  # These will be applied for the last lora_layers
+  keys: ["self_attn.q_proj", "self_attn.v_proj"]
+  rank: 8
+  alpha: 16.0
+  scale: 10.0

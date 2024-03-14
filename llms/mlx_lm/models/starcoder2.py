@@ -1,6 +1,5 @@
-import math
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -16,10 +15,8 @@ class ModelArgs(BaseModelArgs):
     num_hidden_layers: int
     intermediate_size: int
     num_attention_heads: int
-    num_key_value_heads: int = None
-    max_position_embeddings: int = 16384
+    num_key_value_heads: int
     norm_epsilon: float = 1e-5
-    norm_type: str = "layer_norm"
     vocab_size: int = 49152
     rope_theta: float = 100000
     tie_word_embeddings: bool = True
@@ -33,8 +30,6 @@ class Attention(nn.Module):
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
-
-        self.repeats = self.n_heads // self.n_kv_heads
 
         head_dim = args.hidden_size // args.num_attention_heads
         self.scale = head_dim**-0.5
@@ -60,10 +55,6 @@ class Attention(nn.Module):
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
-        if self.repeats > 1:
-            keys = mx.repeat(keys, self.repeats, axis=1)
-            values = mx.repeat(values, self.repeats, axis=1)
-
         if cache is not None:
             key_cache, value_cache = cache
             queries = self.rope(queries, offset=key_cache.shape[2])
@@ -74,11 +65,11 @@ class Attention(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores += mask
-        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
-        output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
+
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
 
@@ -156,11 +147,10 @@ class Starcoder2Model(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.args = args
         self.model_type = args.model_type
         self.model = Starcoder2Model(args)
-        # This is for 15B starcoder2 since it doesn't tie word embeddings
-        if not args.tie_word_embeddings:
-            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -168,11 +158,12 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        if not self.model.args.tie_word_embeddings:
-            return self.lm_head(out), cache
-        else:
-            out = out @ self.model.embed_tokens.weight.T
-            return out, cache
+        return self.lm_head(out), cache
+
+    def sanitize(self, weights):
+        if self.args.tie_word_embeddings and "lm_head.weight" not in weights:
+            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
+        return weights
 
     @property
     def layers(self):
