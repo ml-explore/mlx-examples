@@ -556,33 +556,24 @@ def quantize_model(
 def save_config(
     config: dict,
     config_path: Union[str, Path],
-    upload_repo: Optional[str] = None,
-    indent: int = 4,
 ) -> None:
     """Save the model configuration to the ``config_path``.
-
-    If ``upload_repo`` is provided, sets ``upload_repo`` as the value of
-    ``_name_or_path`` key.
 
     The final configuration will be sorted before saving for better readability.
 
     Args:
         config (dict): The model configuration.
         config_path (Union[str, Path]): Model configuration file path.
-        upload_repo (Optional[str], optional): Name of the Huggingface repo to upload to.
-                                                Defaults to None.
-        indent (int, optional): Number of spaces to indent the json output with.
-                                                Defaults to 4.
-
     """
-    # update the config with the upload_repo as the _name_or_path
-    if upload_repo is not None:
-        config["_name_or_path"] = upload_repo
+    # Clean unused keys
+    config.pop("_name_or_path", None)
+
     # sort the config for better readability
     config = dict(sorted(config.items()))
+
     # write the updated config to the config_path (if provided)
     with open(config_path, "w") as fid:
-        json.dump(config, fid, indent=indent)
+        json.dump(config, fid, indent=4)
 
 
 def convert(
@@ -620,11 +611,7 @@ def convert(
 
     tokenizer.save_pretrained(mlx_path)
 
-    config_path = mlx_path / "config.json"
-    # update (sort) and save config
-    save_config(config, config_path=config_path)
+    save_config(config, config_path=mlx_path / "config.json")
 
     if upload_repo is not None:
-        # update the config with the upload_repo as the value of "_name_or_path" key
-        save_config(config, upload_repo=upload_repo, config_path=config_path)
         upload_to_hub(mlx_path, upload_repo, hf_path)
