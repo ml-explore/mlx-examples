@@ -1,4 +1,4 @@
-mlx>=0.1
+mlx>=0.6
 huggingface-hub
 regex
 numpy
