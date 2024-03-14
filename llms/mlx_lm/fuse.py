@@ -13,7 +13,7 @@ from .utils import (
     fetch_from_hub,
     get_model_path,
     save_weights,
-    update_config,
+    save_config,
     upload_to_hub,
 )
 
@@ -95,7 +95,7 @@ def main() -> None:
 
     config_path = save_path / "config.json"
     # update (sort) and save config
-    config = update_config(config, config_path=config_path)
+    config = save_config(config, config_path=config_path)
 
     if args.upload_repo is not None:
         hf_path = args.hf_path or (
@@ -106,7 +106,7 @@ def main() -> None:
                 "Must provide original Hugging Face repo to upload local model."
             )
         # update the config with the upload_repo as the value of "_name_or_path" key
-        config = update_config(
+        config = save_config(
             config, upload_repo=args.upload_repo, config_path=config_path
         )
         upload_to_hub(args.save_path, args.upload_repo, hf_path)

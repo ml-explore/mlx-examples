@@ -16,7 +16,7 @@ from .utils import (
     fetch_from_hub,
     get_model_path,
     save_weights,
-    update_config,
+    save_config,
     upload_to_hub,
 )
 
@@ -158,11 +158,11 @@ def merge(
 
     config_path = mlx_path / "config.json"
     # update (sort) and save config
-    config = update_config(config, config_path=config_path)
+    config = save_config(config, config_path=config_path)
 
     if upload_repo is not None:
         # update the config with the upload_repo as the value of "_name_or_path" key
-        config = update_config(config, upload_repo=upload_repo, config_path=config_path)
+        config = save_config(config, upload_repo=upload_repo, config_path=config_path)
         upload_to_hub(mlx_path, upload_repo, base_hf_path)
 
 
