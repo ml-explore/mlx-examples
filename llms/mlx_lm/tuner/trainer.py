@@ -250,6 +250,7 @@ def train(
                     "iterations_per_second": it_sec,
                     "tokens_per_second": tokens_sec,
                     "trained_tokens": trained_tokens,
+                    "peak_memory": peak_mem,
                 }
                 training_callback.on_train_loss_report(train_info)
 
