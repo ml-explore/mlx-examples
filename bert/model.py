@@ -70,11 +70,16 @@ class BertEmbeddings(nn.Module):
         )
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def __call__(self, input_ids: mx.array, token_type_ids: mx.array) -> mx.array:
+    def __call__(self, input_ids: mx.array, token_type_ids: mx.array = None) -> mx.array:
         words = self.word_embeddings(input_ids)
         position = self.position_embeddings(
             mx.broadcast_to(mx.arange(input_ids.shape[1]), input_ids.shape)
         )
+
+        if token_type_ids is None:
+            # If token_type_ids is not provided, default to zeros
+            token_type_ids = mx.zeros_like(input_ids)
+
         token_types = self.token_type_embeddings(token_type_ids)
 
         embeddings = position + words + token_types
@@ -89,13 +94,14 @@ class Bert(nn.Module):
             num_layers=config.num_hidden_layers,
             dims=config.hidden_size,
             num_heads=config.num_attention_heads,
+            mlp_dims=config.intermediate_size
         )
-        self.pooler = nn.Linear(config.hidden_size, config.hidden_sizem)
+        self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
 
     def __call__(
         self,
         input_ids: mx.array,
-        token_type_ids: mx.array,
+        token_type_ids: mx.array = None,
         attention_mask: mx.array = None,
     ) -> Tuple[mx.array, mx.array]:
         x = self.embeddings(input_ids, token_type_ids)
