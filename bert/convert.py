@@ -1,7 +1,7 @@
 import argparse
 
 import numpy
-from transformers import AutoTokenizer, AutoModelForMaskedLM
+from transformers import AutoTokenizer, AutoModel
 
 
 
@@ -21,7 +21,7 @@ def replace_key(key: str) -> str:
 
 
 def convert(bert_model: str, mlx_model: str) -> None:
-    model = AutoModelForMaskedLM.from_pretrained(bert_model)
+    model = AutoModel.from_pretrained(bert_model)
     # save the tensors
     tensors = {
         replace_key(key): tensor.numpy() for key, tensor in model.state_dict().items()
