@@ -66,7 +66,7 @@ def sequence_overlap(s1: Sequence, s2: Sequence) -> bool:
         bool: If the two sequences have overlap
     """
     max_overlap = min(len(s1), len(s2))
-    return any(s1[-i:] == s2[:i] for i in range(1, max_overlap))
+    return any(s1[-i:] == s2[:i] for i in range(1, max_overlap + 1))
 
 
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
