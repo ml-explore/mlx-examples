@@ -108,10 +108,7 @@ def main(args):
         args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
     )
 
-    if not args.ignore_chat_template and (
-        hasattr(tokenizer, "apply_chat_template")
-        and tokenizer.chat_template is not None
-    ):
+    if not args.ignore_chat_template and (hasattr(tokenizer, "apply_chat_template")):
         messages = [{"role": "user", "content": args.prompt}]
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
