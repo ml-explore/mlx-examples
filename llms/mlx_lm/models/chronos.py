@@ -280,11 +280,11 @@ class ChronosModel(nn.Module):
 
 
 # TODO: convert into mlx compatible code
-def left_pad_and_stack_1D(tensors: List[torch.Tensor]):
+def left_pad_and_stack_1D(tensors: List[mx.array]):
     max_len = max(len(c) for c in tensors)
     padded = []
     for c in tensors:
-        assert isinstance(c, torch.Tensor)
+        assert isinstance(c, mx.array)
         assert c.ndim == 1
         padding = torch.full(
             size=(max_len - len(c),), fill_value=torch.nan, device=c.device
@@ -319,7 +319,7 @@ class ChronosPipeline:
 
     def predict(
         self,
-        context: Union[torch.Tensor, List[torch.Tensor]],
+        context: Union[mx.array, List[mx.array]],
         prediction_length: Optional[int] = None,
         num_samples: Optional[int] = None,
         temperature: Optional[float] = None,
@@ -408,9 +408,11 @@ class ChronosPipeline:
             if remaining <= 0:
                 break
 
-            context = torch.cat([context, prediction.median(dim=1).values], dim=-1)
+            # TODO: check which one is better for torch.cat: mx.concatenate or mx.stack
+            context = mx.concatenate([context, prediction.median(dim=1).values], dim=-1)
 
-        return torch.cat(predictions, dim=-1)
+        # TODO: check which one is better for torch.cat: mx.concatenate or mx.stack
+        return mx.concatenate(predictions, dim=-1)
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
