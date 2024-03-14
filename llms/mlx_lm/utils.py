@@ -552,28 +552,25 @@ def quantize_model(
 
 def save_config(
     config: dict,
+    config_path: Union[str, Path],
     upload_repo: Optional[str] = None,
-    config_path: Optional[Union[str, Path]] = None,
     indent: int = 4
-) -> dict:
-    """Update the model configuration and save config to the ``config_path`` (if provided).
+) -> None:
+    """Save the model configuration to the ``config_path``.
 
     If ``upload_repo`` is provided, sets ``upload_repo`` as the value of
     ``_name_or_path`` key.
 
-    The final configuration will be sorted for better readability.
+    The final configuration will be sorted before saving for better readability.
 
     Args:
         config (dict): The model configuration.
-        upload_repo (Optional[str], optional): Name of the HF repo to upload to.
-                                                Defaults to None.
-        config_path (Optional[Union[str, Path]], optional): Model configuration file path.
+        config_path (Union[str, Path]): Model configuration file path.
+        upload_repo (Optional[str], optional): Name of the Huggingface repo to upload to.
                                                 Defaults to None.
         indent (int, optional): Number of spaces to indent the json output with.
                                                 Defaults to 4.
 
-    Returns:
-        dict: The updated model configuration.
     """
     # update the config with the upload_repo as the _name_or_path
     if upload_repo is not None:
@@ -581,11 +578,8 @@ def save_config(
     # sort the config for better readability
     config = dict(sorted(config.items()))
     # write the updated config to the config_path (if provided)
-    if config_path is not None:
-        with open(config_path, "w") as fid:
-            json.dump(config, fid, indent=indent)
-
-    return config
+    with open(config_path, "w") as fid:
+        json.dump(config, fid, indent=indent)
 
 
 def convert(
@@ -625,9 +619,9 @@ def convert(
 
     config_path = mlx_path / "config.json"
     # update (sort) and save config
-    config = save_config(config, config_path=config_path)
+    save_config(config, config_path=config_path)
 
     if upload_repo is not None:
         # update the config with the upload_repo as the value of "_name_or_path" key
-        config = save_config(config, upload_repo=upload_repo, config_path=config_path)
+        save_config(config, upload_repo=upload_repo, config_path=config_path)
         upload_to_hub(mlx_path, upload_repo, hf_path)
