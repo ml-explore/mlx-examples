@@ -6,8 +6,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-import torch
-import torch.nn as nn
+
+## TODO: remove the following two lines
+## import torch
+## import torch.nn as nn
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -249,6 +251,7 @@ class ChronosModel(nn.Module):
         super().__init__()
         self.config = config
         self.model = model
+        # TODO: is the device argument valid for mlx?
         self.device = model.device
 
     def forward(
