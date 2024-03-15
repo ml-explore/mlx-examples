@@ -81,6 +81,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                     "*.py",
                     "tokenizer.model",
                     "*.tiktoken",
+                    "*.txt",
                 ],
             )
         )
@@ -396,7 +397,6 @@ def fetch_from_hub(
     model_path: Path, lazy: bool = False
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     model = load_model(model_path, lazy)
-
     config = AutoConfig.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 

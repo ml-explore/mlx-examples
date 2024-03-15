@@ -68,7 +68,6 @@ class RoPEAttention(nn.Module):
             keys = self.rope(keys)
 
         queries = queries.astype(mx.float32)
-        keys = keys.astype(mx.float32)
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])

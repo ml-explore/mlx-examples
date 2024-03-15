@@ -167,6 +167,12 @@ of memory. Here are some tips to reduce memory use should you need to do so:
    you can do is break your examples into smaller
    sequences when making the `{train, valid, test}.jsonl` files.
 
+5. Gradient checkpointing lets you trade-off memory use (less) for computation
+   (more) by recomputing instead of storing intermediate values needed by the
+   backward pass. You can use gradient checkpointing by passing the
+   `--grad-checkpoint` flag. Gradient checkpointing will be more helpful for
+   larger batch sizes or sequence lengths with smaller or quantized models.
+
 For example, for a machine with 32 GB the following should run reasonably fast:
 
 ```
