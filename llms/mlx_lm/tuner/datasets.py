@@ -9,16 +9,12 @@ class Dataset:
     Light-weight wrapper to hold lines from a jsonl file
     """
 
-    def __init__(self, path: Path, key: str = "text"):
-        if not path.exists():
-            self._data = None
-        else:
-            with open(path, "r") as fid:
-                self._data = [json.loads(l) for l in fid]
-        self._key = key
+    def __init__(self, path: Path):
+        with open(path, "r") as fid:
+            self._data = [json.loads(l) for l in fid]
 
     def __getitem__(self, idx: int):
-        return self._data[idx][self._key]
+        return self._data[idx]["text"]
 
     def __len__(self):
         if self._data is None:
@@ -33,35 +29,33 @@ class ChatDataset(Dataset):
     """
 
     def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
-        super().__init__(path, key="messages")
+        super().__init__(path)
         self._tokenizer = tokenizer
 
     def __getitem__(self, idx: int):
-        messages = self._data[idx][self._key]
+        messages = self._data[idx]["messages"]
         text = self._tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
         return text
 
 
-class PromptCompletionDataset(Dataset):
+class CompletionsDataset(Dataset):
     """
     A dataset for prompt-completion data in the format of {"prompt": ..., "completion": ...}
     https://platform.openai.com/docs/guides/fine-tuning/example-format
     """
 
     def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
-        super().__init__(path, key=None)
+        super().__init__(path)
         self._tokenizer = tokenizer
 
     def __getitem__(self, idx: int):
         data = self._data[idx]
-        prompt = data["prompt"]
-        completion = data["completion"]
         text = self._tokenizer.apply_chat_template(
             [
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": completion},
+                {"role": "user", "content": data["prompt"]},
+                {"role": "assistant", "content": data["completion"]},
             ],
             tokenize=False,
             add_generation_prompt=True,
@@ -69,20 +63,23 @@ class PromptCompletionDataset(Dataset):
         return text
 
 
-def create_dataset(file_path: Path, tokenizer: PreTrainedTokenizer = None):
-    with open(file_path, "r") as fid:
+def create_dataset(path: Path, tokenizer: PreTrainedTokenizer = None):
+    # Return empty dataset for non-existent paths
+    if not path.exists():
+        return []
+    with open(path, "r") as fid:
         first_line = next(fid)
         first_obj = json.loads(first_line)
     if "messages" in first_obj:
-        return ChatDataset(file_path, tokenizer)
+        return ChatDataset(path, tokenizer)
     elif "prompt" in first_obj and "completion" in first_obj:
-        return PromptCompletionDataset(file_path, tokenizer)
+        return CompletionsDataset(path, tokenizer)
     elif "text" in first_obj:
-        return Dataset(file_path)
+        return Dataset(path)
     else:
         raise ValueError(
-            "Unsupported data format, please check the [supported "
-            "formats](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data)."
+            "Unsupported data format, check the supported formats here:\n"
+            "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
         )
 
 
