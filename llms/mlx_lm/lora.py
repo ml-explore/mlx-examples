@@ -152,6 +152,7 @@ def print_trainable_parameters(model):
         f"({trainable_p:.3f}M/{total_p:.3f}M)"
     )
 
+
 def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
