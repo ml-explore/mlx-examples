@@ -1,6 +1,7 @@
+import warnings
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Dict, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -37,6 +38,13 @@ try:
 except ImportError:
     print("To run chronos, install chronos with: pip install chronos")
     exit(1)
+
+
+def nansum(x: mx.array, axis: int = -1):
+    return mx.sum(mx.where(mx.isnan(x), 0, x), axis=axis)
+
+
+mx.nansum = nansum
 
 
 @dataclass
@@ -153,16 +161,15 @@ class MeanScaleUniformBins(ChronosTokenizer):
         self.boundaries = np.concat(
             (
                 # TODO: check if torch.tensor <-> mx.array works or not
-                mx.array([-1e20], device=self.centers.device),
+                #       mx.array DOESNOT have any "device" argument
+                # DONE.
+                mx.array([-1e20]),
                 (self.centers[1:] + self.centers[:-1]) / 2,
-                # TODO: check if torch.tensor <-> mx.array works or not
-                mx.array([1e20], device=self.centers.device),
+                mx.array([1e20]),
             )
         )
 
-    def input_transform(
-        self, context: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def input_transform(self, context: mx.array) -> Tuple[mx.array, mx.array, mx.array]:
         batch_size, length = context.shape
 
         if length > self.config.context_length:
@@ -173,23 +180,25 @@ class MeanScaleUniformBins(ChronosTokenizer):
                 self.config.context_length - length,
             )
             # TODO: check if
-            # - torch.full == mx.full
-            # - torch.nan == mx.nan
-            # - torch.concat == mx.concatenate
-            padding = mx.full(size=padding_size, fill_value=mx.nan)
-            context = mx.concatenate((padding, context), dim=-1)
+            # - DONE | torch.full == mx.full (args: size --> shape, fill_value --> val)
+            # - DONE | torch.nan == mx.nan (~same; dtype precision could be diferent)
+            # - DONE | torch.cat == torch.concat torch.concatenate == mx.concatenate (args: dim --> axis)
+            padding = mx.full(shape=padding_size, val=mx.nan)
+            context = mx.concatenate((padding, context), axis=-1)
 
         # TODO: check if
-        # - torch.isnan == mx.isnan
-        # - torch.abs == mx.abs
-        # - torch.nansum == mx.nansum?? (np.nansum)
+        # - DONE | torch.isnan == mx.isnan (same)
+        # - DONE | torch.abs == mx.abs
+        # - DONE | torch.nansum == mx.nansum?? (np.nansum; created function mx.nansum following pytorch implementation)
         attention_mask = ~mx.isnan(context)
-        scale = torch.nansum(mx.abs(context) * attention_mask, dim=-1) / torch.nansum(
-            attention_mask, dim=-1
+        scale = mx.nansum(mx.abs(context) * attention_mask, axis=-1) / mx.nansum(
+            attention_mask, axis=-1
         )
         scale[~(scale > 0)] = 1.0
+        # TODO: check if mx.array.unsqueeze(dim=-1) is valid or not
         scaled_context = context / scale.unsqueeze(dim=-1)
         token_ids = (
+            # TODO: check if mx.array has something equivalent to torch.bucketize?
             torch.bucketize(
                 input=scaled_context,
                 boundaries=self.boundaries,
@@ -201,17 +210,18 @@ class MeanScaleUniformBins(ChronosTokenizer):
         )
         token_ids[~attention_mask] = self.config.pad_token_id
 
+        # TODO: replace...
+        # - DONE | torch.full --> mx.full
+        # - DONE | torch.concat --> mx.concatenate
         if self.config.use_eos_token:
-            eos_tokens = torch.full(
-                (batch_size, 1), fill_value=self.config.eos_token_id
-            )
-            token_ids = torch.concat((token_ids, eos_tokens), dim=1)
-            eos_mask = mx.full((batch_size, 1), fill_value=True)
-            attention_mask = torch.concat((attention_mask, eos_mask), dim=1)
+            eos_tokens = mx.full((batch_size, 1), val=self.config.eos_token_id)
+            token_ids = mx.concatenate((token_ids, eos_tokens), axis=1)
+            eos_mask = mx.full((batch_size, 1), val=True)
+            attention_mask = mx.concatenate((attention_mask, eos_mask), axis=1)
 
         return token_ids, attention_mask, scale
 
-    def output_transform(self, samples: torch.Tensor, scale: mx.array) -> mx.array:
+    def output_transform(self, samples: mx.array, scale: mx.array) -> mx.array:
         scale_unsqueezed = scale.unsqueeze(-1).unsqueeze(-1)
         indices = torch.clamp(
             samples - self.config.n_special_tokens,
@@ -243,14 +253,14 @@ class ChronosModel(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
+        input_ids: mx.array,
+        attention_mask: mx.array,
         prediction_length: Optional[int] = None,
         num_samples: Optional[int] = None,
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         top_p: Optional[float] = None,
-    ) -> torch.Tensor:
+    ) -> mx.array:
         """
         Predict future sample tokens for the given token sequences.
 
@@ -296,10 +306,12 @@ class ChronosModel(nn.Module):
             preds = preds[..., 1:]  # remove the decoder start token
         else:
             assert self.config.model_type == "causal"
-            assert preds.size(-1) == input_ids.size(-1) + prediction_length
+            # TODO: change torch.tesnor.size --> mx.array.shape
+            # - DONE | input_ids.size --> input_ids.shape
+            assert preds.size(-1) == input_ids.shape(-1) + prediction_length
             preds = preds[..., -prediction_length:]
 
-        return preds.reshape(input_ids.size(0), num_samples, -1)
+        return preds.reshape(input_ids.shape(0), num_samples, -1)
 
 
 # TODO: convert into mlx compatible code
@@ -309,10 +321,12 @@ def left_pad_and_stack_1D(tensors: List[mx.array]):
     for c in tensors:
         assert isinstance(c, mx.array)
         assert c.ndim == 1
-        padding = torch.full(
-            size=(max_len - len(c),), fill_value=torch.nan, device=c.device
-        )
-        padded.append(torch.concat((padding, c), dim=-1))
+        # TODO: update
+        # - DONE | torch.full --> mx.full (drop arg: devce; update arg: fill_value --> val)
+        # - DONE | torch.concat --> mx.concatenate (update arg: dim --> axis)
+        # - DONE | torch.nan --> mx.nan
+        padding = mx.full(size=(max_len - len(c),), val=mx.nan)
+        padded.append(mx.concatenate((padding, c), axis=-1))
     return mx.stack(padded)
 
 
@@ -432,10 +446,17 @@ class ChronosPipeline:
                 break
 
             # TODO: check which one is better for torch.cat: mx.concatenate or mx.stack
-            context = mx.concatenate([context, prediction.median(dim=1).values], dim=-1)
+            # - DONE | torch.concat --> mx.concatenate (update arg: dim --> axis)
+            # - DONE*| torch.median(x, dim=1) --> np.median(x, axis=1)
+            #   - 👉 NOTE: THERE IS NOT DIRECT OPTION IN mlx.nn
+            #   - TODO: replace np.mdeian with mx.median once it is available in future.
+            context = mx.concatenate(
+                [context, np.median(prediction, axis=1).values], axis=-1
+            )
 
         # TODO: check which one is better for torch.cat: mx.concatenate or mx.stack
-        return mx.concatenate(predictions, dim=-1)
+        # - DONE | torch.concat --> mx.concatenate (update arg: dim --> axis)
+        return mx.concatenate(predictions, axis=-1)
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
