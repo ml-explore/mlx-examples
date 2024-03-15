@@ -225,10 +225,12 @@ class MeanScaleUniformBins(ChronosTokenizer):
 
     def output_transform(self, samples: mx.array, scale: mx.array) -> mx.array:
         scale_unsqueezed = scale.unsqueeze(-1).unsqueeze(-1)
-        indices = torch.clamp(
+        # TODO: replace
+        # - DONE | torch.clamp --> mx.clip (args: min --> a_min, max --> a_max)
+        indices = mx.clip(
             samples - self.config.n_special_tokens,
-            min=0,
-            max=len(self.centers) - 1,
+            a_min=0,
+            a_max=len(self.centers) - 1,
         )
         return self.centers[indices] * scale_unsqueezed
 
