@@ -9,7 +9,13 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 from .tuner.lora import LoRALinear
 from .tuner.utils import apply_lora_layers, dequantize
-from .utils import fetch_from_hub, get_model_path, save_weights, upload_to_hub
+from .utils import (
+    fetch_from_hub,
+    get_model_path,
+    save_config,
+    save_weights,
+    upload_to_hub,
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -87,8 +93,7 @@ def main() -> None:
     if args.de_quantize:
         config.pop("quantization", None)
 
-    with open(save_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
+    save_config(config, config_path=save_path / "config.json")
 
     if args.upload_repo is not None:
         hf_path = args.hf_path or (
