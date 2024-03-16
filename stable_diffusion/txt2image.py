@@ -34,7 +34,8 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     print(f"args: {args}")
-    
+
+    # Load the models
     if args.model == "sdxl":
         sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=args.float16)
         if args.quantize:
@@ -60,6 +61,8 @@ if __name__ == "__main__":
             QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 7.5
         args.steps = args.steps or 50
+
+    # Ensure that models are read in memory if needed
     if args.preload_models:
         sd.ensure_models_are_loaded()
 
