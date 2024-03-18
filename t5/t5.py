@@ -315,9 +315,9 @@ class T5(nn.Module):
             inputs, memory=memory, mask=mask, memory_mask=None, cache=cache
         )
         if not self.tie_word_embeddings:
-            y *= self.model_dim**-0.5
             y = self.lm_head(y)
         else:
+            y *= self.model_dim**-0.5
             y = y @ self.wte.weight.T
         return y, cache
 
