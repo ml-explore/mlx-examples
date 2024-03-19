@@ -141,37 +141,36 @@ loader expects a `test.jsonl` in the data directory.
 Currently, `*.jsonl` files support three data formats: `chat`,
 `completions`, and `text`. Here are three examples of these formats:
 
-- `chat`
+`chat`:
   
-  ```jsonl
-  {"messages": [
-      {"role": "system", "content": "You are a helpful assistant." },
-      {"role": "user", "content": "Hello."},
-      {"role": "assistant", "content": "How can I assistant you today."}
-    ]}
-  ```
+```jsonl
+{"messages": [
+  {"role": "system", "content": "You are a helpful assistant." },
+  {"role": "user", "content": "Hello."},
+  {"role": "assistant", "content": "How can I assistant you today."}
+]}
+```
 
-- `completions`
+`completions`:
   
-  ```jsonl
-  {"prompt": "What is the capital of France?", "completion": "Paris."}
-  ```
+```jsonl
+{"prompt": "What is the capital of France?", "completion": "Paris."}
+```
 
-- `text`
+`text`:
 
-  ```jsonl
-  {"text": "This is an example for the model."}
-  ```
+```jsonl
+{"text": "This is an example for the model."}
+```
 
-Note, the format is automatically determined by the dataset. Also, keys in each
-line not expected by the loader will be ignored.
+Note, the format is automatically determined by the dataset. Note also, keys in
+each line not expected by the loader will be ignored.
 
 For the `chat` and `completions` formats, Hugging Face [chat
-templates](https://huggingface.co/blog/chat-templates) are used. This apply the
-model's chat-templates definition by default. However if the model does not
-have a chat template, then Hugging Face will use a default template. For
-example, the final text of the `chat` example above with Hugging
-Face's default template becomes:
+templates](https://huggingface.co/blog/chat-templates) are used. This applies
+the model's chat template by default. If the model does not have a chat
+template, then Hugging Face will use a default. For example, the final text in
+the `chat` example above with Hugging Face's default template becomes:
 
 ```text
 <|im_start|>system
@@ -182,9 +181,9 @@ Hello.<|im_end|>
 How can I assistant you today.<|im_end|>
 ```
 
-If you are unsure of the format to use, the `chat` or `completions`
-are good to start with. For specific requirements on the format of the dataset,
-use the `text` format to assemble the content yourself.
+If you are unsure of the format to use, the `chat` or `completions` are good to
+start with. For custom requirements on the format of the dataset, use the
+`text` format to assemble the content yourself.
 
 ## Memory Issues
 
