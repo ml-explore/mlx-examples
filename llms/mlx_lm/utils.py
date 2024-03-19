@@ -439,7 +439,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
-    from mlx_lm import __version__
+    from . import __version__
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
