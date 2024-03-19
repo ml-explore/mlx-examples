@@ -136,14 +136,54 @@ correct format.
 
 For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
-loader expects a `test.jsonl` in the data directory. Each line in the `*.jsonl`
-file should look like:
+loader expects a `test.jsonl` in the data directory. 
 
+Currently, `*.jsonl` files support three data formats: `chat`,
+`completions`, and `text`. Here are three examples of these formats:
+
+`chat`:
+  
+```jsonl
+{"messages": [
+  {"role": "system", "content": "You are a helpful assistant." },
+  {"role": "user", "content": "Hello."},
+  {"role": "assistant", "content": "How can I assistant you today."},
+]}
 ```
+
+`completions`:
+  
+```jsonl
+{"prompt": "What is the capital of France?", "completion": "Paris."}
+```
+
+`text`:
+
+```jsonl
 {"text": "This is an example for the model."}
 ```
 
-Note, other keys will be ignored by the loader.
+Note, the format is automatically determined by the dataset. Note also, keys in
+each line not expected by the loader will be ignored.
+
+For the `chat` and `completions` formats, Hugging Face [chat
+templates](https://huggingface.co/blog/chat-templates) are used. This applies
+the model's chat template by default. If the model does not have a chat
+template, then Hugging Face will use a default. For example, the final text in
+the `chat` example above with Hugging Face's default template becomes:
+
+```text
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+Hello.<|im_end|>
+<|im_start|>assistant
+How can I assistant you today.<|im_end|>
+```
+
+If you are unsure of the format to use, the `chat` or `completions` are good to
+start with. For custom requirements on the format of the dataset, use the
+`text` format to assemble the content yourself.
 
 ## Memory Issues
 

@@ -3,3 +3,4 @@ numpy
 transformers>=4.38.0
 protobuf
 pyyaml
+jinja2
