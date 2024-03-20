@@ -196,27 +196,15 @@ def load_dataset(args):
 
 
 def print_trainable_parameters(model):
+    def nparams(m):
+        if isinstance(m, nn.QuantizedLinear):
+            return m.weight.size * (32 // m.bits)
+        return sum(v.size for _, v in tree_flatten(m.parameters()))
 
-    quantization_bits = 32
-    for _, module in model.named_modules():
-        if isinstance(module, nn.QuantizedLinear):
-            quantization_bits = module.bits
-            break
-
-    all_params = tree_flatten(model.parameters())
-    quantized_params = {
-        k.rsplit(".", 1)[0] for k, _ in all_params if ".biases" in k or ".scales" in k
-    }
-    total_p = 0
-    for k, v in all_params:
-        if "weight" in k:  # skip biases and scales and lora parameters
-            base_name = k.rsplit(".", 1)[0]
-            if base_name not in quantized_params:
-                total_p += v.size
-            else:
-                total_p += v.size * (32 // quantization_bits)
-
-    total_p /= 10**6
+    leaf_modules = tree_flatten(
+        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
+    )
+    total_p = sum(nparams(m) for _, m in leaf_modules) / 10**6
     trainable_p = (
         sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
     )
