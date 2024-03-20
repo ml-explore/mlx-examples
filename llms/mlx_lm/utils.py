@@ -439,6 +439,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
+
     from . import __version__
 
     card = ModelCard.load(hf_path)
