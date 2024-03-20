@@ -59,3 +59,4 @@ lora_parameters:
   rank: 8
   alpha: 16.0
   scale: 10.0
+  dropout: 0.0

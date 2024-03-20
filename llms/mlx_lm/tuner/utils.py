@@ -32,7 +32,11 @@ def linear_to_lora_layers(
         )
 
     to_lora = lambda lin: LoRALinear.from_linear(
-        lin, r=config["rank"], alpha=config["alpha"], scale=config["scale"]
+        lin,
+        r=config["rank"],
+        alpha=config["alpha"],
+        scale=config["scale"],
+        dropout=config["dropout"],
     )
 
     keys = config.get("keys", None)

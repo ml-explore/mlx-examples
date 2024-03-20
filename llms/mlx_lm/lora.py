@@ -235,11 +235,6 @@ def run(args, training_callback: TrainingCallback = None):
 
         print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
-    if args.prompt is not None:
-        raise NotImplementedError(
-            "Please use mlx_lm.generate with trained adapter for generation."
-        )
-
 
 if __name__ == "__main__":
     parser = build_parser()
