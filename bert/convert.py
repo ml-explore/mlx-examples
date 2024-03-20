@@ -4,7 +4,6 @@ import numpy
 from transformers import AutoModel
 
 
-
 def replace_key(key: str) -> str:
     key = key.replace(".layer.", ".layers.")
     key = key.replace(".self.key.", ".key_proj.")
@@ -28,6 +27,7 @@ def convert(bert_model: str, mlx_model: str) -> None:
     }
     numpy.savez(mlx_model, **tensors)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert BERT weights to MLX.")
     parser.add_argument(
@@ -43,6 +43,5 @@ if __name__ == "__main__":
         help="The output path for the MLX BERT weights.",
     )
     args = parser.parse_args()
-
 
     convert(args.bert_model, args.mlx_model)

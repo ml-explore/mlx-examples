@@ -10,6 +10,7 @@ import numpy as np
 from mlx.utils import tree_unflatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizerBase
 
+
 class TransformerEncoderLayer(nn.Module):
     """
     A transformer encoder layer with (the original BERT) post-normalization.
@@ -64,13 +65,17 @@ class BertEmbeddings(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        self.token_type_embeddings = nn.Embedding(
+            config.type_vocab_size, config.hidden_size
+        )
         self.position_embeddings = nn.Embedding(
             config.max_position_embeddings, config.hidden_size
         )
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def __call__(self, input_ids: mx.array, token_type_ids: mx.array = None) -> mx.array:
+    def __call__(
+        self, input_ids: mx.array, token_type_ids: mx.array = None
+    ) -> mx.array:
         words = self.word_embeddings(input_ids)
         position = self.position_embeddings(
             mx.broadcast_to(mx.arange(input_ids.shape[1]), input_ids.shape)
@@ -94,7 +99,7 @@ class Bert(nn.Module):
             num_layers=config.num_hidden_layers,
             dims=config.hidden_size,
             num_heads=config.num_attention_heads,
-            mlp_dims=config.intermediate_size
+            mlp_dims=config.intermediate_size,
         )
         self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
 
@@ -115,12 +120,14 @@ class Bert(nn.Module):
         return y, mx.tanh(self.pooler(y[:, 0]))
 
 
-def load_model(bert_model: str, weights_path: str) -> Tuple[Bert, PreTrainedTokenizerBase]:
+def load_model(
+    bert_model: str, weights_path: str
+) -> Tuple[Bert, PreTrainedTokenizerBase]:
     if not Path(weights_path).exists():
         raise ValueError(f"No model weights found in {weights_path}")
-    
+
     config = AutoConfig.from_pretrained(bert_model)
-    
+
     # create and update the model
     model = Bert(config)
     model.load_weights(weights_path)
