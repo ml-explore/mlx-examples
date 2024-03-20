@@ -1,6 +1,6 @@
 # BERT
 
-An implementation of BERT [(Devlin, et al., 2019)](https://aclanthology.org/N19-1423/) within MLX.
+An implementation of BERT [(Devlin, et al., 2019)](https://aclanthology.org/N19-1423/) in MLX.
 
 ## Setup 
 
@@ -38,12 +38,12 @@ output, pooled = model(**tokens)
 ```
 
 The `output` contains a `Batch x Tokens x Dims` tensor, representing a vector
-for every input token. If you want to train anything at a **token-level**,
-you'll want to use this.
+for every input token. If you want to train anything at the **token-level**,
+use this.
 
 The `pooled` contains a `Batch x Dims` tensor, which is the pooled
 representation for each input. If you want to train a **classification**
-model, you'll want to use this.
+model, use this.
 
 
 ## Test
