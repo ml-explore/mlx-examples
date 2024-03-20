@@ -62,7 +62,7 @@ def setup_arg_parser():
         help="Use the raw prompt without the tokenizer's chat template.",
     )
     parser.add_argument(
-        "--use-default-template",
+        "--use-default-chat-template",
         action="store_true",
         help="Use the default chat template",
     )
@@ -113,7 +113,7 @@ def main(args):
         args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
     )
 
-    if args.use_default_template:
+    if args.use_default_chat_template:
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
 
