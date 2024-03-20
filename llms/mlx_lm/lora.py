@@ -7,6 +7,7 @@ import re
 import types
 from pathlib import Path
 
+import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import yaml
@@ -14,7 +15,7 @@ from mlx.utils import tree_flatten
 
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
-from .utils import fetch_from_hub, get_model_path, load
+from .utils import load
 
 yaml_loader = yaml.SafeLoader
 yaml_loader.add_implicit_resolver(
@@ -194,8 +195,14 @@ def load_dataset(args):
     return train, valid, test
 
 
-def print_trainable_parameters(model, config: dict):
-    quantization_bits = config.get("quantization", {}).get("bits", 32)
+def print_trainable_parameters(model):
+
+    quantization_bits = 32
+    for _, module in model.named_modules():
+        if isinstance(module, nn.QuantizedLinear):
+            quantization_bits = module.bits
+            break
+
     all_params = tree_flatten(model.parameters())
     quantized_params = {
         k.rsplit(".", 1)[0] for k, _ in all_params if ".biases" in k or ".scales" in k
@@ -223,15 +230,14 @@ def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model_path = get_model_path(args.model)
-    model, config, tokenizer = fetch_from_hub(model_path)
+    model, tokenizer = load(args.model)
 
     # Freeze all layers
     model.freeze()
     # Convert linear layers to lora layers and unfreeze in the process
     linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
 
-    print_trainable_parameters(model, config)
+    print_trainable_parameters(model)
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args)

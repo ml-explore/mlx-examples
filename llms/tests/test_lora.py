@@ -5,7 +5,7 @@ import unittest
 from io import StringIO
 from unittest.mock import MagicMock
 
-import mlx.core as mx
+import mlx.nn as nn
 from mlx.utils import tree_flatten
 from mlx_lm import lora, tuner
 
@@ -75,16 +75,20 @@ class TestLora(unittest.TestCase):
             "layer3.weight": MagicMock(size=2e6),
         }
 
-        config_8bits = {"quantization": {"bits": 8}}
+        model.named_modules.return_value = [
+            ("quantized_linear", nn.QuantizedLinear(128, 128, bits=8))
+        ]
         expected_output_8bits = "Trainable parameters: 50.000% (3.000M/6.000M)\n"
-        lora.print_trainable_parameters(model, config_8bits)
+        lora.print_trainable_parameters(model)
         self.assertEqual(self.capturedOutput.getvalue(), expected_output_8bits)
         self.capturedOutput.truncate(0)
         self.capturedOutput.seek(0)
 
-        config_4bits = {"quantization": {"bits": 4}}
+        model.named_modules.return_value = [
+            ("quantized_linear", nn.QuantizedLinear(256, 256, bits=4))
+        ]
         expected_output_4bits = "Trainable parameters: 30.000% (3.000M/10.000M)\n"
-        lora.print_trainable_parameters(model, config_4bits)
+        lora.print_trainable_parameters(model)
         self.assertEqual(self.capturedOutput.getvalue(), expected_output_4bits)
         self.capturedOutput.truncate(0)
         self.capturedOutput.seek(0)
@@ -114,9 +118,9 @@ class TestLora(unittest.TestCase):
             ),
         }
 
-        config = {}
+        model.named_modules.return_value = [("linear", nn.Linear(64, 64))]
         expected_output = "Trainable parameters: 50.000% (3.000M/6.000M)\n"
-        lora.print_trainable_parameters(model, config)
+        lora.print_trainable_parameters(model)
         self.assertEqual(self.capturedOutput.getvalue(), expected_output)
 
 
