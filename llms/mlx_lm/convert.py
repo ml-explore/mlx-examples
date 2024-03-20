@@ -42,6 +42,13 @@ def configure_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "-d",
+        "--dequantize",
+        help="Dequantize a quantized model.",
+        action="store_true",
+        default=False,
+    )
     return parser
 
 
