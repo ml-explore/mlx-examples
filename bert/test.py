@@ -18,7 +18,7 @@ def run_torch(bert_model: str, batch: List[str]):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Run a BERT-like model for a batch of texts."
+        description="Run a BERT-like model for a batch of text."
     )
     parser.add_argument(
         "--bert-model",
