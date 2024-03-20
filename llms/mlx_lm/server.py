@@ -238,6 +238,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 A list of stop words passed to the stopping_criteria function
         """
         tokens = []
+        finish_reason = "length"
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
@@ -255,12 +256,13 @@ class APIHandler(BaseHTTPRequestHandler):
                 tokens, stop_id_sequences, TOKENIZER.eos_token_id
             )
             if stop_condition.stop_met:
+                finish_reason = "stop"
                 if stop_condition.trim_length:
                     tokens = tokens[: -stop_condition.trim_length]
                 break
 
         text = TOKENIZER.decode(tokens)
-        response = self.generate_response(text, "stop", len(prompt), len(tokens))
+        response = self.generate_response(text, finish_reason, len(prompt), len(tokens))
 
         response_json = json.dumps(response).encode()
 
