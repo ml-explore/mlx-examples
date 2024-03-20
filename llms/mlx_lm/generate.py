@@ -62,6 +62,11 @@ def setup_arg_parser():
         help="Use the raw prompt without the tokenizer's chat template.",
     )
     parser.add_argument(
+        "--use-default-template",
+        action="store_true",
+        help="Use the default chat template",
+    )
+    parser.add_argument(
         "--colorize",
         action="store_true",
         help="Colorize output based on T[0] probability",
@@ -108,7 +113,14 @@ def main(args):
         args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
     )
 
-    if not args.ignore_chat_template and (hasattr(tokenizer, "apply_chat_template")):
+    if args.use_default_template:
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = tokenizer.default_chat_template
+
+    if not args.ignore_chat_template and (
+        hasattr(tokenizer, "apply_chat_template")
+        and tokenizer.chat_template is not None
+    ):
         messages = [{"role": "user", "content": args.prompt}]
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
