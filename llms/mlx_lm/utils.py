@@ -17,6 +17,8 @@ from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
+from .sample_utils import top_p_sampling
+
 # Local imports
 from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
@@ -144,23 +146,7 @@ def generate_step(
             token = mx.argmax(logits, axis=-1)
         else:
             if top_p > 0 and top_p < 1.0:
-                if (
-                    logits.dtype == mx.bfloat16
-                ):  # workdaround for unable to load kernel contiguous_scan_inclusive_sum_bfloat16_bfloat16
-                    logits = logits.astype(mx.float32)
-                probs = mx.softmax(logits / temp, axis=-1)
-
-                sorted_probs = mx.sort(probs)[::-1]
-                sorted_indices = mx.argsort(probs)[::-1]
-                cumulative_probs = mx.cumsum(sorted_probs, axis=-1)
-
-                top_probs = mx.where(
-                    cumulative_probs > 1 - top_p,
-                    sorted_probs,
-                    mx.zeros_like(sorted_probs),
-                )
-                sorted_token = mx.random.categorical(mx.log(top_probs))
-                token = sorted_indices.squeeze(0)[sorted_token]
+                token = top_p_sampling(logits, top_p, temp)
             else:
                 token = mx.random.categorical(logits * (1 / temp))
 
