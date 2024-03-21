@@ -34,3 +34,7 @@ class TestScheduleConfigs(unittest.TestCase):
             optimizer.update({}, {})
         expected_lr = 1e-5 * 0.5 * (1.0 + math.cos(math.pi * 200 / 10))
         self.assertAlmostEqual(optimizer.learning_rate.item(), expected_lr, delta=1e-1)
+
+
+if __name__ == "__main__":
+    unittest.main()
