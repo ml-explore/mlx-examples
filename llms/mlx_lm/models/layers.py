@@ -5,23 +5,6 @@ import mlx.nn as nn
 
 
 @partial(mx.compile, shapeless=True)
-def rms_norm(x, weight, eps):
-    x = x.astype(mx.float32)
-    x = x * mx.rsqrt(x.square().mean(-1, keepdims=True) + eps)
-    return weight * x.astype(weight.dtype)
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((dims,))
-        self.eps = eps
-
-    def __call__(self, x):
-        return rms_norm(x, self.weight, self.eps)
-
-
-@partial(mx.compile, shapeless=True)
 def ln_norm(x, eps, weight=None, bias=None):
     """
     Layer normalization for input tensor x.
