@@ -17,7 +17,7 @@ from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
-from .sample_utils import top_p_filtering
+from .sample_utils import top_p_sampling
 
 # Local imports
 from .tuner.utils import apply_lora_layers
@@ -146,7 +146,7 @@ def generate_step(
             token = mx.argmax(logits, axis=-1)
         else:
             if top_p > 0 and top_p < 1.0:
-                token = top_p_filtering(logits, top_p, temp)
+                token = top_p_sampling(logits, top_p, temp)
             else:
                 token = mx.random.categorical(logits * (1 / temp))
 

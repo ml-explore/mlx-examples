@@ -1,7 +1,7 @@
 import mlx.core as mx
 
 
-def top_p_filtering(logits: mx.array, top_p: float, temperature: float) -> mx.array:
+def top_p_sampling(logits: mx.array, top_p: float, temperature: float) -> mx.array:
     """
     Apply top-p (nucleus) filtering to logits using cumulative probabilities.
 
@@ -21,8 +21,9 @@ def top_p_filtering(logits: mx.array, top_p: float, temperature: float) -> mx.ar
     probs = mx.softmax(logits / temperature, axis=-1)
 
     # sort probs in ascending order
-    sorted_probs = mx.sort(probs, axis=-1)
     sorted_indices = mx.argsort(probs, axis=-1)
+    sorted_probs = probs[..., sorted_indices]
+
     cumulative_probs = mx.cumsum(sorted_probs, axis=-1)
 
     # select tokens with cumulative probs below threshold
