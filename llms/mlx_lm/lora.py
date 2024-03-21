@@ -13,6 +13,7 @@ import numpy as np
 import yaml
 from mlx.utils import tree_flatten
 
+from .schedule_config import build_schedule
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import linear_to_lora_layers
@@ -53,6 +54,7 @@ CONFIG_DEFAULTS = {
     "test": False,
     "test_batches": 500,
     "max_seq_length": 2048,
+    "schedule": {},
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
 }
 
@@ -199,7 +201,13 @@ def run(args, training_callback: TrainingCallback = None):
         )
 
         model.train()
-        opt = optim.Adam(learning_rate=args.learning_rate)
+        opt = optim.Adam(
+            learning_rate=(
+                (build_schedule(args.schedule) or args.learning_rate)
+                if args.schedule
+                else args.learning_rate
+            )
+        )
         # Train model
         train(
             model=model,
