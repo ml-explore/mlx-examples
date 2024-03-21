@@ -16,9 +16,9 @@ class TestLora(unittest.TestCase):
 
         token = top_p_sampling(logits, top_p, temperature)
         expected_top_probs = mx.array([[0.0, 0.0, 0.0, 0.643914]])
-        assert mx.allclose(token, expected_token)
+        self.assertTrue(mx.allclose(token, expected_token))
         args, _ = mock_categorical.call_args
-        assert mx.allclose(args[0], mx.log(expected_top_probs))
+        self.assertTrue(mx.allclose(args[0], mx.log(expected_top_probs)))
 
         logits = mx.array([[1.0, 2.0, 3.0, 4.0]])
         top_p = 0.9
