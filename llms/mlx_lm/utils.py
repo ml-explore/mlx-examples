@@ -145,11 +145,11 @@ def generate_step(
         else:
             # referenced implementation from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py#L449-L460
             if top_p > 0 and top_p < 1.0:
-                # print("top_p", top_p)
                 if (
                     logits.dtype == mx.bfloat16
                 ):  # workdaround for unable to load kernel contiguous_scan_inclusive_sum_bfloat16_bfloat16
                     logits = logits.astype(mx.float32)
+
                 probs = mx.softmax(logits / temp, axis=-1)
 
                 # sort probs in ascending order
