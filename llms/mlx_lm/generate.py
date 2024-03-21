@@ -62,6 +62,11 @@ def setup_arg_parser():
         help="Use the raw prompt without the tokenizer's chat template.",
     )
     parser.add_argument(
+        "--use-default-chat-template",
+        action="store_true",
+        help="Use the default chat template",
+    )
+    parser.add_argument(
         "--colorize",
         action="store_true",
         help="Colorize output based on T[0] probability",
@@ -107,6 +112,10 @@ def main(args):
     model, tokenizer = load(
         args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
     )
+
+    if args.use_default_chat_template:
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = tokenizer.default_chat_template
 
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
