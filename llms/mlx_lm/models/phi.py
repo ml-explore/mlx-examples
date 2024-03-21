@@ -6,7 +6,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
 
 
 @dataclass
@@ -122,7 +121,9 @@ class PhiDecoderLayer(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.self_attn = PhiAttention(config=config)
-        self.input_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.input_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
         self.mlp = PhiMLP(config)
 
     def __call__(self, x, mask, cache):
@@ -137,7 +138,9 @@ class PhiModel(nn.Module):
         super().__init__()
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = [PhiDecoderLayer(config) for i in range(config.num_hidden_layers)]
-        self.final_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.final_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
 
     def __call__(self, x, cache):
         x = self.embed_tokens(x)
