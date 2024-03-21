@@ -116,7 +116,7 @@ class MOE(nn.Module):
 
         if self.training:
             ys = []
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
             for e, expert in enumerate(self.mlp):
                 idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
