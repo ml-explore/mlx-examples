@@ -2,7 +2,7 @@
 
 You can use use the `mlx-lm` package to fine-tune an LLM with low rank
 adaptation (LoRA) for a target task.[^lora] The example also supports quantized
-LoRA (QLoRA).[^qlora] LoRA fine-tuning works with any model families:
+LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 - Mistral
 - Llama
