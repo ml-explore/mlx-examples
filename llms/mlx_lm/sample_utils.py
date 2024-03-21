@@ -3,7 +3,7 @@ import mlx.core as mx
 
 def top_p_sampling(logits: mx.array, top_p: float, temperature: float) -> mx.array:
     """
-    Apply top-p (nucleus) filtering to logits using cumulative probabilities.
+    Apply top-p (nucleus) sampling to logits.
 
     Args:
         logits: The logits from the model's output.
