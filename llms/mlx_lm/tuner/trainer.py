@@ -189,7 +189,6 @@ def train(
 
     state = [model.state, optimizer.state]
 
-    @partial(mx.compile, inputs=state, outputs=state)
     def step(batch):
         # Forward and backward pass
         (lvalue, toks), grad = loss_value_and_grad(model, *batch)
