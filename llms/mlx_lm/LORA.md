@@ -9,6 +9,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Phi2
 - Mixtral
 - Qwen2
+- Gemma
 - OLMo
 
 ## Contents
@@ -17,7 +18,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
   * [Fine-tune](#Fine-tune)
   * [Evaluate](#Evaluate)
   * [Generate](#Generate)
-* [Fuse and Upload](#Fuse-and-Upload)
+* [Fuse](#Fuse)
 * [Data](#Data)
 * [Memory Issues](#Memory-Issues)
 
@@ -93,11 +94,14 @@ python -m mlx_lm.generate \
     --prompt "<your_model_prompt>"
 ```
 
-## Fuse and Upload
+## Fuse
 
 You can generate a model fused with the low-rank adapters using the
-`mlx_lm.fuse` command. This command also allows you to upload the fused model
-to the Hugging Face Hub.
+`mlx_lm.fuse` command. This command also allows you to optionally:
+
+- Upload the fused model to the Hugging Face Hub.
+- Export the fused model to GGUF. Note GGUF support is limited to Mistral,
+  Mixtral, and Llama style models in fp16 precision.
 
 To see supported options run:
 
@@ -126,6 +130,17 @@ python -m mlx_lm.fuse \
     --upload-repo mlx-community/my-4bit-lora-mistral \
     --hf-path mistralai/Mistral-7B-v0.1
 ```
+
+To export a fused model to GGUF, run:
+
+```shell
+python -m mlx_lm.fuse \
+    --model mistralai/Mistral-7B-v0.1 \
+    --export-gguf
+```
+
+This will save the GGUF model in `lora_fused_model/ggml-model-f16.gguf`. You
+can specify the file name with `--gguf-path`.
 
 ## Data
 
