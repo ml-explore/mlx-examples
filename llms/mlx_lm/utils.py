@@ -253,8 +253,12 @@ def generate(
             elif REPLACEMENT_CHAR not in s:
                 print(s[skip:], end="", flush=True)
                 skip = len(s)
+            # Reset token cache
+            if s.endswith("\n"):
+                tokens = []
+                skip = 0
 
-    token_count = len(tokens)
+    token_count = n + 1
     token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
 
     if verbose:
