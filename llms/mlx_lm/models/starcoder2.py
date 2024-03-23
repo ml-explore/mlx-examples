@@ -5,7 +5,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
 
 
 @dataclass
@@ -91,8 +90,8 @@ class TransformerBlock(nn.Module):
 
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
-        self.post_attention_layernorm = LayerNorm(
+        self.input_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.post_attention_layernorm = nn.LayerNorm(
             args.hidden_size, eps=args.norm_epsilon
         )
         self.args = args
@@ -121,7 +120,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.norm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
 
     def __call__(
         self,

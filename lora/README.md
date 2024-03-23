@@ -2,8 +2,12 @@
 
 This is an example of using MLX to fine-tune an LLM with low rank adaptation
 (LoRA) for a target task.[^lora] The example also supports quantized LoRA
-(QLoRA).[^qlora] The example works with Llama, Mistral, and Phi-2 style
-models available on Hugging Face.
+(QLoRA).[^qlora] The example works with Llama and Mistral style models
+available on Hugging Face.
+
+> [!TIP]
+> For a more fully featured LLM package, checkout [MLX
+> LM](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm).
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
 generate SQL queries from natural language. However, the example is intended to

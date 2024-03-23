@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import argparse
 import json
@@ -12,7 +12,7 @@ import mlx.optimizers as optim
 import numpy as np
 import utils as lora_utils
 from mlx.utils import tree_flatten, tree_unflatten
-from models.lora import LoRALinear
+from models import LoRALinear
 
 
 def build_parser():

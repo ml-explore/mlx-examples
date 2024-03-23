@@ -6,7 +6,6 @@ import mlx.nn as nn
 import numpy as np
 
 from .base import BaseModelArgs
-from .layers import RMSNorm
 
 
 @dataclass
@@ -146,7 +145,7 @@ class MixtralSparseMoeBlock(nn.Module):
         if self.training:
             mx.eval(inds)
             inds = np.array(inds)
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
             for e, expert in enumerate(self.experts):
                 idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
@@ -173,8 +172,10 @@ class MixtralDecoderLayer(nn.Module):
         self.self_attn = MixtralAttention(args)
 
         self.block_sparse_moe = MixtralSparseMoeBlock(args)
-        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = nn.RMSNorm(
+            args.hidden_size, eps=args.rms_norm_eps
+        )
 
     def __call__(
         self,
@@ -199,7 +200,7 @@ class MixtralModel(nn.Module):
         self.layers = [
             MixtralDecoderLayer(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
         self,

@@ -132,21 +132,6 @@ class MultiHeadAttention(nn.Module):
         return self.out_proj(values_hat), (keys, values)
 
 
-class RMSNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((dims,))
-        self.eps = eps
-
-    def _norm(self, x):
-        return x * mx.rsqrt(x.square().mean(-1, keepdims=True) + self.eps)
-
-    def __call__(self, x):
-        t = x.dtype
-        output = self._norm(x).astype(t)
-        return self.weight * output
-
-
 class DenseActivation(nn.Module):
     def __init__(self, config: T5Config):
         super().__init__()
@@ -182,8 +167,8 @@ class TransformerEncoderLayer(nn.Module):
     def __init__(self, config: T5Config):
         super().__init__()
         self.attention = MultiHeadAttention(config)
-        self.ln1 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln2 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln1 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln2 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dense = DenseActivation(config)
 
     def __call__(self, x, mask):
@@ -202,7 +187,7 @@ class TransformerEncoder(nn.Module):
         self.layers = [
             TransformerEncoderLayer(config) for i in range(config.num_layers)
         ]
-        self.ln = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.relative_attention_bias = RelativePositionBias(config, bidirectional=True)
 
     def __call__(self, x: mx.array):
@@ -217,9 +202,9 @@ class TransformerDecoderLayer(nn.Module):
         super().__init__()
         self.self_attention = MultiHeadAttention(config)
         self.cross_attention = MultiHeadAttention(config)
-        self.ln1 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln2 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln3 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln1 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln2 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln3 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dense = DenseActivation(config)
 
     def __call__(
@@ -257,7 +242,7 @@ class TransformerDecoder(nn.Module):
         super().__init__()
         n_layers = getattr(config, "num_decoder_layers", config.num_layers)
         self.layers = [TransformerDecoderLayer(config) for i in range(n_layers)]
-        self.ln = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.relative_attention_bias = RelativePositionBias(config, bidirectional=False)
 
     def __call__(self, x, memory, cache=None):

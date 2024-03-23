@@ -7,8 +7,6 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .layers import LayerNorm
-
 
 @dataclass
 class ModelArgs:
@@ -116,7 +114,7 @@ class MOE(nn.Module):
 
         if self.training:
             ys = []
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
             for e, expert in enumerate(self.mlp):
                 idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
@@ -141,7 +139,7 @@ class ParallelBlock(nn.Module):
         dims = config.model_dim
         mlp_dims = dims * 4
         self.mixer = RoPEAttention(dims, config.num_heads, config.rotary_dim)
-        self.ln = LayerNorm(dims)
+        self.ln = nn.LayerNorm(dims)
         self.moe = MOE(config, dims, mlp_dims)
 
     def __call__(self, x, mask, cache):
@@ -179,7 +177,7 @@ class Embd(nn.Module):
 class OutputHead(nn.Module):
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()
-        self.ln = LayerNorm(config.model_dim)
+        self.ln = nn.LayerNorm(config.model_dim)
         self.linear = nn.Linear(config.model_dim, config.num_vocab)
 
     def __call__(self, inputs):

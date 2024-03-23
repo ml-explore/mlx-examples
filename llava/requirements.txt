@@ -1,4 +1,4 @@
-mlx>=0.5.0
+mlx>=0.8.0
 numpy
 transformers
 torch
