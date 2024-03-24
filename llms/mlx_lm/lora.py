@@ -6,15 +6,13 @@ import re
 import types
 from pathlib import Path
 
-import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import yaml
-from mlx.utils import tree_flatten
 
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import apply_lora_layers, build_schedule, linear_to_lora_layers
+from .tuner.utils import build_schedule, pre_processing_model
 from .utils import load, save_config
 
 yaml_loader = yaml.SafeLoader
@@ -32,7 +30,6 @@ yaml_loader.add_implicit_resolver(
     ),
     list("-+0123456789."),
 )
-
 
 CONFIG_DEFAULTS = {
     "model": "mlx_model",
@@ -150,63 +147,32 @@ def build_parser():
     return parser
 
 
-def print_trainable_parameters(model):
-    def nparams(m):
-        if isinstance(m, nn.QuantizedLinear):
-            return m.weight.size * (32 // m.bits)
-        return sum(v.size for _, v in tree_flatten(m.parameters()))
-
-    leaf_modules = tree_flatten(
-        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
-    )
-    total_p = sum(nparams(m) for _, m in leaf_modules) / 10**6
-    trainable_p = (
-        sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
-    )
-    print(
-        f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
-        f"({trainable_p:.3f}M/{total_p:.3f}M)"
-    )
-
-
 def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
-    # Freeze all layers
-    model.freeze()
-
-    adapter_path = Path(args.adapter_path)
-    adapter_file = adapter_path / "adapters.safetensors"
-
-    if args.test and not args.train:
-        # Allow testing without LoRA layers by providing empty path
-        if args.adapter_path != "":
-            apply_lora_layers(model, adapter_path)
-    elif args.train:
-        adapter_path.mkdir(parents=True, exist_ok=True)
-        save_config(vars(args), adapter_path / "adapter_config.json")
-
-        # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(
-            model, args.lora_layers, args.lora_parameters, args.use_dora
-        )
-        print_trainable_parameters(model)
-    else:
-        raise ValueError("Must provide at least one of --train or --test")
+    model = pre_processing_model(
+        model=model,
+        adapter_path=args.adapter_path,
+        is_train=args.train,
+        is_test=args.test,
+        lora_layers=args.lora_layers,
+        lora_config=args.lora_parameters,
+        resume_adapter_file=args.resume_adapter_file,
+    )
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file, strict=False)
-
     if args.train:
         print("Training")
+        adapter_path = Path(args.adapter_path)
+        adapter_path.mkdir(parents=True, exist_ok=True)
+        adapter_file = adapter_path / "adapters.safetensors"
+        save_config(vars(args), adapter_path / "adapter_config.json")
+
         # init training args
         training_args = TrainingArgs(
             batch_size=args.batch_size,

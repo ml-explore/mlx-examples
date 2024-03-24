@@ -7,7 +7,7 @@ from typing import Dict
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as opt
-from mlx.utils import tree_unflatten
+from mlx.utils import tree_flatten, tree_unflatten
 
 from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
 from .dora import DoRALinear
@@ -217,4 +217,56 @@ def remove_lora_layers(model: nn.Module) -> nn.Module:
             reset_layers.append((name, module.linear))
     if len(reset_layers) > 0:
         model.update_modules(tree_unflatten(reset_layers))
+    return model
+
+
+def print_trainable_parameters(model):
+    def nparams(m):
+        if isinstance(m, nn.QuantizedLinear):
+            return m.weight.size * (32 // m.bits)
+        return sum(v.size for _, v in tree_flatten(m.parameters()))
+
+    leaf_modules = tree_flatten(
+        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
+    )
+    total_p = sum(nparams(m) for _, m in leaf_modules) / 10**6
+    trainable_p = (
+        sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
+    )
+    print(
+        f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
+        f"({trainable_p:.3f}M/{total_p:.3f}M)"
+    )
+
+
+def pre_processing_model(
+    model: nn.Module,
+    adapter_path: str,
+    is_train: bool,
+    is_test: bool,
+    lora_layers: int,
+    lora_config: dict,
+    resume_adapter_file: str,
+) -> nn.Module:
+    """
+    Pre-processing model for QLoRA/LoRA training.
+    """
+    # Freeze all layers
+    model.freeze()
+
+    adapter_path = Path(adapter_path)
+
+    if is_test and not is_train:
+        apply_lora_layers(model, adapter_path)
+    else:
+        # Convert linear layers to lora layers and unfreeze in the process
+        linear_to_lora_layers(model, lora_layers, lora_config)
+
+        print_trainable_parameters(model)
+
+    # Resume training the given adapters.
+    if resume_adapter_file is not None:
+        print(f"Loading pretrained adapters from {resume_adapter_file}")
+        model.load_weights(resume_adapter_file, strict=False)
+
     return model
