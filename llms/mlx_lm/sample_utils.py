@@ -22,7 +22,8 @@ def top_p_sampling(logits: mx.array, top_p: float, temperature: float) -> mx.arr
 
     # sort probs in ascending order
     sorted_indices = mx.argsort(probs, axis=-1)
-    sorted_probs = probs[..., sorted_indices]
+    # probs shape is [B,V] and after indexing it will be [1, B, V], so we squeeze it back to [B, V]
+    sorted_probs = probs[..., sorted_indices].squeeze(0)
 
     cumulative_probs = mx.cumsum(sorted_probs, axis=-1)
 
