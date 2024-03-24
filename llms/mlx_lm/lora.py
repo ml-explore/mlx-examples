@@ -1,7 +1,6 @@
 # Copyright © 2024 Apple Inc.
 
 import argparse
-import json
 import math
 import re
 import types
@@ -15,8 +14,7 @@ from mlx.utils import tree_flatten
 
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import linear_to_lora_layers
-from .utils import load
+from .utils import load_with_lora
 
 yaml_loader = yaml.SafeLoader
 yaml_loader.add_implicit_resolver(
@@ -33,7 +31,6 @@ yaml_loader.add_implicit_resolver(
     ),
     list("-+0123456789."),
 )
-
 
 CONFIG_DEFAULTS = {
     "model": "mlx_model",
@@ -143,45 +140,19 @@ def build_parser():
     return parser
 
 
-def print_trainable_parameters(model):
-    def nparams(m):
-        if isinstance(m, nn.QuantizedLinear):
-            return m.weight.size * (32 // m.bits)
-        return sum(v.size for _, v in tree_flatten(m.parameters()))
-
-    leaf_modules = tree_flatten(
-        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
-    )
-    total_p = sum(nparams(m) for _, m in leaf_modules) / 10**6
-    trainable_p = (
-        sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
-    )
-    print(
-        f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
-        f"({trainable_p:.3f}M/{total_p:.3f}M)"
-    )
-
-
 def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model, tokenizer = load(args.model)
-
-    # Freeze all layers
-    model.freeze()
-    # Convert linear layers to lora layers and unfreeze in the process
-    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
-
-    print_trainable_parameters(model)
+    model, tokenizer = load_with_lora(
+        path_or_hf_repo=args.model,
+        lora_layers=args.lora_layers,
+        config=args.lora_parameters,
+        resume_adapter_file=args.resume_adapter_file,
+    )
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
-
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file, strict=False)
 
     if args.train:
         print("Training")
