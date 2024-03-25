@@ -22,7 +22,6 @@ from .sample_utils import top_p_sampling
 # Local imports
 from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
-from .tuner.utils import linear_to_lora_layers
 
 # Constants
 MODEL_REMAPPING = {
