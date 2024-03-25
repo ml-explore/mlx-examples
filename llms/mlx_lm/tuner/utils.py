@@ -3,7 +3,7 @@ from typing import Dict
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_unflatten
+from mlx.utils import tree_flatten, tree_unflatten
 
 from .lora import LoRALinear
 
@@ -150,4 +150,55 @@ def remove_lora_layers(model: nn.Module) -> nn.Module:
             reset_layers.append((name, module.linear))
     if len(reset_layers) > 0:
         model.update_modules(tree_unflatten(reset_layers))
+    return model
+
+
+def print_trainable_parameters(model):
+    def nparams(m):
+        if isinstance(m, nn.QuantizedLinear):
+            return m.weight.size * (32 // m.bits)
+        return sum(v.size for _, v in tree_flatten(m.parameters()))
+
+    leaf_modules = tree_flatten(
+        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
+    )
+    total_p = sum(nparams(m) for _, m in leaf_modules) / 10**6
+    trainable_p = (
+        sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
+    )
+    print(
+        f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
+        f"({trainable_p:.3f}M/{total_p:.3f}M)"
+    )
+
+
+def prepare_for_training(
+    model: nn.Module,
+    lora_layers: int,
+    config: Dict,
+    resume_adapter_file: str = None,
+) -> nn.Module:
+    """
+    Prepare a model for QLoRA/LoRA training.
+
+    Args:
+        model (nn.Module): The model to be prepared.
+        lora_layers (int): The number of LoRA layers.
+        config (Dict): The LoRA configuration dictionary.
+        resume_adapter_file (str, optional): The path to a pretrained adapter weights file for resuming training. Defaults to None.
+
+    Returns:
+        nn.Module: The prepared model for QLoRA/LoRA training.
+    """
+    # Freeze all layers
+    model.freeze()
+    # Convert linear layers to lora layers and unfreeze in the process
+    linear_to_lora_layers(model, lora_layers, config)
+
+    # Resume training the given adapters.
+    if resume_adapter_file is not None:
+        print(f"Loading pretrained adapters from {resume_adapter_file}")
+        model.load_weights(resume_adapter_file, strict=False)
+
+    print_trainable_parameters(model)
     return model

@@ -6,15 +6,14 @@ import re
 import types
 from pathlib import Path
 
-import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import yaml
-from mlx.utils import tree_flatten
 
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .utils import load_with_lora
+from .tuner.utils import prepare_for_training
+from .utils import load
 
 yaml_loader = yaml.SafeLoader
 yaml_loader.add_implicit_resolver(
@@ -144,8 +143,9 @@ def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model, tokenizer = load_with_lora(
-        path_or_hf_repo=args.model,
+    model, tokenizer = load(args.model)
+    model = prepare_for_training(
+        model=model,
         lora_layers=args.lora_layers,
         config=args.lora_parameters,
         resume_adapter_file=args.resume_adapter_file,
