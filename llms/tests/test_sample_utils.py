@@ -5,7 +5,7 @@ import mlx.core as mx
 from mlx_lm.sample_utils import top_p_sampling
 
 
-class TestLora(unittest.TestCase):
+class TestSamplingUtils(unittest.TestCase):
     @patch("mlx.core.random.categorical")
     def test_top_p_sampling(self, mock_categorical):
         logits = mx.array([[1.0, 2.0, 3.0, 4.0]])
