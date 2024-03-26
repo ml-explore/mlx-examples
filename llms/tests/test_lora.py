@@ -46,7 +46,7 @@ class TestLora(unittest.TestCase):
             )
             self.assertEqual(
                 trainable_params,
-                lora_layers * params["rank"] * 1024 * 2 * n_keys + lora_layers * n_keys,
+                lora_layers * params["rank"] * 1024 * 2 * n_keys,
             )
 
         params = {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0}
