@@ -21,7 +21,9 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
-            outputs, cache = model(mx.argmax(outputs[1, :], keepdims=True), cache=cache)
+            outputs, cache = model(
+                mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache
+            )
             self.assertEqual(outputs.shape, (1, 1, vocab_size))
             self.assertEqual(outputs.dtype, t)
 

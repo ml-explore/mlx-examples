@@ -1,4 +1,4 @@
-mlx>=0.0.6
+mlx>=0.8.0
 sentencepiece
 torch
 numpy

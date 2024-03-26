@@ -5,7 +5,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
 
 
 @dataclass
@@ -97,7 +96,7 @@ class TransformerBlock(nn.Module):
 
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = LayerNorm(
+        self.input_layernorm = nn.LayerNorm(
             args.hidden_size, eps=args.layer_norm_eps, bias=args.layer_norm_bias
         )
         self.args = args
@@ -125,7 +124,7 @@ class CohereModel(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = LayerNorm(
+        self.norm = nn.LayerNorm(
             args.hidden_size, eps=args.layer_norm_eps, bias=args.layer_norm_bias
         )
 

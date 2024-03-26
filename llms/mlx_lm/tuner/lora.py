@@ -97,9 +97,6 @@ class LoRALinear(nn.Module):
         self.lora_b = mx.zeros(shape=(r, output_dims))
 
     def __call__(self, x):
-        dtype = self.linear.weight.dtype
-        if isinstance(self.linear, nn.QuantizedLinear):
-            dtype = self.linear.scales.dtype
-        y = self.linear(x.astype(dtype))
+        y = self.linear(x)
         z = (self.dropout(x) @ self.lora_a) @ self.lora_b
-        return y + self.scale * z
+        return y + (self.scale * z).astype(x.dtype)
