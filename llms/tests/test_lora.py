@@ -45,7 +45,8 @@ class TestLora(unittest.TestCase):
                 v.size for _, v in tree_flatten(model.trainable_parameters())
             )
             self.assertEqual(
-                trainable_params, lora_layers * params["rank"] * 1024 * 2 * n_keys
+                trainable_params,
+                lora_layers * params["rank"] * 1024 * 2 * n_keys + lora_layers * n_keys,
             )
 
         params = {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0}
