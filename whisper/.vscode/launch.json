@@ -1,0 +1,74 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Transcribe: Telugu using Whisper Medium",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_transcribe.py",
+            "args": [
+                "--audio", "${workspaceFolder}/whisper/assets/adityateluguthursday.m4a", 
+                "--model", "${workspaceFolder}/mlx_models/whisper-medium-mlx", 
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Train: Whisper Medium on Telugu using LoRA",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/lora/lora.py",
+            "args": [
+                "--model", "${workspaceFolder}/mlx_models/whisper-medium-mlx", 
+                "--train",
+                "--adapter-file", "${workspaceFolder}/lora_adapters_whisper_with_telugu.npz",
+                "--hf-dataset", "mozilla-foundation/common_voice_16_1", 
+                "--hf-dataset-lang", "te",
+                "--batch-size", "2",
+                "--lora-layers", "2"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Fuse & Save: Whisper Medium on Telugu using LoRA",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/lora/fuse.py",
+            "args": [
+                "--model", "${workspaceFolder}/mlx_models/whisper-medium-mlx",
+                "--adapter-file", "${workspaceFolder}/lora_adapters_whisper_with_telugu.npz",
+                "--save-path", "${workspaceFolder}/lora_fused_model_whisper_with_telugu"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Transcribe: Telugu using Whisper Medium LoRA-Telugu",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_transcribe.py",
+            "args": [
+                "--audio", "${workspaceFolder}/whisper/assets/adityateluguthursday.m4a",
+                "--model", "${workspaceFolder}/lora_fused_model_whisper_with_telugu",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Attach using Process Id",
+            "type": "python",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

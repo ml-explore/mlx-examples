@@ -10,12 +10,14 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
+from .base import BaseModelArgs
+
 from .decoding import decode as decode_function
 from .decoding import detect_language as detect_language_function
 
 
 @dataclass
-class ModelDimensions:
+class ModelDimensions(BaseModelArgs):
     n_mels: int
     n_audio_ctx: int
     n_audio_state: int
@@ -35,6 +37,11 @@ def sinusoids(length, channels, max_timescale=10000):
     inv_timescales = mx.exp(-log_timescale_increment * mx.arange(channels // 2))
     scaled_time = mx.arange(length)[:, None] * inv_timescales[None, :]
     return mx.concatenate([mx.sin(scaled_time), mx.cos(scaled_time)], axis=1)
+
+
+class LayerNorm(nn.LayerNorm):
+    def __call__(self, x: mx.array) -> mx.array:
+        return super().__call__(x.astype(mx.float32)).astype(x.dtype)
 
 
 class MultiHeadAttention(nn.Module):
@@ -93,17 +100,17 @@ class ResidualAttentionBlock(nn.Module):
         super().__init__()
 
         self.attn = MultiHeadAttention(n_state, n_head)
-        self.attn_ln = nn.LayerNorm(n_state)
+        self.attn_ln = LayerNorm(n_state)
 
         self.cross_attn = (
             MultiHeadAttention(n_state, n_head) if cross_attention else None
         )
-        self.cross_attn_ln = nn.LayerNorm(n_state) if cross_attention else None
+        self.cross_attn_ln = LayerNorm(n_state) if cross_attention else None
 
         n_mlp = n_state * 4
         self.mlp1 = nn.Linear(n_state, n_mlp)
         self.mlp2 = nn.Linear(n_mlp, n_state)
-        self.mlp_ln = nn.LayerNorm(n_state)
+        self.mlp_ln = LayerNorm(n_state)
 
     def __call__(self, x, xa=None, mask=None, kv_cache=None):
         kv, cross_kv = kv_cache if kv_cache else (None, None)
@@ -135,7 +142,7 @@ class AudioEncoder(nn.Module):
         self._positional_embedding = sinusoids(n_ctx, n_state).astype(dtype)
 
         self.blocks = [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
-        self.ln_post = nn.LayerNorm(n_state)
+        self.ln_post = LayerNorm(n_state)
 
     def __call__(self, x):
         x = nn.gelu(self.conv1(x)).astype(x.dtype)
@@ -169,7 +176,7 @@ class TextDecoder(nn.Module):
             ResidualAttentionBlock(n_state, n_head, cross_attention=True)
             for _ in range(n_layer)
         ]
-        self.ln = nn.LayerNorm(n_state)
+        self.ln = LayerNorm(n_state)
         self._mask = nn.MultiHeadAttention.create_additive_causal_mask(n_ctx).astype(
             dtype
         )
@@ -253,7 +260,7 @@ class Whisper(nn.Module):
         return logits, cross_qk
 
     def __call__(self, mel, tokens):
-        return self.decoder(tokens, self.encoder(mel))[0] # `mel` is b x 3000 x 80 and `tokens` is b x (31 or so?)
+        return self.decoder(tokens, self.encoder(mel))[0]
 
     @property
     def is_multilingual(self):
