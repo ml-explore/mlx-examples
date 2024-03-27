@@ -76,6 +76,11 @@ def build_parser():
         help="Directory with {train, valid, test}.jsonl files",
     )
     parser.add_argument(
+        "--sort-by-data-length",
+        action="store_true",
+        help="Sorts sequences by length to reduce padding and enhance efficiency.",
+    )
+    parser.add_argument(
         "--lora-layers",
         type=int,
         help="Number of layers to fine-tune",
@@ -196,6 +201,7 @@ def run(args, training_callback: TrainingCallback = None):
             adapter_file=args.adapter_file,
             max_seq_length=args.max_seq_length,
             grad_checkpoint=args.grad_checkpoint,
+            sort_by_data_length=args.sort_by_data_length,
         )
 
         model.train()
