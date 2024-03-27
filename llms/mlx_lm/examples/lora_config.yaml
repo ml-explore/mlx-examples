@@ -60,3 +60,9 @@ lora_parameters:
   alpha: 16.0
   scale: 10.0
   dropout: 0.0
+
+schedule:
+  name: cosine_decay
+  warmup: 100 # 0 for no warmup
+  minimum: 1e-7 #0 if not specified
+  arguments: .... # passed to scheduler
