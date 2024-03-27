@@ -1,4 +1,6 @@
+import json
 import os
+import warnings
 from typing import Dict
 
 import mlx.core as mx
@@ -83,7 +85,21 @@ def apply_lora_layers(model: nn.Module, adapter_file: str) -> nn.Module:
     if not os.path.exists(adapter_file):
         raise FileNotFoundError(f"The adapter file does not exist: {adapter_file}")
 
-    adapters = list(mx.load(adapter_file).items())
+    try:
+        weights, metadata = mx.load(adapter_file, return_metadata=True)
+        if not metadata:
+            warnings.warn(
+                "The metadata for the adapter is missing. Default values will be used, which may result in incorrect LoRA parameters."
+            )
+            metadata = {}
+    except ValueError:
+        warnings.warn(
+            "The metadata not supported for format npz. Default values will be used, which may result in incorrect LoRA parameters."
+        )
+        weights = mx.load(adapter_file)
+        metadata = {}
+
+    adapters = list(weights.items())
 
     linear_replacements = []
     lora_layers = set(
@@ -91,7 +107,10 @@ def apply_lora_layers(model: nn.Module, adapter_file: str) -> nn.Module:
     )
     for name, module in model.named_modules():
         if name in lora_layers:
-            replacement_module = LoRALinear.from_linear(module)
+            replacement_module = LoRALinear.from_linear(
+                module,
+                **json.loads(metadata.get("lora_config", "{}")),
+            )
             linear_replacements.append((name, replacement_module))
 
     model.update_modules(tree_unflatten(linear_replacements))

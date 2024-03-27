@@ -78,6 +78,13 @@ class LoRALinear(nn.Module):
         bias: bool = False,
     ):
         super().__init__()
+        # store hyperparameters
+        self.lora_config = {
+            "r": r,
+            "alpha": alpha,
+            "dropout": dropout,
+            "scale": scale,
+        }
 
         # Regular linear layer weights
         self.linear = nn.Linear(input_dims, output_dims, bias=bias)
