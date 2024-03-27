@@ -31,7 +31,11 @@ class Attention(nn.Module):
 
         self.scale = self.head_dim**-0.5
 
-        self.Wqkv = nn.Linear(args.d_model, (self.num_key_value_heads * 2 + self.num_heads) * self.head_dim, bias=False)
+        self.Wqkv = nn.Linear(
+            args.d_model,
+            (self.num_key_value_heads * 2 + self.num_heads) * self.head_dim,
+            bias=False,
+        )
         self.out_proj = nn.Linear(args.d_model, args.d_model, bias=False)
         self.rope = nn.RoPE(
             self.head_dim,
@@ -84,7 +88,9 @@ class NormAttnNorm(nn.Module):
         self.norm_2 = nn.LayerNorm(args.d_model, bias=False)
         self.attn = Attention(args)
 
-    def __call__(self, x: mx.array,
+    def __call__(
+        self,
+        x: mx.array,
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
@@ -125,7 +131,9 @@ class SparseMoeBlock(nn.Module):
         self.num_experts_per_tok = args.ffn_config["moe_top_k"]
 
         self.router = Router(self.d_model, self.num_experts)
-        self.experts = [MLP(self.d_model, self.ffn_dim) for _ in range(self.num_experts)]
+        self.experts = [
+            MLP(self.d_model, self.ffn_dim) for _ in range(self.num_experts)
+        ]
 
     def __call__(self, x: mx.array) -> mx.array:
         ne = self.num_experts_per_tok
@@ -208,6 +216,7 @@ class DBRX(nn.Module):
 
         for e, layer in enumerate(self.blocks):
             import pdb
+
             h, cache[e] = layer(h, mask, cache[e])
 
         return self.norm_f(h), cache
@@ -243,7 +252,7 @@ class Model(nn.Module):
             experts = []
             for e in range(num_experts):
                 sk = ".".join(subks[:-2] + [str(e)] + subks[-1:] + ["weight"])
-                sv = v[e*dim:(e+1)*dim, ...]
+                sv = v[e * dim : (e + 1) * dim, ...]
                 if subks[-1] == "w2":
                     sv = sv.T
                 experts.append((sk, sv))
@@ -257,5 +266,3 @@ class Model(nn.Module):
                 expert_weights.extend(split_expert(k, v))
         new_weights.update(expert_weights)
         return new_weights
-
-
