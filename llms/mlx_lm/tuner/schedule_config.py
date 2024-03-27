@@ -7,7 +7,7 @@ def build_schedule(schedule_config):
         arguments = schedule_config["arguments"]
         initial_lr = arguments[0]
         schedule_fn = getattr(opt.schedulers, schedule_name)
-        warmup_steps = schedule_config.get("arguments", 0)
+        warmup_steps = schedule_config.get("warmup", 0)
         warmup_min_lr = schedule_config.get("minimum", 0.0)
         bound_schedule_fn = schedule_fn(*arguments)
         if warmup_steps:

@@ -10,7 +10,7 @@ CONFIG_YAML1 = """
 schedule:
   name: cosine_decay
   warmup: 100
-  arguments: [ 1e-5, 100 ] }
+  arguments: [ 1e-5, 100 ] 
 """
 
 CONFIG_YAML2 = """
@@ -39,7 +39,7 @@ schedule:
   name: cosine_decay
   warmup: 10
   minimum: 1e-6
-  arguments: [ 1e-5, 20 ] }
+  arguments: [ 1e-5, 20 ] 
 """
 
 
@@ -70,7 +70,7 @@ class TestScheduleConfigs(unittest.TestCase):
     def test_non_zero_warmup(self):
         config = yaml.load(CONFIG_YAML6, yaml_loader)
         lr_schedule = build_schedule(config["schedule"])
-        lr = lr_schedule(1)
+        lr = lr_schedule(0)
         self.assertAlmostEqual(lr, 1e-6, delta=1e-7)
 
     def test_malformed_config(self):
