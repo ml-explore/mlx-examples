@@ -4,43 +4,42 @@ import unittest
 import mlx.optimizers as opt
 import yaml
 from mlx_lm.lora import yaml_loader
-from mlx_lm.schedule_config import build_schedule
+from mlx_lm.tuner.schedule_config import build_schedule
 
 CONFIG_YAML1 = """
 schedule:
-  join:
-    boundaries: [101]
-    schedules:
-      - { name: linear_schedule,
-          arguments: [0.0, 1e-5, 100] }
-      - { name: cosine_decay,
-          arguments: [ 1e-5, 100 ] }
+  name: cosine_decay
+  warmup: 100
+  arguments: [ 1e-5, 100 ] }
 """
 
 CONFIG_YAML2 = """
 schedule:
-  join:
-    schedules:
-      - { name: linear_schedule,
-          arguments: [0.0, 1e-5, 100] }
-      - { name: cosine_decay,
-          arguments: [ 1e-5, 100 ] }
-"""
+  warmup: 100
+  """
 
 CONFIG_YAML3 = """
 schedule:
-  join:
+  name: cosine_decay
 """
 
 CONFIG_YAML4 = """
 schedule:
-  cosine_decay:
-    arguments: [ 0.1, 10 ]
+  name: cosine_decay
+  arguments: [ 0.1, 10 ]
 """
 
 CONFIG_YAML5 = """
 schedule:
   
+"""
+
+CONFIG_YAML6 = """
+schedule:
+  name: cosine_decay
+  warmup: 10
+  minimum: 1e-6
+  arguments: [ 1e-5, 20 ] }
 """
 
 
@@ -68,12 +67,18 @@ class TestScheduleConfigs(unittest.TestCase):
         expected_lr = 0.1 * 0.5 * (1.0 + math.cos(math.pi * 4 / 10))
         self.assertAlmostEqual(lr, expected_lr, delta=1e-7)
 
+    def test_non_zero_warmup(self):
+        config = yaml.load(CONFIG_YAML6, yaml_loader)
+        lr_schedule = build_schedule(config["schedule"])
+        lr = lr_schedule(1)
+        self.assertAlmostEqual(lr, 1e-6, delta=1e-7)
+
     def test_malformed_config(self):
         config = yaml.load(CONFIG_YAML2, yaml_loader)
         self.assertRaises(KeyError, build_schedule, config["schedule"])
 
         config = yaml.load(CONFIG_YAML3, yaml_loader)
-        self.assertRaises(TypeError, build_schedule, config["schedule"])
+        self.assertRaises(KeyError, build_schedule, config["schedule"])
 
     def test_empty_config(self):
         config = yaml.load(CONFIG_YAML5, yaml_loader)
