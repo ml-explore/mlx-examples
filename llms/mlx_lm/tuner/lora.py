@@ -78,6 +78,13 @@ class LoRALinear(nn.Module):
         bias: bool = False,
     ):
         super().__init__()
+        # store hyperparameters
+        self.lora_config = {
+            "r": r,
+            "alpha": alpha,
+            "dropout": dropout,
+            "scale": scale,
+        }
 
         # Regular linear layer weights
         self.linear = nn.Linear(input_dims, output_dims, bias=bias)
@@ -85,8 +92,7 @@ class LoRALinear(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
         # Scale for low-rank update
-        self.scale = mx.array(scale * (alpha / r))
-        self.freeze(keys=["scale"], recurse=False)
+        self.scale = scale * (alpha / r)
 
         # Low rank lora weights
         scale = 1 / math.sqrt(input_dims)

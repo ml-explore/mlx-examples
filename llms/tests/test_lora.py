@@ -1,14 +1,17 @@
 # Copyright © 2024 Apple Inc.
 
+import json
 import sys
 import unittest
 from io import StringIO
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import mlx.nn as nn
 from mlx.utils import tree_flatten
 from mlx_lm import lora, tuner
 from mlx_lm.tuner.lora import LoRALinear
+from mlx_lm.tuner.trainer import save_adapter
+from mlx_lm.tuner.utils import apply_lora_layers
 
 
 class TestLora(unittest.TestCase):
@@ -119,6 +122,81 @@ class TestLora(unittest.TestCase):
         expected_output = "Trainable parameters: 50.000% (3.000M/6.000M)\n"
         lora.print_trainable_parameters(model)
         self.assertEqual(self.capturedOutput.getvalue(), expected_output)
+
+    @patch("mlx.core.save_safetensors")
+    def test_save_adapter(self, mock_save_safetensors):
+        mock_model = MagicMock()
+        mock_model.trainable_parameters.return_value = ["mocked_param"]
+        lora_rank = 32
+        lora_alpha = 64
+        lora_scale = 20.0
+        lora_dropout = 0.2
+        mock_model.named_modules.return_value = [
+            (
+                "lora_linear",
+                LoRALinear(
+                    input_dims=10,
+                    output_dims=10,
+                    r=lora_rank,
+                    alpha=lora_alpha,
+                    dropout=lora_dropout,
+                    scale=lora_scale,
+                ),
+            )
+        ]
+
+        adapter_file = "path/to/adapter.safetensors"
+
+        save_adapter(mock_model, adapter_file)
+
+        mock_save_safetensors.assert_called_once_with(
+            adapter_file,
+            {"0": "mocked_param"},
+            metadata={
+                "format": "mlx",
+                "lora_config": json.dumps(
+                    {
+                        "r": lora_rank,
+                        "alpha": lora_alpha,
+                        "dropout": lora_dropout,
+                        "scale": lora_scale,
+                    }
+                ),
+            },
+        )
+
+    @patch("os.path.exists")
+    @patch("mlx.core.load")
+    def test_apply_lora_layers(self, mock_load, mock_exists):
+        mock_exists.return_value = True
+        lora_rank = 8
+        lora_alpha = 16
+        lora_scale = 10.0
+        lora_dropout = 0.0
+        mock_load.return_value = (
+            {"layers.0.lora_a": "value"},
+            {
+                "lora_config": json.dumps(
+                    {
+                        "r": lora_rank,
+                        "alpha": lora_alpha,
+                        "dropout": lora_dropout,
+                        "scale": lora_scale,
+                    }
+                )
+            },
+        )
+
+        model = nn.Sequential(nn.Linear(10, 10))
+        updated_model = apply_lora_layers(model, "valid_adapter_file")
+
+        self.assertIsNotNone(updated_model)
+        for _, module in updated_model.named_modules():
+            if isinstance(module, LoRALinear):
+                self.assertEqual(
+                    module.scale,
+                    float(lora_scale) * (float(lora_alpha) / int(lora_rank)),
+                )
 
 
 if __name__ == "__main__":

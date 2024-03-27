@@ -48,7 +48,7 @@ CONFIG_DEFAULTS = {
     "steps_per_report": 10,
     "steps_per_eval": 200,
     "resume_adapter_file": None,
-    "adapter_file": "adapters.npz",
+    "adapter_file": "adapters.safetensors",
     "save_every": 100,
     "test": False,
     "test_batches": 500,
