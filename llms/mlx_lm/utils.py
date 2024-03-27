@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
