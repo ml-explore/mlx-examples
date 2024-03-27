@@ -34,12 +34,12 @@ python convert.py --model t5-small
 You can run with the default arguments:
 
 ```
-python main.py
+python speculative.py
 ```
 
 To see a full list of options use:
 ```
-python main.py --help
+python speculative.py --help
 ```
 
 ### Notes
@@ -64,3 +64,20 @@ draft tokens at the expense of more large model evaluations.
 Decoding](https://arxiv.org/abs/2211.17192)
 [^2]: For more information on T5 see the [original paper](https://arxiv.org/abs/1910.10683)
    or the [Hugging Face page](https://huggingface.co/docs/transformers/model_doc/t5).
+
+## Prompt Lookup Decoding
+When speculative decoding works, it significantly accelerates inference. However, selecting an appropriate draft model can be challenging. Prompt lookup decoding[^3] modifies speculative decoding by substituting the draft model with a straightforward sliding window search across the prompt. This alteration eliminates the need for a draft model while offering comparable speed enhancements, particularly when applied to the right task. Prompt lookup decoding excels in *input-grounded* tasks like summarization, document Q/A, and code editing, where there's substantial overlap between input and output.
+
+## Run
+[Setup](#setup) is the same as for Speculative Decoding. You can the run with default arguments:
+
+```
+python prompt_lookup.py
+```
+
+To see a full list of options use:
+```
+python prompt_lookup --help
+```
+
+[^3] Check out the [original implementation](https://github.com/apoorvumang/prompt-lookup-decoding).
