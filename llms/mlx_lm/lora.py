@@ -13,10 +13,9 @@ import numpy as np
 import yaml
 from mlx.utils import tree_flatten
 
-from .tuner.schedule_config import build_schedule
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import linear_to_lora_layers
+from .tuner.utils import build_schedule, linear_to_lora_layers
 from .utils import load
 
 yaml_loader = yaml.SafeLoader
