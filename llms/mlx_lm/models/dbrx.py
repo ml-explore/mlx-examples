@@ -152,7 +152,6 @@ class SparseMoeBlock(nn.Module):
         ).astype(gates.dtype)
 
         if self.training:
-            mx.eval(inds)
             inds = np.array(inds)
             y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
             for e, expert in enumerate(self.experts):
@@ -165,7 +164,7 @@ class SparseMoeBlock(nn.Module):
         else:
             y = []
             for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
+                yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
                 yt = (yt * st).sum(axis=-1)
                 y.append(yt[None, :])
             y = mx.concatenate(y)
@@ -247,22 +246,12 @@ class Model(nn.Module):
         num_experts = self.args.ffn_config["moe_num_experts"]
         dim = self.args.ffn_config["ffn_hidden_size"]
 
-        def split_expert(k, v):
-            subks = k.split(".")
-            experts = []
-            for e in range(num_experts):
-                sk = ".".join(subks[:-2] + [str(e)] + subks[-1:] + ["weight"])
-                sv = v[e * dim : (e + 1) * dim, ...]
-                if subks[-1] == "w2":
-                    sv = sv.T
-                experts.append((sk, sv))
-            return experts
-
         pattern = "experts.mlp"
         new_weights = {k: v for k, v in weights.items() if pattern not in k}
-        expert_weights = []
         for k, v in weights.items():
             if pattern in k:
-                expert_weights.extend(split_expert(k, v))
-        new_weights.update(expert_weights)
+                experts = [(k.replace(".mlp", f".{e}") + ".weight", sv) for e, sv in enumerate(mx.split(v, num_experts, axis=0))]
+                if k.endswith("w2"):
+                    experts = [(s, sv.T) for s, sv in experts]
+                new_weights.update(experts)
         return new_weights
