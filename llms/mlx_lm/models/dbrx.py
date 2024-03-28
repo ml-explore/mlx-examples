@@ -211,8 +211,6 @@ class DBRX(nn.Module):
             cache = [None] * len(self.blocks)
 
         for e, layer in enumerate(self.blocks):
-            import pdb
-
             h, cache[e] = layer(h, mask, cache[e])
 
         return self.norm_f(h), cache
