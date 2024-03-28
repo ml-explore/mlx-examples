@@ -250,7 +250,10 @@ class Model(nn.Module):
         new_weights = {k: v for k, v in weights.items() if pattern not in k}
         for k, v in weights.items():
             if pattern in k:
-                experts = [(k.replace(".mlp", f".{e}") + ".weight", sv) for e, sv in enumerate(mx.split(v, num_experts, axis=0))]
+                experts = [
+                    (k.replace(".mlp", f".{e}") + ".weight", sv)
+                    for e, sv in enumerate(mx.split(v, num_experts, axis=0))
+                ]
                 if k.endswith("w2"):
                     experts = [(s, sv.T) for s, sv in experts]
                 new_weights.update(experts)
