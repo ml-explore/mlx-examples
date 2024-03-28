@@ -141,15 +141,12 @@ class SparseMoeBlock(nn.Module):
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.router(x)
+        gates = mx.softmax(gates.astype(mx.float32), axis=-1)
 
-        inds = mx.stop_gradient(
-            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        )  # TODO remove it once we figure out how to fine tune TopK in MOE
-
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        scores = scores / mx.linalg.norm(scores, ord=1, axis=-1, keepdims=True)
+        scores = scores.astype(x.dtype)
 
         if self.training:
             inds = np.array(inds)
@@ -166,8 +163,8 @@ class SparseMoeBlock(nn.Module):
             for xt, st, it in zip(x, scores, inds.tolist()):
                 yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
                 yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
-            y = mx.concatenate(y)
+                y.append(yt)
+            y = mx.stack(y, axis=0)
 
         return y.reshape(orig_shape)
 
