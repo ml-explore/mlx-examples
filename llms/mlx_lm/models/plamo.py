@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -183,11 +183,7 @@ class PlamoModel(nn.Module):
             mask = mask.astype(self.embed_tokens.weight.dtype)
 
         if cache is None:
-            past_key_values_length = 0
             cache = [None for _ in range(len(self.layers.layers))]
-        else:
-            if cache[0] is not None:
-                past_key_values_length = cache[0][0].shape[2]
 
         for e, layer in enumerate(self.layers.layers):
             h, c = layer(h, mask, cache[e])
