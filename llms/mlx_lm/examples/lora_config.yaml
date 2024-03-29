@@ -4,7 +4,7 @@ model: "mlx_model"
 train: true
 
 # Directory with {train, valid, test}.jsonl files
-data: "/Users/awnihannun/mlx-examples/lora/data"
+data: "/path/to/training/data"
 
 # The PRNG seed
 seed: 0
