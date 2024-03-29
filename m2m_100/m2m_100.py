@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import time
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -138,9 +139,215 @@ class M2M100Attention(nn.Module):
         return attn_output
             
 
+class M2M100EncoderLayer(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+
+        self.embed_dim = config.d_model
+        self.self_attn = M2M100Attention(
+            embed_dim=self.embed_dim,
+            num_heads=config.encoder_attention_heads,
+            dropout=config.attention_dropout,
+            is_decoder=False,
+            bias=True,
+            is_causal=False,
+            args=config
+        )
+
+        self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
+
+        if config.activation_function == "gelu":
+            self.activation_fn = nn.GELU()
+        elif config.activation_function == "relu":
+            self.activation_fn = nn.ReLU()
+        
+        self.fc1 = nn.Linear(self.embed_dim, config.encoder_ffn_dim)
+        self.fc2 = nn.Linear(config.encoder_ffn_dim, self.embed_dim)
+        self.final_layer_norm = nn.LayerNorm(self.embed_dim)
+
+    def __call__(self, hidden_states: mx.array, attention_mask: mx.array):
+        residual = hidden_states
+        hidden_states = self.self_attn_layer_norm(hidden_states)
+
+        hidden_states = self.self_attn(hidden_states, attention_mask=attention_mask)
+        hidden_states = hidden_states + residual
+
+        residual = hidden_states
+        hidden_states = self.final_layer_norm(hidden_states)
+
+        hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = self.fc2(hidden_states)
+        hidden_states = hidden_states + residual
+
+        return hidden_states
+        
+class M2M100DecoderLayer(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+
+        self.embed_dim = config.d_model
+        self.self_attn = M2M100Attention(
+            embed_dim=self.embed_dim,
+            num_heads=config.decoder_attention_heads,
+            dropout=config.attention_dropout,
+            is_decoder=True,
+            is_causal=True,
+            args=config
+        )
+
+        self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
+        self.encoder_attn = M2M100Attention(
+            embed_dim=self.embed_dim,
+            num_heads=config.decoder_attention_heads,
+            dropout=config.attention_dropout,
+            is_decoder=True,
+            args=config
+        )
+
+        self.encoder_attn_layer_norm = nn.LayerNorm(self.embed_dim)
+
+        if config.activation_function == "gelu":
+            self.activation_fn = nn.GELU()
+        elif config.activation_function == "relu":
+            self.activation_fn = nn.ReLU()
+        
+        self.fc1 = nn.Linear(self.embed_dim, config.decoder_ffn_dim)
+        self.fc2 = nn.Linear(config.decoder_ffn_dim, self.embed_dim)
+        self.final_layer_norm = nn.LayerNorm(self.embed_dim)
+
+    def __call__(self, hidden_states: mx.array, encoder_hidden_states: mx.array, attention_mask: mx.array, encoder_attention_mask: mx.array):
+        residual = hidden_states
+        hidden_states = self.self_attn_layer_norm(hidden_states)
+        
+        hidden_states = self.self_attn(
+            hidden_states,
+            attention_mask=attention_mask,
+            past_key_value=None,
+        )
+        hidden_states = hidden_states + residual
+
+        if encoder_hidden_states is not None:
+            residual = hidden_states
+            hidden_states = self.encoder_attn_layer_norm(hidden_states)
+
+            hidden_states = self.encoder_attn(
+                hidden_states,
+                key_value_states=encoder_hidden_states,
+                attention_mask=encoder_attention_mask,
+                past_key_value=None,
+            )
+            hidden_states = hidden_states + residual
+
+        residual = hidden_states
+        hidden_states = self.final_layer_norm(hidden_states)
+        hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = self.fc2(hidden_states)
+
+        hidden_states = hidden_states + residual
+        return hidden_states
+
+class M2M100Encoder(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+
+        embed_dim = config.d_model
+        self.padding_idx = config.pad_token_id
+        self.max_source_positions = config.max_position_embeddings
+        self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
+
+        self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim)
+        self.embed_positions = nn.SinusoidalPositionalEncoding(embed_dim)
+
+        self.layers = [M2M100EncoderLayer(config) for _ in range(config.encoder_layers)]
+        self.layer_norm = nn.LayerNorm(embed_dim)
+    
+    def __call__(self, input_ids: mx.array, attention_mask: mx.array):
+
+        input_shape = input_ids.size()
+        input_ids = input_ids.view(-1, input_shape[-1])
+
+        inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
+        embed_pos = self.embed_positions(input_ids)
+
+        hidden_states = inputs_embeds + embed_pos
+
+        if attention_mask is not None:
+            attention_mask = attention_mask.view(-1, 1, 1, input_shape[-1])
+        
+        for layer in self.layers:
+            layer_output = layer(hidden_states, attention_mask)
+            hidden_states = layer_output[0]
+        
+        hidden_states = self.layer_norm(hidden_states)
+        return hidden_states
 
 
+class M2M100Decoder(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
 
+        embed_dim = config.d_model
+        self.padding_idx = config.pad_token_id
+        self.max_target_positions = config.max_position_embeddings
+        self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
+        self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim)
+        self.embed_positions = nn.SinusoidalPositionalEncoding(embed_dim)
 
+        self.layers = [M2M100DecoderLayer(config) for _ in range(config.decoder_layers)]
+        self.layer_norm = nn.LayerNorm(embed_dim)
 
+    def __call__(self, input_ids: mx.array, encoder_hidden_states: mx.array, attention_mask: mx.array, encoder_attention_mask: mx.array, past_key_values: mx.array):
+        
+        input_shape = input_ids.size()
+        input_ids = input_ids.view(-1, input_shape[-1])
+
+        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
+
+        inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
+
+        embed_pos = self.embed_positions(input_ids, past_key_values)
+
+        hidden_states = inputs_embeds + embed_pos
+
+        if attention_mask is not None:
+            attention_mask = attention_mask.view(-1, 1, 1, input_shape[-1])
+        
+        for layer in self.layers:
+            layer_output = layer(hidden_states, encoder_hidden_states, attention_mask, encoder_attention_mask)
+            hidden_states = layer_output[0]   
+
+        hidden_states = self.layer_norm(hidden_states)
+
+        return hidden_states     
+        
+
+class M2M100Model(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+
+        self.config = config
+        self.encoder = M2M100Encoder(config)
+        self.decoder = M2M100Decoder(config)
+
+    def __call__(self, input_ids: mx.array, attention_mask: mx.array, decoder_input_ids: mx.array, encoder_attention_mask: mx.array, decoder_attention_mask: mx.array, past_key_values: mx.array):
+
+        encoder_hidden_states = self.encoder(input_ids, attention_mask)
+        decoder_hidden_states = self.decoder(decoder_input_ids, encoder_hidden_states, decoder_attention_mask, encoder_attention_mask, past_key_values)
+
+        return decoder_hidden_states
+
+class M2M100ForConditionalGeneration(nn.Module):
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+
+        self.config = config
+        self.model = M2M100Model(config)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+
+    def __call__(self, input_ids: mx.array, attention_mask: mx.array, decoder_input_ids: mx.array, encoder_attention_mask: mx.array, decoder_attention_mask: mx.array, past_key_values: mx.array):
+
+        decoder_hidden_states = self.model(input_ids, attention_mask, decoder_input_ids, encoder_attention_mask, decoder_attention_mask, past_key_values)
+        lm_logits = self.lm_head(decoder_hidden_states)
+
+        return decoder_hidden_states
