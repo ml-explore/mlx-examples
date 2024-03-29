@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from sys import exit
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn

@@ -16,7 +16,7 @@ lora_layers: 16
 batch_size: 4
 
 # Iterations to train for.
-iters: 100
+iters: 1000
 
 # Number of validation batches, -1 uses the entire validation set.
 val_batches: 25
@@ -43,7 +43,7 @@ save_every: 100
 test: false
 
 # Number of test set batches, -1 uses the entire test set.
-test_batches: 500
+test_batches: 100
 
 # Maximum sequence length.
 max_seq_length: 2048
@@ -60,3 +60,10 @@ lora_parameters:
   alpha: 16.0
   scale: 10.0
   dropout: 0.0
+
+# Schedule can only be specified in a config file, uncomment to use.
+#lr_schedule:
+#  name: cosine_decay
+#  warmup: 100 # 0 for no warmup
+#  warmup_init: 1e-7 # 0 if not specified
+#  arguments: [1e-5, 1000, 1e-7] # passed to scheduler

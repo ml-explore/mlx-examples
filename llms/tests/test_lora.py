@@ -1,14 +1,18 @@
 # Copyright © 2024 Apple Inc.
 
+import math
 import sys
 import unittest
 from io import StringIO
 from unittest.mock import MagicMock
 
 import mlx.nn as nn
+import mlx.optimizers as opt
 from mlx.utils import tree_flatten
 from mlx_lm import lora, tuner
+from mlx_lm.lora import yaml_loader
 from mlx_lm.tuner.lora import LoRALinear
+from mlx_lm.tuner.utils import build_schedule
 
 
 class TestLora(unittest.TestCase):
@@ -118,6 +122,53 @@ class TestLora(unittest.TestCase):
         expected_output = "Trainable parameters: 50.000% (3.000M/6.000M)\n"
         lora.print_trainable_parameters(model)
         self.assertEqual(self.capturedOutput.getvalue(), expected_output)
+
+
+class TestScheduleConfig(unittest.TestCase):
+    def test_join(self):
+        config = {"name": "cosine_decay", "warmup": 100, "arguments": [1e-5, 100]}
+        cos_with_warmup = build_schedule(config)
+        self.assertIsNotNone(cos_with_warmup)
+
+        self.assertEqual(cos_with_warmup(0), 0.0)
+        self.assertAlmostEqual(cos_with_warmup(101), 1e-5, delta=1e-1)
+        optimizer = opt.Adam(learning_rate=cos_with_warmup)
+        for _ in range(100):
+            optimizer.update({}, {})
+        self.assertAlmostEqual(optimizer.learning_rate.item(), 1e-5, delta=1e-1)
+        for _ in range(100):
+            optimizer.update({}, {})
+        expected_lr = 1e-5 * 0.5 * (1.0 + math.cos(math.pi * 200 / 10))
+        self.assertAlmostEqual(optimizer.learning_rate.item(), expected_lr, delta=1e-1)
+
+    def test_single_schedule(self):
+
+        config = {
+            "name": "cosine_decay",
+            "arguments": [0.1, 10],
+        }
+        lr_schedule = build_schedule(config)
+        lr = lr_schedule(4)
+        expected_lr = 0.1 * 0.5 * (1.0 + math.cos(math.pi * 4 / 10))
+        self.assertAlmostEqual(lr, expected_lr, delta=1e-7)
+
+    def test_non_zero_warmup(self):
+        config = {
+            "name": "cosine_decay",
+            "warmup": 10,
+            "warmup_init": 1e-6,
+            "arguments": [1e-5, 20],
+        }
+        lr_schedule = build_schedule(config)
+        lr = lr_schedule(0)
+        self.assertAlmostEqual(lr, 1e-6, delta=1e-7)
+
+    def test_malformed_config(self):
+        config = {"warmup": 100}
+        self.assertRaises(KeyError, build_schedule, config)
+
+        config = {"cosine_decay": None}
+        self.assertRaises(KeyError, build_schedule, config)
 
 
 if __name__ == "__main__":
