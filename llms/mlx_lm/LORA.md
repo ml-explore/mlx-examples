@@ -65,11 +65,11 @@ mistralai/Mistral-7B-v0.1`.
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
-By default, the adapter weights are saved in `adapters.npz`. You can specify
-the output location with `--adapter-file`.
+By default, the adapter config and weights are saved in `adapters/`. You can
+specify the output location with `--adapter-path`.
 
 You can resume fine-tuning with an existing adapter with
-`--resume-adapter-file <path_to_adapters.npz>`. 
+`--resume-adapter-file <path_to_adapters.safetensors>`.
 
 ### Evaluate
 
@@ -78,7 +78,7 @@ To compute test set perplexity use:
 ```shell
 python -m mlx_lm.lora \
     --model <path_to_model> \
-    --adapter-file <path_to_adapters.npz> \
+    --adapter-path <path_to_adapters> \
     --data <path_to_data> \
     --test
 ```
@@ -90,7 +90,7 @@ For generation use `mlx_lm.generate`:
 ```shell
 python -m mlx_lm.generate \
     --model <path_to_model> \
-    --adapter-file <path_to_adapters.npz> \
+    --adapter-path <path_to_adapters> \
     --prompt "<your_model_prompt>"
 ```
 
@@ -115,7 +115,7 @@ To generate the fused model run:
 python -m mlx_lm.fuse --model <path_to_model>
 ```
 
-This will by default load the adapters from `adapters.npz`, and save the fused
+This will by default load the adapters from `adapters/`, and save the fused
 model in the path `lora_fused_model/`. All of these are configurable.
 
 To upload a fused model, supply the `--upload-repo` and `--hf-path` arguments
