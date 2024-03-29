@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 
 import mlx.nn as nn
 import mlx.optimizers as opt
-import yaml
 from mlx.utils import tree_flatten
 from mlx_lm import lora, tuner
 from mlx_lm.lora import yaml_loader
@@ -125,47 +124,10 @@ class TestLora(unittest.TestCase):
         self.assertEqual(self.capturedOutput.getvalue(), expected_output)
 
 
-CONFIG_YAML1 = """
-schedule:
-  name: cosine_decay
-  warmup: 100
-  arguments: [ 1e-5, 100 ] 
-"""
-
-CONFIG_YAML2 = """
-schedule:
-  warmup: 100
-  """
-
-CONFIG_YAML3 = """
-schedule:
-  name: cosine_decay
-"""
-
-CONFIG_YAML4 = """
-schedule:
-  name: cosine_decay
-  arguments: [ 0.1, 10 ]
-"""
-
-CONFIG_YAML5 = """
-schedule:
-
-"""
-
-CONFIG_YAML6 = """
-schedule:
-  name: cosine_decay
-  warmup: 10
-  minimum: 1e-6
-  arguments: [ 1e-5, 20 ] 
-"""
-
-
-class TestScheduleConfigs(unittest.TestCase):
+class TestScheduleConfig(unittest.TestCase):
     def test_join(self):
-        config = yaml.load(CONFIG_YAML1, yaml_loader)
-        cos_with_warmup = build_schedule(config["schedule"])
+        config = {"name": "cosine_decay", "warmup": 100, "arguments": [1e-5, 100]}
+        cos_with_warmup = build_schedule(config)
         self.assertIsNotNone(cos_with_warmup)
 
         self.assertEqual(cos_with_warmup(0), 0.0)
@@ -180,28 +142,33 @@ class TestScheduleConfigs(unittest.TestCase):
         self.assertAlmostEqual(optimizer.learning_rate.item(), expected_lr, delta=1e-1)
 
     def test_single_schedule(self):
-        config = yaml.load(CONFIG_YAML4, yaml_loader)
-        lr_schedule = build_schedule(config["schedule"])
+
+        config = {
+            "name": "cosine_decay",
+            "arguments": [0.1, 10],
+        }
+        lr_schedule = build_schedule(config)
         lr = lr_schedule(4)
         expected_lr = 0.1 * 0.5 * (1.0 + math.cos(math.pi * 4 / 10))
         self.assertAlmostEqual(lr, expected_lr, delta=1e-7)
 
     def test_non_zero_warmup(self):
-        config = yaml.load(CONFIG_YAML6, yaml_loader)
-        lr_schedule = build_schedule(config["schedule"])
+        config = {
+            "name": "cosine_decay",
+            "warmup": 10,
+            "warmup_init": 1e-6,
+            "arguments": [1e-5, 20],
+        }
+        lr_schedule = build_schedule(config)
         lr = lr_schedule(0)
         self.assertAlmostEqual(lr, 1e-6, delta=1e-7)
 
     def test_malformed_config(self):
-        config = yaml.load(CONFIG_YAML2, yaml_loader)
-        self.assertRaises(KeyError, build_schedule, config["schedule"])
+        config = {"warmup": 100}
+        self.assertRaises(KeyError, build_schedule, config)
 
-        config = yaml.load(CONFIG_YAML3, yaml_loader)
-        self.assertRaises(KeyError, build_schedule, config["schedule"])
-
-    def test_empty_config(self):
-        config = yaml.load(CONFIG_YAML5, yaml_loader)
-        self.assertIsNone(build_schedule(config["schedule"]))
+        config = {"cosine_decay": None}
+        self.assertRaises(KeyError, build_schedule, config)
 
 
 if __name__ == "__main__":
