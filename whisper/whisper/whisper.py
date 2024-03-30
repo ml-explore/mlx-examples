@@ -115,7 +115,7 @@ class ResidualAttentionBlock(nn.Module):
                 self.cross_attn_ln(x), xa, kv_cache=cross_kv
             )
             x += y
-        x = x + self.mlp2(nn.gelu(self.mlp1(self.mlp_ln(x))).astype(x.dtype))
+        x = x + self.mlp2(nn.gelu(self.mlp1(self.mlp_ln(x))))
         return x, (kv, cross_kv), cross_qk
 
 
@@ -138,8 +138,8 @@ class AudioEncoder(nn.Module):
         self.ln_post = nn.LayerNorm(n_state)
 
     def __call__(self, x):
-        x = nn.gelu(self.conv1(x)).astype(x.dtype)
-        x = nn.gelu(self.conv2(x)).astype(x.dtype)
+        x = nn.gelu(self.conv1(x))
+        x = nn.gelu(self.conv2(x))
         assert x.shape[1:] == self._positional_embedding.shape, "incorrect audio shape"
         x = x + self._positional_embedding
 

@@ -239,12 +239,13 @@ def generate(
         ),
         range(max_tokens),
     ):
-        if token == tokenizer.eos_token_id:
-            break
+        token = token.item()
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
-        tokens.append(token.item())
+        if token == tokenizer.eos_token_id:
+            break
+        tokens.append(token)
 
         if verbose:
             s = tokenizer.decode(tokens)

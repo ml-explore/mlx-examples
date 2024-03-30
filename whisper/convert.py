@@ -91,7 +91,8 @@ def _download(url: str, root: str) -> str:
                 output.write(buffer)
                 loop.update(len(buffer))
 
-    model_bytes = open(download_target, "rb").read()
+    with open(download_target, "rb") as fid:
+        model_bytes = fid.read()
     if hashlib.sha256(model_bytes).hexdigest() != expected_sha256:
         raise RuntimeError(
             "Model has been downloaded but the SHA256 checksum does not not match. Please retry loading the model."
