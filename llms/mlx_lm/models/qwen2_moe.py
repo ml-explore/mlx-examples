@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -12,36 +12,27 @@ from .base import BaseModelArgs
 class ModelArgs(BaseModelArgs):
     model_type: str
     hidden_size: int
-    num_hidden_layers: int
     intermediate_size: int
+    num_hidden_layers: int
     num_attention_heads: int
+    num_key_value_heads: int
     rms_norm_eps: float
     vocab_size: int
-    num_key_value_heads: int
-    decoder_sparse_step:int
+    decoder_sparse_step: int
     moe_intermediate_size: int
     shared_expert_intermediate_size: int
     num_experts_per_tok: int
     num_experts: int
-    norm_topk_prob: bool
-    output_router_logits: bool
+    norm_topk_prob: bool = False
+    output_router_logits: bool = False
     router_aux_loss_coef: float = 0.001
-    rope_theta: float = 1000000
+    rope_theta: float = 1000000.0
     rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-    tie_word_embeddings: bool = True
+    tie_word_embeddings: bool = False
 
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
-
-        if self.rope_scaling:
-            required_keys = {"factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
-
-            if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
 
 
 class Attention(nn.Module):
@@ -60,16 +51,10 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
 
-        rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
-        )
         self.rope = nn.RoPE(
             head_dim,
             traditional=args.rope_traditional,
             base=args.rope_theta,
-            scale=rope_scale,
         )
 
     def __call__(
@@ -137,21 +122,23 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        cache=None,
     ):
         ne = self.top_k
-        B, T, D = x.shape
+        B, L, D = x.shape
         x = x.reshape(-1, D)
 
         # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(x)
-        router_weights = mx.softmax(router_logits.astype(mx.float32), axis=-1)
+        gates = self.gate(x)
 
-        inds = mx.stop_gradient(mx.argpartition(-router_weights, kth=ne, axis=-1)[:,: ne])
-        scores = mx.take_along_axis(router_weights, inds, axis=-1) # Take topk values along axis.
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+
+        scores = mx.softmax(
+            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
+            axis=-1,
+        ).astype(gates.dtype)
 
         if self.norm_topk_prob:
-            scores /= mx.linalg.norm(scores, ord=1, axis=-1, keepdims=True)
+            scores /= scores.sum(axis=-1, keepdims=True)
 
         scores = scores.astype(x.dtype)
 
@@ -159,28 +146,29 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
             inds = np.array(inds)
             y = mx.zeros((B, ne, D), x.dtype)
             for e, expert in enumerate(self.experts):
-                idx1, idx2 = map(mx.array, np.where(inds==e))
+                idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
                     continue
                 y[idx1, idx2] = expert(x[idx1])
 
             y = (y * scores[:, :, None]).sum(axis=1)
-
         else:
             y = []
             for xt, st, it in zip(x, scores, inds.tolist()):
                 yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
                 yt = (yt * st).sum(axis=-1)
-                y.append(yt)
+                y.append(yt[None, :])
 
-            y = mx.stack(y, axis=0)
+            y = mx.concatenate(y)
 
         shared_expert_output = self.shared_expert(x)
-        shared_expert_output = mx.sigmoid(self.shared_expert_gate(x)) * shared_expert_output
+        shared_expert_output = (
+            mx.sigmoid(self.shared_expert_gate(x)) * shared_expert_output
+        )
 
-        y = y + shared_expert_output
+        y += shared_expert_output
 
-        return y.reshape(B, T, D)
+        return y.reshape(B, L, -1)
 
 
 class Qwen2MoeDecoderLayer(nn.Module):
@@ -222,7 +210,8 @@ class Qwen2Model(nn.Module):
         assert self.vocab_size > 0
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-            Qwen2MoeDecoderLayer(args=args, layer_idx=layer_idx) for layer_idx in range(args.num_hidden_layers)
+            Qwen2MoeDecoderLayer(args=args, layer_idx=layer_idx)
+            for layer_idx in range(args.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -262,14 +251,6 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         return self.lm_head(out), cache
-
-    def sanitize(self, weights):
-        if self.args.tie_word_embeddings and "lm_head.weight" not in weights:
-            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
 
     @property
     def layers(self):
