@@ -129,13 +129,10 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 
         # router_logits: (batch * sequence_length, n_experts)
         gates = self.gate(x)
+        gates = mx.softmax(gates.astype(mx.float32), axis=-1)
 
         inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
-
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
+        scores = mx.take_along_axis(gates, inds, axis=-1)
 
         if self.norm_topk_prob:
             scores /= scores.sum(axis=-1, keepdims=True)
@@ -157,9 +154,9 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
             for xt, st, it in zip(x, scores, inds.tolist()):
                 yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
                 yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
+                y.append(yt)
 
-            y = mx.concatenate(y)
+            y = mx.stack(y, axis=0)
 
         shared_expert_output = self.shared_expert(x)
         shared_expert_output = (
@@ -174,7 +171,6 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 class Qwen2MoeDecoderLayer(nn.Module):
     def __init__(self, args: ModelArgs, layer_idx: int):
         super().__init__()
-        self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
         self.self_attn = Attention(args)
         if args.num_experts > 0 and (layer_idx + 1) % args.decoder_sparse_step == 0:
