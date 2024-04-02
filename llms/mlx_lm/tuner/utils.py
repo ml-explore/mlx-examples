@@ -70,7 +70,7 @@ def linear_to_lora_layers(
         "mixtral",
         "stablelm",
         "qwen2",
-        "qwen2_moe"
+        "qwen2_moe",
         "gemma",
         "starcoder2",
         "cohere",

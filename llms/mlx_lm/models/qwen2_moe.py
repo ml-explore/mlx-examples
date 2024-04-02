@@ -50,7 +50,7 @@ class Attention(nn.Module):
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
         head_dim = args.hidden_size // n_heads
-        self.scale = head_dim ** -0.5
+        self.scale = head_dim**-0.5
 
         self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=True)
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
@@ -134,12 +134,11 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 
         # router_logits: (batch * sequence_length, n_experts)
         gates = self.gate(x)
-        gates = mx.softmax(gates.astype(mx.float32), axis=-1).astype(gates.dtype)
+        gates = mx.softmax(gates.astype(mx.float32), axis=-1)
 
         inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
 
-        scores = mx.take_along_axis(gates, inds, axis=-1)
-        scores = scores.astype(x.dtype)
+        scores = mx.take_along_axis(gates, inds, axis=-1).astype(x.dtype)
 
         if self.training:
             inds = np.array(inds)
@@ -205,8 +204,7 @@ class Qwen2MoeModel(nn.Module):
         assert self.vocab_size > 0
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-            Qwen2MoeDecoderLayer(args=args)
-            for _ in range(args.num_hidden_layers)
+            Qwen2MoeDecoderLayer(args=args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
