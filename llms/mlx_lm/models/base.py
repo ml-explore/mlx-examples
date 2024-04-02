@@ -6,9 +6,9 @@ import mlx.core as mx
 
 class KVCache:
 
-    def __init__(self, length, head_dim, n_kv_heads):
-        self.keys = mx.zeros((1, n_kv_heads, length, head_dim))
-        self.values = mx.zeros((1, n_kv_heads, length, head_dim))
+    def __init__(self, length, head_dim, n_kv_heads, dtype):
+        self.keys = mx.zeros((1, n_kv_heads, length, head_dim), dtype)
+        self.values = mx.zeros((1, n_kv_heads, length, head_dim), dtype)
         self.offset = 0
 
     def update_and_fetch(self, keys, values):
