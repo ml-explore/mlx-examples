@@ -164,7 +164,7 @@ def generate_step(
 
     y = prompt
     cache = [
-        KVCache(max_tokens, model.head_dim, model.n_kv_heads)
+        KVCache(prompt.size + max_tokens, model.head_dim, model.n_kv_heads)
         for _ in range(len(model.layers))
     ]
     repetition_context = prompt.tolist()
