@@ -195,7 +195,7 @@ def train(
     # Main training loop
     start = time.perf_counter()
     for it, batch in zip(
-        range(args.iters),
+        range(1, args.iters + 1),
         iterate_batches(
             dataset=train_dataset,
             tokenizer=tokenizer,
@@ -212,7 +212,7 @@ def train(
         n_tokens += toks.item()
 
         # Report training loss if needed
-        if ((it + 1) % args.steps_per_report == 0) or (it + 1 == args.iters):
+        if it % args.steps_per_report == 0 or it == args.iters:
             train_loss = np.mean(losses)
 
             stop = time.perf_counter()
@@ -222,7 +222,7 @@ def train(
             trained_tokens += n_tokens
             peak_mem = mx.metal.get_peak_memory() / 2**30
             print(
-                f"Iter {it + 1}: Train loss {train_loss:.3f}, "
+                f"Iter {it}: Train loss {train_loss:.3f}, "
                 f"Learning Rate {learning_rate:.3e}, "
                 f"It/sec {it_sec:.3f}, "
                 f"Tokens/sec {tokens_sec:.3f}, "
@@ -232,7 +232,7 @@ def train(
 
             if training_callback is not None:
                 train_info = {
-                    "iteration": it + 1,
+                    "iteration": it,
                     "train_loss": train_loss,
                     "learning_rate": learning_rate,
                     "iterations_per_second": it_sec,
@@ -247,7 +247,7 @@ def train(
             start = time.perf_counter()
 
         # Report validation loss if needed
-        if it == 0 or ((it + 1) % args.steps_per_eval == 0) or (it + 1 == args.iters):
+        if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
             stop = time.perf_counter()
             val_loss = evaluate(
                 model=model,
@@ -261,14 +261,12 @@ def train(
             )
             val_time = time.perf_counter() - stop
             print(
-                f"Iter {it + 1}: "
-                f"Val loss {val_loss:.3f}, "
-                f"Val took {val_time:.3f}s"
+                f"Iter {it}: " f"Val loss {val_loss:.3f}, " f"Val took {val_time:.3f}s"
             )
 
             if training_callback is not None:
                 val_info = {
-                    "iteration": it + 1,
+                    "iteration": it,
                     "val_loss": val_loss,
                     "val_time": val_time,
                 }
@@ -277,12 +275,19 @@ def train(
             start = time.perf_counter()
 
         # Save adapter weights
-        if (it + 1) % args.steps_per_save == 0:
-            save_adapter(model=model, adapter_file=args.adapter_file)
-            print(f"Iter {it + 1}: Saved adapter weights to {args.adapter_file}.")
+        if it % args.steps_per_save == 0:
+            save_adapter(model, args.adapter_file)
+            checkpoint = (
+                Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
+            )
+            save_adapter(model, checkpoint)
+            print(
+                f"Iter {it}: Saved adapter weights to "
+                f"{args.adapter_file} and {checkpoint}."
+            )
 
     # save final adapter weights
-    save_adapter(model=model, adapter_file=args.adapter_file)
+    save_adapter(model, args.adapter_file)
     print(f"Saved final adapter weights to {args.adapter_file}.")
 
 
@@ -291,5 +296,4 @@ def save_adapter(
     adapter_file: Union[str, Path],
 ):
     flattened_tree = tree_flatten(model.trainable_parameters())
-
     mx.save_safetensors(str(adapter_file), dict(flattened_tree))
