@@ -17,7 +17,6 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     num_experts_per_tok: int
     num_experts: int
-    decoder_sparse_step: int
     moe_intermediate_size: int
     shared_expert_intermediate_size: int
     rms_norm_eps: float
