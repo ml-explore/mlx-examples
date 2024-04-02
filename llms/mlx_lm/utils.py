@@ -35,6 +35,8 @@ linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
     and m.weight.shape[0]
     != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
+    and m.weight.shape[0]
+    not in [1, 60] # avoid quantizing qwen2_moe gate layers
 )
 
 
