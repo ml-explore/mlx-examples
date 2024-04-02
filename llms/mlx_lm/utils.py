@@ -114,7 +114,6 @@ def generate_step(
     prompt: mx.array,
     model: nn.Module,
     temp: float = 0.0,
-    max_tokens: int = 256,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
@@ -127,7 +126,6 @@ def generate_step(
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
-        max_tokens (int): Maximum number of tokens to generate.
         repetition_penalty (float, optional): The penalty factor for repeating tokens.
         repetition_context_size (int, optional): The number of tokens to consider for repetition penalty (default 20).
         top_p (float, optional): Nulceus sampling, higher means model considers more less likely words
@@ -164,8 +162,7 @@ def generate_step(
 
     y = prompt
     cache = [
-        KVCache(prompt.size + max_tokens, model.head_dim, model.n_kv_heads, mx.float16)
-        for _ in range(len(model.layers))
+        KVCache(model.head_dim, model.n_kv_heads) for _ in range(len(model.layers))
     ]
     repetition_context = prompt.tolist()
 
@@ -174,7 +171,7 @@ def generate_step(
 
     def _step(y):
         nonlocal repetition_context
-        logits, cache = model(y[None], cache=cache)
+        logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if repetition_penalty:
@@ -248,7 +245,6 @@ def generate(
             prompt_tokens,
             model,
             temp,
-            max_tokens,
             repetition_penalty,
             repetition_context_size,
             top_p,
