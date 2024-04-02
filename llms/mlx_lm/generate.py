@@ -24,9 +24,9 @@ def setup_arg_parser():
         help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
-        "--adapter-file",
+        "--adapter-path",
         type=str,
-        help="Optional path for the trained adapter weights.",
+        help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
         "--trust-remote-code",
@@ -110,7 +110,7 @@ def main(args):
         tokenizer_config["eos_token"] = args.eos_token
 
     model, tokenizer = load(
-        args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
+        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
     )
 
     if args.use_default_chat_template:

@@ -1,6 +1,5 @@
 import argparse
 import glob
-import json
 import shutil
 from pathlib import Path
 
@@ -31,10 +30,10 @@ def parse_arguments() -> argparse.Namespace:
         help="The path to save the fused model.",
     )
     parser.add_argument(
-        "--adapter-file",
+        "--adapter-path",
         type=str,
-        default="adapters.npz",
-        help="Path to the trained adapter weights (npz or safetensors).",
+        default="adapters",
+        help="Path to the trained adapter weights and config.",
     )
     parser.add_argument(
         "--hf-path",
@@ -75,7 +74,7 @@ def main() -> None:
     model, config, tokenizer = fetch_from_hub(model_path)
 
     model.freeze()
-    model = apply_lora_layers(model, args.adapter_file)
+    model = apply_lora_layers(model, args.adapter_path)
 
     fused_linears = [
         (n, m.to_linear())

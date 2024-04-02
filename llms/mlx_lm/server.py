@@ -418,9 +418,9 @@ if __name__ == "__main__":
         help="The path to the MLX model weights, tokenizer, and config",
     )
     parser.add_argument(
-        "--adapter-file",
+        "--adapter-path",
         type=str,
-        help="Optional path for the trained adapter weights.",
+        help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
         "--host",
@@ -445,7 +445,7 @@ if __name__ == "__main__":
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
 
     MODEL, TOKENIZER = load(
-        args.model, adapter_file=args.adapter_file, tokenizer_config=tokenizer_config
+        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
     )
 
     run(args.host, args.port)
