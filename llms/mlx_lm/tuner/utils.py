@@ -70,6 +70,7 @@ def linear_to_lora_layers(
         "mixtral",
         "stablelm",
         "qwen2",
+        "qwen2_moe",
         "gemma",
         "starcoder2",
         "cohere",
@@ -77,6 +78,9 @@ def linear_to_lora_layers(
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
         if model.model_type == "mixtral":
             keys.add("block_sparse_moe.gate")
+        if model.model_type == "qwen2_moe":
+            keys.add("mlp.gate")
+            keys.add("mlp.shared_expert_gate")
     elif model.model_type == "olmo":
         keys = set(["att_proj"])
     elif model.model_type == "phi-msft":
