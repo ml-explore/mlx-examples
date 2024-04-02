@@ -127,7 +127,6 @@ class TestModels(unittest.TestCase):
             vocab_size=10_000,
             num_experts_per_tok=4,
             num_experts=16,
-            decoder_sparse_step=1,
             moe_intermediate_size=1024,
             shared_expert_intermediate_size=2048,
         )
