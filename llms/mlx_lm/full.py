@@ -3,6 +3,7 @@ import json
 import math
 import re
 import types
+import os
 from pathlib import Path
 
 import mlx.nn as nn
@@ -10,6 +11,9 @@ import mlx.optimizers as optim
 import numpy as np
 import yaml
 from mlx.utils import tree_flatten
+from mlx.core import load as core_load
+from mlx.core import save_safetensors as core_save_safetensors
+from mlx.core import save_gguf as core_save_gguf
 
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
@@ -44,7 +48,7 @@ CONFIG_DEFAULTS = {
     "learning_rate": 1e-5,
     "steps_per_report": 10,
     "steps_per_eval": 200,
-    "model_file": "model.npz",
+    "model_file": "model.safetensors",
     "save_every": 100,
     "test": False,
     "test_batches": 500,
@@ -134,6 +138,11 @@ def run(args, training_callback: TrainingCallback = None):
 
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
+    
+    # Load the model weights if they exist: To support Resuming from last file
+    if Path(args.model_file).is_file():
+        model.update(core_load(args.model_file))
+        print(f"model file loaded: {args.model_file}")
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
@@ -172,17 +181,19 @@ def run(args, training_callback: TrainingCallback = None):
         )
 
         # Save the model weights
-        mx.save(training_args.model_file, model.state)
-        print(f"Saved final model weights to {training_args.model_file}.")
-
-    # Load the model weights if they exist
-    if Path(args.model_file).is_file():
-        model.update(mx.load(args.model_file))
-    else:
-        raise ValueError(
-            f"Model file {args.model_file} missing. "
-            "Use --train to learn and save the model.npz."
-        )
+        # ISSUE: in trainer.py, save_adapter saved already full size model. so this code is renaming only
+        if training_args.adapter_file.rsplit('.',1)[-1] == args.model_file.rsplit('.',1)[-1]: #maybe npz?
+          os.rename(training_args.adapter_file,args.model_file)
+        else:
+          model_tmp = core_load(training_args.adapter_file)
+          if args.model_file.rsplit('.',1)[-1] == 'safetensors':
+              core_save_safetensors(args.model_file, model_tmp)
+          elif args.model_file.rsplit('.',1)[-1] == 'gguf':
+              core_save_gguf(args.model_file, model_tmp)
+          else:
+              print(f"ERROR: only npz, gguf, safetensors format are available. use {training_args.adapter_file} file instead of {args.model_file}.")
+          
+        print(f"Saved final model weights to {args.model_file}.")
 
     if args.test:
         print("Testing")

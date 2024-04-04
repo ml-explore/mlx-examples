@@ -66,6 +66,33 @@ the output location with `--model-file`.
 You can resume fine-tuning with an existing model with
 `--model-file <path_to_model.npz>`.
 
+* NOTICE:
+  - After finetune, you get the model-file only,
+  - You have to model only file, put it back to original model folder. (copy or else. as you wish to.)
+  - You can convert model format npz to safetensor, like this.
+
+```
+# Conversion of file format
+import sys
+from mlx.core import *
+
+#IN: npz format file, OUT: safetensors format file
+def convert_npz_to_safetensor(input_file, output_file):
+    try:
+        # Load the npz file
+        data = load(input_file)
+        
+        # Save the data as safetensor
+        save_safetensors(output_file, data)
+        
+        print(f"Conversion successful. Output saved as {output_file}")
+    except FileNotFoundError:
+        print(f"File not found: {input_file}")
+    except Exception as e:
+        print(f"An error occurred during conversion: {str(e)}")
+
+```
+
 ### Evaluate
 
 To compute test set perplexity use:
