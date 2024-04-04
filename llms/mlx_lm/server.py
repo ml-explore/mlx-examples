@@ -372,9 +372,10 @@ class APIHandler(BaseHTTPRequestHandler):
         if hasattr(TOKENIZER, "apply_chat_template") and TOKENIZER.chat_template:
             prompt = TOKENIZER.apply_chat_template(
                 body["messages"],
-                tokenize=True,
+                tokenize=False,
                 add_generation_prompt=True,
             )
+            prompt = TOKENIZER.encode(prompt)
         else:
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
             prompt = TOKENIZER.encode(prompt)
