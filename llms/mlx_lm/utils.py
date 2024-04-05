@@ -436,17 +436,24 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     from . import __version__
 
+    api = HfApi()
+    fullname = api.whoami()["fullname"]
+    name = api.whoami()["name"]
+
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
     card.text = dedent(
         f"""
         # {upload_repo}
-        This model was converted to MLX format from [`{hf_path}`]() using mlx-lm version **{__version__}**.
-        Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+        
+        The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path}) using mlx-lm version **{__version__}**.
+        
+        Model added by [{fullname}](https://huggingface.co/{name}).
+        
         ## Use with mlx
 
         ```bash
-        pip install mlx-lm
+        pip install -U mlx mlx-lm
         ```
 
         ```python
@@ -461,7 +468,6 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     logging.set_verbosity_info()
 
-    api = HfApi()
     api.create_repo(repo_id=upload_repo, exist_ok=True)
     api.upload_folder(
         folder_path=path,
