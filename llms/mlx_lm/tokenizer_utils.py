@@ -276,7 +276,7 @@ def _is_bpe_decoder(decoder):
     return _match(_target_description, decoder)
 
 
-def load_tokenizer(model_path, tokenizer_config_extra):
+def load_tokenizer(model_path, tokenizer_config_extra={}):
     """Load a huggingface tokenizer and try to infer the type of streaming
     detokenizer to use."""
     detokenizer_class = NaiveStreamingDetokenizer
@@ -291,5 +291,6 @@ def load_tokenizer(model_path, tokenizer_config_extra):
                 detokenizer_class = BPEStreamingDetokenizer
 
     return TokenizerWrapper(
-        AutoTokenizer.from_pretrained(model_path), detokenizer_class
+        AutoTokenizer.from_pretrained(model_path, **tokenizer_config_extra),
+        detokenizer_class,
     )
