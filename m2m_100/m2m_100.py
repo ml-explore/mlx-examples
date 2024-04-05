@@ -5,14 +5,20 @@ import glob
 import json
 import time
 import math
+import torch
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
+from transformers import M2M100Config, NllbTokenizer, PreTrainedTokenizerBase
+
+from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask, _prepare_4d_causal_attention_mask
+
 
 @dataclass
 class ModelArgs:
@@ -39,6 +45,22 @@ class ModelArgs:
     pad_token_id: int
     bos_token_id: int
     eos_token_id: int
+    num_hidden_layers: int
+
+
+class M2M100SinusoidalPositionalEmbedding(nn.Module):
+    """This module produces sinusoidal positional embeddings of any length."""
+
+    def __init__(self, num_positions: int, embedding_dim: int, padding_idx: Optional[int] = None):
+        super().__init__()
+        self.offset = 2
+        self.embedding_dim = embedding_dim
+        self.padding_idx = padding_idx
+        self.num_positions = num_positions
+        self.weights = nn.SinusoidalPositionalEncoding(embedding_dim)
+  
+    def __call__(self, input_ids: mx.array, past_key_values_length: int = 0):
+        return self.weights(input_ids)
 
 class M2M100Attention(nn.Module):
     def __init__(self,
@@ -69,7 +91,8 @@ class M2M100Attention(nn.Module):
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
     
     def _shape(self, tensor: mx.array, seq_len: int, bsz: int):
-        return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
+        print(tensor.shape)
+        return tensor.reshape(bsz, seq_len, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
 
     def __call__(self,
         hidden_states: mx.array,
@@ -80,6 +103,8 @@ class M2M100Attention(nn.Module):
         ):
 
         is_cross_attention = key_value_states is not None
+
+        print("hidden_states", hidden_states.shape)
         bsz, tgt_len, _ = hidden_states.shape
 
         query_states = self.q_proj(hidden_states)
@@ -109,18 +134,21 @@ class M2M100Attention(nn.Module):
         value_states = value_states.reshape(proj_shape)
 
         src_len = key_states.shape[1]
-        attn_weights = query_states @ key_states.transpose(1, 2)
+        attn_weights = query_states @ key_states.transpose(0, 2, 1)
 
-        if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
+        if attn_weights.shape != (bsz * self.num_heads, tgt_len, src_len):
             raise ValueError(
                 f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is"
-                f" {attn_weights.size()}"
+                f" {attn_weights.shape}"
             )
         
+        print("attn_weights", attention_mask)
+        print("attn_weights", attention_mask.shape)
+        
         if attention_mask is not None:
-            if attention_mask.size() != (bsz, 1, tgt_len, src_len):
+            if attention_mask.shape != (bsz, 1, tgt_len, src_len):
                 raise ValueError(
-                    f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.size()}"
+                    f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.shape}"
                 )
 
             attn_weights = attn_weights.reshape(bsz, self.num_heads, tgt_len, src_len) + attention_mask
@@ -131,10 +159,12 @@ class M2M100Attention(nn.Module):
         attn_outputs = attn_weights @ value_states
 
         attn_output = attn_outputs.reshape(bsz, self.num_heads, tgt_len, self.head_dim)
-        attn_output = attn_output.transpose(1, 2)
+        attn_output = attn_output.transpose(0, 2, 1, 3)
 
         attn_output = attn_output.reshape(bsz, tgt_len, self.embed_dim)
         attn_output = self.out_proj(attn_output)
+
+        print("attn_output", attn_output.shape)
 
         return attn_output
             
@@ -247,7 +277,7 @@ class M2M100DecoderLayer(nn.Module):
         return hidden_states
 
 class M2M100Encoder(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config: ModelArgs, embed_tokens: Optional[nn.Embedding]):
         super().__init__()
 
         embed_dim = config.d_model
@@ -256,34 +286,44 @@ class M2M100Encoder(nn.Module):
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
         self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim)
-        self.embed_positions = nn.SinusoidalPositionalEncoding(embed_dim)
+        self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim)
 
         self.layers = [M2M100EncoderLayer(config) for _ in range(config.encoder_layers)]
         self.layer_norm = nn.LayerNorm(embed_dim)
     
     def __call__(self, input_ids: mx.array, attention_mask: mx.array):
 
-        input_shape = input_ids.size()
-        input_ids = input_ids.view(-1, input_shape[-1])
+        input_shape = input_ids.shape
+        input_ids = input_ids.reshape(-1, input_shape[-1])
+
+        print(input_ids)
+        print(self.embed_tokens)
 
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
         embed_pos = self.embed_positions(input_ids)
 
         hidden_states = inputs_embeds + embed_pos
 
+        # if attention_mask is not None:
+        #     attention_mask = attention_mask.reshape(-1, 1, 1, input_shape[-1])
+
+        # expand attention_mask
         if attention_mask is not None:
-            attention_mask = attention_mask.view(-1, 1, 1, input_shape[-1])
+            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+            attention_mask = torch.tensor(np.array(attention_mask))
+            attention_mask = _prepare_4d_attention_mask(attention_mask, torch.float16)
+            attention_mask = mx.array(attention_mask.numpy())
         
         for layer in self.layers:
             layer_output = layer(hidden_states, attention_mask)
-            hidden_states = layer_output[0]
+            hidden_states = layer_output
         
         hidden_states = self.layer_norm(hidden_states)
         return hidden_states
 
 
 class M2M100Decoder(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config: ModelArgs, embed_tokens: Optional[nn.Embedding]):
         super().__init__()
 
         embed_dim = config.d_model
@@ -291,8 +331,8 @@ class M2M100Decoder(nn.Module):
         self.max_target_positions = config.max_position_embeddings
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
-        self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim)
-        self.embed_positions = nn.SinusoidalPositionalEncoding(embed_dim)
+        self.embed_tokens = embed_tokens
+        self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim)
 
         self.layers = [M2M100DecoderLayer(config) for _ in range(config.decoder_layers)]
         self.layer_norm = nn.LayerNorm(embed_dim)
@@ -315,11 +355,11 @@ class M2M100Decoder(nn.Module):
         
         for layer in self.layers:
             layer_output = layer(hidden_states, encoder_hidden_states, attention_mask, encoder_attention_mask)
-            hidden_states = layer_output[0]   
+            hidden_states = layer_output[0] 
 
         hidden_states = self.layer_norm(hidden_states)
 
-        return hidden_states     
+        return hidden_states
         
 
 class M2M100Model(nn.Module):
@@ -327,8 +367,10 @@ class M2M100Model(nn.Module):
         super().__init__()
 
         self.config = config
-        self.encoder = M2M100Encoder(config)
-        self.decoder = M2M100Decoder(config)
+
+        self.shared = nn.Embedding(config.vocab_size, config.d_model)
+        self.encoder = M2M100Encoder(config, self.shared)
+        self.decoder = M2M100Decoder(config, self.shared)
 
     def __call__(self, input_ids: mx.array, attention_mask: mx.array, decoder_input_ids: mx.array, encoder_attention_mask: mx.array, decoder_attention_mask: mx.array, past_key_values: mx.array):
 
@@ -347,7 +389,59 @@ class M2M100ForConditionalGeneration(nn.Module):
 
     def __call__(self, input_ids: mx.array, attention_mask: mx.array, decoder_input_ids: mx.array, encoder_attention_mask: mx.array, decoder_attention_mask: mx.array, past_key_values: mx.array):
 
-        decoder_hidden_states = self.model(input_ids, attention_mask, decoder_input_ids, encoder_attention_mask, decoder_attention_mask, past_key_values)
-        lm_logits = self.lm_head(decoder_hidden_states)
+        outputs = self.model(input_ids, attention_mask, decoder_input_ids, encoder_attention_mask, decoder_attention_mask, past_key_values)
+        lm_logits = self.lm_head(outputs[0])
 
-        return decoder_hidden_states
+        return lm_logits
+
+def load_model(
+    model_name: str, weights_path: str
+) -> Tuple[M2M100ForConditionalGeneration, PreTrainedTokenizerBase]:
+    if not Path(weights_path).exists():
+        raise ValueError(f"No model weights found in {weights_path}")
+
+    config = M2M100Config.from_pretrained(model_name)
+
+    model = M2M100ForConditionalGeneration(config)
+    model.load_weights(weights_path)
+
+    tokenizer = NllbTokenizer.from_pretrained(model_name, src_lang="eng_Latn", tgt_lang="fra_Latn")
+    
+    return model, tokenizer
+
+
+def run(model: str, mlx_model: str, input_sentence: str):
+    model, tokenizer = load_model(model, mlx_model)
+
+    tokens = tokenizer(input_sentence, return_tensors="np")
+    tokens = {key: mx.array(v) for key, v in tokens.items()}
+
+    print(tokens)
+
+    encoded_tokens = model.model.encoder(tokens["input_ids"], tokens["attention_mask"])
+
+    print(encoded_tokens)
+
+    print(encoded_tokens.shape)
+
+
+
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Convert M2M style model weights to MLX.")
+    parser.add_argument(
+        "--nllb-model",
+        type=str,
+        default="facebook/nllb-200-1.3B",
+        help="The huggingface name of the NLLB model to save",
+    )
+    parser.add_argument(
+        "--mlx-model",
+        type=str,
+        default="weights/nllb-200-1.3B.npz",
+        help="The output path for the MLX weights.",
+    )
+    args = parser.parse_args()
+
+    run(args.nllb_model, args.mlx_model, "what is your name?")
