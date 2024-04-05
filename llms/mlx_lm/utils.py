@@ -437,8 +437,9 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     from . import __version__
 
     api = HfApi()
-    fullname = api.whoami()["fullname"]
-    name = api.whoami()["name"]
+    user_info = api.whoami()
+    fullname = user_info["fullname"]
+    name = user_info["name"]
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
