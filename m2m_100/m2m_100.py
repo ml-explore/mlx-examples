@@ -48,6 +48,21 @@ class ModelArgs:
     num_hidden_layers: int
 
 
+def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_length=0):
+    """
+    Replace non-padding symbols with their position numbers. Position numbers begin at padding_idx+1. Padding symbols
+    are ignored. This is modified from fairseq's `utils.make_positions`.
+    """
+    print("input_ids =======>", input_ids)
+    print("padding_idx =======>", padding_idx)
+
+    mask = (input_ids != padding_idx).astype(mx.int16)
+
+    incremental_indices = (mx.cumsum(mask, axis=1).astype(input_ids.dtype) + past_key_values_length) * mask
+    return incremental_indices + padding_idx
+
+
+
 class M2M100SinusoidalPositionalEmbedding(nn.Module):
     """This module produces sinusoidal positional embeddings of any length."""
 
@@ -57,10 +72,44 @@ class M2M100SinusoidalPositionalEmbedding(nn.Module):
         self.embedding_dim = embedding_dim
         self.padding_idx = padding_idx
         self.num_positions = num_positions
+        self.weight = self.make_weights(num_positions + self.offset, embedding_dim, padding_idx)
         self.weights = nn.SinusoidalPositionalEncoding(embedding_dim)
   
     def __call__(self, input_ids: mx.array, past_key_values_length: int = 0):
-        return self.weights(input_ids)
+        bsz, seq_len = input_ids.shape
+        position_ids = create_position_ids_from_input_ids(input_ids, self.padding_idx, past_key_values_length)
+
+        position_ids = position_ids.reshape(-1)
+        print(position_ids)
+        print(self.weight.shape)
+        output = mx.take(self.weight, position_ids, 0).reshape(bsz, seq_len, self.weight.shape[-1])
+        return output
+    
+    def make_weights(self, num_embeddings: int, embedding_dim: int, padding_idx: Optional[int] = None):
+        """
+        """
+        emb_weights = self.get_embedding(num_embeddings, embedding_dim, padding_idx)
+    
+        return emb_weights
+    
+    def get_embedding(self, num_embeddings: int, embedding_dim: int, padding_idx: Optional[int] = None):
+        """
+        """
+        half_dim = embedding_dim // 2
+        emb = math.log(10000) / (half_dim - 1)
+
+        emb = mx.exp(mx.arange(half_dim) * -emb)
+        emb = mx.expand_dims(mx.arange(num_embeddings),1) * mx.expand_dims(emb, 0)
+        emb = mx.concatenate([mx.sin(emb), mx.cos(emb)], axis=1).reshape(num_embeddings, -1)
+
+        if embedding_dim % 2 == 1:
+            emb = mx.concatenate([emb, mx.zeros(num_embeddings, 1)], axis=1)
+        
+        if padding_idx is not None:
+            emb[padding_idx] = 0
+        
+        return emb
+
 
 class M2M100Attention(nn.Module):
     def __init__(self,
@@ -91,7 +140,6 @@ class M2M100Attention(nn.Module):
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
     
     def _shape(self, tensor: mx.array, seq_len: int, bsz: int):
-        print(tensor.shape)
         return tensor.reshape(bsz, seq_len, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
 
     def __call__(self,
@@ -104,7 +152,6 @@ class M2M100Attention(nn.Module):
 
         is_cross_attention = key_value_states is not None
 
-        print("hidden_states", hidden_states.shape)
         bsz, tgt_len, _ = hidden_states.shape
 
         query_states = self.q_proj(hidden_states)
@@ -142,9 +189,6 @@ class M2M100Attention(nn.Module):
                 f" {attn_weights.shape}"
             )
         
-        print("attn_weights", attention_mask)
-        print("attn_weights", attention_mask.shape)
-        
         if attention_mask is not None:
             if attention_mask.shape != (bsz, 1, tgt_len, src_len):
                 raise ValueError(
@@ -163,8 +207,6 @@ class M2M100Attention(nn.Module):
 
         attn_output = attn_output.reshape(bsz, tgt_len, self.embed_dim)
         attn_output = self.out_proj(attn_output)
-
-        print("attn_output", attn_output.shape)
 
         return attn_output
             
@@ -286,7 +328,9 @@ class M2M100Encoder(nn.Module):
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
         self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim)
-        self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim)
+        self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim, self.padding_idx)
+
+        # self.embed_positions = nn.Embedding(config.vocab_size, embed_dim)
 
         self.layers = [M2M100EncoderLayer(config) for _ in range(config.encoder_layers)]
         self.layer_norm = nn.LayerNorm(embed_dim)
@@ -296,13 +340,17 @@ class M2M100Encoder(nn.Module):
         input_shape = input_ids.shape
         input_ids = input_ids.reshape(-1, input_shape[-1])
 
-        print(input_ids)
-        print(self.embed_tokens)
-
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
+
+        print("inputs_embeds =======>", inputs_embeds)
         embed_pos = self.embed_positions(input_ids)
 
+
+        print("embed_pos =======>", embed_pos)
+
         hidden_states = inputs_embeds + embed_pos
+
+        print("hidden_states =======>", hidden_states)
 
         # if attention_mask is not None:
         #     attention_mask = attention_mask.reshape(-1, 1, 1, input_shape[-1])
@@ -403,7 +451,7 @@ def load_model(
     config = M2M100Config.from_pretrained(model_name)
 
     model = M2M100ForConditionalGeneration(config)
-    model.load_weights(weights_path)
+    model.load_weights(weights_path, False)
 
     tokenizer = NllbTokenizer.from_pretrained(model_name, src_lang="eng_Latn", tgt_lang="fra_Latn")
     
@@ -415,8 +463,6 @@ def run(model: str, mlx_model: str, input_sentence: str):
 
     tokens = tokenizer(input_sentence, return_tensors="np")
     tokens = {key: mx.array(v) for key, v in tokens.items()}
-
-    print(tokens)
 
     encoded_tokens = model.model.encoder(tokens["input_ids"], tokens["attention_mask"])
 

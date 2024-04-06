@@ -264,9 +264,6 @@ class M2M100Attention(nn.Module):
             )
         
 
-        print("attn_weights", attention_mask)
-        print("attn_weights", attention_mask.shape)
-
         if attention_mask is not None:
             if attention_mask.size() != (bsz, 1, tgt_len, src_len):
                 raise ValueError(
@@ -760,10 +757,16 @@ class M2M100Encoder(M2M100PreTrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
 
+            print("inputs_embeds", inputs_embeds)
+
         embed_pos = self.embed_positions(input_ids, inputs_embeds)
         embed_pos = embed_pos.to(inputs_embeds.device)
 
+        print("embed_pos", embed_pos)
+
         hidden_states = inputs_embeds + embed_pos
+
+        print("hidden_states", hidden_states)
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
 
         # expand attention_mask
