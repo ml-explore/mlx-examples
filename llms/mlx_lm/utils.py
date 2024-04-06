@@ -454,7 +454,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         ## Use with mlx
 
         ```bash
-        pip install -U mlx mlx-lm
+        pip install mlx-lm
         ```
 
         ```python
