@@ -309,6 +309,28 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_stablelm2(self):
+        from mlx_lm.models import stablelm_epoch
+
+        args = stablelm_epoch.ModelArgs(
+            model_type="stablelm_epoch",
+            vocab_size=10000,
+            hidden_size=512,
+            num_attention_heads=8,
+            num_hidden_layers=4,
+            num_key_value_heads=2,
+            rope_pct=0.25,
+            intermediate_size=1024,
+            norm_eps=1e-5,
+            rope_theta=10000,
+            use_qkv_bias=True,
+            use_norm_bias=False,
+        )
+        model = stablelm_epoch.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
