@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import time
+import sys
 import math
 import torch
 from dataclasses import dataclass
@@ -53,9 +54,6 @@ def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_l
     Replace non-padding symbols with their position numbers. Position numbers begin at padding_idx+1. Padding symbols
     are ignored. This is modified from fairseq's `utils.make_positions`.
     """
-    print("input_ids =======>", input_ids)
-    print("padding_idx =======>", padding_idx)
-
     mask = (input_ids != padding_idx).astype(mx.int16)
 
     incremental_indices = (mx.cumsum(mask, axis=1).astype(input_ids.dtype) + past_key_values_length) * mask
@@ -80,8 +78,6 @@ class M2M100SinusoidalPositionalEmbedding(nn.Module):
         position_ids = create_position_ids_from_input_ids(input_ids, self.padding_idx, past_key_values_length)
 
         position_ids = position_ids.reshape(-1)
-        print(position_ids)
-        print(self.weight.shape)
         output = mx.take(self.weight, position_ids, 0).reshape(bsz, seq_len, self.weight.shape[-1])
         return output
     
@@ -154,7 +150,7 @@ class M2M100Attention(nn.Module):
 
         bsz, tgt_len, _ = hidden_states.shape
 
-        query_states = self.q_proj(hidden_states)
+        query_states = self.q_proj(hidden_states) * self.scaling
 
         if (is_cross_attention and past_key_value is not None and past_key_value[0].shape[2] == key_value_states.shape[1]):
             key_states = past_key_value[0]
@@ -174,7 +170,7 @@ class M2M100Attention(nn.Module):
         if self.is_decoder:
             past_key_value = (key_states, value_states)
     
-        proj_shape = (bsz * self.num_heads, tgt_len, self.head_dim)
+        proj_shape = (bsz * self.num_heads, -1, self.head_dim)
 
         query_states = self._shape(query_states, tgt_len, bsz).reshape(proj_shape)
         key_states = key_states.reshape(proj_shape)
@@ -220,9 +216,6 @@ class M2M100EncoderLayer(nn.Module):
             embed_dim=self.embed_dim,
             num_heads=config.encoder_attention_heads,
             dropout=config.attention_dropout,
-            is_decoder=False,
-            bias=True,
-            is_causal=False,
             args=config
         )
 
@@ -239,6 +232,7 @@ class M2M100EncoderLayer(nn.Module):
 
     def __call__(self, hidden_states: mx.array, attention_mask: mx.array):
         residual = hidden_states
+
         hidden_states = self.self_attn_layer_norm(hidden_states)
 
         hidden_states = self.self_attn(hidden_states, attention_mask=attention_mask)
@@ -287,14 +281,18 @@ class M2M100DecoderLayer(nn.Module):
         self.fc2 = nn.Linear(config.decoder_ffn_dim, self.embed_dim)
         self.final_layer_norm = nn.LayerNorm(self.embed_dim)
 
-    def __call__(self, hidden_states: mx.array, encoder_hidden_states: mx.array, attention_mask: mx.array, encoder_attention_mask: mx.array):
+    def __call__(self, hidden_states: mx.array, attention_mask: mx.array, encoder_hidden_states: mx.array, encoder_attention_mask: mx.array, past_key_value: Optional[Tuple[mx.array]] = None):
         residual = hidden_states
         hidden_states = self.self_attn_layer_norm(hidden_states)
+
+        # Self Attention
+        # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
+        self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         
         hidden_states = self.self_attn(
             hidden_states,
             attention_mask=attention_mask,
-            past_key_value=None,
+            past_key_value=self_attn_past_key_value,
         )
         hidden_states = hidden_states + residual
 
@@ -309,7 +307,7 @@ class M2M100DecoderLayer(nn.Module):
                 past_key_value=None,
             )
             hidden_states = hidden_states + residual
-
+        
         residual = hidden_states
         hidden_states = self.final_layer_norm(hidden_states)
         hidden_states = self.activation_fn(self.fc1(hidden_states))
@@ -327,10 +325,8 @@ class M2M100Encoder(nn.Module):
         self.max_source_positions = config.max_position_embeddings
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
-        self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim)
+        self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim) if embed_tokens is None else embed_tokens
         self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim, self.padding_idx)
-
-        # self.embed_positions = nn.Embedding(config.vocab_size, embed_dim)
 
         self.layers = [M2M100EncoderLayer(config) for _ in range(config.encoder_layers)]
         self.layer_norm = nn.LayerNorm(embed_dim)
@@ -342,18 +338,9 @@ class M2M100Encoder(nn.Module):
 
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
 
-        print("inputs_embeds =======>", inputs_embeds)
         embed_pos = self.embed_positions(input_ids)
 
-
-        print("embed_pos =======>", embed_pos)
-
         hidden_states = inputs_embeds + embed_pos
-
-        print("hidden_states =======>", hidden_states)
-
-        # if attention_mask is not None:
-        #     attention_mask = attention_mask.reshape(-1, 1, 1, input_shape[-1])
 
         # expand attention_mask
         if attention_mask is not None:
@@ -362,7 +349,7 @@ class M2M100Encoder(nn.Module):
             attention_mask = _prepare_4d_attention_mask(attention_mask, torch.float16)
             attention_mask = mx.array(attention_mask.numpy())
         
-        for layer in self.layers:
+        for _, layer in enumerate(self.layers):
             layer_output = layer(hidden_states, attention_mask)
             hidden_states = layer_output
         
@@ -379,31 +366,42 @@ class M2M100Decoder(nn.Module):
         self.max_target_positions = config.max_position_embeddings
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
-        self.embed_tokens = embed_tokens
-        self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim)
+        self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim) if embed_tokens is None else embed_tokens
+        self.embed_positions = M2M100SinusoidalPositionalEmbedding(config.max_position_embeddings, embed_dim, self.padding_idx)
 
         self.layers = [M2M100DecoderLayer(config) for _ in range(config.decoder_layers)]
         self.layer_norm = nn.LayerNorm(embed_dim)
 
-    def __call__(self, input_ids: mx.array, encoder_hidden_states: mx.array, attention_mask: mx.array, encoder_attention_mask: mx.array, past_key_values: mx.array):
+    def __call__(self, input_ids: mx.array, attention_mask: mx.array, encoder_hidden_states: mx.array, encoder_attention_mask: mx.array, past_key_values: mx.array):
         
-        input_shape = input_ids.size()
-        input_ids = input_ids.view(-1, input_shape[-1])
+        input_shape = input_ids.shape
+        input_ids = input_ids.reshape(-1, input_shape[-1])
 
         past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
 
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
 
-        embed_pos = self.embed_positions(input_ids, past_key_values)
+        # create causal mask
+        # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+        combined_attention_mask = _prepare_4d_causal_attention_mask(
+            torch.tensor(np.array(attention_mask)), input_shape, torch.tensor(np.array(inputs_embeds)), past_key_values_length
+        )
+        combined_attention_mask = mx.array(combined_attention_mask.numpy())
+        
+        # expand attention_mask
+        if attention_mask is not None:
+            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+            encoder_attention_mask = torch.tensor(np.array(encoder_attention_mask))
+            encoder_attention_mask = _prepare_4d_attention_mask(encoder_attention_mask, torch.float16, tgt_len=input_shape[-1])
+            encoder_attention_mask = mx.array(encoder_attention_mask.numpy())
+
+        embed_pos = self.embed_positions(input_ids)
 
         hidden_states = inputs_embeds + embed_pos
-
-        if attention_mask is not None:
-            attention_mask = attention_mask.view(-1, 1, 1, input_shape[-1])
         
         for layer in self.layers:
-            layer_output = layer(hidden_states, encoder_hidden_states, attention_mask, encoder_attention_mask)
-            hidden_states = layer_output[0] 
+            layer_output = layer(hidden_states, combined_attention_mask, encoder_hidden_states, encoder_attention_mask)
+            hidden_states = layer_output
 
         hidden_states = self.layer_norm(hidden_states)
 
@@ -435,12 +433,11 @@ class M2M100ForConditionalGeneration(nn.Module):
         self.model = M2M100Model(config)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
-    def __call__(self, input_ids: mx.array, attention_mask: mx.array, decoder_input_ids: mx.array, encoder_attention_mask: mx.array, decoder_attention_mask: mx.array, past_key_values: mx.array):
-
-        outputs = self.model(input_ids, attention_mask, decoder_input_ids, encoder_attention_mask, decoder_attention_mask, past_key_values)
-        lm_logits = self.lm_head(outputs[0])
-
-        return lm_logits
+    def encode(self, input_ids: mx.array, attention_mask: mx.array) -> mx.array:
+        return self.model.encoder(input_ids, attention_mask)
+    
+    def decode(self, decoder_input_ids, encoder_hidden_states, attention_mask, encoder_attention_mask, past_key_values):
+        return self.model.decoder(decoder_input_ids, encoder_hidden_states, attention_mask, encoder_attention_mask, past_key_values)
 
 def load_model(
     model_name: str, weights_path: str
@@ -464,14 +461,25 @@ def run(model: str, mlx_model: str, input_sentence: str):
     tokens = tokenizer(input_sentence, return_tensors="np")
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
-    encoded_tokens = model.model.encoder(tokens["input_ids"], tokens["attention_mask"])
+    decoder_input_ids = mx.array([[2, 256057]])
+    decoder_input_mask = mx.array([[1, 1]])
 
-    print(encoded_tokens)
+    encoder_tokens = model.encode(tokens["input_ids"], tokens["attention_mask"])
 
-    print(encoded_tokens.shape)
+    for i in range(10):
+        outputs = model.decode(decoder_input_ids,decoder_input_mask, encoder_tokens, tokens["attention_mask"], None)
+        logits = model.lm_head(outputs)[:,-1,:]
 
+        next_token = mx.argmax(logits, axis=-1)
 
+        decoder_input_ids = mx.concatenate([decoder_input_ids, next_token.reshape(1, -1)], axis=1)
+        decoder_input_mask = mx.concatenate([decoder_input_mask, mx.ones((1,1))], axis=1)
 
+        if next_token[0] == model.config.eos_token_id:
+            break
+    
+
+    print(tokenizer.decode(np.array(decoder_input_ids)[0], skip_special_tokens=True))
 
 
 if __name__ == "__main__":
