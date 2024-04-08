@@ -5,6 +5,12 @@ from transformers import AutoTokenizer
 REPLACEMENT_CHAR = "\ufffd"
 
 
+def _remove_space(x):
+    if x and x[0] == " ":
+        return x[1:]
+    return x
+
+
 class StreamingDetokenizer:
     """The streaming detokenizer interface so that we can detokenize one token at a time.
 
@@ -128,7 +134,7 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
             if self.text:
                 self.text += self._unflushed.replace("\u2581", " ")
             else:
-                self.text = self._unflushed.replace("\u2581", " ").removeprefix(" ")
+                self.text = _remove_space(self._unflushed.replace("\u2581", " "))
             self._unflushed = v
         else:
             self._unflushed += v
@@ -137,7 +143,7 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         if self.text:
             self.text += self._unflushed.replace("\u2581", " ")
         else:
-            self.text = self._unflushed.replace("\u2581", " ").removeprefix(" ")
+            self.text = _remove_space(self._unflushed.replace("\u2581", " "))
         self._unflushed = ""
 
 
@@ -180,7 +186,7 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
             if self.text or not self.trim_space:
                 self.text += current_text
             else:
-                self.text += current_text.removeprefix(" ")
+                self.text += _remove_space(current_text)
             self._unflushed = v
         else:
             self._unflushed += v
@@ -192,7 +198,7 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         if self.text or not self.trim_space:
             self.text += current_text
         else:
-            self.text += current_text.removeprefix(" ")
+            self.text += _remove_space(current_text)
         self._unflushed = ""
 
     @classmethod
