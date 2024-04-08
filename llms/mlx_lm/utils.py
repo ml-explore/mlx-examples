@@ -249,7 +249,9 @@ def generate(
 
         if verbose:
             s = tokenizer.decode(tokens)
-            if formatter:
+            if not s:
+                continue
+            elif formatter:
                 formatter(s[skip:], prob.item())
                 skip = len(s)
             elif s[-1] != REPLACEMENT_CHAR:
