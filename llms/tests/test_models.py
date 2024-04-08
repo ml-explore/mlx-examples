@@ -242,6 +242,25 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+        # StableLM 2
+        args = stablelm.ModelArgs(
+            model_type="stablelm",
+            vocab_size=10000,
+            hidden_size=512,
+            num_attention_heads=8,
+            num_hidden_layers=4,
+            num_key_value_heads=2,
+            partial_rotary_factor=0.25,
+            intermediate_size=1024,
+            layer_norm_eps=1e-5,
+            rope_theta=10000,
+            use_qkv_bias=True,
+        )
+        model = stablelm.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
     def test_starcoder2(self):
         from mlx_lm.models import starcoder2
 
