@@ -72,7 +72,6 @@ def linear_to_lora_layers(
         "phi",
         "mixtral",
         "stablelm",
-        "stablelm_epoch",
         "qwen2",
         "qwen2_moe",
         "gemma",
