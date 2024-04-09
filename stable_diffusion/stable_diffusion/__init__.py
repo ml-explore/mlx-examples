@@ -224,6 +224,7 @@ class StableDiffusionXL(StableDiffusion):
 
         if n_images > 1:
             conditioning = mx.repeat(conditioning, n_images, axis=0)
+            pooled_conditioning = mx.repeat(pooled_conditioning, n_images, axis=0)
 
         return conditioning, pooled_conditioning
 
