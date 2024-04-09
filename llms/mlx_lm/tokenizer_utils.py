@@ -17,6 +17,10 @@ class StreamingDetokenizer:
     Example usage is as follows:
 
         detokenizer = ...
+
+        # Reset the tokenizer state
+        detokenizer.reset()
+
         for token in generate(...):
             detokenizer.add_token(token.item())
 
@@ -24,7 +28,8 @@ class StreamingDetokenizer:
             # since it contains whole words usually.
             detokenizer.text
 
-            # Contains the printable segment (usually a word) since last time it was accessed
+            # Contains the printable segment (usually a word) since the last
+            # time it was accessed
             detokenizer.last_segment
 
             # Contains all the tokens added so far
@@ -284,7 +289,11 @@ def _is_bpe_decoder(decoder):
 
 def load_tokenizer(model_path, tokenizer_config_extra={}):
     """Load a huggingface tokenizer and try to infer the type of streaming
-    detokenizer to use."""
+    detokenizer to use.
+
+    Note, to use a fast streaming tokenizer, pass a local file path rather than
+    a Hugging Face repo ID.
+    """
     detokenizer_class = NaiveStreamingDetokenizer
 
     tokenizer_file = model_path / "tokenizer.json"
