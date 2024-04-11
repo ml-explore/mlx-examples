@@ -1,6 +1,6 @@
 mlx>=0.8
 numpy
-transformers>=4.38.0
+transformers>=4.39.3
 protobuf
 pyyaml
 jinja2
