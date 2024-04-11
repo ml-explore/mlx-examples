@@ -127,15 +127,13 @@ class MixtralSparseMoeBlock(nn.Module):
         ]
 
     def __call__(self, x: mx.array) -> mx.array:
-        ne = self.num_experts_per_tok - 1
+        ne = self.num_experts_per_tok
         orig_shape = x.shape
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
 
-        inds = mx.stop_gradient(
-            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        )  # TODO remove it once we figure out how to fine tune TopK in MOE
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne])
 
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),

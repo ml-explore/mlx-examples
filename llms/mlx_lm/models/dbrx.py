@@ -143,7 +143,7 @@ class SparseMoeBlock(nn.Module):
         gates = self.router(x)
         gates = mx.softmax(gates.astype(mx.float32), axis=-1)
 
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne])
         scores = mx.take_along_axis(gates, inds, axis=-1)
         scores = scores / mx.linalg.norm(scores, ord=1, axis=-1, keepdims=True)
         scores = scores.astype(x.dtype)
