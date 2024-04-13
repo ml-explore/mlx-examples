@@ -188,14 +188,15 @@ def generate_step(
                 repetition_context = repetition_context[-repetition_context_size:]
         return y, prob
 
-    y, prob = _step(y)
+    y, p = _step(y)
 
+    sync = mx.async_eval(y)
     while True:
-        sync = mx.async_eval(y)
-        next_out = _step(y)
+        next_y, next_p = _step(y)
+        next_sync = mx.async_eval(next_y)
         sync.wait()
-        yield y.item(), prob
-        y, prob = next_out
+        yield y.item(), p
+        sync, y, p = next_sync, next_y, next_p
 
 
 def generate(
