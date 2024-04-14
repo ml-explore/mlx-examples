@@ -31,12 +31,6 @@ MODEL_REMAPPING = {
 
 MAX_FILE_SIZE_GB = 5
 
-linear_class_predicate = (
-    lambda m: isinstance(m, nn.Linear)
-    and m.weight.shape[0]
-    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
-)
-
 
 def _get_classes(config: dict):
     """
@@ -327,25 +321,16 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         weights = model.sanitize(weights)
 
     if quantization is not None:
-        # for legacy models that don't have lm_head quant due to non-32 dims
-        if "lm_head.scales" not in weights.keys():
-            vocab_size = config["vocab_size"]
-            extended_linear_class_predicate = (
-                lambda layer: linear_class_predicate(layer)
-                and layer.weight.shape[0] != vocab_size
-            )
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=extended_linear_class_predicate,
-            )
-        # for models that have lm_head quant
-        else:
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=linear_class_predicate,
-            )
+        # Handle legacy models which may not have everything quantized
+        class_predicate = (
+            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
+            and f"{p}.scales" in weights
+        )
+        nn.quantize(
+            model,
+            **quantization,
+            class_predicate=class_predicate,
+        )
 
     model.load_weights(list(weights.items()))
 
@@ -544,10 +529,7 @@ def quantize_model(
         Tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-
-    nn.QuantizedLinear.quantize_module(
-        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
-    )
+    nn.quantize(model, q_group_size, q_bits)
     quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 

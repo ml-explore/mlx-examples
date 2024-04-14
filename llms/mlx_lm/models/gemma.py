@@ -169,7 +169,7 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
+        out = self.model.embed_tokens.call_as_linear(out)
         return out, cache
 
     @property
