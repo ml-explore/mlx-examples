@@ -339,7 +339,7 @@ def load_model(model_path):
         quantization = config.pop("quantization", None)
     model = Llama(ModelArgs(**config))
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.quantize(model, **quantization)
     model.update(tree_unflatten(list(weights.items())))
     tokenizer = SentencePieceProcessor(model_file=str(model_path / "tokenizer.model"))
     return model, tokenizer

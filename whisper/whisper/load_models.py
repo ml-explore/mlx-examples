@@ -32,7 +32,7 @@ def load_model(
     model = whisper.Whisper(model_args, dtype)
 
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.quantize(model, **quantization)
 
     model.update(weights)
     mx.eval(model.parameters())
