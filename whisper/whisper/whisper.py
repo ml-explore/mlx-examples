@@ -196,7 +196,7 @@ class TextDecoder(nn.Module):
             )
 
         x = self.ln(x)
-        return self.token_embedding.call_as_linear(x), kv_cache, cross_qk
+        return self.token_embedding.as_linear(x), kv_cache, cross_qk
 
 
 class Whisper(nn.Module):
