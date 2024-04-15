@@ -2,12 +2,14 @@
 Test the M2M100ForConditionalGeneration model.
 """
 
-import unittest
-
 import os
+import unittest
+from typing import List
+
 import torch
 from transformers import NllbTokenizer, M2M100ForConditionalGeneration, M2M100Config
 
+import numpy as np
 import mlx.core as mx
 
 from convert import convert
@@ -17,7 +19,7 @@ from m2m_100_model import M2M100ForConditionalGeneration as M2M100ForConditional
 def forward_hf(
     model: M2M100ForConditionalGeneration,
     tokenizer: NllbTokenizer,
-    sample_input: str):
+    sample_inputs: List[str]):
     """
     Run Translation using the Torch HGF model.
 
@@ -27,14 +29,13 @@ def forward_hf(
         sample_input (str): Sample sentence to translate
     """
 
-    input_tokens = tokenizer(sample_input, return_tensors="pt")
+    input_tokens = tokenizer(sample_inputs, return_tensors="pt")
 
     with torch.no_grad():
         encoder_outputs = model.model.encoder(**input_tokens)
 
-
-        decoder_input_ids = torch.tensor([[2, tokenizer.lang_code_to_id["fra_Latn"]]])
-        decoder_input_mask = torch.tensor([[1, 1]])
+        decoder_input_ids = torch.tensor([[2, tokenizer.lang_code_to_id["fra_Latn"]]]*2)
+        decoder_input_mask = torch.tensor([[1, 1]]*2)
 
         for _ in range(10):
             outputs = model.model.decoder(input_ids=decoder_input_ids,
@@ -44,22 +45,20 @@ def forward_hf(
 
             logits = model.lm_head(outputs[0])
             logits = logits[:, -1, :]
-
             next_token = torch.argmax(logits, dim=-1)
+            next_token = next_token.unsqueeze(1)
 
-            decoder_input_ids = torch.cat([decoder_input_ids, next_token.unsqueeze(0)], dim=-1)
+            decoder_input_ids = torch.cat([decoder_input_ids, next_token], dim=-1)
             decoder_input_mask = torch.cat([decoder_input_mask,
-                                            torch.ones_like(next_token).unsqueeze(0)], dim=-1)
+                                            torch.ones_like(next_token)], dim=-1)
 
-            if next_token == model.config.eos_token_id:
-                break
 
     return decoder_input_ids
 
 def forward_mlx(
     model: M2M100ForConditionalGenerationMLX,
     tokenizer: NllbTokenizer,
-    sample_input: str):
+    sample_inputs: List[str]):
     """
     Run Translation using the MLX model.
 
@@ -69,26 +68,28 @@ def forward_mlx(
         sample_input (str): Sample sentence to translate
     """
 
-    inputs = tokenizer(sample_input, return_tensors="np")
+    inputs = tokenizer(sample_inputs, return_tensors="np")
+    inputs = {key: mx.array(v) for key, v in inputs.items()}
+    bsz = len(sample_inputs)
 
     decoder_input_ids = mx.array([[model.config.eos_token_id,
-                            tokenizer.lang_code_to_id["fra_Latn"]]])
+                            tokenizer.lang_code_to_id["fra_Latn"]]]*2)
 
-    decoder_input_mask = mx.array([[1, 1]])
-
+    decoder_input_mask = mx.array([[1, 1]]*2)
     encoder_tokens = model.encode(inputs["input_ids"], inputs["attention_mask"])
 
     for _ in range(10):
-        outputs = model.decode(decoder_input_ids,decoder_input_mask, encoder_tokens, inputs["attention_mask"], None)
+        outputs = model.decode(decoder_input_ids,
+                                decoder_input_mask,
+                                encoder_tokens,
+                                inputs["attention_mask"], None)
+
         logits = model.lm_head(outputs)[:,-1,:]
 
         next_token = mx.argmax(logits, axis=-1)
 
         decoder_input_ids = mx.concatenate([decoder_input_ids, next_token.reshape(-1, 1)], axis=1)
-        decoder_input_mask = mx.concatenate([decoder_input_mask, mx.ones((1,1))], axis=1)
-
-        if next_token[0] == model.config.eos_token_id:
-            break
+        decoder_input_mask = mx.concatenate([decoder_input_mask, mx.ones((bsz,1))], axis=1)
     
     return decoder_input_ids
 
@@ -136,12 +137,12 @@ class TestM2M100(unittest.TestCase):
                                         )
 
     def test_generation(self):
-        sample_input = "what is your name?"
+        sample_input = ["what is your name?", "what is your name?"]
 
         hf_output = forward_hf(self.hf_model, self.tokenizer, sample_input)
         mlx_output = forward_mlx(self.mlx_model, self.tokenizer, sample_input)
 
-        self.assertTrue(mx.allclose(hf_output.numpy(), mlx_output.asnumpy()))
-    
+        self.assertTrue(mx.allclose(mx.array(hf_output.numpy()), mlx_output))
+
 if __name__ == "__main__":
     unittest.main()
