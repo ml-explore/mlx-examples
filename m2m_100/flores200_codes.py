@@ -2,7 +2,7 @@
 This file contains the language codes for the FLORES-200 dataset.
 """
 
-codes_as_string = '''Acehnese (Arabic script)	ace_Arab
+codes_as_string = """Acehnese (Arabic script)	ace_Arab
 Acehnese (Latin script)	ace_Latn
 Mesopotamian Arabic	acm_Arab
 Ta’izzi-Adeni Arabic	acq_Arab
@@ -205,12 +205,12 @@ Yue Chinese	yue_Hant
 Chinese (Simplified)	zho_Hans
 Chinese (Traditional)	zho_Hant
 Standard Malay	zsm_Latn
-Zulu	zul_Latn'''
+Zulu	zul_Latn"""
 
-codes_as_string = codes_as_string.split('\n')
+codes_as_string = codes_as_string.split("\n")
 
 FLORES_CODES = {}
 
 for code in codes_as_string:
-    lang, lang_code = code.split('\t')
+    lang, lang_code = code.split("\t")
     FLORES_CODES[lang] = lang_code
