@@ -1,57 +1,43 @@
 # Copyright © 2023 Apple Inc.
 
+import os
 import argparse
-import glob
-import json
-import time
-import sys
 import math
-import torch
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional, Tuple
 
+import torch
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from mlx.utils import tree_unflatten
-from sentencepiece import SentencePieceProcessor
-from transformers import M2M100Config, NllbTokenizer, PreTrainedTokenizerBase
+from transformers import M2M100Config
 
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask, _prepare_4d_causal_attention_mask
+from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
+
+from utils import load_mlx_nllb_model, run_translation_mlx
 
 
-@dataclass
-class ModelArgs:
-    vocab_size: int
-    max_position_embeddings: int
-    encoder_layers: int
-    encoder_ffn_dim: int
-    encoder_attention_heads: int
-    decoder_layers: int
-    decoder_ffn_dim: int
-    decoder_attention_heads: int
-    encoder_layerdrop: float
-    decoder_layerdrop: float
-    use_cache: bool
-    is_encoder_decoder: bool    
-    activation_function: str
-    d_model: int
-    dropout: float
-    attention_dropout: float
-    activation_dropout: float
-    init_std: float
-    decoder_start_token_id: int
-    scale_embedding: bool
-    pad_token_id: int
-    bos_token_id: int
-    eos_token_id: int
-    num_hidden_layers: int
+def _prepare_4d_attention_mask(mask: mx.array, tgt_len: Optional[int] = None):
+    """Create 4d attention mask from a 2d mask."""
+
+    bsz, src_len = mask.shape
+
+    if tgt_len is None:
+        tgt_len = src_len
+
+    expanded_mask = mask[:, None, None, :]
+    expanded_mask = np.broadcast_to(expanded_mask, (bsz, 1, tgt_len, src_len))
+    inverted_mask = 1.0 - expanded_mask
+    inverted_mask = np.array(inverted_mask)
+  
+    inverted_mask = np.ma.array(data=inverted_mask, mask = inverted_mask)
+    inverted_mask = inverted_mask.filled(fill_value=-np.inf)
+    return mx.array(inverted_mask)
 
 
 def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_length=0):
     """
-    Replace non-padding symbols with their position numbers. Position numbers begin at padding_idx+1. Padding symbols
+    Replace non-padding symbols with their position numbers.
+    Position numbers begin at padding_idx+1. Padding symbols
     are ignored. This is modified from fairseq's `utils.make_positions`.
     """
     mask = (input_ids != padding_idx).astype(mx.int16)
@@ -82,15 +68,10 @@ class M2M100SinusoidalPositionalEmbedding(nn.Module):
         return output
     
     def make_weights(self, num_embeddings: int, embedding_dim: int, padding_idx: Optional[int] = None):
-        """
-        """
         emb_weights = self.get_embedding(num_embeddings, embedding_dim, padding_idx)
-    
         return emb_weights
     
     def get_embedding(self, num_embeddings: int, embedding_dim: int, padding_idx: Optional[int] = None):
-        """
-        """
         half_dim = embedding_dim // 2
         emb = math.log(10000) / (half_dim - 1)
 
@@ -115,7 +96,7 @@ class M2M100Attention(nn.Module):
         is_decoder: bool = False,
         bias: bool = True,
         is_causal: bool = False,
-        args: ModelArgs = None):
+        args: M2M100Config = None):
 
         super().__init__()
         self.args = args
@@ -208,7 +189,7 @@ class M2M100Attention(nn.Module):
             
 
 class M2M100EncoderLayer(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config: M2M100Config):
         super().__init__()
 
         self.embed_dim = config.d_model
@@ -248,7 +229,7 @@ class M2M100EncoderLayer(nn.Module):
         return hidden_states
         
 class M2M100DecoderLayer(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config: M2M100Config):
         super().__init__()
 
         self.embed_dim = config.d_model
@@ -317,7 +298,7 @@ class M2M100DecoderLayer(nn.Module):
         return hidden_states
 
 class M2M100Encoder(nn.Module):
-    def __init__(self, config: ModelArgs, embed_tokens: Optional[nn.Embedding]):
+    def __init__(self, config: M2M100Config, embed_tokens: Optional[nn.Embedding]):
         super().__init__()
 
         embed_dim = config.d_model
@@ -342,12 +323,9 @@ class M2M100Encoder(nn.Module):
 
         hidden_states = inputs_embeds + embed_pos
 
-        # expand attention_mask
         if attention_mask is not None:
-            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            attention_mask = torch.tensor(np.array(attention_mask))
-            attention_mask = _prepare_4d_attention_mask(attention_mask, torch.float16)
-            attention_mask = mx.array(attention_mask.numpy())
+            attention_mask = _prepare_4d_attention_mask(attention_mask)
+
         
         for _, layer in enumerate(self.layers):
             layer_output = layer(hidden_states, attention_mask)
@@ -358,7 +336,7 @@ class M2M100Encoder(nn.Module):
 
 
 class M2M100Decoder(nn.Module):
-    def __init__(self, config: ModelArgs, embed_tokens: Optional[nn.Embedding]):
+    def __init__(self, config: M2M100Config, embed_tokens: Optional[nn.Embedding]):
         super().__init__()
 
         embed_dim = config.d_model
@@ -387,13 +365,10 @@ class M2M100Decoder(nn.Module):
             torch.tensor(np.array(attention_mask)), input_shape, torch.tensor(np.array(inputs_embeds)), past_key_values_length
         )
         combined_attention_mask = mx.array(combined_attention_mask.numpy())
-        
-        # expand attention_mask
+
         if attention_mask is not None:
-            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            encoder_attention_mask = torch.tensor(np.array(encoder_attention_mask))
-            encoder_attention_mask = _prepare_4d_attention_mask(encoder_attention_mask, torch.float16, tgt_len=input_shape[-1])
-            encoder_attention_mask = mx.array(encoder_attention_mask.numpy())
+            encoder_attention_mask = _prepare_4d_attention_mask(encoder_attention_mask,
+                                                                tgt_len=input_shape[-1])
 
         embed_pos = self.embed_positions(input_ids)
 
@@ -409,7 +384,7 @@ class M2M100Decoder(nn.Module):
         
 
 class M2M100Model(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config: M2M100Config):
         super().__init__()
 
         self.config = config
@@ -426,7 +401,7 @@ class M2M100Model(nn.Module):
         return decoder_hidden_states
 
 class M2M100ForConditionalGeneration(nn.Module):
-    def __init__(self, config: ModelArgs):
+    def __init__(self, config: M2M100Config):
         super().__init__()
 
         self.config = config
@@ -438,48 +413,6 @@ class M2M100ForConditionalGeneration(nn.Module):
     
     def decode(self, decoder_input_ids, encoder_hidden_states, attention_mask, encoder_attention_mask, past_key_values):
         return self.model.decoder(decoder_input_ids, encoder_hidden_states, attention_mask, encoder_attention_mask, past_key_values)
-
-def load_model(
-    model_name: str, weights_path: str
-) -> Tuple[M2M100ForConditionalGeneration, PreTrainedTokenizerBase]:
-    if not Path(weights_path).exists():
-        raise ValueError(f"No model weights found in {weights_path}")
-
-    config = M2M100Config.from_pretrained(model_name)
-
-    model = M2M100ForConditionalGeneration(config)
-    model.load_weights(weights_path, False)
-
-    tokenizer = NllbTokenizer.from_pretrained(model_name, src_lang="eng_Latn", tgt_lang="fra_Latn")
-    
-    return model, tokenizer
-
-
-def run(model: str, mlx_model: str, input_sentence: str):
-    model, tokenizer = load_model(model, mlx_model)
-
-    tokens = tokenizer(input_sentence, return_tensors="np")
-    tokens = {key: mx.array(v) for key, v in tokens.items()}
-
-    decoder_input_ids = mx.array([[2, 256057]])
-    decoder_input_mask = mx.array([[1, 1]])
-
-    encoder_tokens = model.encode(tokens["input_ids"], tokens["attention_mask"])
-
-    for i in range(10):
-        outputs = model.decode(decoder_input_ids,decoder_input_mask, encoder_tokens, tokens["attention_mask"], None)
-        logits = model.lm_head(outputs)[:,-1,:]
-
-        next_token = mx.argmax(logits, axis=-1)
-
-        decoder_input_ids = mx.concatenate([decoder_input_ids, next_token.reshape(1, -1)], axis=1)
-        decoder_input_mask = mx.concatenate([decoder_input_mask, mx.ones((1,1))], axis=1)
-
-        if next_token[0] == model.config.eos_token_id:
-            break
-    
-
-    print(tokenizer.decode(np.array(decoder_input_ids)[0], skip_special_tokens=True))
 
 
 if __name__ == "__main__":
@@ -496,6 +429,29 @@ if __name__ == "__main__":
         default="weights/nllb-200-1.3B.npz",
         help="The output path for the MLX weights.",
     )
+    parser.add_argument("--source_language", type=str, required=True)
+    parser.add_argument("--target_language", type=str, required=True)
+    parser.add_argument("--input_sentence",
+        type=str,
+        default="Hello there! Today, we are going to talk about something called the \"discount rate.\"")
     args = parser.parse_args()
 
-    run(args.nllb_model, args.mlx_model, "what is your name?")
+    current_directory = os.getcwd()
+    weights_path = os.path.join(current_directory, "weights", args.model_name.replace("/", "-") + ".npz")
+    model, tokenizer, tgt_token_id = load_mlx_nllb_model(
+        model_name=args.model_name,
+        weights_path=weights_path,
+        source_language=args.source_language,
+        target_language=args.target_language
+    )
+
+    translated_sentence = run_translation_mlx(
+        model=model,
+        tokenizer=tokenizer,
+        input_sentences=[args.input_sentence],
+        target_language_token=tgt_token_id,
+        max_generation_tokens=15,
+        verbose=True
+    )
+
+    print(f"Translated Sentence: {translated_sentence}")

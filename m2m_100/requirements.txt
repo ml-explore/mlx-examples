@@ -1,0 +1,14 @@
+huggingface-hub==0.22.2
+mlx==0.8.1
+mpmath==1.3.0
+numpy==1.26.4
+packaging==24.0
+PyYAML==6.0.1
+regex==2023.12.25
+requests==2.31.0
+safetensors==0.4.2
+sentencepiece==0.2.0
+tokenizers==0.15.2
+torch==2.2.1
+tqdm==4.66.2
+transformers==4.39.3
