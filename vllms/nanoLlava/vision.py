@@ -105,7 +105,6 @@ class MHA(nn.Module):
 
         self.num_heads = num_heads
         head_dim = dims // num_heads
-        self.repeats = num_heads // 1
         self.scale = head_dim**-0.5
 
         self.in_proj = nn.Linear(dims, dims * 3, bias=bias)
