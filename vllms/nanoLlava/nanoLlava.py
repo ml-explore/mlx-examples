@@ -234,7 +234,7 @@ class NanoLlavaModel(nn.Module):
             config = json.load(f)
 
         siglip_config = AutoConfig.from_pretrained(config["mm_vision_tower"])
-        text_config = AutoConfig.from_pretrained("Qwen/Qwen1.5-0.5B-Chat")
+        text_config = AutoConfig.from_pretrained(config["language_model"])
         siglip_config = siglip_config.to_dict()
         text_config = text_config.to_dict()
         config["vision_config"] = siglip_config["vision_config"]
