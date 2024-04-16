@@ -81,11 +81,15 @@ class Attention(nn.Module):
         keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
-        )
-        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.out_proj(output)
+        scale = math.sqrt(1 / queries.shape[-1])
+        scores = (queries * scale) @ keys
+        if mask is not None:
+            scores = scores + mask.astype(scores.dtype)
+        scores = mx.softmax(scores, axis=-1)
+        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+
+        return self.out_proj(values_hat)
+
 
 class MHA(nn.Module):
     def __init__(
@@ -102,30 +106,34 @@ class MHA(nn.Module):
                 f"number of heads ({dims} % {num_heads}) != 0"
             )
 
-
         self.num_heads = num_heads
         head_dim = dims // num_heads
+        self.repeats = num_heads // 1
         self.scale = head_dim**-0.5
-        proj_size = dims * num_heads
 
-        self.in_proj = nn.Linear(dims, proj_size * 3, bias=bias)
-        self.out_proj = nn.Linear(dims, proj_size, bias=bias)
+        self.in_proj = nn.Linear(dims, dims * 3, bias=bias)
+        self.out_proj = nn.Linear(dims, dims, bias=bias)
 
-    def __call__(self, x:mx.array, mask=None, cache=None):
-        queries, keys, values = self.in_proj(x)
+    def __call__(self, queries: mx.array, kv: mx.array, mask=None, cache=None):
+        B, L, D = queries.shape
+
+        qkv = self.in_proj(queries)
+        _, keys, values = mx.split(qkv, 3, axis=-1)
 
         num_heads = self.num_heads
         B, L, D = queries.shape
         _, S, _ = keys.shape
         queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
+        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
-        )
-        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.out_proj(output)
+        scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
+        if mask is not None:
+            scores = scores + mask.astype(scores.dtype)
+        scores = mx.softmax(scores, axis=-1)
+        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        return self.out_proj(values_hat)
+
 
 class MLP(nn.Module):
     def __init__(self, config: VisionConfig):
@@ -228,14 +236,21 @@ class SigLipMultiheadAttentionPoolingHead(nn.Module):
     def __init__(self, config: VisionConfig):
         super().__init__()
 
-        self.probe = mx.ones((1,1, config.hidden_size,))
-        self.attention = MHA(config.hidden_size, num_heads = config.num_attention_heads, bias=True)
+        self.probe = mx.ones(
+            (
+                1,
+                1,
+                config.hidden_size,
+            )
+        )
+        self.attention = MHA(
+            config.hidden_size, num_heads=config.num_attention_heads, bias=True
+        )
         self.layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.mlp = MLP(config)
 
     def __call__(self, x: mx.array):
-
-        x = self.attention(self.probe, x, x)[0]
+        x = self.attention(self.probe, x)[0]
 
         residual = x
         x = self.layernorm(x)
@@ -252,7 +267,6 @@ class VisionModel(nn.Module):
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
         self.vision_model = SigLipVisionModel(config)
-
 
     def __call__(
         self, x: mx.array, output_hidden_states: Optional[bool] = None

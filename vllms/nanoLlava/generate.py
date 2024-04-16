@@ -5,11 +5,11 @@ import codecs
 from pathlib import Path
 
 import mlx.core as mx
+import numpy as np
 import requests
+from nanoLlava import NanoLlavaModel, SigLipImageProcessor
 from PIL import Image
-from transformers import AutoProcessor, AutoTokenizer
-
-from nanoLlava import NanoLlavaModel
+from transformers import AutoProcessor
 
 
 def parse_arguments():
@@ -73,17 +73,21 @@ def load_image(image_source):
 def prepare_inputs(processor, image, prompt):
     if isinstance(image, str):
         image = load_image(image)
-    inputs = processor(prompt, image, return_tensors="np")
-    pixel_values = mx.array(inputs["pixel_values"])
-    input_ids = mx.array(inputs["input_ids"])
+
+    text_chunks = [processor(chunk).input_ids for chunk in prompt.split("<image>")]
+    input_ids = mx.array([text_chunks[0] + [-200] + text_chunks[1]])
+
+    sig_processor = SigLipImageProcessor()
+    pixel_values = sig_processor.preprocess([image])[0]
+    pixel_values = mx.array(np.expand_dims(pixel_values, axis=0))
+
     return input_ids, pixel_values
 
 
 def load_model(model_path):
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    processor = AutoProcessor.from_pretrained(model_path)
+    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     model = NanoLlavaModel.from_pretrained(model_path)
-    return processor, model, tokenizer
+    return processor, model
 
 
 def sample(logits, temperature=0.0):
@@ -105,27 +109,26 @@ def generate_text(input_ids, pixel_values, model, processor, max_tokens, tempera
         logits = logits[:, -1, :]
         y = sample(logits, temperature)
         token = y.item()
-        if token == processor.tokenizer.eos_token_id:
+        if token == processor.eos_token_id:
             break
         tokens.append(token)
 
-    return processor.tokenizer.decode(tokens)
+    return processor.decode(tokens)
 
 
 def main():
     args = parse_arguments()
-    processor, model, tokenizer = load_model(args.model)
+    processor, model = load_model(args.model)
 
     prompt = codecs.decode(args.prompt, "unicode_escape")
-    prompt = tokenizer.apply_chat_template(
-        [{"role": "user", "content": f'<image>\n{prompt}'}],
+    prompt = processor.apply_chat_template(
+        [{"role": "user", "content": f"{prompt}"}],
         tokenize=False,
-        add_generation_prompt=True
+        add_generation_prompt=True,
     )
 
     input_ids, pixel_values = prepare_inputs(processor, args.image, prompt)
 
-    print(prompt)
     generated_text = generate_text(
         input_ids, pixel_values, model, processor, args.max_tokens, args.temp
     )
