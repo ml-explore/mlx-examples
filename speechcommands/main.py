@@ -4,7 +4,6 @@ from functools import partial
 
 import kwt
 import mlx.core as mx
-import mlx.data as dx
 import mlx.nn as nn
 import mlx.optimizers as optim
 from mlx.data.datasets import load_speechcommands

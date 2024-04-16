@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_map, tree_unflatten
+from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
 
 

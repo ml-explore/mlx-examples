@@ -10,7 +10,6 @@ import mlx.nn as nn
 import mlx.optimizers as opt
 from mlx.utils import tree_flatten
 from mlx_lm import lora, tuner
-from mlx_lm.lora import yaml_loader
 from mlx_lm.tuner.lora import LoRALinear
 from mlx_lm.tuner.utils import build_schedule
 

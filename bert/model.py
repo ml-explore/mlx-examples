@@ -1,12 +1,9 @@
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy
-import numpy as np
 from mlx.utils import tree_unflatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizerBase
 
