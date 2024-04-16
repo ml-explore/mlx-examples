@@ -27,7 +27,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 The main command is `mlx_lm.lora`. To see a full list of command-line options run:
 
 ```shell
-python -m mlx_lm.lora --help
+mlx_lm.lora --help
 ```
 
 Note, in the following the `--model` argument can be any compatible Hugging
@@ -37,7 +37,7 @@ You can also specify a YAML config with `-c`/`--config`. For more on the format 
 [example YAML](examples/lora_config.yaml). For example:
 
 ```shell
-python -m mlx_lm.lora --config /path/to/config.yaml
+mlx_lm.lora --config /path/to/config.yaml
 ```
 
 If command-line flags are also used, they will override the corresponding
@@ -48,7 +48,7 @@ values in the config.
 To fine-tune a model use:
 
 ```shell
-python -m mlx_lm.lora \
+mlx_lm.lora \
     --model <path_to_model> \
     --train \
     --data <path_to_data> \
@@ -76,7 +76,7 @@ You can resume fine-tuning with an existing adapter with
 To compute test set perplexity use:
 
 ```shell
-python -m mlx_lm.lora \
+mlx_lm.lora \
     --model <path_to_model> \
     --adapter-path <path_to_adapters> \
     --data <path_to_data> \
@@ -88,7 +88,7 @@ python -m mlx_lm.lora \
 For generation use `mlx_lm.generate`:
 
 ```shell
-python -m mlx_lm.generate \
+mlx_lm.generate \
     --model <path_to_model> \
     --adapter-path <path_to_adapters> \
     --prompt "<your_model_prompt>"
@@ -106,13 +106,13 @@ You can generate a model fused with the low-rank adapters using the
 To see supported options run:
 
 ```shell
-python -m mlx_lm.fuse --help
+mlx_lm.fuse --help
 ```
 
 To generate the fused model run:
 
 ```shell
-python -m mlx_lm.fuse --model <path_to_model>
+mlx_lm.fuse --model <path_to_model>
 ```
 
 This will by default load the adapters from `adapters/`, and save the fused
@@ -125,7 +125,7 @@ useful for the sake of attribution and model versioning.
 For example, to fuse and upload a model derived from Mistral-7B-v0.1, run: 
 
 ```shell
-python -m mlx_lm.fuse \
+mlx_lm.fuse \
     --model mistralai/Mistral-7B-v0.1 \
     --upload-repo mlx-community/my-4bit-lora-mistral \
     --hf-path mistralai/Mistral-7B-v0.1
@@ -134,7 +134,7 @@ python -m mlx_lm.fuse \
 To export a fused model to GGUF, run:
 
 ```shell
-python -m mlx_lm.fuse \
+mlx_lm.fuse \
     --model mistralai/Mistral-7B-v0.1 \
     --export-gguf
 ```

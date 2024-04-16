@@ -11,13 +11,13 @@ API](https://platform.openai.com/docs/api-reference).
 Start the server with: 
 
 ```shell
-python -m mlx_lm.server --model <path_to_model_or_hf_repo>
+mlx_lm.server --model <path_to_model_or_hf_repo>
 ```
 
 For example:
 
 ```shell
-python -m mlx_lm.server --model mistralai/Mistral-7B-Instruct-v0.1
+mlx_lm.server --model mistralai/Mistral-7B-Instruct-v0.1
 ```
 
 This will start a text generation server on port `8080` of the `localhost`
@@ -27,7 +27,7 @@ Hugging Face repo if it is not already in the local cache.
 To see a full list of options run:
 
 ```shell
-python -m mlx_lm.server --help
+mlx_lm.server --help
 ```
 
 You can make a request to the model by running:
