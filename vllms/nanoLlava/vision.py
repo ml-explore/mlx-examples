@@ -78,17 +78,14 @@ class Attention(nn.Module):
         B, L, D = queries.shape
         _, S, _ = keys.shape
         queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
+        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
-        scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys
-        if mask is not None:
-            scores = scores + mask.astype(scores.dtype)
-        scores = mx.softmax(scores, axis=-1)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-
-        return self.out_proj(values_hat)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        return self.out_proj(output)
 
 
 class MHA(nn.Module):
@@ -127,12 +124,11 @@ class MHA(nn.Module):
         keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
-        scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores = scores + mask.astype(scores.dtype)
-        scores = mx.softmax(scores, axis=-1)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.out_proj(values_hat)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        return self.out_proj(output)
 
 
 class MLP(nn.Module):

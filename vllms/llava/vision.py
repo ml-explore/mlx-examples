@@ -60,7 +60,10 @@ class Attention(nn.Module):
         value_dims = value_dims or dims
         value_output_dims = value_output_dims or dims
 
-        self.num_heads = num_heads
+        self.num_heads = num_heads = num_heads
+        head_dim = dims // num_heads
+        self.scale = head_dim**-0.5
+
         self.q_proj = nn.Linear(query_input_dims, dims, bias=bias)
         self.k_proj = nn.Linear(key_input_dims, dims, bias=bias)
         self.v_proj = nn.Linear(value_input_dims, value_dims, bias=bias)
@@ -75,17 +78,15 @@ class Attention(nn.Module):
         B, L, D = queries.shape
         _, S, _ = keys.shape
         queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
+        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
-        scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys
-        if mask is not None:
-            scores = scores + mask.astype(scores.dtype)
-        scores = mx.softmax(scores, axis=-1)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
-        return self.out_proj(values_hat)
+        return self.out_proj(output)
 
 
 class MLP(nn.Module):
