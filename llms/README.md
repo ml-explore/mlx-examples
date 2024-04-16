@@ -101,6 +101,9 @@ python -m mlx_lm.convert \
     --upload-repo mlx-community/my-4bit-mistral
 ```
 
+The following commands can also be executed without invoking `python -m ...`, just: `mlx_lm.generate, mlx_lm.convert, mlx_lm.lora, mlx_lm.merge, mlx_lm.server`.
+This is especially helpful if you want to quickly launch something by installing globally in an isolated environment with pipx/condax.
+
 ### Supported Models
 
 The example supports Hugging Face format Mistral, Llama, and Phi-2 style
