@@ -6,10 +6,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 import utils
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten, tree_unflatten
 
 
 @dataclass

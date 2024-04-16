@@ -2,7 +2,6 @@
 import argparse
 import os
 import subprocess
-import sys
 import time
 
 import mlx.core as mx

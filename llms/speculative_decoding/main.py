@@ -1,11 +1,7 @@
 import argparse
-import glob
-import json
 import time
-from pathlib import Path
 
 import mlx.core as mx
-import mlx.nn as nn
 from decoder import SpeculativeDecoder
 from mlx.utils import tree_unflatten
 from model import Model
