@@ -92,7 +92,7 @@ class Attention(nn.Module):
         return self.o_proj(output)
 
 
-class Qwen2MoeMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
         self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
@@ -100,6 +100,19 @@ class Qwen2MoeMLP(nn.Module):
         self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
 
     def __call__(self, x) -> mx.array:
+        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
+
+
+class MoeMLP(nn.Module):
+    def __init__(self, dim, hidden_dim, num_experts):
+        super().__init__()
+        self.gate_proj = nn.Linear(dim * num_experts, hidden_dim, bias=False)
+        self.up_proj = nn.Linear(dim * num_experts, hidden_dim, bias=False)
+        self.down_proj = nn.Linear(hidden_dim * num_experts, dim, bias=False)
+        self.num_experts = num_experts
+
+    def __call__(self, x, selected) -> mx.array:
+
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
@@ -113,12 +126,10 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         self.num_experts = num_experts = args.num_experts
         self.top_k = args.num_experts_per_tok
 
-        # gating
         self.gate = nn.Linear(dim, num_experts, bias=False)
-        self.experts = [
-            Qwen2MoeMLP(dim, intermediate_size) for _ in range(self.num_experts)
-        ]
-        self.shared_expert = Qwen2MoeMLP(dim, shared_expert_intermediate_size)
+        self.moe_mlp = MoeMLP(dim, intermediate_size, num_experts)
+
+        self.shared_expert = MLP(dim, shared_expert_intermediate_size)
         self.shared_expert_gate = nn.Linear(dim, 1, bias=False)
 
     def __call__(
@@ -133,9 +144,10 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         gates = self.gate(x)
         gates = mx.softmax(gates.astype(mx.float32), axis=-1)
 
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
-
-        scores = mx.take_along_axis(gates, inds, axis=-1).astype(x.dtype)
+        # Zero out non selected scores
+        k = scores.shape[-1] - self.ne
+        inds = mx.stop_gradient(mx.topk(gates, k=k, axis=-1))
+        gates[..., inds] = 0
 
         if self.training:
             inds = np.array(inds)
@@ -148,13 +160,14 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 
             y = (y * scores[:, :, None]).sum(axis=1)
         else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt)
-
-            y = mx.stack(y, axis=0)
+            #    y = []
+            #    for xt, st, it in zip(x, scores, inds.tolist()):
+            #        yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
+            #        yt = (yt * st).sum(axis=-1)
+            #        y.append(yt)
+            #
+            #    y = mx.stack(y, axis=0)
+            self.moe_mlp(inds, scores)
 
         shared_expert_output = self.shared_expert(x)
         shared_expert_output = (
@@ -245,6 +258,20 @@ class Model(nn.Module):
     def sanitize(self, weights):
         if self.args.tie_word_embeddings and "lm_head.weight" not in weights:
             weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
+        for l in range(self.layers):
+            prefix = f"model.layers.{l}"
+            for n in ["up_proj", "down_proj", "gate_proj"]:
+                to_join = [
+                    weights.pop(f"{prefix}.mlp.experts.{e}.{n}.weight")
+                    for e in range(self.args.num_experts)
+                ]
+                import pdb
+
+                pdb.set_trace()
+                weights[f"{prefix}.mlp_moe.{n}"] = mx.stack(to_join)
+        import pdb
+
+        pdb.set_trace()
         # Remove unused precomputed rotary freqs
         return {
             k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
