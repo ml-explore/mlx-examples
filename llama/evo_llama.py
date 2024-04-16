@@ -349,7 +349,7 @@ def few_shot_generate(args):
             # if "No" in new_answer or "Yes" not in answer:
             #    loss = loss + 1
             #    print("bouuuuu!")
-            loss = len(answer)
+            loss += len(answer)
         optim.tell(cache_modifier_candidate, loss)
         print("we get loss ", loss)
         # optim.tell(cache_modifier_candidate, -float(input("Score between 0 and 9 ?")))
@@ -370,7 +370,7 @@ def few_shot_generate(args):
             cache_modifier = 0 * cache_modifier
             # TODO4: computation of the loss in test 
             # (typically the same as in TODO3)
-            loss = len(answer)
+            lossg += len(answer)
         if np.max(cache_modifier) == 0 and np.min(cache_modifier) == 0:
             print(666, "===>G", lossg, "(", "ZERO", ")  SCORE LLAMA+NG scale=", SCALE)
 
