@@ -46,6 +46,7 @@ class SpeculativeDecoder:
         model: Model,
         draft_model: Model,
         tokenizer: str,
+        color: bool,
         num_draft: int = 5,
         delta: float = 0.0,
     ):
@@ -54,6 +55,7 @@ class SpeculativeDecoder:
         self.draft_model = draft_model
         self.num_draft = num_draft
         self.delta = delta
+        self.color = color
 
     def _generate(
         self,
@@ -91,6 +93,7 @@ class SpeculativeDecoder:
         print()
         self.model.reset_cache()
 
+    # Accept / Reject criteria (see Section 2.3 https://arxiv.org/pdf/2211.17192.pdf)
     def _get_num_accept(self, draft_tokens, draft_probs, model_logits):
         # accept_toks = mx.argmax(model_logits, axis=-1) == draft_tokens
         model_probs = mx.take_along_axis(
@@ -120,9 +123,9 @@ class SpeculativeDecoder:
         tokens = mx.array([self.tokenizer.decoder_start_id])
 
         n_steps = 0
-        ntoks = 0
+        n_generated = 0
         n_accepted = 0
-        n_draft = 0
+        n_drafted = 0
 
         outputs = []
         skip = 0
@@ -133,7 +136,7 @@ class SpeculativeDecoder:
             draft_tokens = []
             draft_probs = []
             for _, (t, p) in zip(
-                range(ntoks, min(ntoks + self.num_draft, max_tokens)),
+                range(n_generated, min(n_generated + self.num_draft, max_tokens)),
                 self._generate(draft_inputs, draft_memory, draft=True),
             ):
                 draft_tokens.append(t)
@@ -163,7 +166,7 @@ class SpeculativeDecoder:
             )
 
             n_accepted += num_to_accept
-            n_draft += draft_tokens.size
+            n_drafted += draft_tokens.size
 
             # Rewind the cache for unaccepted tokens:
             if (n := draft_tokens.size) > num_to_accept:
@@ -172,17 +175,35 @@ class SpeculativeDecoder:
 
             n_steps += 1
 
+            truncated = False
             for t in new_tokens.tolist():
-                if t == self.tokenizer.eos_id or ntoks >= max_tokens:
+                if t == self.tokenizer.eos_id or n_generated >= max_tokens:
+                    truncated = True
                     break
                 outputs.append(t)
-                ntoks += 1
+                n_generated += 1
 
             str_output = self.tokenizer.decode(outputs)
-            print(str_output[skip:], end="", flush=True)
+
+            if self.color and not truncated:
+                model_token = len(self.tokenizer.decode(outputs[-1]))
+                print(
+                    "\033[34m" + str_output[skip:-model_token] + "\033[30m",
+                    end="",
+                )
+                print(str_output[-model_token:], end="", flush=True)
+            elif self.color and truncated:
+                if truncated:
+                    print(
+                        "\033[34m" + str_output[skip:] + "\033[30m",
+                        end="",
+                    )
+            else:
+                print(str_output[skip:], end="", flush=True)
+
             skip = len(str_output)
 
-            if ntoks >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
+            if n_generated >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
                 break
             draft_inputs = new_tokens[max(new_tokens.size - 2, 0) :]
             inputs = draft_inputs[-1:]
@@ -192,4 +213,148 @@ class SpeculativeDecoder:
 
         self.model.reset_cache()
         self.draft_model.reset_cache()
-        return {"n_accepted": n_accepted, "n_draft": n_draft, "n_steps": n_steps}
+        return {"n_accepted": n_accepted, "n_draft": n_drafted, "n_steps": n_steps}
+
+
+########################################################
+
+class PromptLookupDecoder:
+    def __init__(
+        self,
+        model: Model,
+        tokenizer: str,
+        n_draft: int,
+        ngram_max: int,
+        ngram_min: int,
+        temp: float,
+        seed: int,
+        color: bool,
+    ):
+        self.model = model
+        self.tokenizer = Tokenizer(tokenizer)
+        self.n_draft = n_draft
+        self.ngram_max = ngram_max
+        self.ngram_min = ngram_min
+        self.temp = temp
+        self.seed = seed
+        self.color = color
+
+    @staticmethod
+    def window_compare(start_idx, input_ids, ngram):
+        return input_ids[mx.arange(ngram.size) + start_idx] == ngram 
+
+    def generate_draft(self, input_ids):
+        for ngram_size in range(self.ngram_max, self.ngram_min - 1, -1): 
+            ngram = input_ids[-ngram_size:]
+
+            start_indices = mx.arange(0, input_ids.size - self.ngram_max)
+            matches = self.vmap_compare(start_indices, input_ids, ngram)
+            
+            # check for full `ngram` matches
+            matches = matches.all(axis=1)
+            # get idx of first match; 0 if no match
+            idx_match = matches.argmax() 
+
+            # double check idx
+            if matches[idx_match]:
+                start_idx = idx_match.item() + ngram_size
+                end_idx = start_idx + self.n_draft
+                return input_ids[start_idx:end_idx]
+
+        return mx.array([], dtype=mx.uint32)
+
+    def prompt_lookup(
+        self,
+        prompt: str,
+        max_tokens: int,
+    ):
+        def sample(logits):
+            if self.temp == 0:
+                return mx.argmax(logits, axis=-1)
+            else:
+                return mx.random.categorical(logits * (1 / self.temp))
+        
+        # used in draft generation
+        self.vmap_compare = mx.vmap(self.window_compare, in_axes=(0, None, None))
+
+        prompt = mx.array(self.tokenizer.encode(prompt), mx.uint32)[None]
+        memory = self.model.encode(prompt)
+
+        history = prompt.squeeze(0)[
+            :-1
+        ]  # remove eos token from prompt lookup search space
+
+        n_steps = 0
+        n_generated = 0
+        n_accepted = 0
+        n_drafted = 0
+
+        outputs = []
+        skip = 0
+        inputs = mx.array([self.tokenizer.decoder_start_id])
+        while True:
+            # For each decoding step: generate n_draft tokens by searching the prompt
+            draft_tokens = self.generate_draft(history)
+
+            # Verify draft tokens with the last verified token
+            verify_tokens = mx.concatenate([inputs, draft_tokens])
+            logits = self.model.decode(verify_tokens[None], memory)
+
+            # Only keep samples that match the draft:
+            # draft tokens aren't sampled - hence no accept / reject critera
+            sampled = sample(logits).squeeze(0)
+            equal_toks = sampled[:-1] == draft_tokens
+            num_to_accept = (equal_toks.tolist() + [False]).index(False)
+            new_tokens = sampled[
+                : max(1, num_to_accept + 1)
+            ]  # accepted draft tokens + next token from main model
+
+            n_accepted += num_to_accept
+            n_drafted += draft_tokens.size
+
+            # Rewind the cache for unaccepted tokens:
+            if (n := draft_tokens.size) > num_to_accept:
+                self.model.truncate_cache(n - new_tokens.size + 1)
+
+            n_steps += 1
+
+            truncated = False
+            for t in new_tokens.tolist():
+                if t == self.tokenizer.eos_id or n_generated >= max_tokens:
+                    truncated = True
+                    break
+                outputs.append(t)
+                n_generated += 1
+
+            str_output = self.tokenizer.decode(outputs)
+
+            if self.color and not truncated:
+                model_token = len(self.tokenizer.decode(outputs[-1]))
+                print(
+                    "\033[34m" + str_output[skip:-model_token] + "\033[30m",
+                    end="",
+                )
+                print(str_output[-model_token:], end="", flush=True)
+            elif self.color and truncated:
+                if truncated:
+                    print(
+                        "\033[34m" + str_output[skip:] + "\033[30m",
+                        end="",
+                    )
+            else:
+                print(str_output[skip:], end="", flush=True)
+
+            skip = len(str_output)
+
+            if n_generated >= max_tokens or new_tokens[-1] == self.tokenizer.eos_id:
+                break
+
+            history = mx.concatenate([history, new_tokens])
+            inputs = history[-1:]
+
+        print(self.tokenizer.decode(outputs)[skip:], end="", flush=True)
+        print()
+
+        self.model.reset_cache()
+
+        return {"n_accepted": n_accepted, "n_draft": n_drafted, "n_steps": n_steps}
