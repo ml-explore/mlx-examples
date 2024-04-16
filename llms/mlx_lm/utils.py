@@ -190,13 +190,12 @@ def generate_step(
 
     y, p = _step(y)
 
-    sync = mx.async_eval(y)
+    mx.async_eval(y)
     while True:
         next_y, next_p = _step(y)
-        next_sync = mx.async_eval(next_y)
-        sync.wait()
+        mx.async_eval(next_y)
         yield y.item(), p
-        sync, y, p = next_sync, next_y, next_p
+        y, p = next_y, next_p
 
 
 def generate(
