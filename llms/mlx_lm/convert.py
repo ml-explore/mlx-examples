@@ -51,6 +51,7 @@ def configure_parser() -> argparse.ArgumentParser:
     )
     return parser
 
+
 def main():
     parser = configure_parser()
     args = parser.parse_args()
