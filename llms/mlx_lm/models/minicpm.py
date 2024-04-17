@@ -177,7 +177,6 @@ class Model(nn.Module):
         self.args = args
         self.model_type = args.model_type
         self.model = MiniCPMModel(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -185,13 +184,9 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = self.lm_head(out / (self.args.hidden_size / self.args.dim_model_base))
+        out = out @ self.model.embed_tokens.weight.T
         return out, cache
 
-    def sanitize(self, weights):
-        if "lm_head.weight" not in weights:
-            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
-        return weights
 
     @property
     def layers(self):
