@@ -79,6 +79,11 @@ def default_loss(model, inputs, targets, lengths):
 def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
     # Sort by length:
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))
+    if len(dataset) < batch_size:
+        raise ValueError(
+            f"Dataset must have at least batch_size={batch_size}"
+            f" examples but only has {len(dataset)}."
+        )
 
     # Make the batches:
     batch_idx = [
