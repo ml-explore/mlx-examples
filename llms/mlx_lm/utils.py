@@ -15,7 +15,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
-from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
 from .sample_utils import top_p_sampling
@@ -277,6 +277,16 @@ def generate(
     return detokenizer.text
 
 
+def load_config(model_path: Path) -> dict:
+    try:
+        with open(model_path / "config.json", "r") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        logging.error(f"Config file not found in {model_path}")
+        raise
+    return config
+
+
 def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     """
     Load and initialize the model from a given path.
@@ -294,13 +304,8 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         FileNotFoundError: If the weight files (.safetensors) are not found.
         ValueError: If the model class or args class are not found or cannot be instantiated.
     """
-    try:
-        with open(model_path / "config.json", "r") as f:
-            config = json.load(f)
-            quantization = config.get("quantization", None)
-    except FileNotFoundError:
-        logging.error(f"Config file not found in {model_path}")
-        raise
+
+    config = load_config(model_path)
 
     weight_files = glob.glob(str(model_path / "*.safetensors"))
     if not weight_files:
@@ -319,7 +324,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     if hasattr(model, "sanitize"):
         weights = model.sanitize(weights)
 
-    if quantization is not None:
+    if quantization := config.get("quantization", None) is not None:
         # Handle legacy models which may not have everything quantized
         class_predicate = (
             lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
@@ -380,10 +385,9 @@ def fetch_from_hub(
     model_path: Path, lazy: bool = False
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     model = load_model(model_path, lazy)
-    config = AutoConfig.from_pretrained(model_path)
+    config = load_config(model_path)
     tokenizer = load_tokenizer(model_path)
-
-    return model, config.to_dict(), tokenizer
+    return model, config, tokenizer
 
 
 def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
