@@ -104,16 +104,29 @@ class MLP(nn.Module):
 
 
 class MoeMLP(nn.Module):
+
     def __init__(self, dim, hidden_dim, num_experts):
         super().__init__()
-        self.gate_proj = nn.Linear(dim * num_experts, hidden_dim, bias=False)
-        self.up_proj = nn.Linear(dim * num_experts, hidden_dim, bias=False)
-        self.down_proj = nn.Linear(hidden_dim * num_experts, dim, bias=False)
+        self.gate_proj = mx.zeros((num_experts, hidden_dim, dim))
+        self.up_proj = mx.zeros((num_experts, hidden_dim, dim))
+        self.down_proj = mx.zeros((num_experts, dim, hidden_dim))
         self.num_experts = num_experts
 
-    def __call__(self, x, selected) -> mx.array:
-
-        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
+    def __call__(self, x, gates) -> mx.array:
+        x = mx.expand_dims(x, (1, 2))
+        gates = mx.expand_dims(gates, (2, 3))
+        x_up = mx.block_masked_mm(
+            x, mx.expand_dims(mx.swapaxes(self.up_proj, -2, -1), 0), mask_rhs=gates
+        )
+        x_gate = mx.block_masked_mm(
+            x, mx.expand_dims(mx.swapaxes(self.gate_proj, -2, -1), 0), mask_rhs=gates
+        )
+        out = mx.block_masked_mm(
+            nn.silu(x_gate) * x_up,
+            mx.expand_dims(mx.swapaxes(self.down_proj, -2, -1), 0),
+            mask_rhs=gates,
+        )
+        return (out * gates).sum(axis=1).squeeze(axis=1)
 
 
 class Qwen2MoeSparseMoeBlock(nn.Module):
@@ -136,38 +149,21 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         self,
         x: mx.array,
     ):
-        ne = self.top_k
         B, L, D = x.shape
         x = x.reshape(-1, D)
 
         # router_logits: (batch * sequence_length, n_experts)
         gates = self.gate(x)
-        gates = mx.softmax(gates.astype(mx.float32), axis=-1)
+        gates = mx.softmax(gates.astype(mx.float32), axis=-1).astype(gates.dtype)
 
-        # Zero out non selected scores
-        k = scores.shape[-1] - self.ne
-        inds = mx.stop_gradient(mx.topk(gates, k=k, axis=-1))
-        gates[..., inds] = 0
+        # Zero out unselected gates
+        k = gates.shape[-1] - self.top_k
+        inds = mx.stop_gradient(mx.argpartition(gates, kth=k - 1, axis=-1)[..., :k])
 
-        if self.training:
-            inds = np.array(inds)
-            y = mx.zeros((B * L, ne, D), x.dtype)
-            for e, expert in enumerate(self.experts):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
+        # TODO replace with mx.put_along_axis and remove reshapes
+        gates[mx.arange(B * L)[:, None], inds] = 0
 
-            y = (y * scores[:, :, None]).sum(axis=1)
-        else:
-            #    y = []
-            #    for xt, st, it in zip(x, scores, inds.tolist()):
-            #        yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
-            #        yt = (yt * st).sum(axis=-1)
-            #        y.append(yt)
-            #
-            #    y = mx.stack(y, axis=0)
-            self.moe_mlp(inds, scores)
+        y = self.moe_mlp(x, gates)
 
         shared_expert_output = self.shared_expert(x)
         shared_expert_output = (
@@ -256,26 +252,17 @@ class Model(nn.Module):
         return self.lm_head(out)
 
     def sanitize(self, weights):
-        if self.args.tie_word_embeddings and "lm_head.weight" not in weights:
-            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
-        for l in range(self.layers):
+        if "model.layers.0.mlp.experts.0.up_proj.weight" not in weights:
+            return weights
+        for l in range(self.args.num_hidden_layers):
             prefix = f"model.layers.{l}"
             for n in ["up_proj", "down_proj", "gate_proj"]:
                 to_join = [
                     weights.pop(f"{prefix}.mlp.experts.{e}.{n}.weight")
                     for e in range(self.args.num_experts)
                 ]
-                import pdb
-
-                pdb.set_trace()
-                weights[f"{prefix}.mlp_moe.{n}"] = mx.stack(to_join)
-        import pdb
-
-        pdb.set_trace()
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
+                weights[f"{prefix}.mlp.moe_mlp.{n}"] = mx.stack(to_join)
+        return weights
 
     @property
     def layers(self):
