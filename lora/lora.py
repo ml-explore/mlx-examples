@@ -11,7 +11,7 @@ import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import utils as lora_utils
-from mlx.utils import tree_flatten, tree_unflatten
+from mlx.utils import tree_flatten
 from models import LoRALinear
 
 

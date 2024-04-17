@@ -1,9 +1,6 @@
-from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 import mlx.core as mx
-import mlx.nn as nn
-import numpy as np
 import transformers
 from model import Model
 

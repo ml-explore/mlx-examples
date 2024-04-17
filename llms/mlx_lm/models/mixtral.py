@@ -133,9 +133,7 @@ class MixtralSparseMoeBlock(nn.Module):
 
         gates = self.gate(x)
 
-        inds = mx.stop_gradient(
-            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        )  # TODO remove it once we figure out how to fine tune TopK in MOE
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne])
 
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),

@@ -409,7 +409,7 @@ def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler)
     httpd.serve_forever()
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="MLX Http Server.")
     parser.add_argument(
         "--model",
@@ -449,3 +449,7 @@ if __name__ == "__main__":
     )
 
     run(args.host, args.port)
+
+
+if __name__ == "__main__":
+    main()

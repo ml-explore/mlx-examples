@@ -3,8 +3,8 @@ from typing import List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from mlx.utils import tree_map, tree_unflatten
-from transformers import AutoTokenizer, T5Config
+from mlx.utils import tree_map
+from transformers import T5Config
 
 
 def _relative_position_bucket(

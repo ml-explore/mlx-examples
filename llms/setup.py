@@ -24,4 +24,14 @@ setup(
     install_requires=requirements,
     packages=["mlx_lm", "mlx_lm.models", "mlx_lm.tuner"],
     python_requires=">=3.8",
+    entry_points={
+        "console_scripts": [
+            "mlx_lm.convert = mlx_lm.convert:main",
+            "mlx_lm.fuse = mlx_lm.fuse:main",
+            "mlx_lm.generate = mlx_lm.generate:main",
+            "mlx_lm.lora = mlx_lm.lora:main",
+            "mlx_lm.merge = mlx_lm.merge:main",
+            "mlx_lm.server = mlx_lm.server:main",
+        ]
+    },
 )

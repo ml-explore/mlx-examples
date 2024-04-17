@@ -6,14 +6,14 @@ Face hub or save them locally for LoRA fine tuning.
 The main command is `mlx_lm.merge`:
 
 ```shell
-python -m mlx_lm.merge --config config.yaml 
+mlx_lm.merge --config config.yaml 
 ```
 
 The merged model will be saved by default in `mlx_merged_model`. To see a
 full list of options run:
 
 ```shell
-python -m mlx_lm.merge --help
+mlx_lm.merge --help
 ```
 
 Here is an example `config.yaml`:

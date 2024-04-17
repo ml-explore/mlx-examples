@@ -101,7 +101,10 @@ def colorprint_by_t0(s, t0):
     colorprint(color, s)
 
 
-def main(args):
+def main():
+    parser = setup_arg_parser()
+    args = parser.parse_args()
+
     mx.random.seed(args.seed)
 
     # Building tokenizer_config
@@ -143,6 +146,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = setup_arg_parser()
-    args = parser.parse_args()
-    main(args)
+    main()

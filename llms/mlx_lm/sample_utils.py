@@ -12,11 +12,6 @@ def top_p_sampling(logits: mx.array, top_p: float, temperature: float) -> mx.arr
     Returns:
         token selected based on the top-p criterion.
     """
-    if (
-        logits.dtype == mx.bfloat16
-    ):  # workaround for unable to load kernel contiguous_scan_inclusive_sum_bfloat16_bfloat16
-        logits = logits.astype(mx.float32)
-
     # referenced implementation from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py#L449-L460
     probs = mx.softmax(logits / temperature, axis=-1)
 

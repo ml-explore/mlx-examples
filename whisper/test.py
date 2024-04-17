@@ -2,7 +2,6 @@
 
 import json
 import os
-import subprocess
 import unittest
 from dataclasses import asdict
 from pathlib import Path

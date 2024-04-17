@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_map, tree_unflatten
+from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
 
 
@@ -103,7 +103,7 @@ class MOEFeedForward(nn.Module):
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
-        inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        inds = mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne]
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
             axis=-1,
