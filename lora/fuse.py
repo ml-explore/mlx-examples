@@ -43,6 +43,12 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
+        "--upload-multi-commits",
+        help="Use multiple commits to upload the model, which allows for resuming.",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "-d",
         "--de-quantize",
         help="Generate a de-quantized model.",
@@ -111,4 +117,6 @@ if __name__ == "__main__":
             raise ValueError(
                 "Must provide original Hugging Face repo to upload local model."
             )
-        utils.upload_to_hub(args.save_path, args.upload_name, hf_path)
+        utils.upload_to_hub(
+            args.save_path, args.upload_name, hf_path, args.upload_multi_commits
+        )

@@ -33,7 +33,7 @@ def fetch_from_hub(hf_path: str):
     return weights, config.to_dict(), tokenizer
 
 
-def upload_to_hub(path: str, name: str, hf_path: str):
+def upload_to_hub(path: str, name: str, hf_path: str, multi_commits: bool=False):
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
@@ -64,6 +64,8 @@ python generate.py --model {repo_id} --prompt "My name is"
         folder_path=path,
         repo_id=repo_id,
         repo_type="model",
+        multi_commits=multi_commits,
+        multi_commits_verbose=multi_commits,
     )
 
 

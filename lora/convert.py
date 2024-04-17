@@ -82,6 +82,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--upload-multi-commits",
+        help="Use multiple commits to upload the model, which allows for resuming.",
+        action="store_true",
+        default=False,
+    )
 
     args = parser.parse_args()
 
@@ -96,4 +102,6 @@ if __name__ == "__main__":
 
     utils.save_model(args.mlx_path, weights, tokenizer, config)
     if args.upload_name is not None:
-        utils.upload_to_hub(args.mlx_path, args.upload_name, args.hf_path)
+        utils.upload_to_hub(
+            args.mlx_path, args.upload_name, args.hf_path, args.upload_multi_commits
+        )

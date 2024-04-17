@@ -43,6 +43,12 @@ def configure_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
+        "--upload-multi-commits",
+        help="Use multiple commits to upload the model, which allows for resuming.",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "-d",
         "--dequantize",
         help="Dequantize a quantized model.",

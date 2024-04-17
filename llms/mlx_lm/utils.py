@@ -425,7 +425,7 @@ def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list
     return shards
 
 
-def upload_to_hub(path: str, upload_repo: str, hf_path: str):
+def upload_to_hub(path: str, upload_repo: str, hf_path: str, multi_commits: bool=False):
     """
     Uploads the model to Hugging Face hub.
 
@@ -471,6 +471,8 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         folder_path=path,
         repo_id=upload_repo,
         repo_type="model",
+        multi_commits=multi_commits,
+        multi_commits_verbose=multi_commits,
     )
     print(f"Upload successful, go to https://huggingface.co/{upload_repo} for details.")
 
@@ -584,6 +586,7 @@ def convert(
     q_bits: int = 4,
     dtype: str = "float16",
     upload_repo: str = None,
+    upload_multi_commits: Optional[bool] = None,
     revision: Optional[str] = None,
     dequantize: bool = False,
 ):
@@ -623,4 +626,4 @@ def convert(
     save_config(config, config_path=mlx_path / "config.json")
 
     if upload_repo is not None:
-        upload_to_hub(mlx_path, upload_repo, hf_path)
+        upload_to_hub(mlx_path, upload_repo, hf_path, upload_multi_commits)

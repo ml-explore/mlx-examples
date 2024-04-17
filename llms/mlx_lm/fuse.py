@@ -63,6 +63,12 @@ def parse_arguments() -> argparse.Namespace:
         default="ggml-model-f16.gguf",
         type=str,
     )
+    parser.add_argument(
+        "--upload-multi-commits",
+        help="Use multiple commits to upload the model, which allows for resuming.",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args()
 
 
@@ -121,7 +127,9 @@ def main() -> None:
             raise ValueError(
                 "Must provide original Hugging Face repo to upload local model."
             )
-        upload_to_hub(args.save_path, args.upload_repo, hf_path)
+        upload_to_hub(
+            args.save_path, args.upload_repo, hf_path, args.upload_multi_commits
+        )
 
 
 if __name__ == "__main__":

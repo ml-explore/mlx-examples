@@ -43,6 +43,12 @@ def configure_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--upload-multi-commits",
+        help="Use multiple commits to upload the model, which allows for resuming.",
+        action="store_true",
+        default=False,
+    )
     return parser
 
 
@@ -116,6 +122,7 @@ def merge(
     config: str,
     mlx_path: str = "mlx_model",
     upload_repo: Optional[str] = None,
+    upload_multi_commits: Optional[bool] = None,
 ):
     with open(config, "r") as fid:
         merge_conf = yaml.safe_load(fid)
@@ -159,7 +166,7 @@ def merge(
     save_config(config, config_path=mlx_path / "config.json")
 
     if upload_repo is not None:
-        upload_to_hub(mlx_path, upload_repo, base_hf_path)
+        upload_to_hub(mlx_path, upload_repo, base_hf_path, upload_multi_commits)
 
 
 def main():
