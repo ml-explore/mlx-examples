@@ -324,7 +324,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     if hasattr(model, "sanitize"):
         weights = model.sanitize(weights)
 
-    if quantization := config.get("quantization", None) is not None:
+    if (quantization := config.get("quantization", None)) is not None:
         # Handle legacy models which may not have everything quantized
         class_predicate = (
             lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
