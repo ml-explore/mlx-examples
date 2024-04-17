@@ -106,7 +106,6 @@ class MiniCPMAttention(nn.Module):
                 queries, keys, values, scale=self.scale, mask=mask
             )
 
-            # attn_output = attn_output.reshape(B, L, self.hidden_size) # Originale impementation
             attn_output = attn_output.transpose(0, 2, 1, 3).reshape(B, L, self.hidden_size)
 
             return self.o_proj(attn_output), (keys, values)
@@ -186,7 +185,6 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        # out = out @ self.model.embed_tokens.weight.T
         out = self.lm_head(out / (self.args.hidden_size / self.args.dim_model_base))
         return out, cache
 
