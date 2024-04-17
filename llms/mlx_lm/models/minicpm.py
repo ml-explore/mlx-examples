@@ -191,10 +191,7 @@ class Model(nn.Module):
     def sanitize(self, weights):
         if "lm_head.weight" not in weights:
             weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
+        return weights
 
     @property
     def layers(self):
