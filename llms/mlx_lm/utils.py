@@ -360,7 +360,7 @@ def load(
     tokenizer_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
-) -> Tuple[nn.Module, PreTrainedTokenizer]:
+) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
 
@@ -374,7 +374,7 @@ def load(
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
     Returns:
-        Tuple[nn.Module, PreTrainedTokenizer]: A tuple containing the loaded model and tokenizer.
+        Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
     Raises:
         FileNotFoundError: If config file or safetensors are not found.
