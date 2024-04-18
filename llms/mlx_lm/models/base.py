@@ -17,7 +17,8 @@ class KVCache:
     def update_and_fetch(self, keys, values):
         prev = self.offset
         if prev % self.step == 0:
-            shape = (1, self.n_kv_heads, max(self.step, keys.shape[2]), self.head_dim)
+            n_steps = (self.step + keys.shape[2] - 1) // self.step
+            shape = (1, self.n_kv_heads, n_steps * self.step, self.head_dim)
             new_k = mx.zeros(shape, keys.dtype)
             new_v = mx.zeros(shape, values.dtype)
             if self.keys is not None:
