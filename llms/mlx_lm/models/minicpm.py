@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -18,9 +18,22 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float
     vocab_size: int
     num_key_value_heads: int
-    rope_theta: float
     max_position_embeddings: int
     scale_depth: float
+    rope_theta: float  = 1000000.0
+    rope_traditional: bool = False
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+    tie_word_embeddings: bool = False
+
+    def __post_init__(self):
+        if self.num_key_value_heads is None:
+            self.num_key_value_heads = self.num_attention_heads
+
+        if self.rope_scaling:
+            required_keys = {"factor", "type"}
+            if not all(key in self.rope_scaling for key in required_keys):
+                raise ValueError(f"rope_scaling must contain keys {required_keys}")
+
 
 class MiniCPMRMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
@@ -32,7 +45,7 @@ class MiniCPMRMSNorm(nn.Module):
         return mx.fast.rms_norm(x, 1.0 + self.weight, self.eps)
 
 
-class MiniCPMMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -49,8 +62,7 @@ class MiniCPMMLP(nn.Module):
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
 
-class MiniCPMAttention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
+class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -69,10 +81,17 @@ class MiniCPMAttention(nn.Module):
         self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
+        rope_scale = (
+            1 / args.rope_scaling["factor"]
+            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
+            else 1
+        )
+
         self.rope = nn.RoPE(
             self.head_dim,
-            traditional=True,
+            traditional=self.args.rope_traditional,
             base=self.rope_theta,
+            scale=rope_scale,
         )
 
 
@@ -111,15 +130,15 @@ class MiniCPMAttention(nn.Module):
             return self.o_proj(attn_output), (keys, values)
 
 
-class MiniCPMDecoderLayer(nn.Module):
+class DecoderLayer(nn.Module):
     def __init__(self, args: ModelArgs) -> None:
         super().__init__()
         self.args = args
         self.hidden_size = args.hidden_size
         self.num_hidden_layers = args.num_hidden_layers
 
-        self.self_attn = MiniCPMAttention(args)
-        self.mlp = MiniCPMMLP(args)
+        self.self_attn = Attention(args)
+        self.mlp = MLP(args)
         self.input_layernorm = MiniCPMRMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = MiniCPMRMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -147,7 +166,7 @@ class MiniCPMModel(nn.Module):
 
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-                MiniCPMDecoderLayer(args=args) for _ in range(args.num_hidden_layers)
+            DecoderLayer(args=args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = MiniCPMRMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -178,14 +197,27 @@ class Model(nn.Module):
         self.model_type = args.model_type
         self.model = MiniCPMModel(args)
 
+        if not self.args.tie_word_embeddings:
+            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+
     def __call__(
         self,
         inputs: mx.array,
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
+
+        if not self.args.tie_word_embeddings:
+            out = self.lm_head(out / (self.args.hidden_size / self.args.dim_model_base))
+        else:
+            out = out @ self.model.embed_tokens.weight.T
+
         return out, cache
+
+    def sanitize(self, weights):
+        if "lm_head.weight" not in weights:
+            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
+        return weights
 
 
     @property

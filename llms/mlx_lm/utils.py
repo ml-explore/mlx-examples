@@ -191,9 +191,9 @@ def generate_step(
     y, prob = _step(y)
 
     while True:
-        sync = mx.async_eval(y)
+        # sync = mx.async_eval(y)
         next_out = _step(y)
-        sync.wait()
+        # sync.wait()
         yield y.item(), prob
         y, prob = next_out
 
