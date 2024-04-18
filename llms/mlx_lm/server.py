@@ -238,7 +238,7 @@ class APIHandler(BaseHTTPRequestHandler):
         detokenizer.reset()
         tokens = []
         finish_reason = "length"
-        suffix_to_remove = None
+        stop_sequence_suffix = None
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
@@ -258,7 +258,7 @@ class APIHandler(BaseHTTPRequestHandler):
             if stop_condition.stop_met:
                 finish_reason = "stop"
                 if stop_condition.trim_length:
-                    suffix_to_remove = self.tokenizer.decode(
+                    stop_sequence_suffix = self.tokenizer.decode(
                         tokens[-stop_condition.trim_length :]
                     )
                 break
@@ -266,8 +266,8 @@ class APIHandler(BaseHTTPRequestHandler):
         detokenizer.finalize()
         text = (
             detokenizer.text
-            if suffix_to_remove is None
-            else detokenizer.text[: -len(suffix_to_remove)]
+            if stop_sequence_suffix is None
+            else detokenizer.text[: -len(stop_sequence_suffix)]
         )
         response = self.generate_response(text, finish_reason, len(prompt), len(tokens))
 
@@ -304,7 +304,7 @@ class APIHandler(BaseHTTPRequestHandler):
         # Buffer to store the last `max_stop_id_sequence_len` tokens
         # to check for stop conditions before writing to the stream.
         stop_sequence_buffer = []
-        suffix_to_remove = None
+        stop_sequence_suffix = None
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
@@ -331,7 +331,7 @@ class APIHandler(BaseHTTPRequestHandler):
             )
             if stop_condition.stop_met:
                 if stop_condition.trim_length:
-                    suffix_to_remove = self.tokenizer.decode(
+                    stop_sequence_suffix = self.tokenizer.decode(
                         tokens[-stop_condition.trim_length :]
                     )
                 break
@@ -348,8 +348,8 @@ class APIHandler(BaseHTTPRequestHandler):
             detokenizer.finalize()
             next_chunk = (
                 detokenizer.last_segment
-                if suffix_to_remove is None
-                else detokenizer.last_segment[: -len(suffix_to_remove)]
+                if stop_sequence_suffix is None
+                else detokenizer.last_segment[: -len(stop_sequence_suffix)]
             )
             response = self.generate_response(next_chunk, "length")
 
