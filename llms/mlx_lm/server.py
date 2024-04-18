@@ -238,6 +238,7 @@ class APIHandler(BaseHTTPRequestHandler):
         detokenizer.reset()
         tokens = []
         finish_reason = "length"
+        suffix_to_remove = None
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
@@ -303,7 +304,7 @@ class APIHandler(BaseHTTPRequestHandler):
         # Buffer to store the last `max_stop_id_sequence_len` tokens
         # to check for stop conditions before writing to the stream.
         stop_sequence_buffer = []
-
+        suffix_to_remove = None
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
