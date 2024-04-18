@@ -52,12 +52,16 @@ the converted `weights.npz`, `tokenizer.model`, and `config.json` there.
 ### Run
 
 Once you've converted the weights to MLX format, you can interact with the
-LlamA model:
+LlamA 1,2 model:
 
 ```
 python llama.py --prompt "hello"
 ```
+LlamA 3 model:
 
+```
+python llama3.py --prompt "hello"
+```
 Run `python llama.py --help` for more details.
 
 [^1]: For Llama v1 refer to the [arXiv paper](https://arxiv.org/abs/2302.13971) and [blog post](https://ai.meta.com/blog/large-language-model-llama-meta-ai/) for more details.

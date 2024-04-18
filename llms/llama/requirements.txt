@@ -2,3 +2,4 @@ mlx>=0.8.0
 sentencepiece
 torch
 numpy
+tiktoken==0.4.0
