@@ -74,6 +74,7 @@ class NaiveStreamingDetokenizer(StreamingDetokenizer):
 
     def __init__(self, tokenizer):
         self._tokenizer = tokenizer
+        self._tokenizer.decode([0])
         self.reset()
 
     def reset(self):

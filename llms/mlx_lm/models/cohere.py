@@ -185,7 +185,7 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
+        out = self.model.embed_tokens.as_linear(out)
         out = out * self.model.args.logit_scale
         return out, cache
 

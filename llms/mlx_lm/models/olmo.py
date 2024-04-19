@@ -142,7 +142,7 @@ class Transformer(nn.Module):
         h = self.norm(h)
 
         if self.weight_tying:
-            return h @ self.wte.weight.T, cache
+            return self.wte.as_linear(h), cache
 
         return self.ff_out(h), cache
 

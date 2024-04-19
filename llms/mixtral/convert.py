@@ -60,13 +60,10 @@ def quantize(weights, config, args):
     model.update(all_weights)
 
     # Quantize the model:
-    nn.QuantizedLinear.quantize_module(
+    nn.quantize(
         model,
         args.q_group_size,
         args.q_bits,
-        # TODO: Quantize gate matrices when < 32 tiles supported
-        linear_class_predicate=lambda m: isinstance(m, nn.Linear)
-        and m.weight.shape[0] != 8,
     )
 
     # Extract the subset of quantized weights:

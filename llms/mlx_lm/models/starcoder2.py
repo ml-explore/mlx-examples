@@ -149,7 +149,8 @@ class Model(nn.Module):
         self.args = args
         self.model_type = args.model_type
         self.model = Starcoder2Model(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        if not args.tie_word_embeddings:
+            sself.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -157,12 +158,11 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        return self.lm_head(out), cache
-
-    def sanitize(self, weights):
-        if self.args.tie_word_embeddings and "lm_head.weight" not in weights:
-            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
-        return weights
+        if self.args.tie_word_embeddings:
+            out = self.model.embed_tokens.as_linear(out)
+        else:
+            out = self.lm_head(out)
+        return out, cache
 
     @property
     def layers(self):
