@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union, List
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -203,6 +203,7 @@ def generate(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
+    eos_token_ids: Optional[List[int]] = None,
 ) -> str:
     """
     Generate text from the model.
@@ -219,6 +220,7 @@ def generate(
            probability and displays it.
        repetition_penalty (float, optional): The penalty factor for repeating tokens.
        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
+       eos_token_ids (Optional[List[int]], optional): An Array of EOS Tokens, esp. for Llama-3-8B-Instruct Model, which have 2 types of EOS tokens ("<|end_of_text|>" and "<|eot_id|>").
     """
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
@@ -232,6 +234,11 @@ def generate(
 
     tic = time.perf_counter()
     detokenizer.reset()
+
+    if not eos_token_ids:
+        eos_token_ids = [tokenizer.eos_token_id]
+        # For Llama-3-7B-Instruct Model, there are 2 types of eos_token "<|end_of_text|>" and "<|eot_id|>",
+        # i.e. [tokenizer.eos_token_id,tokenizer.convert_tokens_to_ids("<|eot_id|>")], better leave a room for an array of eos_token(s)
 
     for (token, prob), n in zip(
         generate_step(
@@ -247,7 +254,7 @@ def generate(
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
-        if token == tokenizer.eos_token_id:
+        if token in eos_token_ids:
             break
         detokenizer.add_token(token)
 
