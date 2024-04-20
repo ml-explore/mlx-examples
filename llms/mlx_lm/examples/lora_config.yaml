@@ -69,10 +69,9 @@ lora_parameters:
 #  arguments: [1e-5, 1000, 1e-7] # passed to scheduler
 
 #hf_dataset:
-#  name: "stacked-summaries/stacked-xsum"
-#  train_split: "train"
-#  valid_split: "validation"
-#  test_split: "test"
-#  prompt_feature: "document"
+#  name: "billsum"
+#  train_split: "train[:1000]"
+#  valid_split: "train[-100:]"
+#  prompt_feature: "text"
 #  completion_feature: "summary"
 
