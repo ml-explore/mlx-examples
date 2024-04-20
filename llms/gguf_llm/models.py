@@ -285,7 +285,7 @@ def load(gguf_file: str, repo: str = None):
             and f"{p}.scales" in weights
         )
         nn.quantize(
-            qm,
+            model,
             **quantization,
             class_predicate=class_predicate,
         )
