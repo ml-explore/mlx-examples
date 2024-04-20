@@ -138,12 +138,12 @@ class CompletionsHFDataset(CompletionsDataset):
 
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
     if args.hf_dataset:
-        from datasets import load_dataset
-
+        from datasets import load_dataset, get_dataset_infos
+        dataset_name = args.hf_dataset["name"]
+        print(f"Loading HF dataset {get_dataset_infos(dataset_name)}")
         train_split = args.hf_dataset.get("train_split", "train[:80%]")
         valid_split = args.hf_dataset.get("valid_split", "train[-10%:]")
         test_split = args.hf_dataset.get("test_split")
-        dataset_name = args.hf_dataset["name"]
         train = load_dataset(
             dataset_name, args.hf_dataset.get("configuration"), split=train_split
         )
