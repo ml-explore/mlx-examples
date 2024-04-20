@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Iterable
+
 from transformers import PreTrainedTokenizer
 
 
@@ -88,6 +89,7 @@ class TextHFDataset(Dataset):
     A Huggingface dataset for a single blob of text per record
     https://huggingface.co/docs/datasets/en/access
     """
+
     def __init__(self, hf_dataset, tokenizer, text_feature):
         self._data = hf_dataset
         self._tokenizer = tokenizer
@@ -102,8 +104,14 @@ class CompletionsHFDataset(CompletionsDataset):
     Prompt/completion data from a Huggingface dataset
     https://huggingface.co/docs/datasets/en/access
     """
-    def __init__(self, hf_dataset: Iterable, tokenizer: PreTrainedTokenizer,
-                 prompt_feature: str = None,  completion_feature: str = None):
+
+    def __init__(
+        self,
+        hf_dataset: Iterable,
+        tokenizer: PreTrainedTokenizer,
+        prompt_feature: str = None,
+        completion_feature: str = None,
+    ):
         """
 
         :param hf_dataset: Iterable HF dataset instance in a 'split' and/or configuration
@@ -131,28 +139,55 @@ class CompletionsHFDataset(CompletionsDataset):
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
     if args.hf_dataset:
         from datasets import load_dataset
+
         train_split = args.hf_dataset.get("train_split", "train[:80%]")
         valid_split = args.hf_dataset.get("valid_split", "train[-10%:]")
         test_split = args.hf_dataset.get("test_split")
-        train = load_dataset(args.hf_dataset.name, args.hf_dataset.get("configuration"), split=train_split)
-        valid = load_dataset(args.hf_dataset.name, args.hf_dataset.get("configuration"), split=valid_split)
-        test = load_dataset(args.hf_dataset.name,
-                            args.hf_dataset.get("configuration"), split=test_split) if args.test else None
-        text_feature = args.hf_dataset.text_feature
-        prompt_feature = args.hf_dataset.prompt_feature
-        completion_feature = args.hf_dataset.completion_feature
-        if (prompt_feature and prompt_feature in train.features and completion_feature and
-                completion_feature in train.features):
-            train = CompletionsHFDataset(train, tokenizer, prompt_feature, completion_feature)
-            valid = CompletionsHFDataset(valid, tokenizer, prompt_feature, completion_feature)
-            test = CompletionsHFDataset(test, tokenizer, prompt_feature, completion_feature) if args.test else None
+        dataset_name = args.hf_dataset["name"]
+        train = load_dataset(
+            dataset_name, args.hf_dataset.get("configuration"), split=train_split
+        )
+        valid = load_dataset(
+            dataset_name, args.hf_dataset.get("configuration"), split=valid_split
+        )
+        test = (
+            load_dataset(
+                dataset_name, args.hf_dataset.get("configuration"), split=test_split
+            )
+            if args.test
+            else None
+        )
+        text_feature = args.hf_dataset.get("text_feature")
+        prompt_feature = args.hf_dataset.get("prompt_feature")
+        completion_feature = args.hf_dataset.get("completion_feature")
+        if (
+            prompt_feature
+            and prompt_feature in train.features
+            and completion_feature
+            and completion_feature in train.features
+        ):
+            train = CompletionsHFDataset(
+                train, tokenizer, prompt_feature, completion_feature
+            )
+            valid = CompletionsHFDataset(
+                valid, tokenizer, prompt_feature, completion_feature
+            )
+            test = (
+                CompletionsHFDataset(
+                    test, tokenizer, prompt_feature, completion_feature
+                )
+                if args.test
+                else None
+            )
         elif text_feature and text_feature in train.features:
             train = TextHFDataset(train, tokenizer, text_feature)
             valid = TextHFDataset(valid, tokenizer, text_feature)
             test = TextHFDataset(test, tokenizer, text_feature) if args.test else None
         else:
-            raise ValueError("Need to specify either a prompt and completion feature or a text feature which are "
-                             "features of the specified HF dataset")
+            raise ValueError(
+                "Need to specify either a prompt and completion feature or a text feature which are "
+                "features of the specified HF dataset"
+            )
 
     else:
         names = ("train", "valid", "test")
