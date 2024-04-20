@@ -103,7 +103,7 @@ class MLP(nn.Module):
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-class MoeMLP(nn.Module):
+class SwitchMLP(nn.Module):
 
     def __init__(self, dim, hidden_dim, num_experts):
         super().__init__()
@@ -112,21 +112,13 @@ class MoeMLP(nn.Module):
         self.down_proj = mx.zeros((num_experts, dim, hidden_dim))
         self.num_experts = num_experts
 
-    def __call__(self, x, gates) -> mx.array:
-        x = mx.expand_dims(x, (1, 2))
-        gates = mx.expand_dims(gates, (2, 3))
-        x_up = mx.block_masked_mm(
-            x, mx.expand_dims(mx.swapaxes(self.up_proj, -2, -1), 0), mask_rhs=gates
+    def __call__(self, x, indices) -> mx.array:
+        x = mx.expand_dims(x, -2)
+        x_up = mx.fast.switch_linear(x, self.up_proj.swapaxes(-1, -2), indices)
+        x_gate = mx.fast.switch_linear(x, self.gate_proj.swapaxes(-1, -2), indices)
+        return mx.fast.switch_linear(
+            nn.silu(x_gate) * x_up, self.down_proj.swapaxes(-1, -2), indices
         )
-        x_gate = mx.block_masked_mm(
-            x, mx.expand_dims(mx.swapaxes(self.gate_proj, -2, -1), 0), mask_rhs=gates
-        )
-        out = mx.block_masked_mm(
-            nn.silu(x_gate) * x_up,
-            mx.expand_dims(mx.swapaxes(self.down_proj, -2, -1), 0),
-            mask_rhs=gates,
-        )
-        return (out * gates).sum(axis=1).squeeze(axis=1)
 
 
 class Qwen2MoeSparseMoeBlock(nn.Module):
@@ -140,7 +132,7 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         self.top_k = args.num_experts_per_tok
 
         self.gate = nn.Linear(dim, num_experts, bias=False)
-        self.moe_mlp = MoeMLP(dim, intermediate_size, num_experts)
+        self.switch_mlp = SwitchMLP(dim, intermediate_size, num_experts)
 
         self.shared_expert = MLP(dim, shared_expert_intermediate_size)
         self.shared_expert_gate = nn.Linear(dim, 1, bias=False)
@@ -149,30 +141,22 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         self,
         x: mx.array,
     ):
-        B, L, D = x.shape
-        x = x.reshape(-1, D)
-
-        # router_logits: (batch * sequence_length, n_experts)
         gates = self.gate(x)
-        gates = mx.softmax(gates.astype(mx.float32), axis=-1).astype(gates.dtype)
+        gates = mx.softmax(gates, axis=-1, precise=True)
 
-        # Zero out unselected gates
-        k = gates.shape[-1] - self.top_k
-        inds = mx.stop_gradient(mx.argpartition(gates, kth=k - 1, axis=-1)[..., :k])
+        k = self.top_k
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=k - 1, axis=-1)[..., :k])
+        scores = mx.take_along_axis(gates, inds, axis=-1)
 
-        # TODO replace with mx.put_along_axis and remove reshapes
-        gates[mx.arange(B * L)[:, None], inds] = 0
-
-        y = self.moe_mlp(x, gates)
+        y = self.switch_mlp(x, inds)
+        y = (y * scores[..., None]).sum(axis=-2)
 
         shared_expert_output = self.shared_expert(x)
         shared_expert_output = (
             mx.sigmoid(self.shared_expert_gate(x)) * shared_expert_output
         )
 
-        y += shared_expert_output
-
-        return y.reshape(B, L, -1)
+        return y + shared_expert_output
 
 
 class Qwen2MoeDecoderLayer(nn.Module):
@@ -261,7 +245,7 @@ class Model(nn.Module):
                     weights.pop(f"{prefix}.mlp.experts.{e}.{n}.weight")
                     for e in range(self.args.num_experts)
                 ]
-                weights[f"{prefix}.mlp.moe_mlp.{n}"] = mx.stack(to_join)
+                weights[f"{prefix}.mlp.switch_mlp.{n}"] = mx.stack(to_join)
         return weights
 
     @property
