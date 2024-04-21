@@ -98,7 +98,9 @@ def save_model(save_dir: str, weights, tokenizer, config):
 
     for i, shard in enumerate(shards):
         shard_name = shard_file_format.format(i + 1, shards_count)
-        mx.save_safetensors(str(save_dir / shard_name), shard, metadata={"format": "mlx"})
+        mx.save_safetensors(
+            str(save_dir / shard_name), shard, metadata={"format": "mlx"}
+        )
         for weight_name in shard.keys():
             index_data["weight_map"][weight_name] = shard_name
         del shard
