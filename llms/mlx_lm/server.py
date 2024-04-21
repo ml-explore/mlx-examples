@@ -128,6 +128,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.top_p = self.body.get("top_p", 1.0)
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
+        self.logit_bias = self.body.get("logit_bias", None)
 
         # Get stop id sequences, if provided
         stop_words = self.body.get("stop", [])
@@ -247,6 +248,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 repetition_context_size=self.repetition_context_size,
+                logit_bias=self.logit_bias,
             ),
             range(self.max_tokens),
         ):
