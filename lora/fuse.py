@@ -48,11 +48,6 @@ if __name__ == "__main__":
         help="Generate a de-quantized model.",
         action="store_true",
     )
-    parser.add_argument(
-        "--save-format",
-        help="Format for saved safetensors. Examples: 'mlx', 'pt', 'tf', 'flax'.",
-        default="mlx",
-    )   
 
     print("Loading pretrained model")
     args = parser.parse_args()
@@ -105,7 +100,7 @@ if __name__ == "__main__":
     weights = dict(tree_flatten(model.parameters()))
     if args.de_quantize:
         config.pop("quantization", None)
-    utils.save_model(args.save_path, weights, tokenizer, config, args.save_format)
+    utils.save_model(args.save_path, weights, tokenizer, config)
 
     if args.upload_name is not None:
         hf_path = args.hf_path
