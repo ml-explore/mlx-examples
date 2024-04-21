@@ -338,7 +338,6 @@ class APIHandler(BaseHTTPRequestHandler):
                     )
                 break
 
-            detokenizer.finalize()
             new_text = detokenizer.last_segment
             response = self.generate_response(new_text, None)
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
@@ -347,7 +346,6 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # check is there any remaining text to send
         if stop_sequence_buffer:
-            detokenizer.finalize()
             next_chunk = (
                 detokenizer.last_segment
                 if stop_sequence_suffix is None
