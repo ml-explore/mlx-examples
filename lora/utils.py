@@ -93,14 +93,31 @@ def save_model(save_dir: str, weights, tokenizer, config):
         else "model.safetensors"
     )
 
+    total_size = sum(v.nbytes for v in weights.values())
+    index_data = {"metadata": {"total_size": total_size}, "weight_map": {}}
+
     for i, shard in enumerate(shards):
         shard_name = shard_file_format.format(i + 1, shards_count)
-        mx.save_safetensors(str(save_dir / shard_name), shard)
+        mx.save_safetensors(
+            str(save_dir / shard_name), shard, metadata={"format": "mlx"}
+        )
+        for weight_name in shard.keys():
+            index_data["weight_map"][weight_name] = shard_name
+        del shard
 
     tokenizer.save_pretrained(save_dir)
-
     with open(save_dir / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
+
+    index_data["weight_map"] = {
+        k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
+    }
+    with open(save_dir / "model.safetensors.index.json", "w") as f:
+        json.dump(
+            index_data,
+            f,
+            indent=4,
+        )
 
 
 def load(path_or_hf_repo: str):

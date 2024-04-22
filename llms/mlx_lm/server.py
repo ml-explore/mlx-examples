@@ -128,6 +128,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.top_p = self.body.get("top_p", 1.0)
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
+        self.logit_bias = self.body.get("logit_bias", None)
 
         # Get stop id sequences, if provided
         stop_words = self.body.get("stop", [])
@@ -247,6 +248,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 repetition_context_size=self.repetition_context_size,
+                logit_bias=self.logit_bias,
             ),
             range(self.max_tokens),
         ):
@@ -336,7 +338,6 @@ class APIHandler(BaseHTTPRequestHandler):
                     )
                 break
 
-            detokenizer.finalize()
             new_text = detokenizer.last_segment
             response = self.generate_response(new_text, None)
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
@@ -345,7 +346,6 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # check is there any remaining text to send
         if stop_sequence_buffer:
-            detokenizer.finalize()
             next_chunk = (
                 detokenizer.last_segment
                 if stop_sequence_suffix is None
