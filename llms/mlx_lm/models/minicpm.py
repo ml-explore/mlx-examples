@@ -7,6 +7,7 @@ import numpy as np
 
 from .base import BaseModelArgs
 
+
 @dataclass
 class ModelArgs(BaseModelArgs):
     model_type: str
@@ -20,9 +21,10 @@ class ModelArgs(BaseModelArgs):
     num_key_value_heads: int
     max_position_embeddings: int
     scale_depth: float
+    scale_emb: float
     rope_theta: float  = 1000000.0
     rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+    rope_scaling: Optional[Dict[str, Union[str, float]]] = None
     tie_word_embeddings: bool = False
 
     def __post_init__(self):
@@ -34,11 +36,14 @@ class ModelArgs(BaseModelArgs):
             if not all(key in self.rope_scaling for key in required_keys):
                 raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
+            if self.rope_scaling["type"] != "linear":
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'.")
+
 
 class MiniCPMRMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
         super().__init__()
-        self.weight = mx.ones((dims,))
+        self.weight = mx.ones(dims)
         self.eps = eps
 
     def __call__(self, x):
@@ -48,18 +53,12 @@ class MiniCPMRMSNorm(nn.Module):
 class MLP(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.args = args
-        self.hidden_size = args.hidden_size
-        self.intermediate_size = args.intermediate_size
-
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
-
-        self.act_fn = nn.silu
+        self.gate_proj = nn.Linear(args.hidden_size, args.intermediate_size, bias=False)
+        self.up_proj = nn.Linear(args.hidden_size, args.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(args.intermediate_size, args.hidden_size, bias=False)
 
     def __call__(self, x):
-        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
 class Attention(nn.Module):
@@ -70,6 +69,13 @@ class Attention(nn.Module):
         self.hidden_size = args.hidden_size
         self.num_heads = args.num_attention_heads
         self.rope_theta = args.rope_theta
+        self.max_position_embeddings = args.max_position_embeddings
+
+        self.scaling_factor = 1.0  # Default scaling factor
+
+        # Check if rope_scaling is set and has the 'factor' key
+        if args.rope_scaling and 'factor' in args.rope_scaling:
+            self.scaling_factor = float(args.rope_scaling['factor'])
 
         self.head_dim = self.hidden_size // self.num_heads
         self.num_key_value_heads = args.num_key_value_heads
@@ -81,18 +87,19 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
-        rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
+        self.rope = nn.RoPE(
+            dims=self.head_dim,
+            traditional=args.rope_traditional,
+            base=self.rope_theta,
+            scale=self.scaling_factor,
         )
 
-        self.rope = nn.RoPE(
-            self.head_dim,
-            traditional=self.args.rope_traditional,
-            base=self.rope_theta,
-            scale=rope_scale,
-        )
+    def compute_dynamic_base(self, N):
+        # Dynamically adjust the base if the sequence length exceeds the predefined max
+        if N > self.max_position_embeddings:
+            return self.rope_theta * ((self.scaling_factor * N / self.max_position_embeddings) - (self.scaling_factor - 1)) ** (self.dims / (self.dims - 2))
+        else:
+            return self.rope_theta
 
 
     def __call__(
@@ -101,7 +108,10 @@ class Attention(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
         ) -> mx.array:
-            B, L, _ = x.shape
+            B, L, D = x.shape
+
+            dynamic_base = self.compute_dynamic_base(L)
+            self.rope.base = dynamic_base
 
             queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
@@ -111,10 +121,8 @@ class Attention(nn.Module):
 
             if cache is not None:
                 key_cache, value_cache = cache
-
                 queries = self.rope(queries, offset=key_cache.shape[2])
                 keys = self.rope(keys, offset=key_cache.shape[2])
-
                 keys = mx.concatenate([key_cache, keys], axis=2)
                 values = mx.concatenate([value_cache, values], axis=2)
             else:
@@ -131,7 +139,7 @@ class Attention(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, args: ModelArgs) -> None:
+    def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
         self.hidden_size = args.hidden_size
@@ -143,6 +151,7 @@ class DecoderLayer(nn.Module):
         self.post_attention_layernorm = MiniCPMRMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
         self.scale_depth = args.scale_depth
+        self.num_hidden_layers = args.num_hidden_layers
 
     def __call__(
         self,
@@ -152,8 +161,8 @@ class DecoderLayer(nn.Module):
     ) -> mx.array:
         r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r * (self.scale_depth / np.sqrt(self.num_hidden_layers))
-        h = self.mlp(self.post_attention_layernorm(h))
-        out = x + r * (self.scale_depth / np.sqrt(self.num_hidden_layers))
+        r = self.mlp(self.post_attention_layernorm(h))
+        out = h + r * (self.scale_depth / np.sqrt(self.num_hidden_layers))
         return out, cache
 
 
@@ -166,7 +175,7 @@ class MiniCPMModel(nn.Module):
 
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-            DecoderLayer(args=args) for _ in range(args.num_hidden_layers)
+            DecoderLayer(args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = MiniCPMRMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -175,7 +184,7 @@ class MiniCPMModel(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        h = self.embed_tokens(inputs)
+        h = self.embed_tokens(inputs) * self.args.scale_emb
 
         mask = None
         if h.shape[1] > 1:
@@ -189,6 +198,7 @@ class MiniCPMModel(nn.Module):
             h, cache[e] = layer(h, mask, cache[e])
 
         return self.norm(h), cache
+
 
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -218,7 +228,6 @@ class Model(nn.Module):
         if "lm_head.weight" not in weights:
             weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
         return weights
-
 
     @property
     def layers(self):
