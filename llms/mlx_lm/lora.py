@@ -53,6 +53,7 @@ CONFIG_DEFAULTS = {
     "test_batches": 500,
     "max_seq_length": 2048,
     "lr_schedule": None,
+    "hf_dataset": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
 }
 
