@@ -18,12 +18,10 @@ def quantize(weights, config, args):
     model.load_weights(list(weights.items()))
 
     # Quantize the model:
-    nn.QuantizedLinear.quantize_module(
+    nn.quantize(
         model,
         args.q_group_size,
         args.q_bits,
-        linear_class_predicate=lambda m: isinstance(m, nn.Linear)
-        and m.weight.shape[0] != 8,
     )
 
     # Update the config:
