@@ -135,7 +135,7 @@ class TransformerBlock(nn.Module):
         return out, cache
 
 
-class LlamaModel(nn.Module):
+class Phi3Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -173,7 +173,7 @@ class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.model_type = args.model_type
-        self.model = LlamaModel(args)
+        self.model = Phi3Model(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
@@ -183,12 +183,6 @@ class Model(nn.Module):
     ):
         out, cache = self.model(inputs, cache)
         return self.lm_head(out), cache
-
-    def sanitize(self, weights):
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
 
     @property
     def layers(self):
