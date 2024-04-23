@@ -31,9 +31,10 @@ class ModelArgs(BaseModelArgs):
                 raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
             if self.rope_scaling["type"] != "linear":
-                Warning("rope_scaling 'type' currently only supports 'linear' setting rope scaling to false.")
+                print(
+                    "[WARNING] rope_scaling 'type' currently only supports 'linear' setting rope scaling to false."
+                )
                 self.rope_scaling = None
-
 
 
 class Attention(nn.Module):
@@ -71,7 +72,7 @@ class Attention(nn.Module):
     ) -> mx.array:
         B, L, D = x.shape
 
-        qkv= self.qkv_proj(x)
+        qkv = self.qkv_proj(x)
         queries, keys, values = mx.split(qkv, 3, axis=-1)
 
         # Prepare the queries, keys and values for the attention computation
