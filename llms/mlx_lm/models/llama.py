@@ -154,6 +154,9 @@ class LlamaModel(nn.Module):
         mask = None
         if h.shape[1] > 1:
             mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
+            if cache is not None:
+                pad_size = cache[0][0].shape[2]
+                mask = mx.pad(mask, ((0, 0), (0, pad_size)))
             mask = mask.astype(h.dtype)
 
         if cache is None:
