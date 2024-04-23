@@ -70,6 +70,7 @@ def linear_to_lora_layers(
         "mistral",
         "llama",
         "phi",
+        "phi3",
         "mixtral",
         "stablelm",
         "qwen2",

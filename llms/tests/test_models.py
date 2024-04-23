@@ -53,6 +53,23 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_phi3(self):
+        from mlx_lm.models import phi3
+
+        args = phi3.ModelArgs(
+            model_type="phi3",
+            hidden_size=3072,
+            num_hidden_layers=32,
+            intermediate_size=8192,
+            num_attention_heads=32,
+            rms_norm_eps=1e-5,
+            vocab_size=32064,
+        )
+        model = phi3.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
     def test_gemma(self):
         from mlx_lm.models import gemma
 
