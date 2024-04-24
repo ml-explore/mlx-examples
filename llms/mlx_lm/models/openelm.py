@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union, List
+from typing import Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -38,6 +38,7 @@ class ModelArgs(BaseModelArgs):
                 )
                 self.rope_scaling = None
 
+
 def make_divisible(
     v: Union[float, int],
     divisor: Optional[int] = 8,
@@ -64,7 +65,6 @@ def make_divisible(
     return new_v
 
 
-
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
@@ -77,7 +77,7 @@ class Attention(nn.Module):
         self.repeats = n_heads // n_kv_heads
         self.scale = head_dim**-0.5
 
-        op_size = ((n_heads + (n_kv_heads*2)) * head_dim)
+        op_size = (n_heads + (n_kv_heads * 2)) * head_dim
         self.qkv_proj = nn.Linear(model_dim, op_size, bias=False)
         self.out_proj = nn.Linear(n_heads * head_dim, model_dim, bias=False)
 
@@ -85,9 +85,7 @@ class Attention(nn.Module):
 
         if self.normalize_qk_projections:
             self.q_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
-            self.k_norm = nn.RMSNorm(
-                head_dim, eps=args.rms_norm_eps
-            )
+            self.k_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
 
         rope_scale = (
             1 / args.rope_scaling["factor"]
@@ -110,10 +108,12 @@ class Attention(nn.Module):
         B, L, D = x.shape
 
         qkv = self.qkv_proj(x)
-        qkv = qkv.reshape(B, L, self.n_heads + (self.n_kv_heads * 2), self.head_dim).transpose(0, 2, 1, 3)
-        queries, kv = mx.split(qkv, [self.n_heads], axis=1)
-        keys , values = mx.split(kv, 2, axis=1)
-
+        qkv = qkv.reshape(
+            B, L, self.n_heads + (self.n_kv_heads * 2), self.head_dim
+        ).transpose(0, 2, 1, 3)
+        queries = qkv[:, : self.n_heads, :, :]
+        kv = qkv[:, self.n_heads :, :, :]
+        keys = values = kv
 
         # Prepare the queries, keys and values for the attention computation
         if self.normalize_qk_projections:
@@ -136,7 +136,6 @@ class Attention(nn.Module):
 
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
-
         return self.out_proj(output), (keys, values)
 
 
@@ -158,24 +157,19 @@ class MLP(nn.Module):
         self.proj_2 = nn.Linear(hidden_dim, dim, bias=False)
 
     def __call__(self, x) -> mx.array:
-        if self.args.ffn_with_glu:
-            x = self.proj_1(x)
-            gate, x = mx.split(x, 2, axis=-1)
-            return self.proj_2(nn.silu(gate) * x)
-        else:
-            return self.proj_2(self.act(self.proj_1(x)))
+        x = self.proj_1(x)
+        gate, x = mx.split(x, 2, axis=-1)
+        return self.proj_2(nn.silu(gate) * x)
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, args: ModelArgs, layer_id:int):
+    def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
         dim = args.model_dim
         self.attn = Attention(args, layer_id=layer_id)
         self.ffn = MLP(args, layer_id=layer_id)
         self.ffn_norm = nn.RMSNorm(dim, eps=args.rms_norm_eps)
-        self.attn_norm = nn.RMSNorm(
-            dim, eps=args.rms_norm_eps
-        )
+        self.attn_norm = nn.RMSNorm(dim, eps=args.rms_norm_eps)
 
     def __call__(
         self,
@@ -185,7 +179,7 @@ class TransformerBlock(nn.Module):
     ) -> mx.array:
         r, cache = self.attn(self.ffn_norm(x), mask, cache)
         h = x + r
-        r = self.ffn(self.attn_norm(h))
+        r = self.ffn(self.ffn_norm(h))
         out = h + r
         return out, cache
 
@@ -199,7 +193,8 @@ class OpenELMModel(nn.Module):
         assert self.vocab_size > 0
         self.token_embeddings = nn.Embedding(args.vocab_size, args.model_dim)
         self.layers = [
-            TransformerBlock(args, layer_id=layer_id) for layer_id in range(self.num_transformer_layers)
+            TransformerBlock(args, layer_id=layer_id)
+            for layer_id in range(self.num_transformer_layers)
         ]
         self.norm = nn.RMSNorm(args.model_dim, eps=args.rms_norm_eps)
 
