@@ -18,6 +18,7 @@ class ModelArgs(BaseModelArgs):
     num_query_heads: List
     num_kv_heads: List
     ffn_multipliers: List
+    ffn_with_glu: bool = True
     normalize_qk_projections: bool = True
     share_input_output_layers: bool = True
     rms_norm_eps: float = 1e-6
@@ -67,27 +68,25 @@ def make_divisible(
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
-        dim = args.head_dim
-        model_dim = args.model_dim
+        self.head_dim = head_dim = args.head_dim
+        self.layer_id = layer_id
+        self.model_dim = model_dim = args.model_dim
 
-        self.n_q_heads = n_q_heads = args.num_query_heads[layer_id]
-        self.n_k_heads = n_k_heads = args.num_kv_heads[layer_id]
-        self.n_v_heads = n_v_heads = args.num_kv_heads[layer_id]
+        self.n_heads = n_heads = args.num_query_heads[layer_id]
+        self.n_kv_heads = n_kv_heads = args.num_kv_heads[layer_id]
+        self.repeats = n_heads // n_kv_heads
+        self.scale = head_dim**-0.5
 
-        self.num_groups = self.n_q_heads // self.n_k_heads
-
-        self.scale = dim**-0.5
-
-        op_size = (n_q_heads + n_k_heads + n_v_heads) * dim
+        op_size = ((n_heads + (n_kv_heads*2)) * head_dim)
         self.qkv_proj = nn.Linear(model_dim, op_size, bias=False)
-        self.out_proj = nn.Linear(n_q_heads * dim, model_dim, bias=False)
+        self.out_proj = nn.Linear(n_heads * head_dim, model_dim, bias=False)
 
         self.normalize_qk_projections = args.normalize_qk_projections
 
         if self.normalize_qk_projections:
-            self.q_norm = nn.RMSNorm(dim, eps=args.rms_norm_eps)
+            self.q_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
             self.k_norm = nn.RMSNorm(
-                dim, eps=args.rms_norm_eps
+                head_dim, eps=args.rms_norm_eps
             )
 
         rope_scale = (
@@ -96,7 +95,7 @@ class Attention(nn.Module):
             else 1
         )
         self.rope = nn.RoPE(
-            dim,
+            head_dim,
             traditional=args.rope_traditional,
             base=args.rope_theta,
             scale=rope_scale,
@@ -111,12 +110,12 @@ class Attention(nn.Module):
         B, L, D = x.shape
 
         qkv = self.qkv_proj(x)
-        queries, keys, values = mx.split(qkv, 3, axis=-1)
+        qkv = qkv.reshape(B, L, self.n_heads + (self.n_kv_heads * 2), self.head_dim).transpose(0, 2, 1, 3)
+        queries, kv = mx.split(qkv, [self.n_heads], axis=1)
+        keys , values = mx.split(kv, 2, axis=1)
+
 
         # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         if self.normalize_qk_projections:
             queries = self.q_norm(queries)
             keys = self.k_norm(keys)
@@ -134,7 +133,10 @@ class Attention(nn.Module):
         output = mx.fast.scaled_dot_product_attention(
             queries, keys, values, scale=self.scale, mask=mask
         )
+
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
+
+
         return self.out_proj(output), (keys, values)
 
 
@@ -238,9 +240,11 @@ class Model(nn.Module):
     ):
         out, cache = self.transformer(inputs, cache)
         if self.args.share_input_output_layers:
-            out = self.model.token_embeddings.as_linear(out)
+            out = self.transformer.token_embeddings.as_linear(out)
         else:
             out = self.lm_head(out)
+
+        return out, cache
 
     @property
     def layers(self):
