@@ -143,7 +143,7 @@ class MiniCPMModel(nn.Module):
         self.layers = [
             DecoderLayer(args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = MiniCPMRMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
         self,
