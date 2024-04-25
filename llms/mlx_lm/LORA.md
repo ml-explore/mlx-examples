@@ -11,16 +11,17 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Qwen2
 - Gemma
 - OLMo
+- MiniCPM
 
 ## Contents
 
-* [Run](#Run)
-  * [Fine-tune](#Fine-tune)
-  * [Evaluate](#Evaluate)
-  * [Generate](#Generate)
-* [Fuse](#Fuse)
-* [Data](#Data)
-* [Memory Issues](#Memory-Issues)
+- [Run](#Run)
+  - [Fine-tune](#Fine-tune)
+  - [Evaluate](#Evaluate)
+  - [Generate](#Generate)
+- [Fuse](#Fuse)
+- [Data](#Data)
+- [Memory Issues](#Memory-Issues)
 
 ## Run
 
@@ -122,7 +123,7 @@ To upload a fused model, supply the `--upload-repo` and `--hf-path` arguments
 to `mlx_lm.fuse`. The latter is the repo name of the original model, which is
 useful for the sake of attribution and model versioning.
 
-For example, to fuse and upload a model derived from Mistral-7B-v0.1, run: 
+For example, to fuse and upload a model derived from Mistral-7B-v0.1, run:
 
 ```shell
 mlx_lm.fuse \
@@ -144,38 +145,54 @@ can specify the file name with `--gguf-path`.
 
 ## Data
 
-The LoRA command expects you to provide a dataset with `--data`.  The MLX
+The LoRA command expects you to provide a dataset with `--data`. The MLX
 Examples GitHub repo has an [example of the WikiSQL
 data](https://github.com/ml-explore/mlx-examples/tree/main/lora/data) in the
 correct format.
 
 For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
-loader expects a `test.jsonl` in the data directory. 
+loader expects a `test.jsonl` in the data directory.
 
 Currently, `*.jsonl` files support three data formats: `chat`,
 `completions`, and `text`. Here are three examples of these formats:
 
 `chat`:
-  
+
 ```jsonl
-{"messages": [
-  {"role": "system", "content": "You are a helpful assistant." },
-  {"role": "user", "content": "Hello."},
-  {"role": "assistant", "content": "How can I assistant you today."},
-]}
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Hello."
+    },
+    {
+      "role": "assistant",
+      "content": "How can I assistant you today."
+    }
+  ]
+}
 ```
 
 `completions`:
-  
+
 ```jsonl
-{"prompt": "What is the capital of France?", "completion": "Paris."}
+{
+  "prompt": "What is the capital of France?",
+  "completion": "Paris."
+}
 ```
 
 `text`:
 
 ```jsonl
-{"text": "This is an example for the model."}
+{
+  "text": "This is an example for the model."
+}
 ```
 
 Note, the format is automatically determined by the dataset. Note also, keys in
@@ -207,7 +224,7 @@ of memory. Here are some tips to reduce memory use should you need to do so:
 
 1. Try quantization (QLoRA). You can use QLoRA by generating a quantized model
    with `convert.py` and the `-q` flag. See the [Setup](#setup) section for
-   more details. 
+   more details.
 
 2. Try using a smaller batch size with `--batch-size`. The default is `4` so
    setting this to `2` or `1` will reduce memory consumption. This may slow
@@ -243,7 +260,6 @@ The above command on an M1 Max with 32 GB runs at about 250
 tokens-per-second, using the MLX Example
 [`wikisql`](https://github.com/ml-explore/mlx-examples/tree/main/lora/data)
 data set.
-
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
