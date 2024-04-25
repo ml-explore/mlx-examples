@@ -74,9 +74,7 @@ class Attention(nn.Module):
             self.k_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
 
         self.rope = nn.RoPE(
-            head_dim,
-            traditional=args.rope_traditional,
-            base=args.rope_theta
+            head_dim, traditional=args.rope_traditional, base=args.rope_theta
         )
 
     def __call__(
