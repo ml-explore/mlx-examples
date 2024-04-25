@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Union
+from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
 from .base import BaseModelArgs
+
 
 @dataclass
 class ModelArgs(BaseModelArgs):
@@ -21,10 +22,11 @@ class ModelArgs(BaseModelArgs):
     max_position_embeddings: int
     scale_depth: float
     scale_emb: float
-    rope_theta: float  = 1000000.0
+    rope_theta: float = 1000000.0
     rope_traditional: bool = False
     rope_scaling: Optional[Dict[str, Union[str, float]]] = None
     tie_word_embeddings: bool = False
+
 
 class MLP(nn.Module):
     def __init__(self, args):
@@ -53,10 +55,18 @@ class Attention(nn.Module):
         self.num_key_value_heads = args.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
 
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
+        self.q_proj = nn.Linear(
+            self.hidden_size, self.num_heads * self.head_dim, bias=False
+        )
+        self.k_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        )
+        self.v_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim, self.hidden_size, bias=False
+        )
 
         rope_scale = (
             1 / args.rope_scaling["factor"]
@@ -76,32 +86,34 @@ class Attention(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
-        ):
-            B, L, _ = x.shape
+    ):
+        B, L, _ = x.shape
 
-            queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
-            queries = queries.reshape(B, L, self.num_heads, -1).transpose(0, 2, 1, 3)
-            keys = keys.reshape(B, L, self.num_key_value_heads, -1).transpose(0, 2, 1, 3)
-            values = values.reshape(B, L, self.num_key_value_heads, -1).transpose(0, 2, 1, 3)
+        queries = queries.reshape(B, L, self.num_heads, -1).transpose(0, 2, 1, 3)
+        keys = keys.reshape(B, L, self.num_key_value_heads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.num_key_value_heads, -1).transpose(
+            0, 2, 1, 3
+        )
 
-            if cache is not None:
-                key_cache, value_cache = cache
-                queries = self.rope(queries, offset=key_cache.shape[2])
-                keys = self.rope(keys, offset=key_cache.shape[2])
-                keys = mx.concatenate([key_cache, keys], axis=2)
-                values = mx.concatenate([value_cache, values], axis=2)
-            else:
-                queries = self.rope(queries)
-                keys = self.rope(keys)
+        if cache is not None:
+            key_cache, value_cache = cache
+            queries = self.rope(queries, offset=key_cache.shape[2])
+            keys = self.rope(keys, offset=key_cache.shape[2])
+            keys = mx.concatenate([key_cache, keys], axis=2)
+            values = mx.concatenate([value_cache, values], axis=2)
+        else:
+            queries = self.rope(queries)
+            keys = self.rope(keys)
 
-            attn_output = mx.fast.scaled_dot_product_attention(
-                queries, keys, values, scale=self.scale, mask=mask
-            )
+        attn_output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
 
-            attn_output = attn_output.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        attn_output = attn_output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
-            return self.o_proj(attn_output), (keys, values)
+        return self.o_proj(attn_output), (keys, values)
 
 
 class DecoderLayer(nn.Module):
@@ -114,7 +126,9 @@ class DecoderLayer(nn.Module):
         self.self_attn = Attention(args)
         self.mlp = MLP(args)
         self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = nn.RMSNorm(
+            args.hidden_size, eps=args.rms_norm_eps
+        )
 
         self.scale_depth = args.scale_depth
         self.num_hidden_layers = args.num_hidden_layers
@@ -140,9 +154,7 @@ class MiniCPMModel(nn.Module):
         assert self.vocab_size > 0
 
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
-        self.layers = [
-            DecoderLayer(args) for _ in range(args.num_hidden_layers)
-        ]
+        self.layers = [DecoderLayer(args) for _ in range(args.num_hidden_layers)]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
@@ -194,7 +206,6 @@ class Model(nn.Module):
         if "lm_head.weight" not in weights:
             weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
         return weights
-
 
     @property
     def layers(self):
