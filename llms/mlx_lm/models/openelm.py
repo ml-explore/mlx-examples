@@ -73,7 +73,7 @@ class Attention(nn.Module):
         self.model_dim = model_dim = args.model_dim
 
         self.n_heads = n_heads = args.num_query_heads[layer_id]
-        self.n_kv_heads = n_kv_heads = args.num_kv_heads[layer_id]s
+        self.n_kv_heads = n_kv_heads = args.num_kv_heads[layer_id]
         self.scale = head_dim**-0.5
 
         op_size = (n_heads + (n_kv_heads * 2)) * head_dim
@@ -114,10 +114,8 @@ class Attention(nn.Module):
         ).transpose(0, 2, 1, 3)
 
         # [B, (q_h + k_h + v_h), S, h] --> [B, q_h, S h], [B, k_h, S, h], [B, v_h, S, h]
-        queries = qkv[:, : self.n_heads, :, :]
-        keys = qkv[:, self.n_heads : (self.n_heads + self.n_kv_heads), :, :]
-        values = qkv[:, (self.n_heads + self.n_kv_heads) :, :, :]
-
+        queries, keys, values = mx.split(qkv, [self.n_heads, self.n_heads + self.n_kv_heads], axis=1)
+        
         # Prepare the queries, keys and values for the attention computation
         if self.normalize_qk_projections:
             queries = self.q_norm(queries)
