@@ -88,6 +88,8 @@ def linear_to_lora_layers(
         keys = set(["att_proj"])
     elif model.model_type == "phi3":
         keys = set(["self_attn.qkv_proj"])
+    elif model.model_type == "openelm":
+            keys = set(["self_attn.qkv_proj"])
     elif model.model_type == "phi-msft":
         keys = set(["mixer.Wqkv", "moe.gate"])
     elif model.model_type == "dbrx":
