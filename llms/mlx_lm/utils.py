@@ -311,7 +311,12 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 
     config = load_config(model_path)
 
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
+    weight_files = glob.glob(str(model_path / "model*.safetensors"))
+
+    if not weight_files:
+        # Try weight for back-compat
+        weight_files = glob.glob(str(model_path / "weight*.safetensors"))
+
     if not weight_files:
         logging.error(f"No safetensors found in {model_path}")
         raise FileNotFoundError(f"No safetensors found in {model_path}")
