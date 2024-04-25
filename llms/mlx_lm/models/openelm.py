@@ -24,19 +24,6 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float = 1e-6
     rope_theta: float = 10000
     rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-
-    def __post_init__(self):
-        if self.rope_scaling:
-            required_keys = {"long_factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
-
-            if self.rope_scaling["type"] != "linear":
-                print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear' setting rope scaling to false."
-                )
-                self.rope_scaling = None
 
 
 def make_divisible(
@@ -86,16 +73,10 @@ class Attention(nn.Module):
             self.q_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
             self.k_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
 
-        rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
-        )
         self.rope = nn.RoPE(
             head_dim,
             traditional=args.rope_traditional,
-            base=args.rope_theta,
-            scale=rope_scale,
+            base=args.rope_theta
         )
 
     def __call__(
@@ -114,8 +95,10 @@ class Attention(nn.Module):
         ).transpose(0, 2, 1, 3)
 
         # [B, (q_h + k_h + v_h), S, h] --> [B, q_h, S h], [B, k_h, S, h], [B, v_h, S, h]
-        queries, keys, values = mx.split(qkv, [self.n_heads, self.n_heads + self.n_kv_heads], axis=1)
-        
+        queries, keys, values = mx.split(
+            qkv, [self.n_heads, self.n_heads + self.n_kv_heads], axis=1
+        )
+
         # Prepare the queries, keys and values for the attention computation
         if self.normalize_qk_projections:
             queries = self.q_norm(queries)
