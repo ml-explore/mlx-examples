@@ -146,15 +146,15 @@ class MLP(nn.Module):
         dim = args.model_dim
         ffn_multiplier = args.ffn_multipliers[layer_id]
 
-        hidden_dim = int(
+        intermediate_dim = int(
             make_divisible(
                 ffn_multiplier * args.model_dim,
                 divisor=args.ffn_dim_divisor,
             )
         )
 
-        self.proj_1 = nn.Linear(dim, 2 * hidden_dim, bias=False)
-        self.proj_2 = nn.Linear(hidden_dim, dim, bias=False)
+        self.proj_1 = nn.Linear(dim, 2 * intermediate_dim, bias=False)
+        self.proj_2 = nn.Linear(intermediate_dim, dim, bias=False)
 
     def __call__(self, x) -> mx.array:
         x = self.proj_1(x)
@@ -177,7 +177,7 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attn(self.ffn_norm(x), mask, cache)
+        r, cache = self.attn(self.attn_norm(x), mask, cache)
         h = x + r
         r = self.ffn(self.ffn_norm(h))
         out = h + r
@@ -226,7 +226,7 @@ class Model(nn.Module):
         self.model_type = args.model_type
         self.transformer = OpenELMModel(args)
         if not args.share_input_output_layers:
-            self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+            self.lm_head = nn.Linear(args.model_dim, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -243,4 +243,4 @@ class Model(nn.Module):
 
     @property
     def layers(self):
-        return self.model.layers
+        return self.transformer.layers
