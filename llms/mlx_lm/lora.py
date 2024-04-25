@@ -247,7 +247,7 @@ def run(args, training_callback: TrainingCallback = None):
         print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
 
-if __name__ == "__main__":
+def main():
     parser = build_parser()
     args = parser.parse_args()
     config = args.config
@@ -266,3 +266,7 @@ if __name__ == "__main__":
         if not args.get(k, None):
             args[k] = v
     run(types.SimpleNamespace(**args))
+
+
+if __name__ == "__main__":
+    main()

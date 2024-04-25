@@ -38,7 +38,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--upload-name",
-        help="The name of model to upload to Hugging Face MLX Community",
+        help="The name of model to upload to Hugging Face MLX Community.",
         type=str,
         default=None,
     )

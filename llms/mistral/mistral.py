@@ -183,7 +183,7 @@ def load_model(folder: str):
     weights = tree_unflatten(list(weights.items()))
     model = Mistral(model_args)
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.quantize(model, **quantization)
     model.update(weights)
     mx.eval(model.parameters())
     return model, tokenizer

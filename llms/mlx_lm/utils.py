@@ -15,7 +15,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
-from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
 from .sample_utils import top_p_sampling
@@ -30,12 +30,6 @@ MODEL_REMAPPING = {
 }
 
 MAX_FILE_SIZE_GB = 5
-
-linear_class_predicate = (
-    lambda m: isinstance(m, nn.Linear)
-    and m.weight.shape[0]
-    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
-)
 
 
 def _get_classes(config: dict):
@@ -123,6 +117,7 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
+    logit_bias: Optional[Dict[int, float]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -141,6 +136,7 @@ def generate_step(
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
+        logits = logits + logit_bias if logit_bias else logits
         softmax_logits = mx.softmax(logits)
 
         if temp == 0:
@@ -188,14 +184,14 @@ def generate_step(
                 repetition_context = repetition_context[-repetition_context_size:]
         return y, prob
 
-    y, prob = _step(y)
+    y, p = _step(y)
 
+    mx.async_eval(y)
     while True:
-        sync = mx.async_eval(y)
-        next_out = _step(y)
-        sync.wait()
-        yield y.item(), prob
-        y, prob = next_out
+        next_y, next_p = _step(y)
+        mx.async_eval(next_y)
+        yield y.item(), p
+        y, p = next_y, next_p
 
 
 def generate(
@@ -209,6 +205,7 @@ def generate(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
+    logit_bias: Optional[Dict[int, float]] = None,
 ) -> str:
     """
     Generate text from the model.
@@ -247,6 +244,7 @@ def generate(
             repetition_penalty,
             repetition_context_size,
             top_p,
+            logit_bias,
         ),
         range(max_tokens),
     ):
@@ -283,6 +281,16 @@ def generate(
     return detokenizer.text
 
 
+def load_config(model_path: Path) -> dict:
+    try:
+        with open(model_path / "config.json", "r") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        logging.error(f"Config file not found in {model_path}")
+        raise
+    return config
+
+
 def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     """
     Load and initialize the model from a given path.
@@ -300,13 +308,8 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         FileNotFoundError: If the weight files (.safetensors) are not found.
         ValueError: If the model class or args class are not found or cannot be instantiated.
     """
-    try:
-        with open(model_path / "config.json", "r") as f:
-            config = json.load(f)
-            quantization = config.get("quantization", None)
-    except FileNotFoundError:
-        logging.error(f"Config file not found in {model_path}")
-        raise
+
+    config = load_config(model_path)
 
     weight_files = glob.glob(str(model_path / "*.safetensors"))
     if not weight_files:
@@ -325,26 +328,17 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     if hasattr(model, "sanitize"):
         weights = model.sanitize(weights)
 
-    if quantization is not None:
-        # for legacy models that don't have lm_head quant due to non-32 dims
-        if "lm_head.scales" not in weights.keys():
-            vocab_size = config["vocab_size"]
-            extended_linear_class_predicate = (
-                lambda layer: linear_class_predicate(layer)
-                and layer.weight.shape[0] != vocab_size
-            )
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=extended_linear_class_predicate,
-            )
-        # for models that have lm_head quant
-        else:
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=linear_class_predicate,
-            )
+    if (quantization := config.get("quantization", None)) is not None:
+        # Handle legacy models which may not have everything quantized
+        class_predicate = (
+            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
+            and f"{p}.scales" in weights
+        )
+        nn.quantize(
+            model,
+            **quantization,
+            class_predicate=class_predicate,
+        )
 
     model.load_weights(list(weights.items()))
 
@@ -360,7 +354,7 @@ def load(
     tokenizer_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
-) -> Tuple[nn.Module, PreTrainedTokenizer]:
+) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
 
@@ -374,7 +368,7 @@ def load(
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
     Returns:
-        Tuple[nn.Module, PreTrainedTokenizer]: A tuple containing the loaded model and tokenizer.
+        Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
     Raises:
         FileNotFoundError: If config file or safetensors are not found.
@@ -395,10 +389,9 @@ def fetch_from_hub(
     model_path: Path, lazy: bool = False
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     model = load_model(model_path, lazy)
-    config = AutoConfig.from_pretrained(model_path)
+    config = load_config(model_path)
     tokenizer = load_tokenizer(model_path)
-
-    return model, config.to_dict(), tokenizer
+    return model, config, tokenizer
 
 
 def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
@@ -543,10 +536,7 @@ def quantize_model(
         Tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-
-    nn.QuantizedLinear.quantize_module(
-        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
-    )
+    nn.quantize(model, q_group_size, q_bits)
     quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
