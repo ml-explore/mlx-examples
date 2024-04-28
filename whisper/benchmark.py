@@ -5,10 +5,9 @@ import subprocess
 import time
 
 import mlx.core as mx
+from mlx_whisper import audio, decoding, load_models, transcribe
 
-from whisper import audio, decoding, load_models, transcribe
-
-audio_file = "whisper/assets/ls_test.flac"
+audio_file = "mlx_whisper/assets/ls_test.flac"
 
 
 def parse_arguments():

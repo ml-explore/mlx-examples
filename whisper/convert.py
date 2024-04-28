@@ -16,10 +16,9 @@ import mlx.nn as nn
 import numpy as np
 import torch
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
+from mlx_whisper import torch_whisper
+from mlx_whisper.whisper import ModelDimensions, Whisper
 from tqdm import tqdm
-
-from whisper import torch_whisper
-from whisper.whisper import ModelDimensions, Whisper
 
 _VALID_DTYPES = {"float16", "float32"}
 
