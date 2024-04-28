@@ -163,14 +163,10 @@ class LlamaModel(nn.Module):
             f"Model info\n"
             f"==========\n"
             f"Context length: {args.context_length}\n"
+            f"Vocab size: {args.vocab_size}\n"
             f"Hidden size: {args.hidden_size}\n"
             f"Num layers: {args.num_hidden_layers}\n"
             f"Num attention heads: {args.num_attention_heads}\n"
-            f"Num key value heads: {args.num_key_value_heads}\n"
-            f"RMSNorm epsilon: {args.rms_norm_eps}\n"
-            f"Vocab size: {args.vocab_size}\n"
-            f"RoPE theta: {args.rope_theta}\n"
-            f"RoPE traditional: {args.rope_traditional}\n"
         )
 
     def __call__(
