@@ -64,6 +64,8 @@ python generate.py --model {repo_id} --prompt "My name is"
         folder_path=path,
         repo_id=repo_id,
         repo_type="model",
+        multi_commits=True,
+        multi_commits_verbose=True,
     )
 
 

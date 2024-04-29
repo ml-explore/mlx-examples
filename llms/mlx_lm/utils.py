@@ -469,6 +469,8 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         folder_path=path,
         repo_id=upload_repo,
         repo_type="model",
+        multi_commits=True,
+        multi_commits_verbose=True,
     )
     print(f"Upload successful, go to https://huggingface.co/{upload_repo} for details.")
 
