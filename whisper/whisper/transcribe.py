@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright 2023 Apple Inc.
 
 import sys
 import warnings
@@ -219,7 +219,7 @@ def transcribe(
                 kwargs.pop("best_of", None)
 
             options = DecodingOptions(**kwargs, temperature=t)
-            decode_result = model.decode(segment, options)
+            decode_result = model.decode(segment, options) # `segment` dim is 2D matrix of 3000 x 80
 
             needs_fallback = False
             if (
