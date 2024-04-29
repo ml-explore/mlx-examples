@@ -277,7 +277,7 @@ def load(gguf_file: str, repo: str = None):
     if gguf_ft == 0 or gguf_ft == 1:
         # ALL_F32 or MOSTLY_F16
         quantization = None
-        print("Non-quantized Float32 model")
+        print("Non-quantized: float16 or float32 model")
         pass
     elif gguf_ft == 2 or gguf_ft == 3:
         # MOSTLY_Q4_0 or MOSTLY_Q4_1
