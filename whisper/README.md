@@ -53,7 +53,7 @@ python convert.py --torch-name-or-path ${model} --dtype float32 --mlx-path mlx_m
 python convert.py --torch-name-or-path ${model} -q --q_bits 4 --mlx-path mlx_models/${model}_quantized_4bits
 ```
 
-## Run
+### Run
 
 Install `mlx_whisper` package:
 
