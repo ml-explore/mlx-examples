@@ -136,7 +136,10 @@ def generate_step(
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        logits = logits + logit_bias if logit_bias else logits
+        if logit_bias:
+            indices = mx.array(list(logit_bias.keys()))
+            values = mx.array(list(logit_bias.values()))
+            logits[:, indices] += values
         softmax_logits = mx.softmax(logits)
 
         if temp == 0:
