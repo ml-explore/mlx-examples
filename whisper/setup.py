@@ -28,10 +28,10 @@ setup(
     install_requires=requirements,
     packages=find_packages(),
     package_data={
-        'mlx_whisper': [
-            'assets/mel_filters.npz',
-            'assets/multilingual.tiktoken',
-            'assets/gpt2.tiktoken',
+        "mlx_whisper": [
+            "assets/mel_filters.npz",
+            "assets/multilingual.tiktoken",
+            "assets/gpt2.tiktoken",
         ],
     },
     python_requires=">=3.8",
