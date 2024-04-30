@@ -17,7 +17,6 @@ from version import __version__
 setup(
     name="mlx_whisper",
     version=__version__,
-    # version="0.1.0",
     description="OpenAI Whisper on Apple silicon with MLX and the Hugging Face Hub",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -28,5 +27,12 @@ setup(
     license="MIT",
     install_requires=requirements,
     packages=find_packages(),
+    package_data={
+        'mlx_whisper': [
+            'assets/mel_filters.npz',
+            'assets/multilingual.tiktoken',
+            'assets/gpt2.tiktoken',
+        ],
+    },
     python_requires=">=3.8",
 )
