@@ -136,7 +136,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
         self.logit_bias = self.body.get("logit_bias", None)
-        
+
         self.validate_model_parameters()
 
         # Get stop id sequences, if provided
@@ -167,30 +167,37 @@ class APIHandler(BaseHTTPRequestHandler):
         """
         if not isinstance(self.stream, bool):
             raise ValueError("stream must be a boolean")
-        
+
         if not isinstance(self.max_tokens, int) or self.max_tokens < 0:
             raise ValueError("max_tokens must be a non-negative integer")
-        
+
         if not isinstance(self.temperature, float) or self.temperature < 0:
             raise ValueError("temperature must be a non-negative float")
-        
+
         if not isinstance(self.top_p, float) or self.top_p < 0 or self.top_p > 1:
             raise ValueError("top_p must be a float between 0 and 1")
-        
-        if not isinstance(self.repetition_penalty, float) or self.repetition_penalty < 0:
+
+        if (
+            not isinstance(self.repetition_penalty, float)
+            or self.repetition_penalty < 0
+        ):
             raise ValueError("repetition_penalty must be a non-negative float")
-        
-        if not isinstance(self.repetition_context_size, int) or self.repetition_context_size < 0:
+
+        if (
+            not isinstance(self.repetition_context_size, int)
+            or self.repetition_context_size < 0
+        ):
             raise ValueError("repetition_context_size must be a non-negative integer")
-        
-        if not isinstance(self.logit_bias, dict):
-            raise ValueError("logit_bias must be a dict of int to float")
-        
-        try:
-            self.logit_bias = {int(k): v for k, v in self.logit_bias.items()}
-        except ValueError:
-            raise ValueError("logit_bias must be a dict of int to float")
-        
+
+        if self.logit_bias is not None:
+            if not isinstance(self.logit_bias, dict):
+                raise ValueError("logit_bias must be a dict of int to float")
+
+            try:
+                self.logit_bias = {int(k): v for k, v in self.logit_bias.items()}
+            except ValueError:
+                raise ValueError("logit_bias must be a dict of int to float")
+
         if not isinstance(self.requested_model, str):
             raise ValueError("model must be a string")
 
