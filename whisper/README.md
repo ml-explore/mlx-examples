@@ -53,20 +53,26 @@ python convert.py --torch-name-or-path ${model} --dtype float32 --mlx-path mlx_m
 python convert.py --torch-name-or-path ${model} -q --q_bits 4 --mlx-path mlx_models/${model}_quantized_4bits
 ```
 
-### Run
+## Run
+
+Install `mlx_whisper` package:
+
+```shell
+pip install mlx_whisper
+```
 
 Transcribe audio with:
 
 ```python
-import whisper
+import mlx_whisper
 
-text = whisper.transcribe(speech_file)["text"]
+text = mlx_whisper.transcribe(speech_file)["text"]
 ```
 
 Choose the model by setting `path_or_hf_repo`. For example:
 
 ```python
-result = whisper.transcribe(speech_file, path_or_hf_repo="models/large")
+result = mlx_whisper.transcribe(speech_file, path_or_hf_repo="models/large")
 ```
 
 This will load the model contained in `models/large`. The `path_or_hf_repo`
@@ -77,14 +83,14 @@ The `transcribe` function also supports word-level timestamps. You can generate
 these with:
 
 ```python
-output = whisper.transcribe(speech_file, word_timestamps=True)
+output = mlx_whisper.transcribe(speech_file, word_timestamps=True)
 print(output["segments"][0]["words"])
 ```
 
 To see more transcription options use:
 
 ```
->>> help(whisper.transcribe)
+>>> help(mlx_whisper.transcribe)
 ```
 
 [^1]: Refer to the [arXiv paper](https://arxiv.org/abs/2212.04356), [blog post](https://openai.com/research/whisper), and [code](https://github.com/openai/whisper) for more details.
