@@ -113,12 +113,14 @@ class SwitchMLP(nn.Module):
         self.num_experts = num_experts
 
     def __call__(self, x, indices) -> mx.array:
-        x = mx.expand_dims(x, -2)
-        x_up = mx.fast.switch_linear(x, self.up_proj.swapaxes(-1, -2), indices)
-        x_gate = mx.fast.switch_linear(x, self.gate_proj.swapaxes(-1, -2), indices)
-        return mx.fast.switch_linear(
-            nn.silu(x_gate) * x_up, self.down_proj.swapaxes(-1, -2), indices
+        x = mx.expand_dims(x, (-2, -3))
+        x_up = mx.block_sparse_mm(x, self.up_proj.swapaxes(-1, -2), rhs_indices=indices)
+        x_gate = mx.block_sparse_mm(
+            x, self.gate_proj.swapaxes(-1, -2), rhs_indices=indices
         )
+        return mx.block_sparse_mm(
+            nn.silu(x_gate) * x_up, self.down_proj.swapaxes(-1, -2), rhs_indices=indices
+        ).squeeze(-2)
 
 
 class Qwen2MoeSparseMoeBlock(nn.Module):
