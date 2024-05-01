@@ -238,6 +238,7 @@ def run(args, training_callback: TrainingCallback = None):
             tokenizer=tokenizer,
             batch_size=args.batch_size,
             num_batches=args.test_batches,
+            max_seq_length=args.max_seq_length,
         )
 
         test_ppl = math.exp(test_loss)
