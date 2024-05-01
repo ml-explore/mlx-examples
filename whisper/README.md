@@ -6,18 +6,64 @@ parameters.[^1]
 
 ### Setup
 
-First, install the dependencies:
-
-```
-pip install -r requirements.txt
-```
-
 Install [`ffmpeg`](https://ffmpeg.org/):
 
 ```
 # on macOS using Homebrew (https://brew.sh/)
 brew install ffmpeg
 ```
+
+Install the `mlx-whisper` package with:
+
+```
+pip install mlx-whisper
+```
+
+To build from source you can do:
+
+```
+pip install -e .
+```
+
+### Run
+
+Transcribe audio with:
+
+```python
+import mlx_whisper
+
+text = mlx_whisper.transcribe(speech_file)["text"]
+```
+
+The default model is "mlx-community/whisper-tiny". Choose the model by
+setting `path_or_hf_repo`. For example:
+
+```python
+result = mlx_whisper.transcribe(speech_file, path_or_hf_repo="models/large")
+```
+
+This will load the model contained in `models/large`. The `path_or_hf_repo` can
+also point to an MLX-style Whisper model on the Hugging Face Hub. In this case,
+the model will be automatically downloaded. A [collection of pre-converted
+Whisper
+models](https://huggingface.co/collections/mlx-community/whisper-663256f9964fbb1177db93dc)
+are in the Hugging Face MLX Community.
+
+The `transcribe` function also supports word-level timestamps. You can generate
+these with:
+
+```python
+output = mlx_whisper.transcribe(speech_file, word_timestamps=True)
+print(output["segments"][0]["words"])
+```
+
+To see more transcription options use:
+
+```
+>>> help(mlx_whisper.transcribe)
+```
+
+### Converting models
 
 > [!TIP]
 > Skip the conversion step by using pre-converted checkpoints from the Hugging
@@ -51,46 +97,6 @@ model="tiny"
 python convert.py --torch-name-or-path ${model} --mlx-path mlx_models/${model}_fp16
 python convert.py --torch-name-or-path ${model} --dtype float32 --mlx-path mlx_models/${model}_fp32
 python convert.py --torch-name-or-path ${model} -q --q_bits 4 --mlx-path mlx_models/${model}_quantized_4bits
-```
-
-### Run
-
-Install `mlx_whisper` package:
-
-```shell
-pip install mlx_whisper
-```
-
-Transcribe audio with:
-
-```python
-import mlx_whisper
-
-text = mlx_whisper.transcribe(speech_file)["text"]
-```
-
-Choose the model by setting `path_or_hf_repo`. For example:
-
-```python
-result = mlx_whisper.transcribe(speech_file, path_or_hf_repo="models/large")
-```
-
-This will load the model contained in `models/large`. The `path_or_hf_repo`
-can also point to an MLX-style Whisper model on the Hugging Face Hub. In this
-case, the model will be automatically downloaded.
-
-The `transcribe` function also supports word-level timestamps. You can generate
-these with:
-
-```python
-output = mlx_whisper.transcribe(speech_file, word_timestamps=True)
-print(output["segments"][0]["words"])
-```
-
-To see more transcription options use:
-
-```
->>> help(mlx_whisper.transcribe)
 ```
 
 [^1]: Refer to the [arXiv paper](https://arxiv.org/abs/2212.04356), [blog post](https://openai.com/research/whisper), and [code](https://github.com/openai/whisper) for more details.

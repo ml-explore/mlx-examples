@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import sys
 from pathlib import Path
 
@@ -15,7 +17,7 @@ sys.path.append(str(package_dir))
 from version import __version__
 
 setup(
-    name="mlx_whisper",
+    name="mlx-whisper",
     version=__version__,
     description="OpenAI Whisper on Apple silicon with MLX and the Hugging Face Hub",
     long_description=open("README.md", encoding="utf-8").read(),
@@ -28,7 +30,7 @@ setup(
     install_requires=requirements,
     packages=find_packages(),
     package_data={
-        "mlx_whisper": [
+        "whisper": [
             "assets/mel_filters.npz",
             "assets/multilingual.tiktoken",
             "assets/gpt2.tiktoken",

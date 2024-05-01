@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import json
 import os
@@ -20,7 +20,7 @@ MODEL_NAME = "tiny"
 MLX_FP32_MODEL_PATH = "mlx_models/tiny_fp32"
 MLX_FP16_MODEL_PATH = "mlx_models/tiny_fp16"
 MLX_4BITS_MODEL_PATH = "mlx_models/tiny_quantized_4bits"
-TEST_AUDIO = "whisper/assets/ls_test.flac"
+TEST_AUDIO = "mlx_whisper/assets/ls_test.flac"
 
 
 def _save_model(save_dir, weights, config):
