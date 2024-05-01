@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import json
-from functools import partial
 from typing import Optional
 
 import mlx.core as mx

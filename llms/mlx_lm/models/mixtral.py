@@ -6,7 +6,6 @@ import mlx.nn as nn
 import numpy as np
 
 from .base import BaseModelArgs
-from .layers import RMSNorm
 
 
 @dataclass
@@ -38,8 +37,6 @@ class MixtralAttention(nn.Module):
         self.head_dim = self.hidden_size // self.num_heads
         self.num_key_value_heads = args.num_key_value_heads
         self.rope_theta = args.rope_theta
-
-        self.repeats = self.num_heads // self.num_key_value_heads
 
         self.scale = self.head_dim**-0.5
 
@@ -79,10 +76,6 @@ class MixtralAttention(nn.Module):
             0, 2, 1, 3
         )
 
-        if self.repeats > 1:
-            keys = mx.repeat(keys, self.repeats, axis=1)
-            values = mx.repeat(values, self.repeats, axis=1)
-
         if cache is not None:
             key_cache, value_cache = cache
             queries = self.rope(queries, offset=key_cache.shape[2])
@@ -93,11 +86,10 @@ class MixtralAttention(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores += mask
-        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
-        output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
 
@@ -141,9 +133,7 @@ class MixtralSparseMoeBlock(nn.Module):
 
         gates = self.gate(x)
 
-        inds = mx.stop_gradient(
-            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        )  # TODO remove it once we figure out how to fine tune TopK in MOE
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne])
 
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
@@ -151,9 +141,8 @@ class MixtralSparseMoeBlock(nn.Module):
         ).astype(gates.dtype)
 
         if self.training:
-            mx.eval(inds)
             inds = np.array(inds)
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
             for e, expert in enumerate(self.experts):
                 idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
@@ -164,7 +153,7 @@ class MixtralSparseMoeBlock(nn.Module):
         else:
             y = []
             for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.concatenate([self.experts[e](xt)[:, None] for e in it], axis=-1)
+                yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
                 yt = (yt * st).sum(axis=-1)
                 y.append(yt[None, :])
             y = mx.concatenate(y)
@@ -180,8 +169,10 @@ class MixtralDecoderLayer(nn.Module):
         self.self_attn = MixtralAttention(args)
 
         self.block_sparse_moe = MixtralSparseMoeBlock(args)
-        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = nn.RMSNorm(
+            args.hidden_size, eps=args.rms_norm_eps
+        )
 
     def __call__(
         self,
@@ -206,7 +197,7 @@ class MixtralModel(nn.Module):
         self.layers = [
             MixtralDecoderLayer(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
         self,

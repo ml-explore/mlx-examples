@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import time
 import uuid
 import warnings
@@ -10,14 +11,9 @@ from typing import List, Literal, NamedTuple, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-from transformers import PreTrainedTokenizer
 
+from .tokenizer_utils import TokenizerWrapper
 from .utils import generate_step, load
-
-MODEL: nn.Module
-TOKENIZER: PreTrainedTokenizer
-
-SYSTEM_FINGERPRINT: str = f"fp_{uuid.uuid4()}"
 
 
 class StopCondition(NamedTuple):
@@ -77,24 +73,30 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
 
 
 class APIHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, model: nn.Module, tokenizer: TokenizerWrapper, *args, **kwargs):
         """
         Create static request specific metadata
         """
+        self.model = model
+        self.tokenizer = tokenizer
         self.created = int(time.time())
         super().__init__(*args, **kwargs)
+
+    def _set_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
 
     def _set_completion_headers(self, status_code: int = 200):
         self.send_response(status_code)
         self.send_header("Content-type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
+        self._set_cors_headers()
 
     def _set_stream_headers(self, status_code: int = 200):
         self.send_response(status_code)
         self.send_header("Content-type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
+        self._set_cors_headers()
 
     def do_OPTIONS(self):
         self._set_completion_headers(204)
@@ -102,7 +104,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """
-        Respond to a POST request from a client
+        Respond to a POST request from a client.
         """
         endpoints = {
             "/v1/completions": self.handle_text_completions,
@@ -119,6 +121,8 @@ class APIHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers["Content-Length"])
         raw_body = self.rfile.read(content_length)
         self.body = json.loads(raw_body.decode())
+        indent = "\t"  # Backslashes can't be inside of f-strings
+        logging.debug(f"Incoming Request Body: {json.dumps(self.body, indent=indent)}")
         assert isinstance(
             self.body, dict
         ), f"Request should be dict, but got {type(self.body)}"
@@ -131,12 +135,15 @@ class APIHandler(BaseHTTPRequestHandler):
         self.top_p = self.body.get("top_p", 1.0)
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
+        self.logit_bias = self.body.get("logit_bias", None)
+
+        self.validate_model_parameters()
 
         # Get stop id sequences, if provided
         stop_words = self.body.get("stop", [])
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
         stop_id_sequences = [
-            TOKENIZER.encode(stop_word, add_special_tokens=False)
+            self.tokenizer.encode(stop_word, add_special_tokens=False)
             for stop_word in stop_words
         ]
 
@@ -154,6 +161,46 @@ class APIHandler(BaseHTTPRequestHandler):
         method = self.handle_stream if self.stream else self.handle_completion
         method(prompt, stop_id_sequences)
 
+    def validate_model_parameters(self):
+        """
+        Validate the model parameters passed in the request for the correct types and values.
+        """
+        if not isinstance(self.stream, bool):
+            raise ValueError("stream must be a boolean")
+
+        if not isinstance(self.max_tokens, int) or self.max_tokens < 0:
+            raise ValueError("max_tokens must be a non-negative integer")
+
+        if not isinstance(self.temperature, float) or self.temperature < 0:
+            raise ValueError("temperature must be a non-negative float")
+
+        if not isinstance(self.top_p, float) or self.top_p < 0 or self.top_p > 1:
+            raise ValueError("top_p must be a float between 0 and 1")
+
+        if (
+            not isinstance(self.repetition_penalty, float)
+            or self.repetition_penalty < 0
+        ):
+            raise ValueError("repetition_penalty must be a non-negative float")
+
+        if (
+            not isinstance(self.repetition_context_size, int)
+            or self.repetition_context_size < 0
+        ):
+            raise ValueError("repetition_context_size must be a non-negative integer")
+
+        if self.logit_bias is not None:
+            if not isinstance(self.logit_bias, dict):
+                raise ValueError("logit_bias must be a dict of int to float")
+
+            try:
+                self.logit_bias = {int(k): v for k, v in self.logit_bias.items()}
+            except ValueError:
+                raise ValueError("logit_bias must be a dict of int to float")
+
+        if not isinstance(self.requested_model, str):
+            raise ValueError("model must be a string")
+
     def generate_response(
         self,
         text: str,
@@ -162,8 +209,7 @@ class APIHandler(BaseHTTPRequestHandler):
         completion_token_count: Optional[int] = None,
     ) -> dict:
         """
-        Generate a single response packet based on response type (stream or not),
-            completion type and parameters
+        Generate a single response packet based on response type (stream or not), completion type and parameters.
 
         Args:
             text (str): Text generated by model
@@ -183,7 +229,7 @@ class APIHandler(BaseHTTPRequestHandler):
         # Static response
         response = {
             "id": self.request_id,
-            "system_fingerprint": SYSTEM_FINGERPRINT,
+            "system_fingerprint": f"fp_{uuid.uuid4()}",
             "object": self.object_type,
             "model": self.requested_model,
             "created": self.created,
@@ -230,39 +276,56 @@ class APIHandler(BaseHTTPRequestHandler):
         stop_id_sequences: List[List[int]],
     ):
         """
-        Generate a response to a prompt and send it to the client in a single batch
+        Generate a response to a prompt and send it to the client in a single batch.
 
         Args:
             prompt (mx.array): The prompt, in token form inside of a mlx array
             stop_id_sequences (List[List[int]]):
                 A list of stop words passed to the stopping_criteria function
         """
+        detokenizer = self.tokenizer.detokenizer
+        detokenizer.reset()
         tokens = []
+        finish_reason = "length"
+        stop_sequence_suffix = None
+        logging.debug(f"Starting completion:")
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
-                model=MODEL,
+                model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 repetition_context_size=self.repetition_context_size,
+                logit_bias=self.logit_bias,
             ),
             range(self.max_tokens),
         ):
-            token = token.item()
+            detokenizer.add_token(token)
+            logging.debug(detokenizer.text)
             tokens.append(token)
             stop_condition = stopping_criteria(
-                tokens, stop_id_sequences, TOKENIZER.eos_token_id
+                tokens, stop_id_sequences, self.tokenizer.eos_token_id
             )
             if stop_condition.stop_met:
+                finish_reason = "stop"
                 if stop_condition.trim_length:
-                    tokens = tokens[: -stop_condition.trim_length]
+                    stop_sequence_suffix = self.tokenizer.decode(
+                        tokens[-stop_condition.trim_length :]
+                    )
                 break
 
-        text = TOKENIZER.decode(tokens)
-        response = self.generate_response(text, "stop", len(prompt), len(tokens))
+        detokenizer.finalize()
+        text = (
+            detokenizer.text
+            if stop_sequence_suffix is None
+            else detokenizer.text[: -len(stop_sequence_suffix)]
+        )
+        response = self.generate_response(text, finish_reason, len(prompt), len(tokens))
 
         response_json = json.dumps(response).encode()
+        indent = "\t"  # Backslashes can't be inside of f-strings
+        logging.debug(f"Outgoing Response: {json.dumps(response, indent=indent)}")
 
         # Send an additional Content-Length header when it is known
         self.send_header("Content-Length", str(len(response_json)))
@@ -277,7 +340,7 @@ class APIHandler(BaseHTTPRequestHandler):
         stop_id_sequences: List[List[int]],
     ):
         """
-        Generate response to prompt and foward it to the client using a Server Sent Events (SSE) stream
+        Generate response to prompt and foward it to the client using a Server Sent Events (SSE) stream.
 
         Args:
             prompt (mx.array): The prompt, in token form inside of a mlx array
@@ -287,18 +350,20 @@ class APIHandler(BaseHTTPRequestHandler):
         # No additional headers are needed, call end_headers
         self.end_headers()
 
+        detokenizer = self.tokenizer.detokenizer
+        detokenizer.reset()
         tokens = []
-        current_generated_text_index = 0
 
         max_stop_id_sequence_len = len(max(stop_id_sequences, default=[]))
         # Buffer to store the last `max_stop_id_sequence_len` tokens
         # to check for stop conditions before writing to the stream.
         stop_sequence_buffer = []
-
+        stop_sequence_suffix = None
+        logging.debug(f"Starting stream:")
         for (token, _), _ in zip(
             generate_step(
                 prompt=prompt,
-                model=MODEL,
+                model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
@@ -306,7 +371,8 @@ class APIHandler(BaseHTTPRequestHandler):
             ),
             range(self.max_tokens),
         ):
-            token = token.item()
+            detokenizer.add_token(token)
+            logging.debug(detokenizer.text)
             tokens.append(token)
             stop_sequence_buffer.append(token)
 
@@ -314,26 +380,19 @@ class APIHandler(BaseHTTPRequestHandler):
             if len(stop_sequence_buffer) < max_stop_id_sequence_len:
                 continue
 
-            # "\ufffd" is used to indicate to the tokenizer, that subsequent characters
-            # should be combined into a single unicode character
-            if "\ufffd" in TOKENIZER.decode(token):
-                continue
-
             stop_condition = stopping_criteria(
                 tokens,
                 stop_id_sequences,
-                TOKENIZER.eos_token_id,
+                self.tokenizer.eos_token_id,
             )
             if stop_condition.stop_met:
                 if stop_condition.trim_length:
-                    tokens = tokens[: -stop_condition.trim_length]
+                    stop_sequence_suffix = self.tokenizer.decode(
+                        tokens[-stop_condition.trim_length :]
+                    )
                 break
 
-            # Workaround for llama tokenizer emitting spaces when decoding token by token.
-            generated_text = TOKENIZER.decode(tokens)
-            new_text = generated_text[current_generated_text_index:]
-            current_generated_text_index = len(generated_text)
-
+            new_text = detokenizer.last_segment
             response = self.generate_response(new_text, None)
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
             self.wfile.flush()
@@ -341,8 +400,11 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # check is there any remaining text to send
         if stop_sequence_buffer:
-            generated_text = TOKENIZER.decode(tokens)
-            next_chunk = generated_text[current_generated_text_index:]
+            next_chunk = (
+                detokenizer.last_segment
+                if stop_sequence_suffix is None
+                else detokenizer.last_segment[: -len(stop_sequence_suffix)]
+            )
             response = self.generate_response(next_chunk, "length")
 
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
@@ -353,7 +415,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def handle_chat_completions(self) -> mx.array:
         """
-        Handle a chat completion request
+        Handle a chat completion request.
 
         Returns:
             mx.array: A mx.array of the tokenized prompt from the request body
@@ -367,21 +429,24 @@ class APIHandler(BaseHTTPRequestHandler):
             "chat.completions.chunk" if self.stream else "chat.completions"
         )
 
-        if hasattr(TOKENIZER, "apply_chat_template") and TOKENIZER.chat_template:
-            prompt = TOKENIZER.apply_chat_template(
+        if (
+            hasattr(self.tokenizer, "apply_chat_template")
+            and self.tokenizer.chat_template
+        ):
+            prompt = self.tokenizer.apply_chat_template(
                 body["messages"],
                 tokenize=True,
                 add_generation_prompt=True,
             )
         else:
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
-            prompt = TOKENIZER.encode(prompt)
+            prompt = self.tokenizer.encode(prompt)
 
         return mx.array(prompt)
 
     def handle_text_completions(self) -> mx.array:
         """
-        Handle a text completion request
+        Handle a text completion request.
 
         Returns:
             mx.array: A mx.array of the tokenized prompt from the request body
@@ -392,22 +457,33 @@ class APIHandler(BaseHTTPRequestHandler):
 
         assert "prompt" in self.body, "Request did not contain a prompt"
         prompt_text = self.body["prompt"]
-        prompt = TOKENIZER.encode(prompt_text)
+
+        prompt = self.tokenizer.encode(prompt_text)
         return mx.array(prompt)
 
 
-def run(host: str, port: int, server_class=HTTPServer, handler_class=APIHandler):
+def run(
+    host: str,
+    port: int,
+    model: nn.Module,
+    tokenizer: TokenizerWrapper,
+    server_class=HTTPServer,
+    handler_class=APIHandler,
+):
     server_address = (host, port)
-    httpd = server_class(server_address, handler_class)
+    httpd = server_class(
+        server_address,
+        lambda *args, **kwargs: handler_class(model, tokenizer, *args, **kwargs),
+    )
     warnings.warn(
         "mlx_lm.server is not recommended for production as "
         "it only implements basic security checks."
     )
-    print(f"Starting httpd at {host} on port {port}...")
+    logging.info(f"Starting httpd at {host} on port {port}...")
     httpd.serve_forever()
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="MLX Http Server.")
     parser.add_argument(
         "--model",
@@ -416,9 +492,9 @@ if __name__ == "__main__":
         help="The path to the MLX model weights, tokenizer, and config",
     )
     parser.add_argument(
-        "--adapter-file",
+        "--adapter-path",
         type=str,
-        help="Optional path for the trained adapter weights.",
+        help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
         "--host",
@@ -432,8 +508,33 @@ if __name__ == "__main__":
         default=8080,
         help="Port for the HTTP server (default: 8080)",
     )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Enable trusting remote code for tokenizer",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level (default: INFO)",
+    )
     args = parser.parse_args()
 
-    MODEL, TOKENIZER = load(args.model, adapter_file=args.adapter_file)
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), None),
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
 
-    run(args.host, args.port)
+    # Building tokenizer_config
+    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
+
+    model, tokenizer = load(
+        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
+    )
+    run(args.host, args.port, model, tokenizer)
+
+
+if __name__ == "__main__":
+    main()

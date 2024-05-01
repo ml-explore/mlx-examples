@@ -3,7 +3,7 @@
 import os
 from functools import lru_cache
 from subprocess import CalledProcessError, run
-from typing import Optional, Union
+from typing import Union
 
 import mlx.core as mx
 import numpy as np
@@ -58,7 +58,7 @@ def load_audio(file: str, sr: int = SAMPLE_RATE):
     except CalledProcessError as e:
         raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
 
-    return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
+    return mx.array(np.frombuffer(out, np.int16)).flatten().astype(mx.float32) / 32768.0
 
 
 def pad_or_trim(array, length: int = N_SAMPLES, *, axis: int = -1):
@@ -73,8 +73,7 @@ def pad_or_trim(array, length: int = N_SAMPLES, *, axis: int = -1):
     if array.shape[axis] < length:
         pad_widths = [(0, 0)] * array.ndim
         pad_widths[axis] = (0, length - array.shape[axis])
-        pad_fn = mx.pad if isinstance(array, mx.array) else np.pad
-        array = pad_fn(array, pad_widths)
+        array = mx.pad(array, pad_widths)
 
     return array
 
@@ -154,9 +153,9 @@ def log_mel_spectrogram(
     """
     device = mx.default_device()
     mx.set_default_device(mx.cpu)
-    if not isinstance(audio, mx.array):
-        if isinstance(audio, str):
-            audio = load_audio(audio)
+    if isinstance(audio, str):
+        audio = load_audio(audio)
+    elif not isinstance(audio, mx.array):
         audio = mx.array(audio)
 
     if padding > 0:

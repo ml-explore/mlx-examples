@@ -5,7 +5,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
 
 
 @dataclass
@@ -91,8 +90,8 @@ class TransformerBlock(nn.Module):
 
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
-        self.post_attention_layernorm = LayerNorm(
+        self.input_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.post_attention_layernorm = nn.LayerNorm(
             args.hidden_size, eps=args.norm_epsilon
         )
         self.args = args
@@ -121,7 +120,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.norm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
 
     def __call__(
         self,
@@ -147,9 +146,9 @@ class Starcoder2Model(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.args = args
         self.model_type = args.model_type
         self.model = Starcoder2Model(args)
-        # For 15B starcoder2 and fine-tuned models which don't tie word embeddings
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
@@ -159,11 +158,11 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        if not self.model.args.tie_word_embeddings:
-            return self.lm_head(out), cache
+        if self.args.tie_word_embeddings:
+            out = self.model.embed_tokens.as_linear(out)
         else:
-            out = out @ self.model.embed_tokens.weight.T
-            return out, cache
+            out = self.lm_head(out)
+        return out, cache
 
     @property
     def layers(self):

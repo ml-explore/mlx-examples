@@ -3,8 +3,8 @@ from typing import List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from mlx.utils import tree_map, tree_unflatten
-from transformers import AutoTokenizer, T5Config
+from mlx.utils import tree_map
+from transformers import T5Config
 
 
 def _relative_position_bucket(
@@ -105,7 +105,7 @@ class MultiHeadAttention(nn.Module):
         values: mx.array,
         mask: Optional[mx.array],
         cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> [mx.array, Tuple[mx.array, mx.array]]:
+    ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
         queries = self.query_proj(queries)
         keys = self.key_proj(keys)
         values = self.value_proj(values)
@@ -130,21 +130,6 @@ class MultiHeadAttention(nn.Module):
         scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
         values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.out_proj(values_hat), (keys, values)
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((dims,))
-        self.eps = eps
-
-    def _norm(self, x):
-        return x * mx.rsqrt(x.square().mean(-1, keepdims=True) + self.eps)
-
-    def __call__(self, x):
-        t = x.dtype
-        output = self._norm(x).astype(t)
-        return self.weight * output
 
 
 class DenseActivation(nn.Module):
@@ -182,8 +167,8 @@ class TransformerEncoderLayer(nn.Module):
     def __init__(self, config: T5Config):
         super().__init__()
         self.attention = MultiHeadAttention(config)
-        self.ln1 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln2 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln1 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln2 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dense = DenseActivation(config)
 
     def __call__(self, x, mask):
@@ -202,7 +187,7 @@ class TransformerEncoder(nn.Module):
         self.layers = [
             TransformerEncoderLayer(config) for i in range(config.num_layers)
         ]
-        self.ln = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.relative_attention_bias = RelativePositionBias(config, bidirectional=True)
 
     def __call__(self, x: mx.array):
@@ -217,9 +202,9 @@ class TransformerDecoderLayer(nn.Module):
         super().__init__()
         self.self_attention = MultiHeadAttention(config)
         self.cross_attention = MultiHeadAttention(config)
-        self.ln1 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln2 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln3 = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln1 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln2 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln3 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dense = DenseActivation(config)
 
     def __call__(
@@ -257,7 +242,7 @@ class TransformerDecoder(nn.Module):
         super().__init__()
         n_layers = getattr(config, "num_decoder_layers", config.num_layers)
         self.layers = [TransformerDecoderLayer(config) for i in range(n_layers)]
-        self.ln = RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.ln = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.relative_attention_bias = RelativePositionBias(config, bidirectional=False)
 
     def __call__(self, x, memory, cache=None):

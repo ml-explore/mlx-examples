@@ -6,7 +6,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
 
 
 @dataclass
@@ -17,11 +16,27 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     num_hidden_layers: int
     num_key_value_heads: int
-    partial_rotary_factor: float
     intermediate_size: int
-    layer_norm_eps: float
     rope_theta: float
     use_qkv_bias: bool
+    partial_rotary_factor: float
+    layer_norm_eps: float
+    use_parallel_residual: bool = False
+    qk_layernorm: bool = False
+
+
+class LayerNormPerHead(nn.Module):
+
+    def __init__(self, head_dim, num_heads, eps):
+        super().__init__()
+        self.norms = [
+            nn.LayerNorm(head_dim, eps=eps, bias=False) for _ in range(num_heads)
+        ]
+        self.eps = eps
+
+    def __call__(self, x):
+        w = mx.stack([n.weight for n in self.norms])
+        return w * mx.fast.layer_norm(x, None, None, self.eps)
 
 
 class Attention(nn.Module):
@@ -64,22 +79,31 @@ class Attention(nn.Module):
             base=self.rope_theta,
         )
 
+        self.qk_layernorm = config.qk_layernorm
+        if self.qk_layernorm:
+            self.q_layernorm = LayerNormPerHead(
+                self.head_dim, self.num_heads, eps=config.layer_norm_eps
+            )
+            self.k_layernorm = LayerNormPerHead(
+                self.head_dim, self.num_key_value_heads, eps=config.layer_norm_eps
+            )
+
     def __call__(self, x, mask=None, cache=None):
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
         # Extract some shapes
         B, L, D = queries.shape
 
-        # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, self.num_heads, self.head_dim).transpose(
+        queries = queries.reshape(B, L, self.num_heads, -1)
+        keys = keys.reshape(B, L, self.num_key_value_heads, -1)
+        if self.qk_layernorm:
+            queries = self.q_layernorm(queries)
+            keys = self.k_layernorm(keys)
+        queries = queries.transpose(0, 2, 1, 3)
+        keys = keys.transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.num_key_value_heads, -1).transpose(
             0, 2, 1, 3
         )
-        keys = keys.reshape(B, L, self.num_key_value_heads, self.head_dim).transpose(
-            0, 2, 1, 3
-        )
-        values = values.reshape(
-            B, L, self.num_key_value_heads, self.head_dim
-        ).transpose(0, 2, 1, 3)
 
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
@@ -120,16 +144,27 @@ class DecoderLayer(nn.Module):
         super().__init__()
         self.self_attn = Attention(config=config)
         self.mlp = MLP(config.hidden_size, config.intermediate_size)
-        self.input_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.post_attention_layernorm = LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
+        self.input_layernorm = nn.LayerNorm(
+            config.hidden_size,
+            eps=config.layer_norm_eps,
         )
+        self.use_parallel_residual = config.use_parallel_residual
+        if not self.use_parallel_residual:
+            self.post_attention_layernorm = nn.LayerNorm(
+                config.hidden_size,
+                eps=config.layer_norm_eps,
+            )
 
     def __call__(self, x, mask, cache):
-        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
-        h = x + r
-        r = self.mlp(self.post_attention_layernorm(h))
-        out = h + r
+        h = self.input_layernorm(x)
+        r, cache = self.self_attn(h, mask, cache)
+
+        if self.use_parallel_residual:
+            out = x + r + self.mlp(h)
+        else:
+            h = x + r
+            r = self.mlp(self.post_attention_layernorm(h))
+            out = h + r
         return out, cache
 
 
@@ -138,7 +173,7 @@ class StableLM(nn.Module):
         super().__init__()
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = [DecoderLayer(config) for i in range(config.num_hidden_layers)]
-        self.norm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def __call__(self, x, mask, cache):
         x = self.embed_tokens(x)

@@ -7,8 +7,6 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .layers import LayerNorm
-
 
 @dataclass
 class ModelArgs:
@@ -68,7 +66,6 @@ class RoPEAttention(nn.Module):
             keys = self.rope(keys)
 
         queries = queries.astype(mx.float32)
-        keys = keys.astype(mx.float32)
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
@@ -109,7 +106,7 @@ class MOE(nn.Module):
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1))[:, :ne]
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1))[:, :ne]
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
             axis=-1,
@@ -117,7 +114,7 @@ class MOE(nn.Module):
 
         if self.training:
             ys = []
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]))
+            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
             for e, expert in enumerate(self.mlp):
                 idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
@@ -128,7 +125,7 @@ class MOE(nn.Module):
         else:
             y = []
             for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.concatenate([self.mlp[e](xt)[:, None] for e in it], axis=-1)
+                yt = mx.stack([self.mlp[e](xt) for e in it], axis=-1)
                 yt = (yt * st).sum(axis=-1)
                 y.append(yt[None, :])
             y = mx.concatenate(y)
@@ -142,7 +139,7 @@ class ParallelBlock(nn.Module):
         dims = config.model_dim
         mlp_dims = dims * 4
         self.mixer = RoPEAttention(dims, config.num_heads, config.rotary_dim)
-        self.ln = LayerNorm(dims)
+        self.ln = nn.LayerNorm(dims)
         self.moe = MOE(config, dims, mlp_dims)
 
     def __call__(self, x, mask, cache):
@@ -180,7 +177,7 @@ class Embd(nn.Module):
 class OutputHead(nn.Module):
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()
-        self.ln = LayerNorm(config.model_dim)
+        self.ln = nn.LayerNorm(config.model_dim)
         self.linear = nn.Linear(config.model_dim, config.num_vocab)
 
     def __call__(self, inputs):

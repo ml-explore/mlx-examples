@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from functools import partial
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -23,13 +22,6 @@ class ModelArgs(BaseModelArgs):
     rope_traditional: bool = False
 
 
-@partial(mx.compile, shapeless=True)
-def rms_norm(x, weight, eps):
-    x = x.astype(mx.float32)
-    x = x * mx.rsqrt(x.square().mean(-1, keepdims=True) + eps)
-    return (1.0 + weight) * x.astype(weight.dtype)
-
-
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-5):
         super().__init__()
@@ -37,7 +29,7 @@ class RMSNorm(nn.Module):
         self.eps = eps
 
     def __call__(self, x):
-        return rms_norm(x, self.weight, self.eps)
+        return mx.fast.rms_norm(x, 1.0 + self.weight, self.eps)
 
 
 class Attention(nn.Module):
@@ -177,7 +169,7 @@ class Model(nn.Module):
         cache=None,
     ):
         out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
+        out = self.model.embed_tokens.as_linear(out)
         return out, cache
 
     @property

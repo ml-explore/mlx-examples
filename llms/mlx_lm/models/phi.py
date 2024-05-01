@@ -6,7 +6,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .layers import LayerNorm
 
 
 @dataclass
@@ -70,46 +69,41 @@ class PhiAttention(nn.Module):
 
         # Extract some shapes
         B, L, D = queries.shape
+        n_heads, n_kv_heads = self.num_heads, self.num_key_value_heads
 
         # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, self.num_heads, self.head_dim).transpose(
-            0, 2, 1, 3
-        )
-        keys = keys.reshape(B, L, self.num_key_value_heads, self.head_dim).transpose(
-            0, 2, 1, 3
-        )
-        values = values.reshape(
-            B, L, self.num_key_value_heads, self.head_dim
-        ).transpose(0, 2, 1, 3)
-
-        if self.repeats > 1:
-            keys = mx.repeat(keys, self.repeats, axis=1)
-            values = mx.repeat(values, self.repeats, axis=1)
+        queries = queries.reshape(
+            B,
+            L,
+            n_kv_heads,
+            n_heads // n_kv_heads,
+            -1,
+        ).moveaxis(1, 3)
+        keys = keys.reshape(B, L, n_kv_heads, 1, -1).moveaxis(1, 3)
+        values = values.reshape(B, L, n_kv_heads, 1, -1).moveaxis(1, 3)
 
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
             key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=key_cache.shape[-2])
+            keys = self.rope(keys, offset=key_cache.shape[-2])
+            keys = mx.concatenate([key_cache, keys], axis=-2)
+            values = mx.concatenate([value_cache, values], axis=-2)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
 
         queries = queries.astype(mx.float32)
-        keys = keys.astype(mx.float32)
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys.transpose(0, 1, 3, 2)
+        scores = (queries * scale) @ keys.swapaxes(-1, -2)
         if mask is not None:
             scores = scores + mask
-
         scores = mx.softmax(scores, axis=-1).astype(values.dtype)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = (scores @ values).moveaxis(3, 1).reshape(B, L, -1)
 
-        return self.dense(values_hat), (keys, values)
+        return self.dense(output), (keys, values)
 
 
 class PhiMLP(nn.Module):
@@ -127,7 +121,9 @@ class PhiDecoderLayer(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.self_attn = PhiAttention(config=config)
-        self.input_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.input_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
         self.mlp = PhiMLP(config)
 
     def __call__(self, x, mask, cache):
@@ -142,12 +138,19 @@ class PhiModel(nn.Module):
         super().__init__()
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = [PhiDecoderLayer(config) for i in range(config.num_hidden_layers)]
-        self.final_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.final_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
 
-    def __call__(self, x, mask, cache):
+    def __call__(self, x, cache):
         x = self.embed_tokens(x)
         if cache is None:
             cache = [None] * len(self.layers)
+
+        mask = None
+        if x.shape[1] > 1:
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
+            mask = mask.astype(x.dtype)
 
         for e, layer in enumerate(self.layers):
             x, cache[e] = layer(x, mask, cache[e])
@@ -164,15 +167,9 @@ class Model(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        mask: mx.array = None,
         cache: mx.array = None,
     ) -> Tuple[mx.array, mx.array]:
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
-
-        y, cache = self.model(x, mask, cache)
+        y, cache = self.model(x, cache)
         return self.lm_head(y), cache
 
     @property

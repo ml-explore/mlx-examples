@@ -6,13 +6,12 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.core import linalg as LA
 from mlx.nn.losses import cross_entropy
-from mlx.utils import tree_flatten
 
 
 @dataclass

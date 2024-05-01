@@ -9,16 +9,19 @@ import shutil
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten
-from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
+from .sample_utils import top_p_sampling
+from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
+from .tuner.utils import dequantize as dequantize_model
 
 # Constants
 MODEL_REMAPPING = {
@@ -27,12 +30,6 @@ MODEL_REMAPPING = {
 }
 
 MAX_FILE_SIZE_GB = 5
-
-linear_class_predicate = (
-    lambda m: isinstance(m, nn.Linear)
-    and m.weight.shape[0]
-    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
-)
 
 
 def _get_classes(config: dict):
@@ -81,7 +78,9 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                     "*.py",
                     "tokenizer.model",
                     "*.tiktoken",
+                    "*.txt",
                 ],
+                resume_download=True,
             )
         )
     return model_path
@@ -118,6 +117,7 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
+    logit_bias: Optional[Dict[int, float]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -136,29 +136,17 @@ def generate_step(
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
+        if logit_bias:
+            indices = mx.array(list(logit_bias.keys()))
+            values = mx.array(list(logit_bias.values()))
+            logits[:, indices] += values
         softmax_logits = mx.softmax(logits)
 
         if temp == 0:
             token = mx.argmax(logits, axis=-1)
         else:
             if top_p > 0 and top_p < 1.0:
-                if (
-                    logits.dtype == mx.bfloat16
-                ):  # workdaround for unable to load kernel contiguous_scan_inclusive_sum_bfloat16_bfloat16
-                    logits = logits.astype(mx.float32)
-                probs = mx.softmax(logits / temp, axis=-1)
-
-                sorted_probs = mx.sort(probs)[::-1]
-                sorted_indices = mx.argsort(probs)[::-1]
-                cumulative_probs = mx.cumsum(sorted_probs, axis=-1)
-
-                top_probs = mx.where(
-                    cumulative_probs > 1 - top_p,
-                    sorted_probs,
-                    mx.zeros_like(sorted_probs),
-                )
-                sorted_token = mx.random.categorical(mx.log(top_probs))
-                token = sorted_indices.squeeze(0)[sorted_token]
+                token = top_p_sampling(logits, top_p, temp)
             else:
                 token = mx.random.categorical(logits * (1 / temp))
 
@@ -180,7 +168,8 @@ def generate_step(
     if repetition_context_size:
         repetition_context = repetition_context[-repetition_context_size:]
 
-    while True:
+    def _step(y):
+        nonlocal cache, repetition_context
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
@@ -196,12 +185,21 @@ def generate_step(
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
-        yield y, prob
+        return y, prob
+
+    y, p = _step(y)
+
+    mx.async_eval(y)
+    while True:
+        next_y, next_p = _step(y)
+        mx.async_eval(next_y)
+        yield y.item(), p
+        y, p = next_y, next_p
 
 
 def generate(
     model: nn.Module,
-    tokenizer: PreTrainedTokenizer,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
     prompt: str,
     temp: float = 0.0,
     max_tokens: int = 100,
@@ -210,6 +208,7 @@ def generate(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
+    logit_bias: Optional[Dict[int, float]] = None,
 ) -> str:
     """
     Generate text from the model.
@@ -227,17 +226,18 @@ def generate(
        repetition_penalty (float, optional): The penalty factor for repeating tokens.
        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
     """
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
 
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)
 
     prompt_tokens = mx.array(tokenizer.encode(prompt))
+    detokenizer = tokenizer.detokenizer
 
     tic = time.perf_counter()
-    tokens = []
-    skip = 0
-    REPLACEMENT_CHAR = "\ufffd"
+    detokenizer.reset()
 
     for (token, prob), n in zip(
         generate_step(
@@ -247,31 +247,31 @@ def generate(
             repetition_penalty,
             repetition_context_size,
             top_p,
+            logit_bias,
         ),
         range(max_tokens),
     ):
-        if token == tokenizer.eos_token_id:
-            break
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
-        tokens.append(token.item())
+        if token == tokenizer.eos_token_id:
+            break
+        detokenizer.add_token(token)
 
         if verbose:
-            s = tokenizer.decode(tokens)
             if formatter:
-                formatter(s[skip:], prob.item())
-                skip = len(s)
-            elif REPLACEMENT_CHAR not in s:
-                print(s[skip:], end="", flush=True)
-                skip = len(s)
+                # We have to finalize so that the prob corresponds to the last segment
+                detokenizer.finalize()
+                formatter(detokenizer.last_segment, prob.item())
+            else:
+                print(detokenizer.last_segment, end="", flush=True)
 
-    token_count = len(tokens)
-    token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+    token_count = n + 1
+    detokenizer.finalize()
 
     if verbose:
-        print(token_string[skip:], flush=True)
         gen_time = time.perf_counter() - tic
+        print(detokenizer.last_segment, flush=True)
         print("=" * 10)
         if token_count == 0:
             print("No tokens generated for this prompt")
@@ -281,7 +281,17 @@ def generate(
         print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
         print(f"Generation: {gen_tps:.3f} tokens-per-sec")
 
-    return token_string
+    return detokenizer.text
+
+
+def load_config(model_path: Path) -> dict:
+    try:
+        with open(model_path / "config.json", "r") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        logging.error(f"Config file not found in {model_path}")
+        raise
+    return config
 
 
 def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
@@ -301,15 +311,15 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         FileNotFoundError: If the weight files (.safetensors) are not found.
         ValueError: If the model class or args class are not found or cannot be instantiated.
     """
-    try:
-        with open(model_path / "config.json", "r") as f:
-            config = json.load(f)
-            quantization = config.get("quantization", None)
-    except FileNotFoundError:
-        logging.error(f"Config file not found in {model_path}")
-        raise
 
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
+    config = load_config(model_path)
+
+    weight_files = glob.glob(str(model_path / "model*.safetensors"))
+
+    if not weight_files:
+        # Try weight for back-compat
+        weight_files = glob.glob(str(model_path / "weight*.safetensors"))
+
     if not weight_files:
         logging.error(f"No safetensors found in {model_path}")
         raise FileNotFoundError(f"No safetensors found in {model_path}")
@@ -319,32 +329,24 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         weights.update(mx.load(wf))
 
     model_class, model_args_class = _get_classes(config=config)
-    if hasattr(model_class, "sanitize"):
-        weights = model_class.sanitize(weights)
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
 
-    if quantization is not None:
-        # for legacy models that don't have lm_head quant due to non-32 dims
-        if "lm_head.scales" not in weights.keys():
-            vocab_size = config["vocab_size"]
-            extended_linear_class_predicate = (
-                lambda layer: linear_class_predicate(layer)
-                and layer.weight.shape[0] != vocab_size
-            )
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=extended_linear_class_predicate,
-            )
-        # for models that have lm_head quant
-        else:
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=linear_class_predicate,
-            )
+    if hasattr(model, "sanitize"):
+        weights = model.sanitize(weights)
+
+    if (quantization := config.get("quantization", None)) is not None:
+        # Handle legacy models which may not have everything quantized
+        class_predicate = (
+            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
+            and f"{p}.scales" in weights
+        )
+        nn.quantize(
+            model,
+            **quantization,
+            class_predicate=class_predicate,
+        )
 
     model.load_weights(list(weights.items()))
 
@@ -358,9 +360,9 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 def load(
     path_or_hf_repo: str,
     tokenizer_config={},
-    adapter_file: Optional[str] = None,
+    adapter_path: Optional[str] = None,
     lazy: bool = False,
-) -> Tuple[nn.Module, PreTrainedTokenizer]:
+) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
 
@@ -368,13 +370,13 @@ def load(
         path_or_hf_repo (Path): The path or the huggingface repository to load the model from.
         tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
             Defaults to an empty dictionary.
-        adapter_file (str, optional): Path to the adapter file. If provided, applies LoRA layers to the model.
-            Defaults to None.
+        adapter_path (str, optional): Path to the LoRA adapters. If provided, applies LoRA layers
+            to the model. Default: ``None``.
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
     Returns:
-        Tuple[nn.Module, PreTrainedTokenizer]: A tuple containing the loaded model and tokenizer.
+        Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
     Raises:
         FileNotFoundError: If config file or safetensors are not found.
@@ -383,11 +385,11 @@ def load(
     model_path = get_model_path(path_or_hf_repo)
 
     model = load_model(model_path, lazy)
-    if adapter_file is not None:
-        model = apply_lora_layers(model, adapter_file)
+    if adapter_path is not None:
+        model = apply_lora_layers(model, adapter_path)
         model.eval()
+    tokenizer = load_tokenizer(model_path, tokenizer_config)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
     return model, tokenizer
 
 
@@ -395,11 +397,9 @@ def fetch_from_hub(
     model_path: Path, lazy: bool = False
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     model = load_model(model_path, lazy)
-
-    config = AutoConfig.from_pretrained(model_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-    return model, config.to_dict(), tokenizer
+    config = load_config(model_path)
+    tokenizer = load_tokenizer(model_path)
+    return model, config, tokenizer
 
 
 def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
@@ -439,12 +439,14 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     from huggingface_hub import HfApi, ModelCard, logging
 
+    from . import __version__
+
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
     card.text = dedent(
         f"""
         # {upload_repo}
-        This model was converted to MLX format from [`{hf_path}`]().
+        This model was converted to MLX format from [`{hf_path}`]() using mlx-lm version **{__version__}**.
         Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
         ## Use with mlx
 
@@ -470,6 +472,8 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         folder_path=path,
         repo_id=upload_repo,
         repo_type="model",
+        multi_commits=True,
+        multi_commits_verbose=True,
     )
     print(f"Upload successful, go to https://huggingface.co/{upload_repo} for details.")
 
@@ -542,14 +546,34 @@ def quantize_model(
         Tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-
-    nn.QuantizedLinear.quantize_module(
-        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
-    )
+    nn.quantize(model, q_group_size, q_bits)
     quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config
+
+
+def save_config(
+    config: dict,
+    config_path: Union[str, Path],
+) -> None:
+    """Save the model configuration to the ``config_path``.
+
+    The final configuration will be sorted before saving for better readability.
+
+    Args:
+        config (dict): The model configuration.
+        config_path (Union[str, Path]): Model configuration file path.
+    """
+    # Clean unused keys
+    config.pop("_name_or_path", None)
+
+    # sort the config for better readability
+    config = dict(sorted(config.items()))
+
+    # write the updated config to the config_path (if provided)
+    with open(config_path, "w") as fid:
+        json.dump(config, fid, indent=4)
 
 
 def convert(
@@ -561,6 +585,7 @@ def convert(
     dtype: str = "float16",
     upload_repo: str = None,
     revision: Optional[str] = None,
+    dequantize: bool = False,
 ):
     print("[INFO] Loading")
     model_path = get_model_path(hf_path, revision=revision)
@@ -570,10 +595,18 @@ def convert(
     dtype = mx.float16 if quantize else getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
 
+    if quantize and dequantize:
+        raise ValueError("Choose either quantize or dequantize, not both.")
+
     if quantize:
         print("[INFO] Quantizing")
         model.load_weights(list(weights.items()))
         weights, config = quantize_model(model, config, q_group_size, q_bits)
+
+    if dequantize:
+        print("[INFO] Dequantizing")
+        model = dequantize_model(model)
+        weights = dict(tree_flatten(model.parameters()))
 
     if isinstance(mlx_path, str):
         mlx_path = Path(mlx_path)
@@ -587,8 +620,7 @@ def convert(
 
     tokenizer.save_pretrained(mlx_path)
 
-    with open(mlx_path / "config.json", "w") as fid:
-        json.dump(config, fid, indent=4)
+    save_config(config, config_path=mlx_path / "config.json")
 
     if upload_repo is not None:
         upload_to_hub(mlx_path, upload_repo, hf_path)

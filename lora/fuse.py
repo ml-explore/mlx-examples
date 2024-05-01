@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import argparse
 from pathlib import Path
@@ -7,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import utils
 from mlx.utils import tree_flatten, tree_unflatten
-from models.lora import LoRALinear
+from models import LoRALinear
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--upload-name",
-        help="The name of model to upload to Hugging Face MLX Community",
+        help="The name of model to upload to Hugging Face MLX Community.",
         type=str,
         default=None,
     )

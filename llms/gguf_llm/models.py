@@ -6,10 +6,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 import utils
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten, tree_unflatten
 
 
 @dataclass
@@ -20,6 +18,7 @@ class ModelArgs:
     num_attention_heads: int
     rms_norm_eps: float
     vocab_size: int
+    context_length: int
     num_key_value_heads: int = None
     rope_theta: float = 10000
     rope_traditional: bool = False
@@ -47,20 +46,6 @@ class ModelArgs:
                 if k in inspect.signature(cls).parameters
             }
         )
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, dims: int, eps: float = 1e-5):
-        super().__init__()
-        self.weight = mx.ones((dims,))
-        self.eps = eps
-
-    def _norm(self, x):
-        return x * mx.rsqrt(x.square().mean(-1, keepdims=True) + self.eps)
-
-    def __call__(self, x):
-        output = self._norm(x.astype(mx.float32)).astype(x.dtype)
-        return self.weight * output
 
 
 class Attention(nn.Module):
@@ -107,10 +92,6 @@ class Attention(nn.Module):
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
-        if self.repeats > 1:
-            keys = mx.repeat(keys, self.repeats, axis=1)
-            values = mx.repeat(values, self.repeats, axis=1)
-
         if cache is not None:
             key_cache, value_cache = cache
             queries = self.rope(queries, offset=key_cache.shape[2])
@@ -121,11 +102,10 @@ class Attention(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores += mask
-        scores = mx.softmax(scores.astype(mx.float32), axis=-1).astype(scores.dtype)
-        output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries, keys, values, scale=self.scale, mask=mask
+        )
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output), (keys, values)
 
 
@@ -147,8 +127,10 @@ class TransformerBlock(nn.Module):
         self.hidden_size = args.hidden_size
         self.self_attn = Attention(args)
         self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.post_attention_layernorm = nn.RMSNorm(
+            args.hidden_size, eps=args.rms_norm_eps
+        )
         self.args = args
 
     def __call__(
@@ -175,7 +157,17 @@ class LlamaModel(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        # model info
+        print(
+            f"Model info\n"
+            f"==========\n"
+            f"Context length: {args.context_length}\n"
+            f"Vocab size: {args.vocab_size}\n"
+            f"Hidden size: {args.hidden_size}\n"
+            f"Num layers: {args.num_hidden_layers}\n"
+            f"Num attention heads: {args.num_attention_heads}\n"
+        )
 
     def __call__(
         self,
@@ -215,6 +207,7 @@ class Model(nn.Module):
 
 def get_config(metadata: dict):
     output = {
+        "context_length": metadata["llama.context_length"],
         "hidden_size": metadata["llama.embedding_length"],
         "num_hidden_layers": metadata["llama.block_count"],
         "num_attention_heads": metadata["llama.attention.head_count"],
@@ -288,9 +281,12 @@ def load(gguf_file: str, repo: str = None):
     elif gguf_ft == 2 or gguf_ft == 3:
         # MOSTLY_Q4_0 or MOSTLY_Q4_1
         quantization = {"group_size": 32, "bits": 4}
+        # print bits value
+        print(f"{quantization['bits']} bits quantized model")
     elif gguf_ft == 7:
         # MOSTLY_Q8_0 = 7
         quantization = {"group_size": 32, "bits": 8}
+        print(f"{quantization['bits']} bits quantized model")
     else:
         quantization = None
         print("[WARNING] Using unsupported GGUF quantization. Casting to float16.")
@@ -299,23 +295,15 @@ def load(gguf_file: str, repo: str = None):
     config = get_config(metadata)
     model = Model(ModelArgs(**config))
     if quantization is not None:
-        # quantized the LM head?
-        qm = model if "lm_head.scales" in weights else model.model
-        nn.QuantizedLinear.quantize_module(
-            qm,
+        class_predicate = (
+            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
+            and f"{p}.scales" in weights
+        )
+        nn.quantize(
+            model,
             **quantization,
+            class_predicate=class_predicate,
         )
-
-    def dequantize(k):
-        weight = weights.pop(f"{k}.weight")
-        scales = weights.pop(f"{k}.scales")
-        biases = weights.pop(f"{k}.biases")
-        weights[f"{k}.weight"] = mx.dequantize(
-            weight, scales=scales, biases=biases, **quantization
-        )
-
-    # Dequantize embeddings
-    dequantize("model.embed_tokens")
 
     tokenizer = GGUFTokenizer(metadata)
     model.load_weights(list(weights.items()))

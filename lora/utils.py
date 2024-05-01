@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 import glob
 import json
@@ -8,39 +8,9 @@ from typing import Generator
 
 import mlx.core as mx
 import mlx.nn as nn
-import models.llama as llama
-import models.mixtral as mixtral
-import models.phi2 as phi2
+import models
 import transformers
 from huggingface_hub import snapshot_download
-
-# Constants
-MODEL_MAPPING = {
-    "llama": llama,
-    "mistral": llama,  # mistral is compatible with llama
-    "phi": phi2,
-    "mixtral": mixtral,
-}
-
-
-def _get_classes(config: dict):
-    """
-    Retrieve the model and model args classes based on the configuration.
-
-    Args:
-        config (dict): The model configuration.
-
-    Returns:
-        A tuple containing the Model class and the ModelArgs class.
-    """
-    model_type = config["model_type"]
-    if model_type not in MODEL_MAPPING:
-        msg = f"Model type {model_type} not supported."
-        logging.error(msg)
-        raise ValueError(msg)
-
-    arch = MODEL_MAPPING[model_type]
-    return arch.Model, arch.ModelArgs
 
 
 def fetch_from_hub(hf_path: str):
@@ -94,6 +64,8 @@ python generate.py --model {repo_id} --prompt "My name is"
         folder_path=path,
         repo_id=repo_id,
         repo_type="model",
+        multi_commits=True,
+        multi_commits_verbose=True,
     )
 
 
@@ -123,14 +95,31 @@ def save_model(save_dir: str, weights, tokenizer, config):
         else "model.safetensors"
     )
 
+    total_size = sum(v.nbytes for v in weights.values())
+    index_data = {"metadata": {"total_size": total_size}, "weight_map": {}}
+
     for i, shard in enumerate(shards):
         shard_name = shard_file_format.format(i + 1, shards_count)
-        mx.save_safetensors(str(save_dir / shard_name), shard)
+        mx.save_safetensors(
+            str(save_dir / shard_name), shard, metadata={"format": "mlx"}
+        )
+        for weight_name in shard.keys():
+            index_data["weight_map"][weight_name] = shard_name
+        del shard
 
     tokenizer.save_pretrained(save_dir)
-
     with open(save_dir / "config.json", "w") as fid:
         json.dump(config, fid, indent=4)
+
+    index_data["weight_map"] = {
+        k: index_data["weight_map"][k] for k in sorted(index_data["weight_map"])
+    }
+    with open(save_dir / "model.safetensors.index.json", "w") as f:
+        json.dump(
+            index_data,
+            f,
+            indent=4,
+        )
 
 
 def load(path_or_hf_repo: str):
@@ -157,15 +146,17 @@ def load(path_or_hf_repo: str):
     for wf in weight_files:
         weights.update(mx.load(wf).items())
 
-    model_class, model_args_class = _get_classes(config=config)
-    model_args = model_args_class.from_dict(config)
-    model = model_class(model_args)
+    model_args = models.ModelArgs.from_dict(config)
+    model = models.Model(model_args)
     if quantization is not None:
-        nn.QuantizedLinear.quantize_module(
+        class_predicate = (
+            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
+            and f"{p}.scales" in weights
+        )
+        nn.quantize(
             model,
             **quantization,
-            linear_class_predicate=lambda m: isinstance(m, nn.Linear)
-            and m.weight.shape[0] != 8,
+            class_predicate=class_predicate,
         )
 
     model.load_weights(list(weights.items()))
