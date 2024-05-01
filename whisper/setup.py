@@ -5,13 +5,11 @@ from pathlib import Path
 
 from setuptools import find_packages, setup
 
-package_dir = Path(__file__).parent
-print(f"{package_dir}")
+package_dir = Path(__file__).parent / "mlx_whisper"
 
 with open(package_dir / "requirements.txt") as fid:
     requirements = [l.strip() for l in fid.readlines()]
 
-package_dir = Path(__file__).parent / "mlx_whisper"
 sys.path.append(str(package_dir))
 
 from version import __version__
@@ -29,12 +27,6 @@ setup(
     license="MIT",
     install_requires=requirements,
     packages=find_packages(),
-    package_data={
-        "whisper": [
-            "assets/mel_filters.npz",
-            "assets/multilingual.tiktoken",
-            "assets/gpt2.tiktoken",
-        ],
-    },
+    include_package_data=True,
     python_requires=">=3.8",
 )
