@@ -19,12 +19,6 @@ Install the `mlx-whisper` package with:
 pip install mlx-whisper
 ```
 
-To build from source you can do:
-
-```
-pip install -e .
-```
-
 ### Run
 
 Transcribe audio with:
@@ -70,14 +64,21 @@ To see more transcription options use:
 > Face Hub. There are a few available in the [MLX
 > Community](https://huggingface.co/mlx-community) organization.
 
-To convert a model, first download the Whisper PyTorch checkpoint and convert
-the weights to the MLX format. For example, to convert the `tiny` model use:
+To convert a model, first clone the MLX Examples repo:
+
+```
+git clone https://github.com/ml-explore/mlx-examples.git
+```
+
+Then run `convert.py` from `mlx-examples/whisper`. For example, to convert the
+`tiny` model use:
 
 ```
 python convert.py --torch-name-or-path tiny --mlx-path mlx_models/tiny
 ```
 
-Note you can also convert a local PyTorch checkpoint which is in the original OpenAI format.
+Note you can also convert a local PyTorch checkpoint which is in the original
+OpenAI format.
 
 To generate a 4-bit quantized model, use `-q`. For a full list of options:
 
