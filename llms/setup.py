@@ -34,6 +34,7 @@ setup(
             "mlx_lm.lora = mlx_lm.lora:main",
             "mlx_lm.merge = mlx_lm.merge:main",
             "mlx_lm.server = mlx_lm.server:main",
+            "mlx_lm.manage = mlx_lm.manage:main",
         ]
     },
 )
