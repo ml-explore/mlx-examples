@@ -141,7 +141,7 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 
         if self.training:
             inds = np.array(inds)
-            y = mx.zeros((B, ne, D), x.dtype)
+            y = mx.zeros((B * L, ne, D), x.dtype)
             for e, expert in enumerate(self.experts):
                 idx1, idx2 = map(mx.array, np.where(inds == e))
                 if idx1.size == 0:
