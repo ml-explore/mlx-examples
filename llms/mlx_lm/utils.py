@@ -18,7 +18,6 @@ from mlx.utils import tree_flatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 from .sample_utils import top_p_sampling
-
 # Local imports
 from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
@@ -33,8 +32,8 @@ MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
-    and m.weight.shape[0]
-    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
+              and m.weight.shape[0]
+              != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
 )
 
 
@@ -327,7 +326,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
             vocab_size = config["vocab_size"]
             extended_linear_class_predicate = (
                 lambda layer: linear_class_predicate(layer)
-                and layer.weight.shape[0] != vocab_size
+                              and layer.weight.shape[0] != vocab_size
             )
             nn.QuantizedLinear.quantize_module(
                 model,
@@ -436,11 +435,6 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     from . import __version__
 
-    api = HfApi()
-    user_info = api.whoami()
-    fullname = user_info["fullname"]
-    name = user_info["name"]
-
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
     card.text = dedent(
@@ -448,8 +442,6 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         # {upload_repo}
         
         The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path}) using mlx-lm version **{__version__}**.
-        
-        Model added by [{fullname}](https://huggingface.co/{name}).
         
         ## Use with mlx
 
@@ -469,6 +461,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     logging.set_verbosity_info()
 
+    api = HfApi()
     api.create_repo(repo_id=upload_repo, exist_ok=True)
     api.upload_folder(
         folder_path=path,
