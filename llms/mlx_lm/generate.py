@@ -76,7 +76,7 @@ def setup_arg_parser():
         type=int,
         default=None,
         help="Set the MLX cache limit in GB",
-        required=False
+        required=False,
     )
     return parser
 
@@ -116,7 +116,7 @@ def main():
 
     if args.cache_limit_gb is not None:
         mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
-        
+
     # Building tokenizer_config
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
     if args.eos_token is not None:

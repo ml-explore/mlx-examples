@@ -525,7 +525,7 @@ def main():
         type=int,
         default=None,
         help="Set the MLX cache limit in GB",
-        required=False
+        required=False,
     )
     args = parser.parse_args()
 
