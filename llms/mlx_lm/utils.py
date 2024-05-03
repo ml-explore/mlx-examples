@@ -80,7 +80,6 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                     "*.tiktoken",
                     "*.txt",
                 ],
-                resume_download=True,
             )
         )
     return model_path
