@@ -71,6 +71,13 @@ def setup_arg_parser():
         action="store_true",
         help="Colorize output based on T[0] probability",
     )
+    parser.add_argument(
+        "--cache-limit-gb",
+        type=int,
+        default=None,
+        help="Set the MLX cache limit in GB",
+        required=False,
+    )
     return parser
 
 
@@ -106,6 +113,9 @@ def main():
     args = parser.parse_args()
 
     mx.random.seed(args.seed)
+
+    if args.cache_limit_gb is not None:
+        mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
 
     # Building tokenizer_config
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
