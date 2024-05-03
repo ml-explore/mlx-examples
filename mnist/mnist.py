@@ -9,7 +9,9 @@ import numpy as np
 
 
 def mnist(
-    save_dir="/tmp", base_url="http://yann.lecun.com/exdb/mnist/", filename="mnist.pkl"
+    save_dir="/tmp",
+    base_url="https://raw.githubusercontent.com/fgnt/mnist/master/",
+    filename="mnist.pkl",
 ):
     """
     Load the MNIST dataset in 4 tensors: train images, train labels,
