@@ -18,6 +18,7 @@ from mlx.utils import tree_flatten
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
 
 from .sample_utils import top_p_sampling
+
 # Local imports
 from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
@@ -32,8 +33,8 @@ MAX_FILE_SIZE_GB = 5
 
 linear_class_predicate = (
     lambda m: isinstance(m, nn.Linear)
-              and m.weight.shape[0]
-              != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
+    and m.weight.shape[0]
+    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
 )
 
 
@@ -326,7 +327,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
             vocab_size = config["vocab_size"]
             extended_linear_class_predicate = (
                 lambda layer: linear_class_predicate(layer)
-                              and layer.weight.shape[0] != vocab_size
+                and layer.weight.shape[0] != vocab_size
             )
             nn.QuantizedLinear.quantize_module(
                 model,
