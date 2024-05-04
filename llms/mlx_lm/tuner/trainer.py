@@ -137,8 +137,11 @@ def evaluate(
 ):
     all_losses = []
     ntokens = 0
+
+    index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
+
     for it, batch in zip(
-        range(num_batches),
+        index_iterator,
         iterate_batches(
             dataset=dataset,
             tokenizer=tokenizer,
