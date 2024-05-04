@@ -140,7 +140,7 @@ def evaluate(
 
     index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
 
-    for it, batch in zip(
+    for _, batch in zip(
         index_iterator,
         iterate_batches(
             dataset=dataset,
