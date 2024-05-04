@@ -49,7 +49,7 @@ def parse_arguments():
         "--eos-token",
         type=str,
         default=None,
-        help="Optional custom EOS token."
+        help="End of sequence token for tokenizer",
     )
     return parser.parse_args()
 
@@ -85,9 +85,8 @@ def prepare_inputs(processor, image, prompt):
     input_ids = mx.array(inputs["input_ids"])
     return input_ids, pixel_values
 
-
-def load_model(model_path):
-    processor = AutoProcessor.from_pretrained(model_path)
+def load_model(model_path, tokenizer_config={}):
+    processor = AutoProcessor.from_pretrained(model_path, **tokenizer_config)
     model = LlavaModel.from_pretrained(model_path)
     return processor, model
 
@@ -98,21 +97,18 @@ def sample(logits, temperature=0.0):
     else:
         return mx.random.categorical(logits * (1 / temperature))
 
-
-def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature, eos_token=None):
+def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature):
     logits, cache = model(input_ids, pixel_values)
     logits = logits[:, -1, :]
     y = sample(logits, temperature=temperature)
     tokens = [y.item()]
-
-    eos_token_id = processor.tokenizer.eos_token_id if eos_token is None else processor.tokenizer.convert_tokens_to_ids(eos_token)
 
     for n in range(max_tokens - 1):
         logits, cache = model.language_model(y[None], cache=cache)
         logits = logits[:, -1, :]
         y = sample(logits, temperature)
         token = y.item()
-        if token == eos_token_id:
+        if token == processor.tokenizer.eos_token_id:
             break
         tokens.append(token)
 
@@ -120,7 +116,12 @@ def generate_text(input_ids, pixel_values, model, processor, max_tokens, tempera
 
 def main():
     args = parse_arguments()
-    processor, model = load_model(args.model)
+
+    tokenizer_config = {}
+    if args.eos_token is not None:
+        tokenizer_config['eos_token'] = args.eos_token
+
+    processor, model = load_model(args.model, tokenizer_config)
 
     prompt = codecs.decode(args.prompt, "unicode_escape")
 
@@ -128,7 +129,7 @@ def main():
 
     print(prompt)
     generated_text = generate_text(
-        input_ids, pixel_values, model, processor, args.max_tokens, args.temp, args.eos_token
+        input_ids, pixel_values, model, processor, args.max_tokens, args.temp
     )
     print(generated_text)
 
