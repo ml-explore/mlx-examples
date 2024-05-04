@@ -4,9 +4,8 @@ import math
 import sys
 import unittest
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as opt
 from mlx.utils import tree_flatten
