@@ -11,7 +11,6 @@ from transformers import AutoProcessor
 
 from llava import LlavaModel
 
-
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Generate text from an image using a model."
@@ -41,10 +40,18 @@ def parse_arguments():
         help="Maximum number of tokens to generate.",
     )
     parser.add_argument(
-        "--temp", type=float, default=0.3, help="Temperature for sampling."
+        "--temp",
+        type=float,
+        default=0.3,
+        help="Temperature for sampling."
+    )
+    parser.add_argument(
+        "--eos-token",
+        type=str,
+        default=None,
+        help="Optional custom EOS token."
     )
     return parser.parse_args()
-
 
 def load_image(image_source):
     """
@@ -92,24 +99,24 @@ def sample(logits, temperature=0.0):
         return mx.random.categorical(logits * (1 / temperature))
 
 
-def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature):
-
+def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature, eos_token=None):
     logits, cache = model(input_ids, pixel_values)
     logits = logits[:, -1, :]
     y = sample(logits, temperature=temperature)
     tokens = [y.item()]
+
+    eos_token_id = processor.tokenizer.eos_token_id if eos_token is None else processor.tokenizer.convert_tokens_to_ids(eos_token)
 
     for n in range(max_tokens - 1):
         logits, cache = model.language_model(y[None], cache=cache)
         logits = logits[:, -1, :]
         y = sample(logits, temperature)
         token = y.item()
-        if token == processor.tokenizer.eos_token_id:
+        if token == eos_token_id:
             break
         tokens.append(token)
 
     return processor.tokenizer.decode(tokens)
-
 
 def main():
     args = parse_arguments()
@@ -121,10 +128,9 @@ def main():
 
     print(prompt)
     generated_text = generate_text(
-        input_ids, pixel_values, model, processor, args.max_tokens, args.temp
+        input_ids, pixel_values, model, processor, args.max_tokens, args.temp, args.eos_token
     )
     print(generated_text)
-
 
 if __name__ == "__main__":
     main()
