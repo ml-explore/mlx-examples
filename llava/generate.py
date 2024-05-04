@@ -11,6 +11,7 @@ from transformers import AutoProcessor
 
 from llava import LlavaModel
 
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Generate text from an image using a model."
@@ -40,10 +41,7 @@ def parse_arguments():
         help="Maximum number of tokens to generate.",
     )
     parser.add_argument(
-        "--temp",
-        type=float,
-        default=0.3,
-        help="Temperature for sampling."
+        "--temp", type=float, default=0.3, help="Temperature for sampling."
     )
     parser.add_argument(
         "--eos-token",
@@ -52,6 +50,7 @@ def parse_arguments():
         help="End of sequence token for tokenizer",
     )
     return parser.parse_args()
+
 
 def load_image(image_source):
     """
@@ -85,6 +84,7 @@ def prepare_inputs(processor, image, prompt):
     input_ids = mx.array(inputs["input_ids"])
     return input_ids, pixel_values
 
+
 def load_model(model_path, tokenizer_config={}):
     processor = AutoProcessor.from_pretrained(model_path, **tokenizer_config)
     model = LlavaModel.from_pretrained(model_path)
@@ -96,6 +96,7 @@ def sample(logits, temperature=0.0):
         return mx.argmax(logits, axis=-1)
     else:
         return mx.random.categorical(logits * (1 / temperature))
+
 
 def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature):
     logits, cache = model(input_ids, pixel_values)
@@ -114,12 +115,13 @@ def generate_text(input_ids, pixel_values, model, processor, max_tokens, tempera
 
     return processor.tokenizer.decode(tokens)
 
+
 def main():
     args = parse_arguments()
 
     tokenizer_config = {}
     if args.eos_token is not None:
-        tokenizer_config['eos_token'] = args.eos_token
+        tokenizer_config["eos_token"] = args.eos_token
 
     processor, model = load_model(args.model, tokenizer_config)
 
@@ -132,6 +134,7 @@ def main():
         input_ids, pixel_values, model, processor, args.max_tokens, args.temp
     )
     print(generated_text)
+
 
 if __name__ == "__main__":
     main()
