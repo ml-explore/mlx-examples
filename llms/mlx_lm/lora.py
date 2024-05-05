@@ -6,13 +6,15 @@ import re
 import types
 from pathlib import Path
 
+import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import yaml
 
+from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import build_schedule, pre_processing_model
+from .tuner.utils import apply_lora_layers, build_schedule, pre_processing_for_train
 from .utils import load, save_config
 
 yaml_loader = yaml.SafeLoader
@@ -147,6 +149,67 @@ def build_parser():
     return parser
 
 
+def train_model(
+    args,
+    model: nn.Module,
+    tokenizer: TokenizerWrapper,
+    train_set,
+    valid_set,
+    training_callback: TrainingCallback = None,
+):
+    adapter_path = Path(args.adapter_path)
+    adapter_path.mkdir(parents=True, exist_ok=True)
+    adapter_file = adapter_path / "adapters.safetensors"
+    save_config(vars(args), adapter_path / "adapter_config.json")
+
+    # init training args
+    training_args = TrainingArgs(
+        batch_size=args.batch_size,
+        iters=args.iters,
+        val_batches=args.val_batches,
+        steps_per_report=args.steps_per_report,
+        steps_per_eval=args.steps_per_eval,
+        steps_per_save=args.save_every,
+        adapter_file=adapter_file,
+        max_seq_length=args.max_seq_length,
+        grad_checkpoint=args.grad_checkpoint,
+    )
+
+    model.train()
+    opt = optim.Adam(
+        learning_rate=(
+            build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
+        )
+    )
+    # Train model
+    train(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        optimizer=opt,
+        train_dataset=train_set,
+        val_dataset=valid_set,
+        training_callback=training_callback,
+    )
+
+
+def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set):
+    model.eval()
+
+    test_loss = evaluate(
+        model=model,
+        dataset=test_set,
+        tokenizer=tokenizer,
+        batch_size=args.batch_size,
+        num_batches=args.test_batches,
+        max_seq_length=args.max_seq_length,
+    )
+
+    test_ppl = math.exp(test_loss)
+
+    print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
+
+
 def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
@@ -168,59 +231,22 @@ def run(args, training_callback: TrainingCallback = None):
 
     if args.train:
         print("Training")
-        adapter_path = Path(args.adapter_path)
-        adapter_path.mkdir(parents=True, exist_ok=True)
-        adapter_file = adapter_path / "adapters.safetensors"
-        save_config(vars(args), adapter_path / "adapter_config.json")
-
-        # init training args
-        training_args = TrainingArgs(
-            batch_size=args.batch_size,
-            iters=args.iters,
-            val_batches=args.val_batches,
-            steps_per_report=args.steps_per_report,
-            steps_per_eval=args.steps_per_eval,
-            steps_per_save=args.save_every,
-            adapter_file=adapter_file,
-            max_seq_length=args.max_seq_length,
-            grad_checkpoint=args.grad_checkpoint,
-        )
-
-        model.train()
-        opt = optim.Adam(
-            learning_rate=(
-                build_schedule(args.lr_schedule)
-                if args.lr_schedule
-                else args.learning_rate
-            )
-        )
-        # Train model
-        train(
+        model = pre_processing_for_train(
             model=model,
-            tokenizer=tokenizer,
-            args=training_args,
-            optimizer=opt,
-            train_dataset=train_set,
-            val_dataset=valid_set,
-            training_callback=training_callback,
+            lora_layers=args.lora_layers,
+            lora_config=args.lora_parameters,
+            resume_adapter_file=args.resume_adapter_file,
         )
+
+        train_model(args, model, tokenizer, train_set, valid_set, training_callback)
 
     if args.test:
         print("Testing")
-        model.eval()
+        if not args.train:
+            adapter_path = Path(args.adapter_path)
+            model = apply_lora_layers(model, adapter_path)
 
-        test_loss = evaluate(
-            model=model,
-            dataset=test_set,
-            tokenizer=tokenizer,
-            batch_size=args.batch_size,
-            num_batches=args.test_batches,
-            max_seq_length=args.max_seq_length,
-        )
-
-        test_ppl = math.exp(test_loss)
-
-        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
+        evaluate_model(args, model, tokenizer, test_set)
 
 
 def main():

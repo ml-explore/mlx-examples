@@ -239,11 +239,8 @@ def print_trainable_parameters(model):
     )
 
 
-def pre_processing_model(
+def pre_processing_for_train(
     model: nn.Module,
-    adapter_path: str,
-    is_train: bool,
-    is_test: bool,
     lora_layers: int,
     lora_config: dict,
     resume_adapter_file: str,
@@ -254,19 +251,13 @@ def pre_processing_model(
     # Freeze all layers
     model.freeze()
 
-    adapter_path = Path(adapter_path)
-
-    if is_test and not is_train:
-        apply_lora_layers(model, adapter_path)
-    else:
-        # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(model, lora_layers, lora_config)
-
-        print_trainable_parameters(model)
+    # Convert linear layers to lora layers and unfreeze in the process
+    linear_to_lora_layers(model, lora_layers, lora_config)
 
     # Resume training the given adapters.
     if resume_adapter_file is not None:
         print(f"Loading pretrained adapters from {resume_adapter_file}")
         model.load_weights(resume_adapter_file, strict=False)
 
+    print_trainable_parameters(model)
     return model
