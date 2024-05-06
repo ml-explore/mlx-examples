@@ -166,8 +166,8 @@ class LlamaModel(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for layer, cache in zip(self.layers, cache):
-            h = layer(h, mask, cache=cache)
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, cache=c)
 
         return self.norm(h)
 

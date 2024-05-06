@@ -165,8 +165,8 @@ class CohereModel(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for layer, cache in zip(self.layers, cache):
-            h = layer(h, mask, cache)
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, c)
 
         return self.norm(h)
 
@@ -176,13 +176,14 @@ class Model(nn.Module):
         super().__init__()
         self.model_type = args.model_type
         self.model = CohereModel(args)
+        self.args = args
 
     def __call__(
         self,
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
+        out = self.model(inputs, cache)
         out = self.model.embed_tokens.as_linear(out)
         out = out * self.model.args.logit_scale
         return out
@@ -190,3 +191,11 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
+
+    @property
+    def head_dim(self):
+        return self.args.hidden_size // self.args.num_attention_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

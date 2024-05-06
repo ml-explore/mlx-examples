@@ -281,14 +281,12 @@ class TestModels(unittest.TestCase):
             vocab_size=10_000,
         )
         model = dbrx.Model(args)
-        self.model_test_runner(
-            model, args.model_type, args.vocab_size, args.num_hidden_layers
-        )
+        self.model_test_runner(model, args.model_type, args.vocab_size, args.n_layers)
 
     def test_minicpm(self):
         from mlx_lm.models import minicpm
 
-        args = dbrx.ModelArgs(
+        args = minicpm.ModelArgs(
             model_type="minicpm",
             hidden_size=1024,
             dim_model_base=1024,
