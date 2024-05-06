@@ -4,6 +4,7 @@ import unittest
 
 import mlx.core as mx
 from mlx.utils import tree_map
+from mlx_lm.models.base import KVCache
 
 
 class TestModels(unittest.TestCase):
@@ -17,13 +18,16 @@ class TestModels(unittest.TestCase):
             model.update(tree_map(lambda p: p.astype(t), model.parameters()))
 
             inputs = mx.array([[0, 1]])
-            outputs, cache = model(inputs)
+            outputs = model(inputs)
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
-            outputs, cache = model(
-                mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache
-            )
+            cache = [
+                KVCache(model.head_dim, model.n_kv_heads)
+                for _ in range(len(model.layers))
+            ]
+
+            outputs = model(mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache)
             self.assertEqual(outputs.shape, (1, 1, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
@@ -260,6 +264,44 @@ class TestModels(unittest.TestCase):
             model_type="cohere",
         )
         model = cohere.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_dbrx(self):
+        from mlx_lm.models import dbrx
+
+        args = dbrx.ModelArgs(
+            model_type="dbrx",
+            d_model=1024,
+            ffn_config={"ffn_hidden_size": 2048, "moe_num_experts": 4, "moe_top_k": 2},
+            attn_config={"kv_n_heads": 2, "clip_qkv": True, "rope_theta": 10000},
+            n_layers=4,
+            n_heads=4,
+            vocab_size=10_000,
+        )
+        model = dbrx.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_minicpm(self):
+        from mlx_lm.models import minicpm
+
+        args = dbrx.ModelArgs(
+            model_type="minicpm",
+            hidden_size=1024,
+            dim_model_base=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=4,
+            rms_norm_eps=1e-4,
+            vocab_size=10000,
+            num_key_value_heads=2,
+            scale_depth=1.0,
+            scale_emb=1.0,
+        )
+        model = minicpm.Model(args)
         self.model_test_runner(
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )

@@ -19,7 +19,6 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float
     vocab_size: int
     num_key_value_heads: int
-    max_position_embeddings: int
     scale_depth: float
     scale_emb: float
     rope_theta: float = 1000000.0
@@ -47,7 +46,6 @@ class Attention(nn.Module):
         self.hidden_size = args.hidden_size
         self.num_heads = n_heads = args.num_attention_heads
         self.rope_theta = args.rope_theta
-        self.max_position_embeddings = args.max_position_embeddings
 
         self.head_dim = head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
