@@ -115,6 +115,17 @@ class MLP(nn.Module):
         self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
         self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
 
+        dim = args.hidden_size
+        hidden_dim = args.intermediate_size
+        if hasattr(args, "mlp_bias"):
+            mlp_bias = args.mlp_bias
+        else:
+            mlp_bias = False
+
+        self.gate_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
+        self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
+
     def __call__(self, x) -> mx.array:
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
@@ -125,6 +136,7 @@ class TransformerBlock(nn.Module):
         self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
         self.self_attn = Attention(args)
+        self.mlp = MLP(args)
         self.mlp = MLP(args)
         self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(
@@ -143,13 +155,6 @@ class TransformerBlock(nn.Module):
         r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
         return out
-
-
-def create_additive_causal_mask(N: int, offset: int = 0):
-    rinds = mx.arange(offset + N)
-    linds = mx.arange(offset, offset + N) if offset else rinds
-    mask = linds[:, None] < rinds[None]
-    return mask * -1e9
 
 
 def create_additive_causal_mask(N: int, offset: int = 0):
@@ -199,6 +204,7 @@ class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
+        self.args = args
         self.model_type = args.model_type
         self.model = LlamaModel(args)
         if not args.tie_word_embeddings:
@@ -209,12 +215,12 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
+        out = self.model(inputs, cache)
         if self.args.tie_word_embeddings:
             out = self.model.embed_tokens.as_linear(out)
         else:
             out = self.lm_head(out)
-        return out, cache
+        return out
 
     def sanitize(self, weights):
         # Remove unused precomputed rotary freqs
