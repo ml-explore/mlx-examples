@@ -48,6 +48,12 @@ def build_parser():
         help="Do training",
     )
     parser.add_argument(
+        "--add-eos-token",
+        type=int,
+        default=1,
+        help="Enable add_eos_token for tokenizer",
+    )
+    parser.add_argument(
         "--data",
         type=str,
         default="data/",
@@ -317,9 +323,13 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    print("Loading pretrained model")
-    model, tokenizer, _ = lora_utils.load(args.model)
+    # Building tokenizer_config
+    tokenizer_config = {}
+    if args.train:
+        tokenizer_config["add_eos_token"] = bool(args.add_eos_token)
 
+    print("Loading pretrained model")
+    model, tokenizer, _ = lora_utils.load(args.model, tokenizer_config)
     # Freeze all layers other than LORA linears
     model.freeze()
     for l in model.model.layers[len(model.model.layers) - args.lora_layers :]:
