@@ -77,6 +77,7 @@ def linear_to_lora_layers(
         "gemma",
         "starcoder2",
         "cohere",
+        "minicpm",
     ]:
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
         if model.model_type == "mixtral":
@@ -86,7 +87,7 @@ def linear_to_lora_layers(
             keys.add("mlp.shared_expert_gate")
     elif model.model_type == "olmo":
         keys = set(["att_proj"])
-    elif model.model_type == "phi3":
+    elif model.model_type in ["phi3", "openelm"]:
         keys = set(["self_attn.qkv_proj"])
     elif model.model_type == "phi-msft":
         keys = set(["mixer.Wqkv", "moe.gate"])

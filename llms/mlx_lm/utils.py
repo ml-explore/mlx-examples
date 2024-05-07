@@ -80,7 +80,6 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                     "*.tiktoken",
                     "*.txt",
                 ],
-                resume_download=True,
             )
         )
     return model_path
@@ -136,7 +135,10 @@ def generate_step(
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        logits = logits + logit_bias if logit_bias else logits
+        if logit_bias:
+            indices = mx.array(list(logit_bias.keys()))
+            values = mx.array(list(logit_bias.values()))
+            logits[:, indices] += values
         softmax_logits = mx.softmax(logits)
 
         if temp == 0:
@@ -311,7 +313,12 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 
     config = load_config(model_path)
 
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
+    weight_files = glob.glob(str(model_path / "model*.safetensors"))
+
+    if not weight_files:
+        # Try weight for back-compat
+        weight_files = glob.glob(str(model_path / "weight*.safetensors"))
+
     if not weight_files:
         logging.error(f"No safetensors found in {model_path}")
         raise FileNotFoundError(f"No safetensors found in {model_path}")
@@ -438,8 +445,9 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     card.text = dedent(
         f"""
         # {upload_repo}
-        This model was converted to MLX format from [`{hf_path}`]() using mlx-lm version **{__version__}**.
-        Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+        
+        The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path}) using mlx-lm version **{__version__}**.
+        
         ## Use with mlx
 
         ```bash
@@ -464,6 +472,8 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         folder_path=path,
         repo_id=upload_repo,
         repo_type="model",
+        multi_commits=True,
+        multi_commits_verbose=True,
     )
     print(f"Upload successful, go to https://huggingface.co/{upload_repo} for details.")
 

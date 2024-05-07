@@ -34,7 +34,7 @@ steps_per_eval: 200
 resume_adapter_file: null
 
 # Save/load path for the trained adapter weights.
-adapter_file: "adapters.npz"
+adapter_path: "adapters"
 
 # Save the model every N iterations.
 save_every: 100

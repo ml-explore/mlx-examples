@@ -1,0 +1,4 @@
+include mlx_whisper/requirements.txt
+include mlx_whisper/assets/mel_filters.npz
+include mlx_whisper/assets/multilingual.tiktoken
+include mlx_whisper/assets/gpt2.tiktoken

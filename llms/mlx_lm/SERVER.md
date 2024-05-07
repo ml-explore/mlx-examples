@@ -71,3 +71,6 @@ curl localhost:8080/v1/chat/completions \
 
 - `repetition_context_size`: (Optional) The size of the context window for
   applying repetition penalty. Defaults to `20`.
+
+- `logit_bias`: (Optional) A dictionary mapping token IDs to their bias
+  values. Defaults to `None`.
