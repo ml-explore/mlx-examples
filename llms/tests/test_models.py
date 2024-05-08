@@ -29,6 +29,10 @@ class TestModels(unittest.TestCase):
             )
             cache = [KVCache(model.head_dim, n) for n in kv_heads]
 
+            outputs = model(inputs, cache)
+            self.assertEqual(outputs.shape, (1, 2, vocab_size))
+            self.assertEqual(outputs.dtype, t)
+
             outputs = model(mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache)
             self.assertEqual(outputs.shape, (1, 1, vocab_size))
             self.assertEqual(outputs.dtype, t)
