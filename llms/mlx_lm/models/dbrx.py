@@ -65,11 +65,9 @@ class Attention(nn.Module):
         )
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -78,7 +76,7 @@ class Attention(nn.Module):
             queries, keys, values, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.out_proj(output), (keys, values)
+        return self.out_proj(output)
 
 
 class NormAttnNorm(nn.Module):
@@ -94,9 +92,9 @@ class NormAttnNorm(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        h, cache = self.attn(self.norm_1(x), mask=mask, cache=cache)
+        h = self.attn(self.norm_1(x), mask=mask, cache=cache)
         x = h + x
-        return x, self.norm_2(x), cache
+        return x, self.norm_2(x)
 
 
 class MLP(nn.Module):
@@ -181,9 +179,9 @@ class DecoderLayer(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, h, cache = self.norm_attn_norm(x, mask, cache)
+        r, h = self.norm_attn_norm(x, mask, cache)
         out = self.ffn(h) + r
-        return out, cache
+        return out
 
 
 class DBRX(nn.Module):
@@ -210,10 +208,10 @@ class DBRX(nn.Module):
         if cache is None:
             cache = [None] * len(self.blocks)
 
-        for e, layer in enumerate(self.blocks):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.blocks, cache):
+            h = layer(h, mask, c)
 
-        return self.norm_f(h), cache
+        return self.norm_f(h)
 
 
 class Model(nn.Module):
@@ -229,8 +227,8 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.transformer(inputs, cache)
-        return self.lm_head(out), cache
+        out = self.transformer(inputs, cache)
+        return self.lm_head(out)
 
     @property
     def layers(self):
@@ -253,3 +251,11 @@ class Model(nn.Module):
                     experts = [(s, sv.T) for s, sv in experts]
                 new_weights.update(experts)
         return new_weights
+
+    @property
+    def head_dim(self):
+        return self.args.d_model // self.args.n_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.attn_config["kv_n_heads"]

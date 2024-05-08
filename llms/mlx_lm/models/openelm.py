@@ -22,8 +22,7 @@ class ModelArgs(BaseModelArgs):
     normalize_qk_projections: bool = True
     share_input_output_layers: bool = True
     rms_norm_eps: float = 1e-6
-    rope_theta: float = 10000
-    rope_traditional: bool = False
+    rope_freq_constant: float = 10000
 
 
 def make_divisible(
@@ -73,9 +72,7 @@ class Attention(nn.Module):
             self.q_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
             self.k_norm = nn.RMSNorm(head_dim, eps=args.rms_norm_eps)
 
-        self.rope = nn.RoPE(
-            head_dim, traditional=args.rope_traditional, base=args.rope_theta
-        )
+        self.rope = nn.RoPE(head_dim, traditional=False, base=args.rope_freq_constant)
 
     def __call__(
         self,
@@ -87,12 +84,10 @@ class Attention(nn.Module):
 
         qkv = self.qkv_proj(x)
 
-        # [B, S, (q_h + k_h + v_h) * h] --> [B, S, (q_h + k_h + v_h), h] -> [B, (q_h + k_h + v_h), S, h]
         qkv = qkv.reshape(
             B, L, self.n_heads + (self.n_kv_heads * 2), self.head_dim
         ).transpose(0, 2, 1, 3)
 
-        # [B, (q_h + k_h + v_h), S, h] --> [B, q_h, S h], [B, k_h, S, h], [B, v_h, S, h]
         queries, keys, values = mx.split(
             qkv, [self.n_heads, self.n_heads + self.n_kv_heads], axis=1
         )
@@ -103,11 +98,9 @@ class Attention(nn.Module):
             keys = self.k_norm(keys)
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -118,7 +111,7 @@ class Attention(nn.Module):
 
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
-        return self.out_proj(output), (keys, values)
+        return self.out_proj(output)
 
 
 class MLP(nn.Module):
@@ -159,11 +152,11 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attn(self.attn_norm(x), mask, cache)
+        r = self.attn(self.attn_norm(x), mask, cache)
         h = x + r
         r = self.ffn(self.ffn_norm(h))
         out = h + r
-        return out, cache
+        return out
 
 
 class OpenELMModel(nn.Module):
@@ -195,10 +188,10 @@ class OpenELMModel(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for e, layer in enumerate(self.layers):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, cache=c)
 
-        return self.norm(h), cache
+        return self.norm(h)
 
 
 class Model(nn.Module):
@@ -215,14 +208,22 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.transformer(inputs, cache)
+        out = self.transformer(inputs, cache)
         if self.args.share_input_output_layers:
             out = self.transformer.token_embeddings.as_linear(out)
         else:
             out = self.lm_head(out)
 
-        return out, cache
+        return out
 
     @property
     def layers(self):
         return self.transformer.layers
+
+    @property
+    def head_dim(self):
+        return self.args.head_dim
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_kv_heads
