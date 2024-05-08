@@ -11,7 +11,6 @@ import numpy as np
 @dataclass
 class ModelArgs:
     model_type: str
-    max_sequence_length: int = 2048
     num_vocab: int = 51200
     model_dim: int = 2560
     num_heads: int = 32
@@ -56,11 +55,9 @@ class RoPEAttention(nn.Module):
 
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -69,14 +66,13 @@ class RoPEAttention(nn.Module):
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores = scores + mask
 
-        scores = mx.softmax(scores, axis=-1).astype(values.dtype)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+        ).astype(values.dtype)
+        output = output.moveaxis(2, 1).reshape(B, L, -1)
 
-        return self.out_proj(values_hat), (keys, values)
+        return self.out_proj(output)
 
 
 class MLP(nn.Module):
@@ -144,9 +140,9 @@ class ParallelBlock(nn.Module):
 
     def __call__(self, x, mask, cache):
         h = self.ln(x)
-        attn_h, cache = self.mixer(h, mask, cache)
+        attn_h = self.mixer(h, mask, cache)
         ff_h = self.moe(h)
-        return attn_h + ff_h + x, cache
+        return attn_h + ff_h + x
 
 
 class TransformerDecoder(nn.Module):
@@ -160,9 +156,9 @@ class TransformerDecoder(nn.Module):
         if cache is None:
             cache = [None] * len(self.h)
 
-        for e, layer in enumerate(self.h):
-            x, cache[e] = layer(x, mask, cache[e])
-        return x, cache
+        for layer, c in zip(self.h, cache):
+            x = layer(x, mask, c)
+        return x
 
 
 class Embd(nn.Module):
@@ -190,6 +186,7 @@ class Model(nn.Module):
         self.model_type = config.model_type
         self.transformer = TransformerDecoder(config)
         self.lm_head = OutputHead(config)
+        self.args = config
 
     def __call__(
         self,
@@ -202,9 +199,17 @@ class Model(nn.Module):
             mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
             mask = mask.astype(x.dtype)
 
-        y, cache = self.transformer(x, mask, cache)
-        return self.lm_head(y), cache
+        y = self.transformer(x, mask, cache)
+        return self.lm_head(y)
 
     @property
     def layers(self):
         return self.transformer.h
+
+    @property
+    def head_dim(self):
+        return self.args.model_dim // self.args.num_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_heads

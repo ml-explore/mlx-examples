@@ -161,9 +161,13 @@ def generate_step(
         )
 
     y = prompt
-    cache = [
-        KVCache(model.head_dim, model.n_kv_heads) for _ in range(len(model.layers))
-    ]
+    kv_heads = (
+        [model.n_kv_heads] * len(model.layers)
+        if isinstance(model.n_kv_heads, int)
+        else model.n_kv_heads
+    )
+    cache = [KVCache(model.head_dim, n) for n in kv_heads]
+
     repetition_context = prompt.tolist()
 
     if repetition_context_size:

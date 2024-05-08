@@ -22,10 +22,12 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
-            cache = [
-                KVCache(model.head_dim, model.n_kv_heads)
-                for _ in range(len(model.layers))
-            ]
+            kv_heads = (
+                [model.n_kv_heads] * len(model.layers)
+                if isinstance(model.n_kv_heads, int)
+                else model.n_kv_heads
+            )
+            cache = [KVCache(model.head_dim, n) for n in kv_heads]
 
             outputs = model(mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache)
             self.assertEqual(outputs.shape, (1, 1, vocab_size))
@@ -56,6 +58,15 @@ class TestModels(unittest.TestCase):
         self.model_test_runner(
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
+
+    def test_phixtral(self):
+        from mlx_lm.models import phixtral
+
+        args = phixtral.ModelArgs(
+            "phixtral", num_vocab=1000, num_layers=4, model_dim=1024
+        )
+        model = phixtral.Model(args)
+        self.model_test_runner(model, args.model_type, args.num_vocab, args.num_layers)
 
     def test_phi3(self):
         from mlx_lm.models import phi3
@@ -302,6 +313,64 @@ class TestModels(unittest.TestCase):
         model = minicpm.Model(args)
         self.model_test_runner(
             model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_openelm(self):
+        from mlx_lm.models import openelm
+
+        args = openelm.ModelArgs(
+            model_type="openelm",
+            ffn_dim_divisor=256,
+            ffn_multipliers=[
+                0.5,
+                0.73,
+                0.97,
+                1.2,
+                1.43,
+                1.67,
+                1.9,
+                2.13,
+                2.37,
+                2.6,
+                2.83,
+                3.07,
+                3.3,
+                3.53,
+                3.77,
+                4.0,
+            ],
+            head_dim=64,
+            model_dim=1280,
+            normalize_qk_projections=True,
+            num_kv_heads=[3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5],
+            num_query_heads=[
+                12,
+                12,
+                12,
+                12,
+                12,
+                16,
+                16,
+                16,
+                16,
+                16,
+                16,
+                16,
+                20,
+                20,
+                20,
+                20,
+            ],
+            num_transformer_layers=16,
+            vocab_size=32000,
+        )
+
+        model = openelm.Model(args)
+        self.model_test_runner(
+            model,
+            args.model_type,
+            args.vocab_size,
+            len(args.ffn_multipliers),
         )
 
 
