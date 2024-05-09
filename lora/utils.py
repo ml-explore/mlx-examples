@@ -162,7 +162,9 @@ def load(path_or_hf_repo: str, tokenizer_config={}):
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_path, **tokenizer_config)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        model_path, **tokenizer_config
+    )
     return model, tokenizer, config
 
 
