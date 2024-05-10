@@ -299,17 +299,21 @@ def load_config(model_path: Path) -> dict:
     return config
 
 
-def load_model(model_path: Path, model_config: dict = {}, lazy: bool = False) -> nn.Module:
+def load_model(
+    model_path: Path,
+    lazy: bool = False,
+    model_config: dict = {},
+) -> nn.Module:
     """
     Load and initialize the model from a given path.
 
     Args:
         model_path (Path): The path to load the model from.
-        model_config(dict, optional): Configuration parameters for the model.
-            Defaults to an empty dictionary.
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
+        model_config(dict, optional): Configuration parameters for the model.
+            Defaults to an empty dictionary.
 
     Returns:
         nn.Module: The loaded and initialized model.
@@ -395,7 +399,7 @@ def load(
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path, model_config, lazy)
+    model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
         model = apply_lora_layers(model, adapter_path)
         model.eval()
