@@ -64,7 +64,7 @@ class TrainingArgs:
 
 
 def default_loss(model, inputs, targets, lengths):
-    logits, _ = model(inputs)
+    logits = model(inputs)
     logits = logits.astype(mx.float32)
 
     length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
