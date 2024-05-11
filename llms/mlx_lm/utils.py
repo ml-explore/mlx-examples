@@ -32,6 +32,11 @@ MODEL_REMAPPING = {
 
 MAX_FILE_SIZE_GB = 5
 
+# Custom error class for no local or huggingface repo found for path
+class RepoNotFoundError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
 
 def _get_classes(config: dict):
     """
@@ -69,20 +74,23 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
     """
     model_path = Path(path_or_hf_repo)
     if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                revision=revision,
-                allow_patterns=[
-                    "*.json",
-                    "*.safetensors",
-                    "*.py",
-                    "tokenizer.model",
-                    "*.tiktoken",
-                    "*.txt",
-                ],
+        try:
+            model_path = Path(
+                snapshot_download(
+                    repo_id=path_or_hf_repo,
+                    revision=revision,
+                    allow_patterns=[
+                        "*.json",
+                        "*.safetensors",
+                        "*.py",
+                        "tokenizer.model",
+                        "*.tiktoken",
+                        "*.txt",
+                    ],
+                )
             )
-        )
+        except RepositoryNotFoundError:
+            raise RepoNotFoundError(f"No local or Hugging Face repository found for path: {path_or_hf_repo}.")
     return model_path
 
 
@@ -397,7 +405,10 @@ def load(
         FileNotFoundError: If config file or safetensors are not found.
         ValueError: If model class or args class are not found.
     """
-    model_path = get_model_path(path_or_hf_repo)
+    try:
+        model_path = get_model_path(path_or_hf_repo)
+    except RepoNotFoundError:
+        raise RepoNotFoundError(f"No local or Hugging Face repository found for path: {path_or_hf_repo}. Please check the provided path again.")
 
     model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
