@@ -75,35 +75,29 @@ class PhiAttention(nn.Module):
         queries = queries.reshape(
             B,
             L,
-            n_kv_heads,
-            n_heads // n_kv_heads,
+            n_heads,
             -1,
-        ).moveaxis(1, 3)
-        keys = keys.reshape(B, L, n_kv_heads, 1, -1).moveaxis(1, 3)
-        values = values.reshape(B, L, n_kv_heads, 1, -1).moveaxis(1, 3)
+        ).moveaxis(1, 2)
+        keys = keys.reshape(B, L, n_kv_heads, -1).moveaxis(1, 2)
+        values = values.reshape(B, L, n_kv_heads, -1).moveaxis(1, 2)
 
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[-2])
-            keys = self.rope(keys, offset=key_cache.shape[-2])
-            keys = mx.concatenate([key_cache, keys], axis=-2)
-            values = mx.concatenate([value_cache, values], axis=-2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        queries = queries.astype(mx.float32)
-
-        # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys.swapaxes(-1, -2)
-        if mask is not None:
-            scores = scores + mask
-        scores = mx.softmax(scores, axis=-1).astype(values.dtype)
-        output = (scores @ values).moveaxis(3, 1).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+        ).astype(values.dtype)
 
-        return self.dense(output), (keys, values)
+        output = output.moveaxis(2, 1).reshape(B, L, -1)
+
+        return self.dense(output)
 
 
 class PhiMLP(nn.Module):
@@ -128,9 +122,9 @@ class PhiDecoderLayer(nn.Module):
 
     def __call__(self, x, mask, cache):
         h = self.input_layernorm(x)
-        attn_h, cache = self.self_attn(h, mask, cache)
+        attn_h = self.self_attn(h, mask, cache)
         ff_h = self.mlp(h)
-        return attn_h + ff_h + x, cache
+        return attn_h + ff_h + x
 
 
 class PhiModel(nn.Module):
@@ -152,9 +146,9 @@ class PhiModel(nn.Module):
             mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
             mask = mask.astype(x.dtype)
 
-        for e, layer in enumerate(self.layers):
-            x, cache[e] = layer(x, mask, cache[e])
-        return self.final_layernorm(x), cache
+        for layer, c in zip(self.layers, cache):
+            x = layer(x, mask, c)
+        return self.final_layernorm(x)
 
 
 class Model(nn.Module):
@@ -163,15 +157,24 @@ class Model(nn.Module):
         self.model_type = config.model_type
         self.model = PhiModel(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=True)
+        self.args = config
 
     def __call__(
         self,
         x: mx.array,
         cache: mx.array = None,
     ) -> Tuple[mx.array, mx.array]:
-        y, cache = self.model(x, cache)
-        return self.lm_head(y), cache
+        y = self.model(x, cache)
+        return self.lm_head(y)
 
     @property
     def layers(self):
         return self.model.layers
+
+    @property
+    def head_dim(self):
+        return self.args.hidden_size // self.args.num_attention_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

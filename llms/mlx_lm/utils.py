@@ -18,6 +18,7 @@ from mlx.utils import tree_flatten
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 # Local imports
+from .models.base import KVCache
 from .sample_utils import top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
@@ -160,7 +161,12 @@ def generate_step(
         )
 
     y = prompt
-    cache = None
+    kv_heads = (
+        [model.n_kv_heads] * len(model.layers)
+        if isinstance(model.n_kv_heads, int)
+        else model.n_kv_heads
+    )
+    cache = [KVCache(model.head_dim, n) for n in kv_heads]
 
     repetition_context = prompt.tolist()
 
@@ -168,8 +174,8 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     def _step(y):
-        nonlocal cache, repetition_context
-        logits, cache = model(y[None], cache=cache)
+        nonlocal repetition_context
+        logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if repetition_penalty:
@@ -293,7 +299,11 @@ def load_config(model_path: Path) -> dict:
     return config
 
 
-def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
+def load_model(
+    model_path: Path,
+    lazy: bool = False,
+    model_config: dict = {},
+) -> nn.Module:
     """
     Load and initialize the model from a given path.
 
@@ -302,6 +312,8 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
+        model_config(dict, optional): Configuration parameters for the model.
+            Defaults to an empty dictionary.
 
     Returns:
         nn.Module: The loaded and initialized model.
@@ -312,6 +324,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     """
 
     config = load_config(model_path)
+    config.update(model_config)
 
     weight_files = glob.glob(str(model_path / "model*.safetensors"))
 
@@ -359,6 +372,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 def load(
     path_or_hf_repo: str,
     tokenizer_config={},
+    model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
 ) -> Tuple[nn.Module, TokenizerWrapper]:
@@ -368,6 +382,8 @@ def load(
     Args:
         path_or_hf_repo (Path): The path or the huggingface repository to load the model from.
         tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
+            Defaults to an empty dictionary.
+        model_config(dict, optional): Configuration parameters specifically for the model.
             Defaults to an empty dictionary.
         adapter_path (str, optional): Path to the LoRA adapters. If provided, applies LoRA layers
             to the model. Default: ``None``.
@@ -383,7 +399,7 @@ def load(
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path, lazy)
+    model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
         model = apply_lora_layers(model, adapter_path)
         model.eval()
@@ -445,9 +461,9 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     card.text = dedent(
         f"""
         # {upload_repo}
-        
+
         The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path}) using mlx-lm version **{__version__}**.
-        
+
         ## Use with mlx
 
         ```bash
