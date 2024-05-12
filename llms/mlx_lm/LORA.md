@@ -95,6 +95,28 @@ mlx_lm.generate \
     --prompt "<your_model_prompt>"
 ```
 
+For generation using the API:
+
+```
+from mlx_lm import load, generate
+
+model_repo = "<path_to_model>"
+adapter_path = "<path_to_adapters>"
+
+model, tokenizer = load(model_repo, adapter_path=adapter_path)
+
+text = tokenizer.apply_chat_template(
+    [
+        {"role": "system", "content": "<system_prompt>"},
+        {"role": "user", "content": "<prompt>"},
+    ],
+    tokenize=False,
+    add_generation_prompt=True,
+)
+
+response = generate(model, tokenizer, prompt=text, verbose=True)
+```
+
 ## Fuse
 
 You can generate a model fused with the low-rank adapters using the
