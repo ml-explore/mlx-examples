@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
+from huggingface_hub.utils._errors import RepositoryNotFoundError
 from mlx.utils import tree_flatten
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
@@ -90,7 +91,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                 )
             )
         except RepositoryNotFoundError:
-            raise RepoNotFoundError(f"No local or Hugging Face repository found for path: {path_or_hf_repo}.")
+            raise RepoNotFoundError(f"Model Not Found for {path_or_hf_repo}.\n Please make sure you specified the local path or Hugging Face repo id correctly.\n If you are trying to access a private or gated Hugging Face repo, make sure you are authenticated.")
     return model_path
 
 
