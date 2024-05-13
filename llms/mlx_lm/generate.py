@@ -8,6 +8,7 @@ from .utils import generate, load
 
 DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
+DEFAULT_USE_DORA = False
 DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.6
 DEFAULT_TOP_P = 1.0
@@ -78,6 +79,12 @@ def setup_arg_parser():
         help="Set the MLX cache limit in GB",
         required=False,
     )
+    parser.add_argument(
+        "--use-dora",
+        type=bool,
+        default=False,
+        help="Use dora adapters to generate",
+    )
     return parser
 
 
@@ -123,7 +130,7 @@ def main():
         tokenizer_config["eos_token"] = args.eos_token
 
     model, tokenizer = load(
-        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
+        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config, use_dora=args.use_dora
     )
 
     if args.use_default_chat_template:

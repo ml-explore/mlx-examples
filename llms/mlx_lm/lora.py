@@ -14,7 +14,7 @@ from mlx.utils import tree_flatten
 
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import apply_lora_layers, build_schedule, linear_to_lora_layers,apply_dora_layers,linear_to_dora_layers
+from .tuner.utils import apply_lora_layers, build_schedule, linear_to_lora_layers
 from .utils import load, save_config
 
 yaml_loader = yaml.SafeLoader
@@ -187,7 +187,7 @@ def run(args, training_callback: TrainingCallback = None):
         save_config(vars(args), adapter_path / "adapter_config.json")
 
         # Convert linear layers to lora layers and unfreeze in the process
-        
+
         linear_to_lora_layers(model, args.lora_layers, args.lora_parameters,args.use_dora)
         print_trainable_parameters(model)
 
