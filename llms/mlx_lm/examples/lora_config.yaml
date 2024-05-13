@@ -51,6 +51,8 @@ max_seq_length: 2048
 # Use gradient checkpointing to reduce memory use.
 grad_checkpoint: false
 
+dora: false
+
 # LoRA parameters can only be specified in a config file
 lora_parameters:
   # The layer keys to apply LoRA to.

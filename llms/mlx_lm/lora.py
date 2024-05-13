@@ -14,7 +14,7 @@ from mlx.utils import tree_flatten
 
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import apply_lora_layers, build_schedule, linear_to_lora_layers
+from .tuner.utils import apply_lora_layers, build_schedule, linear_to_lora_layers,apply_dora_layers,linear_to_dora_layers
 from .utils import load, save_config
 
 yaml_loader = yaml.SafeLoader
@@ -140,6 +140,7 @@ def build_parser():
         help="Use gradient checkpointing to reduce memory use.",
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+    parser.add_argument("--dora",type=bool,default=False,help= "Use DORA to finetune")
     return parser
 
 
@@ -175,14 +176,20 @@ def run(args, training_callback: TrainingCallback = None):
     adapter_file = adapter_path / "adapters.safetensors"
 
     if args.test and not args.train:
-        apply_lora_layers(model, adapter_path)
+        if not args.dora:
+            apply_lora_layers(model, adapter_path)
+        else:
+            apply_dora_layers(model, adapter_path)
 
     else:
         adapter_path.mkdir(parents=True, exist_ok=True)
         save_config(vars(args), adapter_path / "adapter_config.json")
 
         # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+        if not args.dora:
+            linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+        else:
+            linear_to_dora_layers(model,args.lora_layers, args.lora_parameters)
 
         print_trainable_parameters(model)
 
