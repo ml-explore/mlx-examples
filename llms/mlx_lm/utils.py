@@ -406,10 +406,7 @@ def load(
         FileNotFoundError: If config file or safetensors are not found.
         ValueError: If model class or args class are not found.
     """
-    try:
-        model_path = get_model_path(path_or_hf_repo)
-    except RepoNotFoundError:
-        raise RepoNotFoundError(f"No local or Hugging Face repository found for path: {path_or_hf_repo}. Please check the provided path again.")
+    model_path = get_model_path(path_or_hf_repo)
 
     model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
