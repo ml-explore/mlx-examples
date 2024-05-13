@@ -31,122 +31,12 @@ def build_schedule(schedule_config: Dict):
     else:
         return bound_schedule_fn
 
-def linear_to_dora_layers(
-    model: nn.Module,
-    num_dora_layers: int,
-    config: Dict,
-):
-    """
-    Convert some of the models linear layers to dora layers.
-
-    Args:
-        model (nn.Module): The neural network model.
-        num_lora_layers (int): The number of blocks to convert to lora layers
-        starting from the last layer.
-        config (dict): More configuration parameters for LoRA, including the
-          rank, alpha, scale, and optional layer keys.
-    """
-
-    num_layers = len(model.layers)
-    if num_dora_layers > num_layers:
-        raise ValueError(
-            f"Requested {num_dora_layers} DoRA layers "
-            f"but the model only has {num_layers} layers."
-        )
-
-    to_dora = lambda lin: DoRALinear.from_linear(
-        lin,
-        r=config["rank"],
-        alpha=config["alpha"],
-        scale=config["scale"],
-        dropout=config["dropout"],
-    )
-
-    keys = config.get("keys", None)
-    if keys is not None:
-        keys = set(keys)
-    elif model.model_type in [
-        "mistral",
-        "llama",
-        "phi",
-        "mixtral",
-        "stablelm",
-        "qwen2",
-        "qwen2_moe",
-        "gemma",
-        "starcoder2",
-        "cohere",
-        "minicpm",
-    ]:
-        keys = set(["self_attn.q_proj", "self_attn.v_proj"])
-        if model.model_type == "mixtral":
-            keys.add("block_sparse_moe.gate")
-        if model.model_type == "qwen2_moe":
-            keys.add("mlp.gate")
-            keys.add("mlp.shared_expert_gate")
-    elif model.model_type == "olmo":
-        keys = set(["att_proj"])
-    elif model.model_type == "openelm":
-        keys = set(["attn.qkv_proj"])
-    elif model.model_type == "phi3":
-        keys = set(["self_attn.qkv_proj"])
-    elif model.model_type == "phi-msft":
-        keys = set(["mixer.Wqkv", "moe.gate"])
-    elif model.model_type == "dbrx":
-        keys = set(["norm_attn_norm.attn.Wqkv", "ffn.router.layer"])
-    else:
-        raise ValueError(f"Lora does not support {model.model_type}")
-
-    for l in model.layers[num_layers - num_dora_layers :]:
-        dora_layers = [(k, to_dora(m)) for k, m in l.named_modules() if k in keys]
-        l.update_modules(tree_unflatten(dora_layers))
-
-
-def apply_dora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
-    """
-    Apply DoRA layers to the model.
-
-    Args:
-        model (nn.Module): The neural network model.
-        adapter_path (str): Path to the adapter configuration file.
-
-    Returns:
-        nn.Module: The updated model with DoRA layers applied.
-    """
-    adapter_path = Path(adapter_path)
-    if not adapter_path.exists():
-        raise FileNotFoundError(f"The adapter path does not exist: {adapter_path}")
-    with open(adapter_path / "adapter_config.json", "r") as fid:
-        config = types.SimpleNamespace(**json.load(fid))
-    linear_to_dora_layers(model, config.lora_layers, config.lora_parameters)
-    model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
-    return model
-
-
-
-def remove_dora_layers(model: nn.Module) -> nn.Module:
-    """
-    Remove the DoRA layers from the model.
-
-    Args:
-        model (nn.Module): The model with DoRA layers.
-
-    Returns:
-        nn.Module: The model without DoRA layers.
-    """
-    reset_layers = []
-    for name, module in model.named_modules():
-        if isinstance(module, DoRALinear):
-            reset_layers.append((name, module.linear))
-    if len(reset_layers) > 0:
-        model.update_modules(tree_unflatten(reset_layers))
-    return model
-
 
 def linear_to_lora_layers(
     model: nn.Module,
     num_lora_layers: int,
     config: Dict,
+    use_dora: bool = False,
 ):
     """
     Convert some of the models linear layers to lora layers.
@@ -165,14 +55,22 @@ def linear_to_lora_layers(
             f"Requested {num_lora_layers} LoRA layers "
             f"but the model only has {num_layers} layers."
         )
-
-    to_lora = lambda lin: LoRALinear.from_linear(
-        lin,
-        r=config["rank"],
-        alpha=config["alpha"],
-        scale=config["scale"],
-        dropout=config["dropout"],
-    )
+    if not use_dora:
+        to_lora = lambda lin: LoRALinear.from_linear(
+            lin,
+            r=config["rank"],
+            alpha=config["alpha"],
+            scale=config["scale"],
+            dropout=config["dropout"],
+        )
+    else:
+        to_lora = lambda lin: DoRALinear.from_linear(
+            lin,
+            r=config["rank"],
+            alpha=config["alpha"],
+            scale=config["scale"],
+            dropout=config["dropout"],
+        )
 
     keys = config.get("keys", None)
     if keys is not None:
@@ -214,7 +112,7 @@ def linear_to_lora_layers(
         l.update_modules(tree_unflatten(lora_layers))
 
 
-def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
+def apply_lora_layers(model: nn.Module, adapter_path: str,use_dora:bool=False) -> nn.Module:
     """
     Apply LoRA layers to the model.
 
@@ -230,7 +128,7 @@ def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
         raise FileNotFoundError(f"The adapter path does not exist: {adapter_path}")
     with open(adapter_path / "adapter_config.json", "r") as fid:
         config = types.SimpleNamespace(**json.load(fid))
-    linear_to_lora_layers(model, config.lora_layers, config.lora_parameters)
+    linear_to_lora_layers(model, config.lora_layers, config.lora_parameters,use_dora)
     model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
     return model
 
