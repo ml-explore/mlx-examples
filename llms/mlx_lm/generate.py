@@ -82,7 +82,7 @@ def setup_arg_parser():
     parser.add_argument(
         "--use-dora",
         type=bool,
-        default=False,
+        default=DEFAULT_USE_DORA,
         help="Use dora adapters to generate",
     )
     return parser
