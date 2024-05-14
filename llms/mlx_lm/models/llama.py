@@ -159,6 +159,13 @@ def create_additive_causal_mask(N: int, offset: int = 0):
     return mask * -1e9
 
 
+def create_additive_causal_mask(N: int, offset: int = 0):
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    return mask * -1e9
+
+
 class LlamaModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -181,9 +188,7 @@ class LlamaModel(nn.Module):
 
         mask = None
         if h.shape[1] > 1:
-            mask = create_additive_causal_mask(
-                h.shape[1], cache[0].offset if cache is not None else 0
-            )
+            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
             mask = mask.astype(h.dtype)
 
         if cache is None:
