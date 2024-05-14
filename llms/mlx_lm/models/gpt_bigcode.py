@@ -18,6 +18,7 @@ class ModelArgs(BaseModelArgs):
     n_positions: int
     layer_norm_epsilon: float
     vocab_size: int
+    num_key_value_heads: int = None
     attn_pdrop: float = 0.1
     embd_pdrop: float = 0.1
     resid_pdrop: float = 0.1
@@ -25,6 +26,10 @@ class ModelArgs(BaseModelArgs):
     attention_bias: bool = True
     mlp_bias: bool = True
     tie_word_embeddings: bool = True
+
+    def __post_init__(self):
+        if self.num_key_value_heads is None:
+            self.num_key_value_heads = 1 if self.multi_query else self.n_head
 
 
 
@@ -34,7 +39,7 @@ class Attention(nn.Module):
 
         self.dim = dim = args.n_embd
         self.n_heads = n_heads = args.n_head
-        self.n_kv_heads = n_kv_heads = 1 if args.multi_query else n_heads
+        self.n_kv_heads = n_kv_heads = 1 if args.multi_query else args.n_head
 
         self.head_dim = head_dim = dim // n_heads
 
@@ -68,16 +73,14 @@ class Attention(nn.Module):
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if cache is not None:
-            key_cache, value_cache = cache
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            keys, values = cache.update_and_fetch(keys, values)
 
         output = mx.fast.scaled_dot_product_attention(
             queries, keys, values, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         output = self.c_proj(output)
-        return self.resid_dropout(output), (keys, values)
+        return self.resid_dropout(output)
 
 
 class MLP(nn.Module):
@@ -118,11 +121,11 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.attn(self.ln_1(x), mask, cache)
+        r = self.attn(self.ln_1(x), mask, cache)
         h = x + r
         r = self.mlp(self.ln_2(h))
         out = h + r
-        return out, cache
+        return out
 
 
 def create_additive_causal_mask(N: int, offset: int = 0):
@@ -152,28 +155,28 @@ class GPTBigCodeModel(nn.Module):
         cache=None,
     ):
         B, L = inputs.shape
-        position_ids = mx.array(np.arange(L))
+
+        hidden_states = self.wte(inputs)
 
         if cache is None:
-            hidden_states = self.wte(inputs) + self.wpe(position_ids)
-        else:
-            hidden_states = self.wte(inputs)
-            
+            position_ids = mx.array(np.arange(L))
+            hidden_states += self.wpe(position_ids)
+            cache = [None] * len(self.h)
+
+
         hidden_states = self.drop(hidden_states)
+
         mask = None
         if hidden_states.shape[1] > 1:
             mask = create_additive_causal_mask(
-                hidden_states.shape[1], cache[0][0].shape[2] if cache is not None else 0
+                hidden_states.shape[1], cache[0].offset if cache is not None else 0
             )
             mask = mask.astype(hidden_states.dtype)
 
-        if cache is None:
-            cache = [None] * len(self.h)
+        for layer, c in zip(self.h, cache):
+            hidden_states = layer(hidden_states, mask, cache=c)
 
-        for e, layer in enumerate(self.h):
-            hidden_states, cache[e] = layer(hidden_states, mask, cache[e])
-
-        return self.ln_f(hidden_states), cache
+        return self.ln_f(hidden_states)
 
 
 class Model(nn.Module):
@@ -190,13 +193,21 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.transformer(inputs, cache)
+        out = self.transformer(inputs, cache)
         if self.args.tie_word_embeddings:
             out = self.transformer.wte.as_linear(out)
         else:
             out = self.lm_head(out)
-        return out, cache
+        return out
 
     @property
     def layers(self):
         return self.transformer.h
+
+    @property
+    def head_dim(self):
+        return self.args.n_embd // self.args.n_head
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

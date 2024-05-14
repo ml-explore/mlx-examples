@@ -22,8 +22,7 @@ class ModelArgs(BaseModelArgs):
     rope_theta: float = 10000
     rope_traditional: bool = False
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-    tie_word_embeddings: bool = False
-
+    tie_word_embeddings: bool = True
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
@@ -47,7 +46,6 @@ class Attention(nn.Module):
 
         head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
-
         if hasattr(args, "attention_bias"):
             attention_bias = args.attention_bias
         else:
@@ -57,6 +55,7 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
+
 
         rope_scale = (
             1 / args.rope_scaling["factor"]
