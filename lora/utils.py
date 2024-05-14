@@ -122,7 +122,7 @@ def save_model(save_dir: str, weights, tokenizer, config):
         )
 
 
-def load(path_or_hf_repo: str):
+def load(path_or_hf_repo: str, tokenizer_config={}):
     # If the path exists, it will try to load model form it
     # otherwise download and cache from the hf_repo and cache
     model_path = Path(path_or_hf_repo)
@@ -162,7 +162,9 @@ def load(path_or_hf_repo: str):
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        model_path, **tokenizer_config
+    )
     return model, tokenizer, config
 
 
