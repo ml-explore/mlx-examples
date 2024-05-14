@@ -158,20 +158,21 @@ class GPTBigCodeModel(nn.Module):
 
         hidden_states = self.wte(inputs)
 
-        if cache is None:
-            position_ids = mx.array(np.arange(L))
-            hidden_states += self.wpe(position_ids)
-            cache = [None] * len(self.h)
-
-
         hidden_states = self.drop(hidden_states)
 
         mask = None
         if hidden_states.shape[1] > 1:
+
+            position_ids = mx.array(np.arange(L))
+            hidden_states += self.wpe(position_ids)
+
             mask = create_additive_causal_mask(
                 hidden_states.shape[1], cache[0].offset if cache is not None else 0
             )
             mask = mask.astype(hidden_states.dtype)
+
+        if cache is None:
+            cache = [None] * len(self.h)
 
         for layer, c in zip(self.h, cache):
             hidden_states = layer(hidden_states, mask, cache=c)
