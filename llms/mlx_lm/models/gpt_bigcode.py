@@ -32,7 +32,6 @@ class ModelArgs(BaseModelArgs):
             self.num_key_value_heads = 1 if self.multi_query else self.n_head
 
 
-
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -65,7 +64,9 @@ class Attention(nn.Module):
         B, L, D = x.shape
 
         qkv = self.c_attn(x)
-        queries, keys, values = mx.split(qkv, [self.dim, self.dim + self.kv_dim], axis=-1)
+        queries, keys, values = mx.split(
+            qkv, [self.dim, self.dim + self.kv_dim], axis=-1
+        )
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
@@ -110,9 +111,7 @@ class TransformerBlock(nn.Module):
         self.attn = Attention(args)
         self.mlp = MLP(args)
         self.ln_1 = nn.LayerNorm(args.n_embd, eps=args.layer_norm_epsilon)
-        self.ln_2 = nn.LayerNorm(
-            args.n_embd, eps=args.layer_norm_epsilon
-        )
+        self.ln_2 = nn.LayerNorm(args.n_embd, eps=args.layer_norm_epsilon)
         self.args = args
 
     def __call__(
@@ -144,9 +143,7 @@ class GPTBigCodeModel(nn.Module):
         self.wte = nn.Embedding(args.vocab_size, args.n_embd)
         self.wpe = nn.Embedding(args.n_positions, args.n_embd)
         self.drop = nn.Dropout(args.embd_pdrop)
-        self.h = [
-            TransformerBlock(args=args) for _ in range(args.n_layer)
-        ]
+        self.h = [TransformerBlock(args=args) for _ in range(args.n_layer)]
         self.ln_f = nn.LayerNorm(args.n_embd, eps=args.layer_norm_epsilon)
 
     def __call__(
