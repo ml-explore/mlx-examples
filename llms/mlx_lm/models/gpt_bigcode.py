@@ -153,12 +153,7 @@ class GPTBigCodeModel(nn.Module):
     ):
         B, L = inputs.shape
         position_ids = mx.array(np.arange(L))
-
-        if cache is None:
-            hidden_states = self.wte(inputs) + self.wpe(position_ids)
-        else:
-            hidden_states = self.wte(inputs)
-            
+        hidden_states = self.wte(inputs) + self.wpe(position_ids)
         hidden_states = self.drop(hidden_states)
         mask = None
         if hidden_states.shape[1] > 1:
