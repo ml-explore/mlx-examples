@@ -15,11 +15,10 @@ class DoRALinear(nn.Module):
         dropout: float = 0.0,
         scale: float = 10.0,
     ):
-        # TODO remove when input_dims and output_dims are attributes
-        # on linear and quantized linear
+        # TODO support quantized weights in DoRALinear
         output_dims, input_dims = linear.weight.shape
         if isinstance(linear, nn.QuantizedLinear):
-            input_dims *= 32 // linear.bits
+            raise ValueError("DoRALinear does not yet support quantized weights.")
         dora_lin = DoRALinear(
             linear=linear,
             input_dims=input_dims,
@@ -29,7 +28,7 @@ class DoRALinear(nn.Module):
             dropout=dropout,
             scale=scale,
         )
-        #dora_lin.linear = linear
+
         return dora_lin
     
     
@@ -39,20 +38,10 @@ class DoRALinear(nn.Module):
         weight = linear.weight
         m=self.m
 
-        is_quantized = isinstance(linear, nn.QuantizedLinear)
 
         # Use the same type as the linear weight if not quantized
         dtype = weight.dtype
 
-        if is_quantized:
-            dtype = mx.float16
-            weight = mx.dequantize(
-                weight,
-                linear.scales,
-                linear.biases,
-                linear.group_size,
-                linear.bits,
-            )
         output_dims, input_dims = weight.shape
         fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
 
@@ -60,18 +49,13 @@ class DoRALinear(nn.Module):
         lora_a = self.lora_a.T.astype(dtype)
         fused_linear.weight = weight + lora_b @ lora_a
 
-        fused_norm=fused_linear.weight.square().sum(axis=0,keepdims=True).sqrt()
+        fused_norm=mx.linalg.norm(fused_linear.weight,axis=1)
 
         fused_linear.weight=fused_linear.weight/fused_norm*m
+        fused_linear.weight=(m/fused_norm)*fused_linear.weight
 
         if bias:
             fused_linear.bias = linear.bias
-        if is_quantized and not de_quantize:
-            fused_linear = nn.QuantizedLinear.from_linear(
-                fused_linear,
-                linear.group_size,
-                linear.bits,
-            )
 
         return fused_linear
     
@@ -104,16 +88,19 @@ class DoRALinear(nn.Module):
             shape=(input_dims, r),
         )
         self.lora_b = mx.zeros(shape=(r, output_dims))
-        self.m = mx.array(self.linear.weight.square().sum(axis=0,keepdims=True).sqrt())
+        self.m=mx.linalg.norm(self.linear.weight,axis=1)
     def __call__(self,x) :
         dtype=self.linear.weight.dtype
         lb = (self.scale * self.lora_b.T).astype(dtype)
         la = self.lora_a.T.astype(dtype)
         adapted=self.linear.weight+lb.astype(dtype) @ la
-        norm= adapted.square().sum(axis=0,keepdims=True).sqrt()
-        y = self.linear(x)
+        norm= mx.linalg.norm(adapted,axis=1)
+
+        y = x@self.linear.weight.T
         z = (self.dropout(x) @ self.lora_a) @ self.lora_b
         res=y+(self.scale*z).astype(x.dtype)
-        return res/norm*self.m
+        if "bias" in self.linear:
+            res += self.linear.bias
+        return (self.m/norm)*res
 
 
