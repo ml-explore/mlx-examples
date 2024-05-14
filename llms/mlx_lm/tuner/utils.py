@@ -47,6 +47,8 @@ def linear_to_lora_layers(
         starting from the last layer.
         config (dict): More configuration parameters for LoRA, including the
           rank, alpha, scale, and optional layer keys.
+        use_dora (bool): If true, the linear layers of model will be covert to 
+          dora layers. Default: ``False``
     """
 
     num_layers = len(model.layers)
@@ -119,6 +121,7 @@ def apply_lora_layers(model: nn.Module, adapter_path: str,use_dora:bool=False) -
     Args:
         model (nn.Module): The neural network model.
         adapter_path (str): Path to the adapter configuration file.
+        use_dora (bool): A bool value. If true, model will be loaded with dora adapters. Default: ``False``
 
     Returns:
         nn.Module: The updated model with LoRA layers applied.

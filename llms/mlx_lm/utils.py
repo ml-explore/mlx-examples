@@ -391,6 +391,7 @@ def load(
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
+        use_dora (bool) Set use_dora as true to use dora layers. Default: ``False``
     Returns:
         Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
