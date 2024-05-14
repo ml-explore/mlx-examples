@@ -22,8 +22,7 @@ class ModelArgs(BaseModelArgs):
     rope_theta: float = 10000
     rope_traditional: bool = False
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-    tie_word_embeddings: bool = False
-
+    tie_word_embeddings: bool = True
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
@@ -47,7 +46,6 @@ class Attention(nn.Module):
 
         head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
-
         if hasattr(args, "attention_bias"):
             attention_bias = args.attention_bias
         else:
@@ -57,6 +55,7 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
+
 
         rope_scale = (
             1 / args.rope_scaling["factor"]
@@ -145,6 +144,13 @@ class TransformerBlock(nn.Module):
         return out
 
 
+def create_additive_causal_mask(N: int, offset: int = 0):
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    return mask * -1e9
+
+
 class LlamaModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -167,7 +173,9 @@ class LlamaModel(nn.Module):
 
         mask = None
         if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
+            mask = create_additive_causal_mask(
+                h.shape[1], cache[0].offset if cache is not None else 0
+            )
             mask = mask.astype(h.dtype)
 
         if cache is None:
@@ -193,12 +201,12 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
+        out = self.model(inputs, cache)
         if self.args.tie_word_embeddings:
             out = self.model.embed_tokens.as_linear(out)
         else:
             out = self.lm_head(out)
-        return out, cache
+        return out
 
     def sanitize(self, weights):
         # Remove unused precomputed rotary freqs
