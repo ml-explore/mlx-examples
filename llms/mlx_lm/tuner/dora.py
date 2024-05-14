@@ -94,8 +94,7 @@ class DoRALinear(nn.Module):
         lb = (self.scale * self.lora_b.T).astype(dtype)
         la = self.lora_a.T.astype(dtype)
         adapted=self.linear.weight+lb.astype(dtype) @ la
-        norm= mx.linalg.norm(adapted,axis=1)
-
+        norm = mx.stop_gradient(mx.linalg.norm(adapted, axis=1))
         y = x@self.linear.weight.T
         z = (self.dropout(x) @ self.lora_a) @ self.lora_b
         res=y+(self.scale*z).astype(x.dtype)
