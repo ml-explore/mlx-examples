@@ -86,7 +86,7 @@ def main() -> None:
     fused_linears = [
         (n, m.to_linear())
         for n, m in model.named_modules()
-        if isinstance(m, LoRALinear) or isinstance(m,DoRALinear)
+        if isinstance(m, (LoRALinear,DoRALinear)) 
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
