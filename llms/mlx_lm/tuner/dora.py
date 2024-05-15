@@ -50,9 +50,10 @@ class DoRALinear(nn.Module):
         fused_linear.weight = weight + lora_b @ lora_a
 
         fused_norm=mx.linalg.norm(fused_linear.weight,axis=1)
-
-        fused_linear.weight=fused_linear.weight/fused_norm*m
-        fused_linear.weight=(m/fused_norm)*fused_linear.weight
+        
+        magnitude=(m/fused_norm)[:,None]
+        
+        fused_linear.weight=magnitude*fused_linear.weight
 
         if bias:
             fused_linear.bias = linear.bias

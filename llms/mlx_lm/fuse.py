@@ -7,6 +7,7 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 from .gguf import convert_to_gguf
 from .tuner.lora import LoRALinear
+from .tuner.dora import DoRALinear
 from .tuner.utils import apply_lora_layers, dequantize
 from .utils import (
     fetch_from_hub,
@@ -63,6 +64,12 @@ def parse_arguments() -> argparse.Namespace:
         default="ggml-model-f16.gguf",
         type=str,
     )
+    parser.add_argument(
+        "--use-dora",
+        help="fuse dora layers to model ",
+        default= False,
+        type= bool,
+    )
     return parser.parse_args()
 
 
@@ -79,12 +86,13 @@ def main() -> None:
     fused_linears = [
         (n, m.to_linear())
         for n, m in model.named_modules()
-        if isinstance(m, LoRALinear)
+        if isinstance(m, LoRALinear) or isinstance(m,DoRALinear)
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
 
-    if args.de_quantize:
+    if args.de_quantize and not args.use_dora:
+        # Quantization has not been supported in dora. 
         print("De-quantizing model")
         model = dequantize(model)
 
