@@ -54,7 +54,7 @@ CONFIG_DEFAULTS = {
     "max_seq_length": 2048,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
-    "use_dora":False,
+    "use_dora": False,
 }
 
 
@@ -141,7 +141,9 @@ def build_parser():
         help="Use gradient checkpointing to reduce memory use.",
     )
     parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
-    parser.add_argument("--use-dora",type=bool,default=False,help= "Use DORA to finetune")
+    parser.add_argument(
+        "--use-dora", type=bool, default=False, help="Use DORA to finetune"
+    )
     return parser
 
 
@@ -178,9 +180,7 @@ def run(args, training_callback: TrainingCallback = None):
 
     if args.test and not args.train:
 
-        apply_lora_layers(model, adapter_path,args.use_dora)
-
-
+        apply_lora_layers(model, adapter_path, args.use_dora)
 
     else:
         adapter_path.mkdir(parents=True, exist_ok=True)
@@ -188,7 +188,9 @@ def run(args, training_callback: TrainingCallback = None):
 
         # Convert linear layers to lora layers and unfreeze in the process
 
-        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters,args.use_dora)
+        linear_to_lora_layers(
+            model, args.lora_layers, args.lora_parameters, args.use_dora
+        )
         print_trainable_parameters(model)
 
     print("Loading datasets")

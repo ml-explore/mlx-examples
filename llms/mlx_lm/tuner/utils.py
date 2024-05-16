@@ -9,8 +9,9 @@ import mlx.nn as nn
 import mlx.optimizers as opt
 from mlx.utils import tree_unflatten
 
-from .lora import LoRALinear
 from .dora import DoRALinear
+from .lora import LoRALinear
+
 
 def build_schedule(schedule_config: Dict):
     """
@@ -47,8 +48,8 @@ def linear_to_lora_layers(
         starting from the last layer.
         config (dict): More configuration parameters for LoRA, including the
           rank, alpha, scale, and optional layer keys.
-        use_dora (bool): If true, the linear layers of model will be covert to 
-          dora layers. Default: ``False``
+        use_dora (bool): If True, uses DoRA instead of LoRA.
+          Default: ``False``
     """
 
     num_layers = len(model.layers)
@@ -57,16 +58,10 @@ def linear_to_lora_layers(
             f"Requested {num_lora_layers} LoRA layers "
             f"but the model only has {num_layers} layers."
         )
-    if not use_dora:
-        to_lora = lambda lin: LoRALinear.from_linear(
-            lin,
-            r=config["rank"],
-            alpha=config["alpha"],
-            scale=config["scale"],
-            dropout=config["dropout"],
-        )
-    else:
-        to_lora = lambda lin: DoRALinear.from_linear(
+    cls = DoRALinear if use_dora else LoRALinear
+
+    def to_lora(lin):
+        cls.from_linear(
             lin,
             r=config["rank"],
             alpha=config["alpha"],
@@ -114,14 +109,13 @@ def linear_to_lora_layers(
         l.update_modules(tree_unflatten(lora_layers))
 
 
-def apply_lora_layers(model: nn.Module, adapter_path: str,use_dora:bool=False) -> nn.Module:
+def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
     """
     Apply LoRA layers to the model.
 
     Args:
         model (nn.Module): The neural network model.
         adapter_path (str): Path to the adapter configuration file.
-        use_dora (bool): A bool value. If true, model will be loaded with dora adapters. Default: ``False``
 
     Returns:
         nn.Module: The updated model with LoRA layers applied.
@@ -131,7 +125,9 @@ def apply_lora_layers(model: nn.Module, adapter_path: str,use_dora:bool=False) -
         raise FileNotFoundError(f"The adapter path does not exist: {adapter_path}")
     with open(adapter_path / "adapter_config.json", "r") as fid:
         config = types.SimpleNamespace(**json.load(fid))
-    linear_to_lora_layers(model, config.lora_layers, config.lora_parameters,use_dora)
+    linear_to_lora_layers(
+        model, config.lora_layers, config.lora_parameters, config.use_dora
+    )
     model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
     return model
 
