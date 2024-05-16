@@ -5,7 +5,8 @@ from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
+
+from .switch_layers import SwitchMLP
 
 
 @dataclass
@@ -75,108 +76,6 @@ class RoPEAttention(nn.Module):
         return self.out_proj(output)
 
 
-class QuantizedSwitchMLP(nn.Module):
-    def __init__(self, dim, hidden_dim, num_experts, group_size=64, bits=4):
-        super().__init__()
-        scale_in = math.sqrt(1 / dim)
-        scale_hidden = math.sqrt(1 / hidden_dim)
-        self.fc1_w, self.fc1_s, self.fc1_b = mx.quantize(
-            mx.random.uniform(
-                low=-scale_in,
-                high=scale_in,
-                shape=(num_experts, hidden_dim, dim),
-            ),
-            group_size=group_size,
-            bits=bits,
-        )
-        self.fc2_w, self.fc2_s, self.fc2_b = mx.quantize(
-            mx.random.uniform(
-                low=-scale_hidden,
-                high=scale_hidden,
-                shape=(num_experts, dim, hidden_dim),
-            ),
-            group_size=group_size,
-            bits=bits,
-        )
-        self.fc1_bias = mx.zeros((num_experts, hidden_dim))
-        self.fc2_bias = mx.zeros((num_experts, dim))
-        self.act = nn.GELU(approx="precise")
-        self.num_experts = num_experts
-        self.group_size = group_size
-        self.bits = bits
-
-    def __call__(self, x, indices) -> mx.array:
-        x = mx.expand_dims(x, (-2, -3))
-        x = mx.block_sparse_qmm(
-            x,
-            self["fc1_w"],
-            self["fc1_s"],
-            self["fc1_b"],
-            rhs_indices=indices,
-            transpose=True,
-            group_size=self.group_size,
-            bits=self.bits,
-        )
-        x = self.act(x)
-        x = mx.block_sparse_qmm(
-            x,
-            self["fc2_w"],
-            self["fc2_s"],
-            self["fc2_b"],
-            rhs_indices=indices,
-            transpose=True,
-            group_size=self.group_size,
-            bits=self.bits,
-        )
-
-        return x.squeeze(-2)
-
-
-class SwitchMLP(nn.Module):
-    def __init__(self, dim, hidden_dim, num_experts):
-        super().__init__()
-        scale_in = math.sqrt(1 / dim)
-        scale_hidden = math.sqrt(1 / hidden_dim)
-        self.fc1 = mx.random.uniform(
-            low=-scale_in,
-            high=scale_in,
-            shape=(num_experts, hidden_dim, dim),
-        )
-        self.fc2 = mx.random.uniform(
-            low=-scale_hidden,
-            high=scale_hidden,
-            shape=(num_experts, dim, hidden_dim),
-        )
-        self.fc1_bias = mx.zeros((num_experts, hidden_dim))
-        self.fc2_bias = mx.zeros((num_experts, dim))
-        self.act = nn.GELU(approx="precise")
-        self.num_experts = num_experts
-
-    def __call__(self, x, indices) -> mx.array:
-        x = mx.expand_dims(x, (-2, -3))
-        x = mx.block_sparse_mm(x, self.fc1.swapaxes(-1, -2), rhs_indices=indices)
-        x = x + mx.expand_dims(self.fc1_bias[indices], -2)
-        x = self.act(x)
-        x = mx.block_sparse_mm(x, self.fc2.swapaxes(-1, -2), rhs_indices=indices)
-        x = x.squeeze(-2) + self.fc2_bias[indices]
-
-        return x
-
-    def to_quantized(self, group_size=64, bits=4):
-        num_experts, hidden_dim, dim = self.fc1.shape
-        qm = QuantizedSwitchMLP(dim, hidden_dim, num_experts)
-        qm.fc1_w, qm.fc1_s, qm.fc1_b = mx.quantize(
-            self.fc1, group_size=group_size, bits=bits
-        )
-        qm.fc2_w, qm.fc2_s, qm.fc2_b = mx.quantize(
-            self.fc2, group_size=group_size, bits=bits
-        )
-        return qm
-
-    def is_quantized(self, weights, prefix):
-        return f"{prefix}.fc1_s" in weights
-
-
 class MOE(nn.Module):
     def __init__(self, args: ModelArgs, dim: int, hidden_dim: int):
         super().__init__()
@@ -184,7 +83,9 @@ class MOE(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_experts = args.num_local_experts
         self.num_experts_per_tok = args.num_experts_per_tok
-        self.switch_mlp = SwitchMLP(self.dim, self.hidden_dim, self.num_experts)
+        self.switch_mlp = SwitchMLP(
+            self.dim, self.hidden_dim, self.num_experts, bias=True
+        )
         self.gate = nn.Linear(args.model_dim, self.num_experts, bias=False)
 
     def __call__(self, x: mx.array) -> mx.array:

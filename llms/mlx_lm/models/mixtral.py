@@ -6,6 +6,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .switch_layers import SwitchGLU
 
 
 @dataclass
@@ -91,131 +92,6 @@ class MixtralAttention(nn.Module):
         return self.o_proj(output)
 
 
-class QuantizedSwitchMLP(nn.Module):
-    def __init__(self, dim, hidden_dim, num_experts, group_size=64, bits=4):
-        super().__init__()
-        scale_in = math.sqrt(1 / dim)
-        scale_hidden = math.sqrt(1 / hidden_dim)
-        self.gate_proj_w, self.gate_proj_s, self.gate_proj_b = mx.quantize(
-            mx.random.uniform(
-                low=-scale_in,
-                high=scale_in,
-                shape=(num_experts, hidden_dim, dim),
-            ),
-            group_size=group_size,
-            bits=bits,
-        )
-        self.up_proj_w, self.up_proj_s, self.up_proj_b = mx.quantize(
-            mx.random.uniform(
-                low=-scale_in,
-                high=scale_in,
-                shape=(num_experts, hidden_dim, dim),
-            ),
-            group_size=group_size,
-            bits=bits,
-        )
-        self.down_proj_w, self.down_proj_s, self.down_proj_b = mx.quantize(
-            mx.random.uniform(
-                low=-scale_hidden,
-                high=scale_hidden,
-                shape=(num_experts, dim, hidden_dim),
-            ),
-            group_size=group_size,
-            bits=bits,
-        )
-        self.num_experts = num_experts
-        self.group_size = group_size
-        self.bits = bits
-
-    def __call__(self, x, indices) -> mx.array:
-        x = mx.expand_dims(x, (-2, -3))
-        x3 = mx.block_sparse_qmm(
-            x,
-            self["w3_w"],
-            self["w3_s"],
-            self["w3_b"],
-            rhs_indices=indices,
-            transpose=True,
-            group_size=self.group_size,
-            bits=self.bits,
-        )
-        x1 = mx.block_sparse_qmm(
-            x,
-            self["w1_w"],
-            self["w1_s"],
-            self["w1_b"],
-            rhs_indices=indices,
-            transpose=True,
-            group_size=self.group_size,
-            bits=self.bits,
-        )
-        y = mx.block_sparse_qmm(
-            nn.silu(x1) * x3,
-            self["w2_w"],
-            self["w2_s"],
-            self["w2_b"],
-            rhs_indices=indices,
-            transpose=True,
-            group_size=self.group_size,
-            bits=self.bits,
-        )
-        return y.squeeze(-2)
-
-
-class SwitchMLP(nn.Module):
-    def __init__(self, dim, hidden_dim, num_experts):
-        super().__init__()
-        scale_in = math.sqrt(1 / dim)
-        scale_hidden = math.sqrt(1 / hidden_dim)
-        self.w1 = mx.random.uniform(
-            low=-scale_in,
-            high=scale_in,
-            shape=(num_experts, hidden_dim, dim),
-        )
-        self.w2 = mx.random.uniform(
-            low=-scale_hidden,
-            high=scale_hidden,
-            shape=(num_experts, dim, hidden_dim),
-        )
-        self.w3 = mx.random.uniform(
-            low=-scale_in,
-            high=scale_in,
-            shape=(num_experts, hidden_dim, dim),
-        )
-        self.num_experts = num_experts
-
-    def __call__(self, x, indices) -> mx.array:
-        x = mx.expand_dims(x, (-2, -3))
-        x3 = mx.block_sparse_mm(x, self.w3.swapaxes(-1, -2), rhs_indices=indices)
-        x1 = mx.block_sparse_mm(
-            x,
-            self.w1.swapaxes(-1, -2),
-            rhs_indices=indices,
-        )
-        return mx.block_sparse_mm(
-            nn.silu(x1) * x3,
-            self.w2.swapaxes(-1, -2),
-            rhs_indices=indices,
-        ).squeeze(-2)
-
-    def to_quantized(self, group_size=64, bits=4):
-        num_experts, hidden_dim, dim = self.w1.shape
-        qm = QuantizedSwitchMLP(dim, hidden_dim, num_experts)
-        qm.w1_w, qm.w1_s, qm.w1_b = mx.quantize(
-            self.w1, group_size=group_size, bits=bits
-        )
-        qm.w2_w, qm.w2_s, qm.w2_b = mx.quantize(
-            self.w2, group_size=group_size, bits=bits
-        )
-        qm.w3_w, qm.w3_s, qm.w3_b = mx.quantize(
-            self.w3, group_size=group_size, bits=bits
-        )
-        return qm
-
-    def is_quantized(self, weights, prefix):
-        return f"{prefix}.w1_s" in weights
-
-
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -227,7 +103,7 @@ class MixtralSparseMoeBlock(nn.Module):
         # gating
         self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
 
-        self.switch_mlp = SwitchMLP(self.hidden_dim, self.ffn_dim, self.num_experts)
+        self.switch_mlp = SwitchGLU(self.hidden_dim, self.ffn_dim, self.num_experts)
 
     def __call__(self, x: mx.array) -> mx.array:
         gates = self.gate(x)
@@ -324,12 +200,12 @@ class Model(nn.Module):
             return weights
         for l in range(self.args.num_hidden_layers):
             prefix = f"model.layers.{l}"
-            for n in ["w1", "w2", "w3"]:
+            for n, m in [("w1", "gate_proj"), ("w2", "down_proj"), ("w3", "up_proj")]:
                 to_join = [
                     weights.pop(f"{prefix}.block_sparse_moe.experts.{e}.{n}.weight")
                     for e in range(self.args.num_local_experts)
                 ]
-                weights[f"{prefix}.block_sparse_moe.switch_mlp.{n}"] = mx.stack(to_join)
+                weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}"] = mx.stack(to_join)
         return weights
 
     @property
