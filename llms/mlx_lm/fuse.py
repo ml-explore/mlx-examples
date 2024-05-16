@@ -81,7 +81,7 @@ def main() -> None:
     model, config, tokenizer = fetch_from_hub(model_path)
 
     model.freeze()
-    model = apply_lora_layers(model, args.adapter_path)
+    model = apply_lora_layers(model, args.adapter_path,args.use_dora)
 
     fused_linears = [
         (n, m.to_linear())
