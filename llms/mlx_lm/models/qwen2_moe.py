@@ -103,6 +103,58 @@ class MLP(nn.Module):
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
+class QuantizedSwitchMLP(nn.Module):
+
+    def __init__(self, dim, hidden_dim, num_experts, group_size=64, bits=4):
+        super().__init__()
+        self.gate_proj_w, self.gate_proj_s, self.gate_proj_b = mx.quantize(
+            mx.zeros((num_experts, hidden_dim, dim)), group_size=group_size, bits=bits
+        )
+        self.up_proj_w, self.up_proj_s, self.up_proj_b = mx.quantize(
+            mx.zeros((num_experts, hidden_dim, dim)), group_size=group_size, bits=bits
+        )
+        self.down_proj_w, self.down_proj_s, self.down_proj_b = mx.quantize(
+            mx.zeros((num_experts, hidden_dim, dim)), group_size=group_size, bits=bits
+        )
+        self.num_experts = num_experts
+        self.group_size = group_size
+        self.bits = bits
+
+    def __call__(self, x, indices) -> mx.array:
+        x = mx.expand_dims(x, (-2, -3))
+        x_up = mx.block_sparse_qmm(
+            x,
+            self["up_proj_w"],
+            self["up_proj_s"],
+            self["up_proj_b"],
+            rhs_indices=indices,
+            transpose=True,
+            group_size=self.group_size,
+            bits=self.bits,
+        )
+        x_gate = mx.block_sparse_qmm(
+            x,
+            self["gate_proj_w"],
+            self["gate_proj_s"],
+            self["gate_proj_b"],
+            rhs_indices=indices,
+            transpose=True,
+            group_size=self.group_size,
+            bits=self.bits,
+        )
+        y = mx.block_sparse_qmm(
+            nn.silu(x_gate) * x_up,
+            self["down_proj_w"],
+            self["down_proj_s"],
+            self["down_proj_b"],
+            rhs_indices=indices,
+            transpose=True,
+            group_size=self.group_size,
+            bits=self.bits,
+        )
+        return y.squeeze(-2)
+
+
 class SwitchMLP(nn.Module):
 
     def __init__(self, dim, hidden_dim, num_experts):
@@ -121,6 +173,20 @@ class SwitchMLP(nn.Module):
         return mx.block_sparse_mm(
             nn.silu(x_gate) * x_up, self.down_proj.swapaxes(-1, -2), rhs_indices=indices
         ).squeeze(-2)
+
+    def to_quantized(self, group_size=64, bits=4):
+        num_experts, hidden_dim, dim = self.gate_proj.shape
+        qm = QuantizedSwitchMLP(dim, hidden_dim, num_experts)
+        qm.gate_proj_w, qm.gate_proj_s, qm.gate_proj_b = mx.quantize(
+            self.gate_proj, group_size=group_size, bits=bits
+        )
+        qm.up_proj_w, qm.up_proj_s, qm.up_proj_b = mx.quantize(
+            self.up_proj, group_size=group_size, bits=bits
+        )
+        qm.down_proj_w, qm.down_proj_s, qm.down_proj_b = mx.quantize(
+            self.down_proj, group_size=group_size, bits=bits
+        )
+        return qm
 
 
 class Qwen2MoeSparseMoeBlock(nn.Module):
