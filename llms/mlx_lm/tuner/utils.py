@@ -61,7 +61,7 @@ def linear_to_lora_layers(
     cls = DoRALinear if use_dora else LoRALinear
 
     def to_lora(lin):
-        cls.from_linear(
+        return cls.from_linear(
             lin,
             r=config["rank"],
             alpha=config["alpha"],
@@ -126,7 +126,10 @@ def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
     with open(adapter_path / "adapter_config.json", "r") as fid:
         config = types.SimpleNamespace(**json.load(fid))
     linear_to_lora_layers(
-        model, config.lora_layers, config.lora_parameters, config.use_dora
+        model,
+        config.lora_layers,
+        config.lora_parameters,
+        getattr(config, "use_dora", False),
     )
     model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
     return model

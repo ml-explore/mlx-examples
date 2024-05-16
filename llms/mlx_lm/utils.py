@@ -375,7 +375,6 @@ def load(
     model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
-    use_dora: bool = False,
 ) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
@@ -391,7 +390,6 @@ def load(
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
-        use_dora (bool) Set use_dora as true to use dora layers. Default: ``False``
     Returns:
         Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
@@ -403,7 +401,7 @@ def load(
 
     model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
-        model = apply_lora_layers(model, adapter_path, use_dora)
+        model = apply_lora_layers(model, adapter_path)
         model.eval()
     tokenizer = load_tokenizer(model_path, tokenizer_config)
 
