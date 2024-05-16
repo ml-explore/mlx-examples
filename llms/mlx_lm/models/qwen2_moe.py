@@ -1,9 +1,9 @@
+import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
 from .base import BaseModelArgs
 
@@ -104,17 +104,36 @@ class MLP(nn.Module):
 
 
 class QuantizedSwitchMLP(nn.Module):
-
     def __init__(self, dim, hidden_dim, num_experts, group_size=64, bits=4):
         super().__init__()
+        scale_in = math.sqrt(1 / dim)
+        scale_hidden = math.sqrt(1 / hidden_dim)
         self.gate_proj_w, self.gate_proj_s, self.gate_proj_b = mx.quantize(
-            mx.zeros((num_experts, hidden_dim, dim)), group_size=group_size, bits=bits
+            mx.random.uniform(
+                low=-scale_in,
+                high=scale_in,
+                shape=(num_experts, hidden_dim, dim),
+            ),
+            group_size=group_size,
+            bits=bits,
         )
         self.up_proj_w, self.up_proj_s, self.up_proj_b = mx.quantize(
-            mx.zeros((num_experts, hidden_dim, dim)), group_size=group_size, bits=bits
+            mx.random.uniform(
+                low=-scale_in,
+                high=scale_in,
+                shape=(num_experts, hidden_dim, dim),
+            ),
+            group_size=group_size,
+            bits=bits,
         )
         self.down_proj_w, self.down_proj_s, self.down_proj_b = mx.quantize(
-            mx.zeros((num_experts, hidden_dim, dim)), group_size=group_size, bits=bits
+            mx.random.uniform(
+                low=-scale_hidden,
+                high=scale_hidden,
+                shape=(num_experts, dim, hidden_dim),
+            ),
+            group_size=group_size,
+            bits=bits,
         )
         self.num_experts = num_experts
         self.group_size = group_size
@@ -156,12 +175,25 @@ class QuantizedSwitchMLP(nn.Module):
 
 
 class SwitchMLP(nn.Module):
-
     def __init__(self, dim, hidden_dim, num_experts):
         super().__init__()
-        self.gate_proj = mx.zeros((num_experts, hidden_dim, dim))
-        self.up_proj = mx.zeros((num_experts, hidden_dim, dim))
-        self.down_proj = mx.zeros((num_experts, dim, hidden_dim))
+        scale_in = math.sqrt(1 / dim)
+        scale_hidden = math.sqrt(1 / hidden_dim)
+        self.gate_proj = mx.random.uniform(
+            low=-scale_in,
+            high=scale_in,
+            shape=(num_experts, hidden_dim, dim),
+        )
+        self.up_proj = mx.random.uniform(
+            low=-scale_in,
+            high=scale_in,
+            shape=(num_experts, hidden_dim, dim),
+        )
+        self.down_proj = mx.random.uniform(
+            low=-scale_hidden,
+            high=scale_hidden,
+            shape=(num_experts, dim, hidden_dim),
+        )
         self.num_experts = num_experts
 
     def __call__(self, x, indices) -> mx.array:
@@ -187,6 +219,9 @@ class SwitchMLP(nn.Module):
             self.down_proj, group_size=group_size, bits=bits
         )
         return qm
+
+    def is_quantized(self, weights, prefix):
+        return f"{prefix}.gate_proj_s" in weights
 
 
 class Qwen2MoeSparseMoeBlock(nn.Module):

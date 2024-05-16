@@ -350,9 +350,13 @@ def load_model(
 
     if (quantization := config.get("quantization", None)) is not None:
         # Handle legacy models which may not have everything quantized
-        class_predicate = lambda p, m: hasattr(m, "to_quantized") and (
-            f"{p}.scales" in weights or f"{p}.up_proj_s" in weights
-        )
+        def class_predicate(p, m):
+            if not hasattr(m, "to_quantized"):
+                return False
+            if hasattr(m, "is_quantized"):
+                return m.is_quantized(weights, p)
+            return f"{p}.scales" in weights
+
         nn.quantize(
             model,
             **quantization,

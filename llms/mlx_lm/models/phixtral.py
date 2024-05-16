@@ -75,15 +75,106 @@ class RoPEAttention(nn.Module):
         return self.out_proj(output)
 
 
-class MLP(nn.Module):
-    def __init__(self, dim, hidden_dim):
+class QuantizedSwitchMLP(nn.Module):
+    def __init__(self, dim, hidden_dim, num_experts, group_size=64, bits=4):
         super().__init__()
-        self.fc1 = nn.Linear(dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, dim)
+        scale_in = math.sqrt(1 / dim)
+        scale_hidden = math.sqrt(1 / hidden_dim)
+        self.fc1_w, self.fc1_s, self.fc1_b = mx.quantize(
+            mx.random.uniform(
+                low=-scale_in,
+                high=scale_in,
+                shape=(num_experts, hidden_dim, dim),
+            ),
+            group_size=group_size,
+            bits=bits,
+        )
+        self.fc2_w, self.fc2_s, self.fc2_b = mx.quantize(
+            mx.random.uniform(
+                low=-scale_hidden,
+                high=scale_hidden,
+                shape=(num_experts, dim, hidden_dim),
+            ),
+            group_size=group_size,
+            bits=bits,
+        )
+        self.fc1_bias = mx.zeros((num_experts, hidden_dim))
+        self.fc2_bias = mx.zeros((num_experts, dim))
         self.act = nn.GELU(approx="precise")
+        self.num_experts = num_experts
+        self.group_size = group_size
+        self.bits = bits
 
-    def __call__(self, x) -> mx.array:
-        return self.fc2(self.act(self.fc1(x)))
+    def __call__(self, x, indices) -> mx.array:
+        x = mx.expand_dims(x, (-2, -3))
+        x = mx.block_sparse_qmm(
+            x,
+            self["fc1_w"],
+            self["fc1_s"],
+            self["fc1_b"],
+            rhs_indices=indices,
+            transpose=True,
+            group_size=self.group_size,
+            bits=self.bits,
+        )
+        x = self.act(x)
+        x = mx.block_sparse_qmm(
+            x,
+            self["fc2_w"],
+            self["fc2_s"],
+            self["fc2_b"],
+            rhs_indices=indices,
+            transpose=True,
+            group_size=self.group_size,
+            bits=self.bits,
+        )
+
+        return x.squeeze(-2)
+
+
+class SwitchMLP(nn.Module):
+    def __init__(self, dim, hidden_dim, num_experts):
+        super().__init__()
+        scale_in = math.sqrt(1 / dim)
+        scale_hidden = math.sqrt(1 / hidden_dim)
+        self.fc1 = mx.random.uniform(
+            low=-scale_in,
+            high=scale_in,
+            shape=(num_experts, hidden_dim, dim),
+        )
+        self.fc2 = mx.random.uniform(
+            low=-scale_hidden,
+            high=scale_hidden,
+            shape=(num_experts, dim, hidden_dim),
+        )
+        self.fc1_bias = mx.zeros((num_experts, hidden_dim))
+        self.fc2_bias = mx.zeros((num_experts, dim))
+        self.act = nn.GELU(approx="precise")
+        self.num_experts = num_experts
+
+    def __call__(self, x, indices) -> mx.array:
+        x = mx.expand_dims(x, (-2, -3))
+        x = mx.block_sparse_mm(x, self.fc1.swapaxes(-1, -2), rhs_indices=indices)
+        x = x + mx.expand_dims(self.fc1_bias[indices], -2)
+        x = self.act(x)
+        x = mx.block_sparse_mm(x, self.fc2.swapaxes(-1, -2), rhs_indices=indices)
+        x = x.squeeze(-2) + self.fc2_bias[indices]
+
+        return x
+
+    def to_quantized(self, group_size=64, bits=4):
+        num_experts, hidden_dim, dim = self.fc1.shape
+        qm = QuantizedSwitchMLP(dim, hidden_dim, num_experts)
+        qm.fc1_w, qm.fc1_s, qm.fc1_b = mx.quantize(
+            self.fc1, group_size=group_size, bits=bits
+        )
+        qm.fc2_w, qm.fc2_s, qm.fc2_b = mx.quantize(
+            self.fc2, group_size=group_size, bits=bits
+        )
+        return qm
+
+    def is_quantized(self, weights, prefix):
+        return f"{prefix}.fc1_s" in weights
 
 
 class MOE(nn.Module):
@@ -93,40 +184,21 @@ class MOE(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_experts = args.num_local_experts
         self.num_experts_per_tok = args.num_experts_per_tok
-        self.mlp = [MLP(self.dim, self.hidden_dim) for _ in range(self.num_experts)]
+        self.switch_mlp = SwitchMLP(self.dim, self.hidden_dim, self.num_experts)
         self.gate = nn.Linear(args.model_dim, self.num_experts, bias=False)
 
     def __call__(self, x: mx.array) -> mx.array:
-        ne = self.num_experts_per_tok
-        orig_shape = x.shape
-        x = x.reshape(-1, x.shape[-1])
-
         gates = self.gate(x)
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1))[:, :ne]
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
 
-        if self.training:
-            ys = []
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
-            for e, expert in enumerate(self.mlp):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
+        k = self.num_experts_per_tok
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=k - 1, axis=-1))[..., :k]
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        scores = mx.softmax(scores, axis=-1, precise=True)
 
-            y = (y * scores[..., None]).sum(axis=1)
-        else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.stack([self.mlp[e](xt) for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
-            y = mx.concatenate(y)
+        y = self.switch_mlp(x, inds)
+        y = (y * scores[..., None]).sum(axis=-2)
 
-        return y.reshape(orig_shape)
+        return y
 
 
 class ParallelBlock(nn.Module):
@@ -201,6 +273,24 @@ class Model(nn.Module):
 
         y = self.transformer(x, mask, cache)
         return self.lm_head(y)
+
+    def sanitize(self, weights):
+        if "transformer.h.0.moe.mlp.0.fc1.weight" not in weights:
+            return weights
+        for l in range(self.args.num_layers):
+            prefix = f"transformer.h.{l}"
+            for n in ["fc1", "fc2"]:
+                to_join = [
+                    weights.pop(f"{prefix}.moe.mlp.{e}.{n}.weight")
+                    for e in range(self.args.num_local_experts)
+                ]
+                weights[f"{prefix}.moe.switch_mlp.{n}"] = mx.stack(to_join)
+                to_join = [
+                    weights.pop(f"{prefix}.moe.mlp.{e}.{n}.bias")
+                    for e in range(self.args.num_local_experts)
+                ]
+                weights[f"{prefix}.moe.switch_mlp.{n}_bias"] = mx.stack(to_join)
+        return weights
 
     @property
     def layers(self):
