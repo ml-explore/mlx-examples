@@ -1,5 +1,6 @@
+# Copyright © 2024 Apple Inc.
+
 import math
-from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -28,6 +29,7 @@ class DoRALinear(nn.Module):
             scale=scale,
         )
 
+        dora_lin.linear = linear
         return dora_lin
 
     def to_linear(self, de_quantize: bool = False):
@@ -59,7 +61,6 @@ class DoRALinear(nn.Module):
 
     def __init__(
         self,
-        linear: nn.Module,
         input_dims: int,
         output_dims: int,
         r: int = 8,
@@ -70,7 +71,7 @@ class DoRALinear(nn.Module):
         super().__init__()
 
         # Regular linear layer weights
-        self.linear = linear
+        self.linear = nn.Linear(input_dims, output_dims, bias=bias)
         self.dropout = nn.Dropout(p=dropout)
 
         # Scale for low-rank update

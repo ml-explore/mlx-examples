@@ -87,8 +87,7 @@ def main() -> None:
 
     model.update_modules(tree_unflatten(fused_linears))
 
-    if args.de_quantize and not args.use_dora:
-        # Quantization has not been supported in dora.
+    if args.de_quantize:
         print("De-quantizing model")
         model = dequantize(model)
 
