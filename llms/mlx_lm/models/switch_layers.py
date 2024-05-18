@@ -4,7 +4,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 
-class QuqntizedSwitchLinear(nn.Module):
+class QuantizedSwitchLinear(nn.Module):
     def __init__(
         self,
         input_dims: int,
@@ -32,6 +32,18 @@ class QuqntizedSwitchLinear(nn.Module):
 
         self.group_size = group_size
         self.bits = bits
+
+    @property
+    def input_dims(self):
+        return self.scales.shape[2] * self.group_size
+
+    @property
+    def output_dims(self):
+        return self.weight.shape[1]
+
+    @property
+    def num_experts(self):
+        return self.weight.shape[0]
 
     def __call__(self, x, indices):
         x = mx.block_sparse_qmm(
@@ -64,6 +76,18 @@ class SwitchLinear(nn.Module):
         if bias:
             self.bias = mx.zeros((num_experts, output_dims))
 
+    @property
+    def input_dims(self):
+        return self.weight.shape[2]
+
+    @property
+    def output_dims(self):
+        return self.weight.shape[1]
+
+    @property
+    def num_experts(self):
+        return self.weight.shape[0]
+
     def __call__(self, x, indices):
         x = mx.block_sparse_mm(x, self["weight"].swapaxes(-1, -2), rhs_indices=indices)
         if "bias" in self:
@@ -72,7 +96,7 @@ class SwitchLinear(nn.Module):
 
     def to_quantized(self, group_size: int = 64, bits: int = 4):
         num_experts, output_dims, input_dims = self.weight.shape
-        ql = QuqntizedSwitchLinear(
+        ql = QuantizedSwitchLinear(
             input_dims, output_dims, num_experts, False, group_size, bits
         )
         ql.weight, ql.scales, ql.biases = mx.quantize(self.weight, group_size, bits)
