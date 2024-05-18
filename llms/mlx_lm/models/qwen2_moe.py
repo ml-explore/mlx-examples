@@ -228,7 +228,7 @@ class Model(nn.Module):
                     weights.pop(f"{prefix}.mlp.experts.{e}.{n}.weight")
                     for e in range(self.args.num_experts)
                 ]
-                weights[f"{prefix}.mlp.switch_mlp.{n}"] = mx.stack(to_join)
+                weights[f"{prefix}.mlp.switch_mlp.{n}.weight"] = mx.stack(to_join)
         return weights
 
     @property

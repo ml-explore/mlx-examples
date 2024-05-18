@@ -353,8 +353,6 @@ def load_model(
         def class_predicate(p, m):
             if not hasattr(m, "to_quantized"):
                 return False
-            if hasattr(m, "is_quantized"):
-                return m.is_quantized(weights, p)
             return f"{p}.scales" in weights
 
         nn.quantize(

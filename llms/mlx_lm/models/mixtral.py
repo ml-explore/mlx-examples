@@ -205,7 +205,9 @@ class Model(nn.Module):
                     weights.pop(f"{prefix}.block_sparse_moe.experts.{e}.{n}.weight")
                     for e in range(self.args.num_local_experts)
                 ]
-                weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}"] = mx.stack(to_join)
+                weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}.weight"] = mx.stack(
+                    to_join
+                )
         return weights
 
     @property

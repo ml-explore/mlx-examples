@@ -185,12 +185,12 @@ class Model(nn.Module):
                     weights.pop(f"{prefix}.moe.mlp.{e}.{n}.weight")
                     for e in range(self.args.num_local_experts)
                 ]
-                weights[f"{prefix}.moe.switch_mlp.{n}"] = mx.stack(to_join)
+                weights[f"{prefix}.moe.switch_mlp.{n}.weight"] = mx.stack(to_join)
                 to_join = [
                     weights.pop(f"{prefix}.moe.mlp.{e}.{n}.bias")
                     for e in range(self.args.num_local_experts)
                 ]
-                weights[f"{prefix}.moe.switch_mlp.{n}_bias"] = mx.stack(to_join)
+                weights[f"{prefix}.moe.switch_mlp.{n}.bias"] = mx.stack(to_join)
         return weights
 
     @property
