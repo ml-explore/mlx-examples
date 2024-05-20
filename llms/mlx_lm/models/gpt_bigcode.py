@@ -19,9 +19,6 @@ class ModelArgs(BaseModelArgs):
     layer_norm_epsilon: float
     vocab_size: int
     num_key_value_heads: int = None
-    attn_pdrop: float = 0.1
-    embd_pdrop: float = 0.1
-    resid_pdrop: float = 0.1
     multi_query: bool = True
     attention_bias: bool = True
     mlp_bias: bool = True
@@ -53,7 +50,6 @@ class Attention(nn.Module):
 
         self.c_attn = nn.Linear(dim, dim + 2 * self.kv_dim, bias=attention_bias)
         self.c_proj = nn.Linear(dim, dim, bias=attention_bias)
-        self.resid_dropout = nn.Dropout(args.resid_pdrop)
 
     def __call__(
         self,
@@ -80,8 +76,7 @@ class Attention(nn.Module):
             queries, keys, values, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        output = self.c_proj(output)
-        return self.resid_dropout(output)
+        return self.c_proj(output)
 
 
 class MLP(nn.Module):
@@ -97,10 +92,9 @@ class MLP(nn.Module):
 
         self.c_fc = nn.Linear(dim, hidden_dim, bias=mlp_bias)
         self.c_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
-        self.dropout = nn.Dropout(args.resid_pdrop)
 
     def __call__(self, x) -> mx.array:
-        return self.dropout(self.c_proj(nn.gelu(self.c_fc(x))))
+        return self.c_proj(nn.gelu(self.c_fc(x)))
 
 
 class TransformerBlock(nn.Module):
@@ -135,7 +129,6 @@ class GPTBigCodeModel(nn.Module):
         assert self.vocab_size > 0
         self.wte = nn.Embedding(args.vocab_size, args.n_embd)
         self.wpe = nn.Embedding(args.n_positions, args.n_embd)
-        self.drop = nn.Dropout(args.embd_pdrop)
         self.h = [TransformerBlock(args=args) for _ in range(args.n_layer)]
         self.ln_f = nn.LayerNorm(args.n_embd, eps=args.layer_norm_epsilon)
 
@@ -147,8 +140,6 @@ class GPTBigCodeModel(nn.Module):
         B, L = inputs.shape
 
         hidden_states = self.wte(inputs)
-
-        hidden_states = self.drop(hidden_states)
 
         mask = None
         if hidden_states.shape[1] > 1:
