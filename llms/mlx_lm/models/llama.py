@@ -114,17 +114,6 @@ class MLP(nn.Module):
         self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
         self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
 
-        dim = args.hidden_size
-        hidden_dim = args.intermediate_size
-        if hasattr(args, "mlp_bias"):
-            mlp_bias = args.mlp_bias
-        else:
-            mlp_bias = False
-
-        self.gate_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
-        self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
-        self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
-
     def __call__(self, x) -> mx.array:
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
@@ -135,7 +124,6 @@ class TransformerBlock(nn.Module):
         self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
         self.self_attn = Attention(args)
-        self.mlp = MLP(args)
         self.mlp = MLP(args)
         self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(
@@ -202,7 +190,6 @@ class LlamaModel(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.args = args
         self.args = args
         self.model_type = args.model_type
         self.model = LlamaModel(args)
