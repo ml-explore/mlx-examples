@@ -6,6 +6,7 @@ from pathlib import Path
 from mlx.utils import tree_flatten, tree_unflatten
 
 from .gguf import convert_to_gguf
+from .tuner.dora import DoRALinear
 from .tuner.lora import LoRALinear
 from .tuner.utils import apply_lora_layers, dequantize
 from .utils import (
@@ -18,7 +19,9 @@ from .utils import (
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
+    parser = argparse.ArgumentParser(
+        description="Fuse fine-tuned adapters into the base model."
+    )
     parser.add_argument(
         "--model",
         default="mlx_model",
@@ -79,7 +82,7 @@ def main() -> None:
     fused_linears = [
         (n, m.to_linear())
         for n, m in model.named_modules()
-        if isinstance(m, LoRALinear)
+        if isinstance(m, (LoRALinear, DoRALinear))
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
