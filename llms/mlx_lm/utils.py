@@ -33,11 +33,13 @@ MODEL_REMAPPING = {
 
 MAX_FILE_SIZE_GB = 5
 
+
 # Custom error class for no local or huggingface repo found for path
 class RepoNotFoundError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
 
 def _get_classes(config: dict):
     """
@@ -91,7 +93,13 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                 )
             )
         except RepositoryNotFoundError:
-            raise RepoNotFoundError(f"Model Not Found for {path_or_hf_repo}.\n Please make sure you specified the local path or Hugging Face repo id correctly.\n If you are trying to access a private or gated Hugging Face repo, make sure you are authenticated.")
+            raise RepoNotFoundError(
+                f"Model not found for path or HF repo: {path_or_hf_repo}.\n"
+                "Please make sure you specified the local path or Hugging Face"
+                " repo id correctly.\nIf you are trying to access a private or"
+                " gated Hugging Face repo, make sure you are authenticated:\n"
+                "https://huggingface.co/docs/huggingface_hub/en/guides/cli#huggingface-cli-login"
+            ) from None
     return model_path
 
 
