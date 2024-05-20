@@ -64,9 +64,13 @@ def linear_to_lora_layers(
         if isinstance(layer, (nn.Linear, nn.QuantizedLinear)):
             LoRALayer = DoRALinear if use_dora else LoRALinear
         elif isinstance(layer, (SwitchLinear, QuantizedSwitchLinear)):
+            if use_dora:
+                raise ValueError(f"{type(layer).__name__} doesn't support DoRA yet.")
             LoRALayer = LoRASwitchLinear
         else:
-            raise ValueError(f"Can't convert layer of type {type(layer)} to LoRA")
+            raise ValueError(
+                f"Can't convert layer of type {type(layer).__name__} to LoRA"
+            )
 
         return LoRALayer.from_linear(
             layer,
