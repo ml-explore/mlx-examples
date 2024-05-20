@@ -4,6 +4,13 @@ from dataclasses import dataclass
 import mlx.core as mx
 
 
+def create_additive_causal_mask(N: int, offset: int = 0):
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    return mask * -1e9
+
+
 class KVCache:
 
     def __init__(self, head_dim, n_kv_heads):

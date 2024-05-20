@@ -5,7 +5,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_additive_causal_mask
 
 
 @dataclass
@@ -125,13 +125,6 @@ class TransformerBlock(nn.Module):
         r = self.mlp(self.ln_2(h))
         out = h + r
         return out
-
-
-def create_additive_causal_mask(N: int, offset: int = 0):
-    rinds = mx.arange(offset + N)
-    linds = mx.arange(offset, offset + N) if offset else rinds
-    mask = linds[:, None] < rinds[None]
-    return mask * -1e9
 
 
 class GPTBigCodeModel(nn.Module):
