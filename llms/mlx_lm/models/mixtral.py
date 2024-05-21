@@ -201,13 +201,15 @@ class Model(nn.Module):
         for l in range(self.args.num_hidden_layers):
             prefix = f"model.layers.{l}"
             for n, m in [("w1", "gate_proj"), ("w2", "down_proj"), ("w3", "up_proj")]:
-                to_join = [
-                    weights.pop(f"{prefix}.block_sparse_moe.experts.{e}.{n}.weight")
-                    for e in range(self.args.num_local_experts)
-                ]
-                weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}.weight"] = mx.stack(
-                    to_join
-                )
+                for k in ["weight", "scales", "biases"]:
+                    to_join = [
+                        weights.pop(f"{prefix}.block_sparse_moe.experts.{e}.{n}.{k}")
+                        for e in range(self.args.num_local_experts)
+                    ]
+                    if to_join:
+                        weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}.{k}"] = (
+                            mx.stack(to_join)
+                        )
         return weights
 
     @property

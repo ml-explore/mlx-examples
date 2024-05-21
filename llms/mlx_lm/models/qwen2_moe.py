@@ -224,11 +224,13 @@ class Model(nn.Module):
         for l in range(self.args.num_hidden_layers):
             prefix = f"model.layers.{l}"
             for n in ["up_proj", "down_proj", "gate_proj"]:
-                to_join = [
-                    weights.pop(f"{prefix}.mlp.experts.{e}.{n}.weight")
-                    for e in range(self.args.num_experts)
-                ]
-                weights[f"{prefix}.mlp.switch_mlp.{n}.weight"] = mx.stack(to_join)
+                for k in ["weight", "scales", "biases"]:
+                    to_join = [
+                        weights.pop(f"{prefix}.mlp.experts.{e}.{n}.{k}")
+                        for e in range(self.args.num_experts)
+                    ]
+                    if to_join:
+                        weights[f"{prefix}.mlp.switch_mlp.{n}.{k}"] = mx.stack(to_join)
         return weights
 
     @property
