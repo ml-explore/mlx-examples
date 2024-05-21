@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from setuptools import find_packages, setup
+from setuptools import find_namespace_packages, setup
 
 package_dir = Path(__file__).parent / "mlx_whisper"
 
@@ -26,7 +26,7 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
-    packages=find_packages(),
+    packages=find_namespace_packages(),
     include_package_data=True,
     python_requires=">=3.8",
 )

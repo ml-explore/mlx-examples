@@ -9,6 +9,7 @@ import mlx.nn as nn
 import mlx.optimizers as opt
 from mlx.utils import tree_unflatten
 
+from .dora import DoRALinear
 from .lora import LoRALinear
 
 
@@ -36,6 +37,7 @@ def linear_to_lora_layers(
     model: nn.Module,
     num_lora_layers: int,
     config: Dict,
+    use_dora: bool = False,
 ):
     """
     Convert some of the models linear layers to lora layers.
@@ -46,6 +48,8 @@ def linear_to_lora_layers(
         starting from the last layer.
         config (dict): More configuration parameters for LoRA, including the
           rank, alpha, scale, and optional layer keys.
+        use_dora (bool): If True, uses DoRA instead of LoRA.
+          Default: ``False``
     """
 
     num_layers = len(model.layers)
@@ -54,14 +58,16 @@ def linear_to_lora_layers(
             f"Requested {num_lora_layers} LoRA layers "
             f"but the model only has {num_layers} layers."
         )
+    cls = DoRALinear if use_dora else LoRALinear
 
-    to_lora = lambda lin: LoRALinear.from_linear(
-        lin,
-        r=config["rank"],
-        alpha=config["alpha"],
-        scale=config["scale"],
-        dropout=config["dropout"],
-    )
+    def to_lora(lin):
+        return cls.from_linear(
+            lin,
+            r=config["rank"],
+            alpha=config["alpha"],
+            scale=config["scale"],
+            dropout=config["dropout"],
+        )
 
     keys = config.get("keys", None)
     if keys is not None:
@@ -119,7 +125,12 @@ def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
         raise FileNotFoundError(f"The adapter path does not exist: {adapter_path}")
     with open(adapter_path / "adapter_config.json", "r") as fid:
         config = types.SimpleNamespace(**json.load(fid))
-    linear_to_lora_layers(model, config.lora_layers, config.lora_parameters)
+    linear_to_lora_layers(
+        model,
+        config.lora_layers,
+        config.lora_parameters,
+        getattr(config, "use_dora", False),
+    )
     model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
     return model
 
