@@ -366,10 +366,11 @@ def load_model(
 
     if (quantization := config.get("quantization", None)) is not None:
         # Handle legacy models which may not have everything quantized
-        class_predicate = (
-            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
-            and f"{p}.scales" in weights
-        )
+        def class_predicate(p, m):
+            if not hasattr(m, "to_quantized"):
+                return False
+            return f"{p}.scales" in weights
+
         nn.quantize(
             model,
             **quantization,
