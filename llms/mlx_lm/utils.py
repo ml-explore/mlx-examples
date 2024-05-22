@@ -16,7 +16,7 @@ import mlx.nn as nn
 from huggingface_hub import snapshot_download
 from huggingface_hub.utils._errors import RepositoryNotFoundError
 from mlx.utils import tree_flatten
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers import PreTrainedTokenizer
 
 # Local imports
 from .models.base import KVCache
