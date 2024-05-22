@@ -80,7 +80,7 @@ def build_parser():
     parser.add_argument(
         "--lora-layers",
         type=int,
-        help="Number of layers to fine-tune",
+        help="Number of layers to fine-tune. Default is 16, use -1 for all.",
     )
     parser.add_argument("--batch-size", type=int, help="Minibatch size.")
     parser.add_argument("--iters", type=int, help="Iterations to train for.")
@@ -143,7 +143,7 @@ def build_parser():
         help="Use gradient checkpointing to reduce memory use.",
         default=None,
     )
-    parser.add_argument("--seed", type=int, default=0, help="The PRNG seed")
+    parser.add_argument("--seed", type=int, default=None, help="The PRNG seed")
     parser.add_argument(
         "--use-dora", action="store_true", default=None, help="Use DoRA to finetune."
     )
@@ -268,7 +268,7 @@ def main():
             config = yaml.load(file, yaml_loader)
         # Prefer parameters from command-line arguments
         for k, v in config.items():
-            if args.get(k, None) is not None:
+            if args.get(k, None) is None:
                 args[k] = v
 
     # Update defaults for unspecified parameters

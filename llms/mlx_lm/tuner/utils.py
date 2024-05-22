@@ -54,6 +54,10 @@ def linear_to_lora_layers(
     """
 
     num_layers = len(model.layers)
+
+    if num_lora_layers < 0:
+        num_lora_layers = num_layers
+
     if num_lora_layers > num_layers:
         raise ValueError(
             f"Requested {num_lora_layers} LoRA layers "
