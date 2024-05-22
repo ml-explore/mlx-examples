@@ -74,12 +74,10 @@ class Attention(nn.Module):
         B, L, D = x.shape
 
         qkv = self.qkv_proj(x)
-        if self.num_hidden_layers == 40:
-            query_pos = self.n_heads * self.head_dim
-            queries, keys, values = mx.split(qkv, [query_pos, query_pos + self.n_kv_heads * self.head_dim], axis=-1)
-        else:
-            queries, keys, values = mx.split(qkv, 3, axis=-1)
-
+        query_pos = self.n_heads * self.head_dim
+        queries, keys, values = mx.split(
+            qkv, [query_pos, query_pos + self.n_kv_heads * self.head_dim], axis=-1
+        )
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
