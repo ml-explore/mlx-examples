@@ -106,6 +106,9 @@ def linear_to_lora_layers(
         if model.model_type == "qwen2_moe":
             keys.add("mlp.gate")
             keys.add("mlp.shared_expert_gate")
+
+    elif model.model_type == "gpt_bigcode":
+        keys = set(["attn.c_attn"])
     elif model.model_type == "olmo":
         keys = set(["att_proj"])
     elif model.model_type == "openelm":
