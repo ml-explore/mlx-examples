@@ -23,24 +23,8 @@ class ModelArgs(BaseModelArgs):
     mup_use_scaling: bool = True
     mup_embedding_multiplier: float = 10.0
     mup_width_multiplier: float = 8.0
-    rope_theta: float = 10000
-    rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
-
-    def __post_init__(self):
-        if self.num_key_value_heads is None:
-            self.num_key_value_heads = self.num_attention_heads
-
-        if self.rope_scaling:
-            required_keys = {"long_factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
-
-            if self.rope_scaling["type"] != "linear":
-                print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear' setting rope scaling to false."
-                )
-                self.rope_scaling = None
+    rope_embedding_base: float = 1000000
+    rope_position_scale: float = 1.0
 
 
 def quick_gelu(x):
@@ -67,6 +51,7 @@ class Attention(nn.Module):
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
+        self.n_q_per_kv = n_heads // n_kv_heads
 
         self.head_dim = head_dim = args.hidden_size // n_heads
 
@@ -81,16 +66,11 @@ class Attention(nn.Module):
             norm_factor = math.sqrt(head_dim)
         self.scale = 1.0 / norm_factor
 
-        rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
-        )
         self.rope = nn.RoPE(
             head_dim,
-            traditional=args.rope_traditional,
-            base=args.rope_theta,
-            scale=rope_scale,
+            traditional=False,
+            base=args.rope_embedding_base,
+            scale=args.rope_position_scale,
         )
 
     def __call__(
@@ -102,14 +82,15 @@ class Attention(nn.Module):
         B, L, D = x.shape
 
         qkv = self.query_key_value(x)
-        query_pos = self.n_heads * self.head_dim
-        queries, keys, values = mx.split(
-            qkv, [query_pos, query_pos + self.n_kv_heads * self.head_dim], axis=-1
-        )
+        qkv = qkv.reshape(B, L, -1, self.n_q_per_kv + 2, self.head_dim)
+        queries = qkv[..., :-2, :].flatten(-3, -2)
+        keys = qkv[..., -2, :]
+        values = qkv[..., -1, :]
+
         # Prepare the queries, keys and values for the attention computation
-        queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
+        queries = queries.transpose(0, 2, 1, 3)
+        keys = keys.transpose(0, 2, 1, 3)
+        values = values.transpose(0, 2, 1, 3)
 
         if cache is not None:
             queries = self.rope(queries, offset=cache.offset)
@@ -215,6 +196,10 @@ class Model(nn.Module):
         self.model = Phi3Model(args)
         self.args = args
         self.mup_width_multiplier = args.mup_width_multiplier
+        self._dummy_tokenizer_ids = mx.array(
+            [100256, 100258, 100259, 100260, 100264, 100265]
+            + list(range(100267, 100352))
+        )
 
     def __call__(
         self,
@@ -225,6 +210,7 @@ class Model(nn.Module):
         out = self.model.embed_tokens.as_linear(out)
         if self.mup_width_multiplier:
             out = out / self.mup_width_multiplier
+        out[self._dummy_tokenizer_ids] = -float("inf")
         return out
 
     @property
