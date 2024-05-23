@@ -198,7 +198,7 @@ class KANLayer(nn.Module):
 
     def __call__(self, x):
         """
-        KANLayer forward given input x
+        KANLayer __call__ given input x
 
         Args:
         -----
@@ -446,3 +446,52 @@ class KANLayer(nn.Module):
             )
             self.lock_id[ids[i][1] * self.in_dim + ids[i][0]] = 0
         self.lock_counter -= 1
+
+
+class KAN(nn.Module):
+    def __init__(
+        self,
+        layers_hidden,
+        num=5,
+        k=3,
+        noise_scale=0.1,
+        scale_base=1.0,
+        scale_sp=1.0,
+        base_fun=nn.SiLU,
+        grid_eps=0.02,
+        grid_range=[-1, 1],
+    ):
+        super(KAN, self).__init__()
+        self.num = num
+        self.k = k
+
+        self.layers = []
+
+        for in_dim, out_dim in zip(layers_hidden, layers_hidden[1:]):
+            self.layers.append(
+                KANLayer(
+                    in_dim,
+                    out_dim,
+                    num=num,
+                    k=k,
+                    noise_scale=noise_scale,
+                    scale_base=scale_base,
+                    scale_sp=scale_sp,
+                    base_fun=base_fun,
+                    grid_eps=grid_eps,
+                    grid_range=grid_range,
+                )
+            )
+
+    def __call__(self, x: mx.array, update_grid=False):
+        for layer in self.layers:
+            if update_grid:
+                layer.update_grid(x)
+            x = layer(x)
+        return x
+
+    def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
+        return sum(
+            layer.regularization_loss(regularize_activation, regularize_entropy)
+            for layer in self.layers
+        )
