@@ -267,20 +267,6 @@ class KANLayer(nn.Module):
         -----
             x : 2D torch.float
                 inputs, shape (number of samples, input dimension)
-
-        Returns:
-        --------
-            None
-
-        Example
-        -------
-        >>> model = KANLayer(in_dim=1, out_dim=1, num=5, k=3)
-        >>> print(model.grid.data)
-        >>> x = torch.linspace(-3,3,steps=100)[:,None]
-        >>> model.update_grid_from_samples(x)
-        >>> print(model.grid.data)
-        tensor([[-1.0000, -0.6000, -0.2000,  0.2000,  0.6000,  1.0000]])
-        tensor([[-3.0002, -1.7882, -0.5763,  0.6357,  1.8476,  3.0002]])
         """
         batch = x.shape[0]
         x = (
@@ -330,23 +316,6 @@ class KANLayer(nn.Module):
                 a parent KANLayer (whose grid is usually coarser than the current model)
             x : 2D torch.float
                 inputs, shape (number of samples, input dimension)
-
-        Returns:
-        --------
-            None
-
-        Example
-        -------
-        >>> batch = 100
-        >>> parent_model = KANLayer(in_dim=1, out_dim=1, num=5, k=3)
-        >>> print(parent_model.grid.data)
-        >>> model = KANLayer(in_dim=1, out_dim=1, num=10, k=3)
-        >>> x = torch.normal(0,1,size=(batch, 1))
-        >>> model.initialize_grid_from_parent(parent_model, x)
-        >>> print(model.grid.data)
-        tensor([[-1.0000, -0.6000, -0.2000,  0.2000,  0.6000,  1.0000]])
-        tensor([[-1.0000, -0.8000, -0.6000, -0.4000, -0.2000,  0.0000,  0.2000,  0.4000,
-          0.6000,  0.8000,  1.0000]])
         """
         batch = x.shape[0]
         # preacts: shape (batch, in_dim) => shape (size, batch) (size = out_dim * in_dim)
