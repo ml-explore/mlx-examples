@@ -1,3 +1,6 @@
+import json
+from functools import partial
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import mlx.core as mx
@@ -5,7 +8,8 @@ import mlx.nn as nn
 
 from .image_encoder import ImageEncoderViT
 from .mask_decoder import MaskDecoder
-from .prompt_encoder import PromptEncoder
+from .prompt_encoder import PositionEmbeddingRandom, PromptEncoder
+from .transformer import TwoWayTransformer
 
 
 class Sam(nn.Module):
@@ -14,7 +18,7 @@ class Sam(nn.Module):
 
     def __init__(
         self,
-        image_encoder: ImageEncoderViT,
+        vision_encoder: ImageEncoderViT,
         prompt_encoder: PromptEncoder,
         mask_decoder: MaskDecoder,
         pixel_mean: List[float] = [123.675, 116.28, 103.53],
@@ -24,7 +28,7 @@ class Sam(nn.Module):
         SAM predicts object masks from an image and input prompts.
 
         Args:
-            image_encoder (ImageEncoderViT): The backbone used to encode the
+            vision_encoder (ImageEncoderViT): The backbone used to encode the
                 image into image embeddings that allow for efficient mask prediction.
             prompt_encoder (PromptEncoder): Encodes various types of input prompts.
             mask_decoder (MaskDecoder): Predicts masks from the image embeddings
@@ -33,11 +37,14 @@ class Sam(nn.Module):
             pixel_std (list(float)): Std values for normalizing pixels in the input image.
         """
         super().__init__()
-        self.image_encoder = image_encoder
+        self.vision_encoder = vision_encoder
         self.prompt_encoder = prompt_encoder
         self.mask_decoder = mask_decoder
-        self.pixel_mean = mx.array(pixel_mean).reshape(1, 1, -1)
-        self.pixel_std = mx.array(pixel_std).reshape(1, 1, -1)
+        self._pixel_mean = mx.array(pixel_mean).reshape(1, 1, -1)
+        self._pixel_std = mx.array(pixel_std).reshape(1, 1, -1)
+        self.shared_image_embedding = PositionEmbeddingRandom(
+            prompt_encoder.embed_dim // 2
+        )
 
     def __call__(
         self,
@@ -85,7 +92,7 @@ class Sam(nn.Module):
         input_images = mx.stack(
             [self.preprocess(x["image"]) for x in batched_input], axis=0
         )
-        image_embeddings = self.image_encoder(input_images)
+        image_embeddings = self.vision_encoder(input_images)
 
         outputs = []
         for image_record, curr_embedding in zip(batched_input, image_embeddings):
@@ -97,10 +104,13 @@ class Sam(nn.Module):
                 points=points,
                 boxes=image_record.get("boxes", None),
                 masks=image_record.get("mask_inputs", None),
+                pe_layer=self.shared_image_embedding,
             )
             low_res_masks, iou_predictions = self.mask_decoder(
                 image_embeddings=curr_embedding[None],
-                image_pe=self.prompt_encoder.get_dense_pe(),
+                image_pe=self.shared_image_embedding(
+                    self.prompt_encoder.image_embedding_size
+                ),
                 sparse_prompt_embeddings=sparse_embeddings,
                 dense_prompt_embeddings=dense_embeddings,
                 multimask_output=multimask_output,
@@ -143,8 +153,8 @@ class Sam(nn.Module):
                 is given by original_size.
         """
         scale_factor = (
-            self.image_encoder.img_size / masks.shape[1],
-            self.image_encoder.img_size / masks.shape[2],
+            self.vision_encoder.img_size / masks.shape[1],
+            self.vision_encoder.img_size / masks.shape[2],
         )
         masks = nn.Upsample(
             scale_factor=scale_factor, mode="linear", align_corners=False
@@ -162,12 +172,12 @@ class Sam(nn.Module):
     def preprocess(self, x: mx.array) -> mx.array:
         """Normalize pixel values and pad to a square input."""
         # Normalize colors
-        x = (x - self.pixel_mean) / self.pixel_std
+        x = (x - self._pixel_mean) / self._pixel_std
 
         # Pad
         h, w = x.shape[-3:-1]
-        padh = self.image_encoder.img_size - h
-        padw = self.image_encoder.img_size - w
+        padh = self.vision_encoder.img_size - h
+        padw = self.vision_encoder.img_size - w
 
         if x.ndim == 3:
             pad_width = [(0, padh), (0, padw), (0, 0)]
@@ -178,3 +188,53 @@ class Sam(nn.Module):
 
         x = mx.pad(x, pad_width)
         return x
+
+
+def load(model_path):
+    model_path = Path(model_path)
+    with open(model_path / "config.json", "r") as fid:
+        config = json.load(fid)
+    encoder_embed_dim = config["vision_config"]["hidden_size"]
+    encoder_depth = config["vision_config"]["num_hidden_layers"]
+    encoder_num_heads = config["vision_config"]["num_attention_heads"]
+    encoder_global_attn_indexes = config["vision_config"]["global_attn_indexes"]
+    prompt_embed_dim = 256
+    image_size = 1024
+    vit_patch_size = 16
+    image_embedding_size = image_size // vit_patch_size
+    sam = Sam(
+        vision_encoder=ImageEncoderViT(
+            depth=encoder_depth,
+            embed_dim=encoder_embed_dim,
+            img_size=image_size,
+            mlp_ratio=4,
+            norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            num_heads=encoder_num_heads,
+            patch_size=vit_patch_size,
+            qkv_bias=True,
+            use_rel_pos=True,
+            global_attn_indexes=encoder_global_attn_indexes,
+            window_size=14,
+            out_chans=prompt_embed_dim,
+        ),
+        prompt_encoder=PromptEncoder(
+            embed_dim=prompt_embed_dim,
+            image_embedding_size=(image_embedding_size, image_embedding_size),
+            input_image_size=(image_size, image_size),
+            mask_in_chans=16,
+        ),
+        mask_decoder=MaskDecoder(
+            num_multimask_outputs=3,
+            transformer=TwoWayTransformer(
+                depth=2,
+                embedding_dim=prompt_embed_dim,
+                mlp_dim=2048,
+                num_heads=8,
+            ),
+            transformer_dim=prompt_embed_dim,
+            iou_head_depth=3,
+            iou_head_hidden_dim=256,
+        ),
+    )
+    sam.load_weights(str(model_path / "model.safetensors"), strict=True)
+    return sam

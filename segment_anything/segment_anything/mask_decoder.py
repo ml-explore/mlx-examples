@@ -44,32 +44,32 @@ class MaskDecoder(nn.Module):
         self.num_mask_tokens = num_multimask_outputs + 1
         self.mask_tokens = nn.Embedding(self.num_mask_tokens, transformer_dim)
 
-        self.output_upscaling = nn.Sequential(
-            ConvTranspose2d(
-                transformer_dim,
-                transformer_dim // 4,
-                kernel_size=2,
-                stride=2,
-                padding=1,
-            ),
-            LayerNorm2d(transformer_dim // 4),
-            activation(),
-            ConvTranspose2d(
-                transformer_dim // 4,
-                transformer_dim // 8,
-                kernel_size=2,
-                stride=2,
-                padding=1,
-            ),
-            activation(),
+        self.upscale_conv1 = ConvTranspose2d(
+            transformer_dim,
+            transformer_dim // 4,
+            kernel_size=2,
+            stride=2,
+            padding=1,
+        )
+        self.upscale_layer_norm = LayerNorm2d(transformer_dim // 4)
+        self.activation = activation()
+        self.upscale_conv2 = ConvTranspose2d(
+            transformer_dim // 4,
+            transformer_dim // 8,
+            kernel_size=2,
+            stride=2,
+            padding=1,
         )
         self.output_hypernetworks_mlps = [
-            MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3)
+            MLP(transformer_dim, transformer_dim, transformer_dim // 8, 1)
             for i in range(self.num_mask_tokens)
         ]
 
         self.iou_prediction_head = MLP(
-            transformer_dim, iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth
+            transformer_dim,
+            iou_head_hidden_dim,
+            self.num_mask_tokens,
+            iou_head_depth - 2,
         )
 
     def __call__(
@@ -148,7 +148,11 @@ class MaskDecoder(nn.Module):
 
         # Upscale mask embeddings and predict masks using the mask tokens
         src = src.reshape(b, h, w, c)
-        upscaled_embedding = self.output_upscaling(src)
+        src = self.upscale_conv1(src)
+        src = self.upscale_layer_norm(src)
+        src = self.activation(src)
+        src = self.upscale_conv1(src)
+        upscaled_embedding = self.activation(src)
         hyper_in_list: List[mx.array] = []
         for i in range(self.num_mask_tokens):
             hyper_in_list.append(
@@ -180,15 +184,16 @@ class MLP(nn.Module):
     ) -> None:
         super().__init__()
         self.num_layers = num_layers
-        h = [hidden_dim] * (num_layers - 1)
-        self.layers = [
-            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
-        ]
+        self.proj_in = nn.Linear(input_dim, hidden_dim)
+        self.layers = [nn.Linear(hidden_dim, hidden_dim) for _ in range(num_layers)]
+        self.proj_out = nn.Linear(hidden_dim, output_dim)
         self.sigmoid_output = sigmoid_output
 
     def __call__(self, x):
+        x = nn.relu(self.proj_in(x))
         for i, layer in enumerate(self.layers):
-            x = nn.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+            x = nn.relu(layer(x))
+        x = self.proj_out(x)
         if self.sigmoid_output:
             x = mx.sigmoid(x)
         return x

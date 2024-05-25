@@ -51,7 +51,7 @@ class TwoWayTransformer(nn.Module):
         self.final_attn_token_to_image = Attention(
             embedding_dim, num_heads, downsample_rate=attention_downsample_rate
         )
-        self.norm_final_attn = nn.LayerNorm(embedding_dim)
+        self.layer_norm_final_attn = nn.LayerNorm(embedding_dim)
 
     def __call__(
         self,
@@ -125,17 +125,17 @@ class TwoWayAttentionBlock(nn.Module):
         """
         super().__init__()
         self.self_attn = Attention(embedding_dim, num_heads)
-        self.norm1 = nn.LayerNorm(embedding_dim)
+        self.layer_norm1 = nn.LayerNorm(embedding_dim)
 
         self.cross_attn_token_to_image = Attention(
             embedding_dim, num_heads, downsample_rate=attention_downsample_rate
         )
-        self.norm2 = nn.LayerNorm(embedding_dim)
+        self.layer_norm2 = nn.LayerNorm(embedding_dim)
 
         self.mlp = MLPBlock(embedding_dim, mlp_dim, activation)
-        self.norm3 = nn.LayerNorm(embedding_dim)
+        self.layer_norm3 = nn.LayerNorm(embedding_dim)
 
-        self.norm4 = nn.LayerNorm(embedding_dim)
+        self.layer_norm4 = nn.LayerNorm(embedding_dim)
         self.cross_attn_image_to_token = Attention(
             embedding_dim, num_heads, downsample_rate=attention_downsample_rate
         )
@@ -152,26 +152,26 @@ class TwoWayAttentionBlock(nn.Module):
             q = queries + query_pe
             attn_out = self.self_attn(q=q, k=q, v=queries)
             queries = queries + attn_out
-        queries = self.norm1(queries)
+        queries = self.layer_norm1(queries)
 
         # Cross attention block, tokens attending to image embedding
         q = queries + query_pe
         k = keys + key_pe
         attn_out = self.cross_attn_token_to_image(q=q, k=k, v=keys)
         queries = queries + attn_out
-        queries = self.norm2(queries)
+        queries = self.layer_norm2(queries)
 
         # MLP block
         mlp_out = self.mlp(queries)
         queries = queries + mlp_out
-        queries = self.norm3(queries)
+        queries = self.layer_norm3(queries)
 
         # Cross attention block, image embedding attending to tokens
         q = queries + query_pe
         k = keys + key_pe
         attn_out = self.cross_attn_image_to_token(q=k, k=q, v=queries)
         keys = keys + attn_out
-        keys = self.norm4(keys)
+        keys = self.layer_norm4(keys)
 
         return queries, keys
 

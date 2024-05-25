@@ -62,7 +62,7 @@ class ImageEncoderViT(nn.Module):
         else:
             self.pos_embed = None
 
-        self.blocks = []
+        self.layers = []
         for i in range(depth):
             block = Block(
                 dim=embed_dim,
@@ -76,36 +76,44 @@ class ImageEncoderViT(nn.Module):
                 window_size=window_size if i not in global_attn_indexes else 0,
                 input_size=(img_size // patch_size, img_size // patch_size),
             )
-            self.blocks.append(block)
+            self.layers.append(block)
 
-        self.neck = nn.Sequential(
-            nn.Conv2d(
-                embed_dim,
-                out_chans,
-                kernel_size=1,
-                bias=False,
-            ),
-            LayerNorm2d(out_chans),
-            nn.Conv2d(
-                out_chans,
-                out_chans,
-                kernel_size=3,
-                padding=1,
-                bias=False,
-            ),
-            LayerNorm2d(out_chans),
-        )
+        self.neck = Neck(embed_dim, out_chans)
 
     def __call__(self, x: mx.array) -> mx.array:
         x = self.patch_embed(x)
         if self.pos_embed is not None:
             x = x + self.pos_embed
 
-        for blk in self.blocks:
+        for blk in self.layers:
             x = blk(x)
 
         x = self.neck(x)
         return x
+
+
+class Neck(nn.Module):
+
+    def __init__(self, embed_dim, out_chans):
+        super().__init__()
+        self.conv1 = nn.Conv2d(
+            embed_dim,
+            out_chans,
+            kernel_size=1,
+            bias=False,
+        )
+        self.layer_norm1 = LayerNorm2d(out_chans)
+        self.conv2 = nn.Conv2d(
+            out_chans,
+            out_chans,
+            kernel_size=3,
+            padding=1,
+            bias=False,
+        )
+        self.layer_norm2 = LayerNorm2d(out_chans)
+
+    def __call__(self, x):
+        return self.layer_norm2(self.conv2(self.layer_norm1(self.conv1(x))))
 
 
 class Block(nn.Module):
@@ -140,7 +148,7 @@ class Block(nn.Module):
                 positional parameter size.
         """
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.layer_norm1 = norm_layer(dim)
         self.attn = Attention(
             dim,
             num_heads=num_heads,
@@ -150,7 +158,7 @@ class Block(nn.Module):
             input_size=input_size if window_size == 0 else (window_size, window_size),
         )
 
-        self.norm2 = norm_layer(dim)
+        self.layer_norm2 = norm_layer(dim)
         self.mlp = MLPBlock(
             embedding_dim=dim, mlp_dim=int(dim * mlp_ratio), act=act_layer
         )
@@ -159,7 +167,7 @@ class Block(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         shortcut = x
-        x = self.norm1(x)
+        x = self.layer_norm1(x)
         # Window partition
         if self.window_size > 0:
             H, W = x.shape[1], x.shape[2]
@@ -171,7 +179,7 @@ class Block(nn.Module):
             x = window_unpartition(x, self.window_size, pad_hw, (H, W))
 
         x = shortcut + x
-        x = x + self.mlp(self.norm2(x))
+        x = x + self.mlp(self.layer_norm2(x))
 
         return x
 
@@ -406,10 +414,10 @@ class PatchEmbed(nn.Module):
         """
         super().__init__()
 
-        self.proj = nn.Conv2d(
+        self.projection = nn.Conv2d(
             in_chans, embed_dim, kernel_size=kernel_size, stride=stride, padding=padding
         )
 
     def __call__(self, x: mx.array) -> mx.array:
-        x = self.proj(x)
+        x = self.projection(x)
         return x

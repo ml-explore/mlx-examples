@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import mlx.core as mx
 import numpy as np
 
-from .modeling import Sam
+from .sam import Sam
 from .utils.transforms import ResizeLongestSide
 
 
@@ -21,7 +21,7 @@ class SamPredictor:
         """
         super().__init__()
         self.model = sam_model
-        self.transform = ResizeLongestSide(sam_model.image_encoder.img_size)
+        self.transform = ResizeLongestSide(sam_model.vision_encoder.img_size)
         self.reset_image()
 
     def set_image(
@@ -70,14 +70,14 @@ class SamPredictor:
         assert (
             len(transformed_image.shape) == 4
             and transformed_image.shape[3] == 3
-            and max(*transformed_image.shape[1:3]) == self.model.image_encoder.img_size
-        ), f"set_mlx_image input must be BHWC with long side {self.model.image_encoder.img_size}."
+            and max(*transformed_image.shape[1:3]) == self.model.vision_encoder.img_size
+        ), f"set_mlx_image input must be BHWC with long side {self.model.vision_encoder.img_size}."
         self.reset_image()
 
         self.original_size = original_image_size
         self.input_size = tuple(transformed_image.shape[1:3])
         input_image = self.model.preprocess(transformed_image)
-        self.features = self.model.image_encoder(input_image)
+        self.features = self.model.vision_encoder(input_image)
         self.is_image_set = True
 
     def predict(

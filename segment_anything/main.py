@@ -6,9 +6,7 @@ from typing import Any, Dict, List
 
 import cv2
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
-from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+from segment_anything import SamAutomaticMaskGenerator, sam
 
 parser = argparse.ArgumentParser(
     description=(
@@ -36,21 +34,10 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--model-type",
+    "--model",
     type=str,
     required=True,
-    help="The type of model to load, in ['default', 'vit_h', 'vit_l', 'vit_b']",
-)
-
-parser.add_argument(
-    "--checkpoint",
-    type=str,
-    required=True,
-    help="The path to the SAM checkpoint to use for mask generation.",
-)
-
-parser.add_argument(
-    "--device", type=str, default="cuda", help="The device to run generation on."
+    help="The path to the SAM model to use for mask generation.",
 )
 
 parser.add_argument(
@@ -193,10 +180,13 @@ def get_amg_kwargs(args):
 
 def main(args: argparse.Namespace) -> None:
     print("Loading model...")
-    sam = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
+    model = sam.load(args.model)
+    import pdb
+
+    pdb.set_trace()
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
-    generator = SamAutomaticMaskGenerator(sam, output_mode=output_mode, **amg_kwargs)
+    generator = SamAutomaticMaskGenerator(model, output_mode=output_mode, **amg_kwargs)
 
     if not os.path.isdir(args.input):
         targets = [args.input]

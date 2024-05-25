@@ -1,26 +1,39 @@
 # Segment Anything
 
-Segment Anything Model (SAM) in MLX. The implementation is ported from Meta AI Research's [Segment Anything](https://github.com/facebookresearch/segment-anything/tree/main).
+An implementation of the Segment Anything Model (SAM) in MLX. See the original
+repo by Meta AI for more details.[^1]
 
 ## Installation
+
 ```bash
 pip install -r requirements.txt
 ```
 
-## Convert checkpoints
-
-Download checkpoints from [Segment Anything repo](https://github.com/facebookresearch/segment-anything/tree/main?tab=readme-ov-file#model-checkpoints) and put them under `models/pt_models`
+## Convert
 
 ```bash
-python scripts/convert_pt.py --pt-path=models/pt_models/[sam_vit_b_01ec64.pth | sam_vit_h_4b8939.pth | sam_vit_l_0b3195.pth]
+python convert.py --hf-path facebook/sam-vit-base
 ```
-The `safetensors` weights are generated under `models/mlx_models`
+
+The `safetensor` weight file is downloaded from Hugging Face, converted, and
+saved in the directory `models/mlx_models`.
+
+The model sizes are:
+
+- `facebook/sam-vit-base`
+- `facebook/sam-vit-large`
+- `facebook/sam-vit-huge`
 
 ## Run
 
-See examples `notebooks/predictor_example.ipynb` and `notebooks/automatic_mask_generator_example.ipynb` to try Segment Anything Model with MLX.
+See examples `notebooks/predictor_example.ipynb` and
+`notebooks/automatic_mask_generator_example.ipynb` to try the Segment Anything
+Model with MLX.
 
-One can also generate masks from command line:
+One can also generate masks from the command line:
+
 ```bash
-python scripts/amg.py --checkpoint <path/to/checkpoint> --model-type <model_type> --input <image_or_folder> --output <path/to/output>
+python main.py --checkpoint <path/to/checkpoint> --model-type <model_type> --input <image_or_folder> --output <path/to/output>
 ```
+
+[^1]: The original Segment Anything [GitHub repo](https://github.com/facebookresearch/segment-anything/tree/main).
