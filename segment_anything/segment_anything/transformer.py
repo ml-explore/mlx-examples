@@ -75,8 +75,7 @@ class TwoWayTransformer(nn.Module):
         # BxHxWxC -> BxHWxC == B x N_image_tokens x C
         bs, h, w, c = image_embedding.shape
         image_embedding = image_embedding.reshape(bs, h * w, c)
-        bs, h, w, c = image_pe.shape
-        image_pe = image_pe.reshape(bs, h * w, c)
+        image_pe = image_pe.reshape(h * w, c)
 
         # Prepare queries
         queries = point_embedding
@@ -95,7 +94,7 @@ class TwoWayTransformer(nn.Module):
         k = keys + image_pe
         attn_out = self.final_attn_token_to_image(q=q, k=k, v=keys)
         queries = queries + attn_out
-        queries = self.norm_final_attn(queries)
+        queries = self.layer_norm_final_attn(queries)
 
         return queries, keys
 

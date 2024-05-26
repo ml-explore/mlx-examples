@@ -30,10 +30,10 @@ See examples `notebooks/predictor_example.ipynb` and
 `notebooks/automatic_mask_generator_example.ipynb` to try the Segment Anything
 Model with MLX.
 
-One can also generate masks from the command line:
+You can also generate masks from the command line:
 
 ```bash
-python main.py --checkpoint <path/to/checkpoint> --model-type <model_type> --input <image_or_folder> --output <path/to/output>
+python main.py --model <path/to/model> --input <image_or_folder> --output <path/to/output>
 ```
 
 [^1]: The original Segment Anything [GitHub repo](https://github.com/facebookresearch/segment-anything/tree/main).

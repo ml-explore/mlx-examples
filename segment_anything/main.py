@@ -181,9 +181,6 @@ def get_amg_kwargs(args):
 def main(args: argparse.Namespace) -> None:
     print("Loading model...")
     model = sam.load(args.model)
-    import pdb
-
-    pdb.set_trace()
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
     generator = SamAutomaticMaskGenerator(model, output_mode=output_mode, **amg_kwargs)

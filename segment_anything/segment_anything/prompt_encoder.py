@@ -52,7 +52,7 @@ class PromptEncoder(nn.Module):
         points: mx.array,
         labels: mx.array,
         pad: bool,
-        pe_layer,
+        pe_layer: nn.Module,
     ) -> mx.array:
         """Embeds point prompts."""
         points = points + 0.5  # Shift to center of pixel
@@ -79,7 +79,7 @@ class PromptEncoder(nn.Module):
         )
         return point_embedding
 
-    def _embed_boxes(self, boxes: mx.array, pe_layer) -> mx.array:
+    def _embed_boxes(self, boxes: mx.array, pe_layer: nn.Module) -> mx.array:
         """Embeds box prompts."""
         boxes = boxes + 0.5  # Shift to center of pixel
         coords = boxes.reshape(-1, 2, 2)
@@ -141,7 +141,9 @@ class PromptEncoder(nn.Module):
         sparse_embeddings = mx.zeros((bs, 0, self.embed_dim))
         if points is not None:
             coords, labels = points
-            point_embeddings = self._embed_points(coords, labels, pad=(boxes is None))
+            point_embeddings = self._embed_points(
+                coords, labels, pad=(boxes is None), pe_layer=pe_layer
+            )
             sparse_embeddings = mx.concatenate(
                 [sparse_embeddings, point_embeddings], axis=1
             )

@@ -85,7 +85,7 @@ class MaskDecoder(nn.Module):
 
         Args:
             image_embeddings (mx.array): the embeddings from the image encoder
-            image_pe (mx.array): positional encoding with the shape of image_embeddings
+            image_pe (mx.array): positional encoding
             sparse_prompt_embeddings (mx.array): the embeddings of the points and boxes
             dense_prompt_embeddings (mx.array): the embeddings of the mask inputs
             multimask_output (bool): Whether to return multiple masks or a single
@@ -138,11 +138,10 @@ class MaskDecoder(nn.Module):
         # Expand per-image data in batch direction to be per-mask
         src = mx.repeat(image_embeddings, repeats=tokens.shape[0], axis=0)
         src = src + dense_prompt_embeddings
-        pos_src = mx.repeat(image_pe, repeats=tokens.shape[0], axis=0)
         b, h, w, c = src.shape
 
         # Run the transformer
-        hs, src = self.transformer(src, pos_src, tokens)
+        hs, src = self.transformer(src, image_pe, tokens)
         iou_token_out = hs[:, 0, :]
         mask_tokens_out = hs[:, 1 : (1 + self.num_mask_tokens), :]
 
@@ -151,7 +150,7 @@ class MaskDecoder(nn.Module):
         src = self.upscale_conv1(src)
         src = self.upscale_layer_norm(src)
         src = self.activation(src)
-        src = self.upscale_conv1(src)
+        src = self.upscale_conv2(src)
         upscaled_embedding = self.activation(src)
         hyper_in_list: List[mx.array] = []
         for i in range(self.num_mask_tokens):

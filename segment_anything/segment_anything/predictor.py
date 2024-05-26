@@ -217,12 +217,15 @@ class SamPredictor:
             points=points,
             boxes=boxes,
             masks=mask_input,
+            pe_layer=self.model.shared_image_embedding,
         )
 
         # Predict masks
         low_res_masks, iou_predictions = self.model.mask_decoder(
             image_embeddings=self.features,
-            image_pe=self.model.prompt_encoder.get_dense_pe(),
+            image_pe=self.model.shared_image_embedding(
+                self.model.prompt_encoder.image_embedding_size
+            ),
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
             multimask_output=multimask_output,
