@@ -397,6 +397,23 @@ class TestModels(unittest.TestCase):
             len(args.ffn_multipliers),
         )
 
+    def test_internlm2(self):
+        from mlx_lm.models import internlm2
+
+        args = internlm2.ModelArgs(
+            model_type="internlm2",
+            hidden_size=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=4,
+            rms_norm_eps=1e-5,
+            vocab_size=10000,
+        )
+        model = internlm2.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -119,6 +119,16 @@ def linear_to_lora_layers(
         keys = set(["mixer.Wqkv", "moe.gate"])
     elif model.model_type == "dbrx":
         keys = set(["norm_attn_norm.attn.Wqkv", "ffn.router.layer"])
+    elif model.model_type == "internlm2":
+        keys = set(
+            [
+                "attention.wqkv",
+                "attention.wo",
+                "feed_forward.w1",
+                "feed_forward.w2",
+                "feed_forward.w3",
+            ]
+        )
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 

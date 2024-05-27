@@ -12,6 +12,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Gemma
 - OLMo
 - MiniCPM
+- InternLM2
 
 ## Contents
 
