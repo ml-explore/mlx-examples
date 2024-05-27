@@ -169,24 +169,29 @@ class Model(nn.Module):
     def sanitize(self, weights):
         new_weights = {}
         for i in range(self.args.n_layer):
-            # not used
-            del weights[f"h.{i}.attn.bias"]
-            # swap to handle backwards Conv1D inner/outter channels
-            weights[f"h.{i}.attn.c_attn.weight"] = weights[
-                f"h.{i}.attn.c_attn.weight"
-            ].transpose(1, 0)
-            weights[f"h.{i}.attn.c_proj.weight"] = weights[
-                f"h.{i}.attn.c_proj.weight"
-            ].transpose(1, 0)
-            weights[f"h.{i}.mlp.c_fc.weight"] = weights[
-                f"h.{i}.mlp.c_fc.weight"
-            ].transpose(1, 0)
-            weights[f"h.{i}.mlp.c_proj.weight"] = weights[
-                f"h.{i}.mlp.c_proj.weight"
-            ].transpose(1, 0)
+            if f"h.{i}.attn.bias" in weights:
+                del weights[f"h.{i}.attn.bias"]
+            if f"h.{i}.attn.c_attn.weight" in weights:
+                weights[f"h.{i}.attn.c_attn.weight"] = weights[
+                    f"h.{i}.attn.c_attn.weight"
+                ].transpose(1, 0)
+            if f"h.{i}.attn.c_proj.weight" in weights:
+                weights[f"h.{i}.attn.c_proj.weight"] = weights[
+                    f"h.{i}.attn.c_proj.weight"
+                ].transpose(1, 0)
+            if f"h.{i}.mlp.c_fc.weight" in weights:
+                weights[f"h.{i}.mlp.c_fc.weight"] = weights[
+                    f"h.{i}.mlp.c_fc.weight"
+                ].transpose(1, 0)
+            if f"h.{i}.mlp.c_proj.weight" in weights:
+                weights[f"h.{i}.mlp.c_proj.weight"] = weights[
+                    f"h.{i}.mlp.c_proj.weight"
+                ].transpose(1, 0)
         for weight in weights:
-            # prepend "model" prefix to weights for loading
-            new_weights[f"model.{weight}"] = weights[weight]
+            if not weight.startswith("model."):
+                new_weights[f"model.{weight}"] = weights[weight]
+            else:
+                new_weights[weight] = weights[weight]
         return new_weights
 
     @property
