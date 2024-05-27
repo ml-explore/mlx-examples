@@ -489,9 +489,3 @@ class KAN(nn.Module):
                 layer.update_grid(x)
             x = layer(x)
         return x
-
-    def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
-        return sum(
-            layer.regularization_loss(regularize_activation, regularize_entropy)
-            for layer in self.layers
-        )
