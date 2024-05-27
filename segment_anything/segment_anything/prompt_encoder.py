@@ -170,7 +170,6 @@ class PromptEncoder(nn.Module):
 
 
 class MaskEmbed(nn.Module):
-
     def __init__(self, embed_dim, mask_in_chans, activation):
         super().__init__()
         self.conv1 = nn.Conv2d(1, mask_in_chans // 4, kernel_size=2, stride=2)

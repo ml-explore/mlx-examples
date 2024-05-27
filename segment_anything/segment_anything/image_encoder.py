@@ -93,7 +93,6 @@ class ImageEncoderViT(nn.Module):
 
 
 class Neck(nn.Module):
-
     def __init__(self, embed_dim, out_chans):
         super().__init__()
         self.conv1 = nn.Conv2d(
