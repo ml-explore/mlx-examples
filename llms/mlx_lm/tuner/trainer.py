@@ -64,7 +64,7 @@ class TrainingArgs:
 
 
 def default_loss(model, inputs, targets, lengths):
-    logits, _ = model(inputs)
+    logits = model(inputs)
     logits = logits.astype(mx.float32)
 
     length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
@@ -137,8 +137,11 @@ def evaluate(
 ):
     all_losses = []
     ntokens = 0
-    for it, batch in zip(
-        range(num_batches),
+
+    index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
+
+    for _, batch in zip(
+        index_iterator,
         iterate_batches(
             dataset=dataset,
             tokenizer=tokenizer,

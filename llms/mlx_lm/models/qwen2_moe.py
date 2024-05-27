@@ -1,11 +1,12 @@
+import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
 from .base import BaseModelArgs
+from .switch_layers import SwitchGLU
 
 
 @dataclass
@@ -78,11 +79,9 @@ class Attention(nn.Module):
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -91,10 +90,10 @@ class Attention(nn.Module):
             queries, keys, values, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.o_proj(output), (keys, values)
+        return self.o_proj(output)
 
 
-class Qwen2MoeMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
         self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
@@ -115,57 +114,32 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         self.num_experts = num_experts = args.num_experts
         self.top_k = args.num_experts_per_tok
 
-        # gating
         self.gate = nn.Linear(dim, num_experts, bias=False)
-        self.experts = [
-            Qwen2MoeMLP(dim, intermediate_size) for _ in range(self.num_experts)
-        ]
-        self.shared_expert = Qwen2MoeMLP(dim, shared_expert_intermediate_size)
+        self.switch_mlp = SwitchGLU(dim, intermediate_size, num_experts)
+
+        self.shared_expert = MLP(dim, shared_expert_intermediate_size)
         self.shared_expert_gate = nn.Linear(dim, 1, bias=False)
 
     def __call__(
         self,
         x: mx.array,
     ):
-        ne = self.top_k
-        B, L, D = x.shape
-        x = x.reshape(-1, D)
-
-        # router_logits: (batch * sequence_length, n_experts)
         gates = self.gate(x)
-        gates = mx.softmax(gates.astype(mx.float32), axis=-1)
+        gates = mx.softmax(gates, axis=-1, precise=True)
 
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+        k = self.top_k
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=k - 1, axis=-1)[..., :k])
+        scores = mx.take_along_axis(gates, inds, axis=-1)
 
-        scores = mx.take_along_axis(gates, inds, axis=-1).astype(x.dtype)
-
-        if self.training:
-            inds = np.array(inds)
-            y = mx.zeros((B, ne, D), x.dtype)
-            for e, expert in enumerate(self.experts):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
-
-            y = (y * scores[:, :, None]).sum(axis=1)
-        else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt)
-
-            y = mx.stack(y, axis=0)
+        y = self.switch_mlp(x, inds)
+        y = (y * scores[..., None]).sum(axis=-2)
 
         shared_expert_output = self.shared_expert(x)
         shared_expert_output = (
             mx.sigmoid(self.shared_expert_gate(x)) * shared_expert_output
         )
 
-        y += shared_expert_output
-
-        return y.reshape(B, L, -1)
+        return y + shared_expert_output
 
 
 class Qwen2MoeDecoderLayer(nn.Module):
@@ -187,11 +161,11 @@ class Qwen2MoeDecoderLayer(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
+        r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
         r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
-        return out, cache
+        return out
 
 
 class Qwen2MoeModel(nn.Module):
@@ -222,10 +196,10 @@ class Qwen2MoeModel(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for e, layer in enumerate(self.layers):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, c)
 
-        return self.norm(h), cache
+        return self.norm(h)
 
 
 class Model(nn.Module):
@@ -241,17 +215,32 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
-        return self.lm_head(out), cache
+        out = self.model(inputs, cache)
+        return self.lm_head(out)
 
     def sanitize(self, weights):
-        if self.args.tie_word_embeddings and "lm_head.weight" not in weights:
-            weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
+        if "model.layers.0.mlp.experts.0.up_proj.weight" not in weights:
+            return weights
+        for l in range(self.args.num_hidden_layers):
+            prefix = f"model.layers.{l}"
+            for n in ["up_proj", "down_proj", "gate_proj"]:
+                for k in ["weight", "scales", "biases"]:
+                    to_join = [
+                        weights.pop(f"{prefix}.mlp.experts.{e}.{n}.{k}")
+                        for e in range(self.args.num_experts)
+                    ]
+                    if to_join:
+                        weights[f"{prefix}.mlp.switch_mlp.{n}.{k}"] = mx.stack(to_join)
+        return weights
 
     @property
     def layers(self):
         return self.model.layers
+
+    @property
+    def head_dim(self):
+        return self.args.hidden_size // self.args.num_attention_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

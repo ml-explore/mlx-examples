@@ -19,7 +19,6 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float
     vocab_size: int
     num_key_value_heads: int
-    max_position_embeddings: int
     scale_depth: float
     scale_emb: float
     rope_theta: float = 1000000.0
@@ -47,7 +46,6 @@ class Attention(nn.Module):
         self.hidden_size = args.hidden_size
         self.num_heads = n_heads = args.num_attention_heads
         self.rope_theta = args.rope_theta
-        self.max_position_embeddings = args.max_position_embeddings
 
         self.head_dim = head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
@@ -98,11 +96,9 @@ class Attention(nn.Module):
         )
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -113,7 +109,7 @@ class Attention(nn.Module):
 
         attn_output = attn_output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
-        return self.o_proj(attn_output), (keys, values)
+        return self.o_proj(attn_output)
 
 
 class DecoderLayer(nn.Module):
@@ -139,11 +135,11 @@ class DecoderLayer(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
+        r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r * (self.scale_depth / np.sqrt(self.num_hidden_layers))
         r = self.mlp(self.post_attention_layernorm(h))
         out = h + r * (self.scale_depth / np.sqrt(self.num_hidden_layers))
-        return out, cache
+        return out
 
 
 class MiniCPMModel(nn.Module):
@@ -172,10 +168,10 @@ class MiniCPMModel(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for e, layer in enumerate(self.layers):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, c)
 
-        return self.norm(h), cache
+        return self.norm(h)
 
 
 class Model(nn.Module):
@@ -193,14 +189,14 @@ class Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
+        out = self.model(inputs, cache)
 
         if not self.args.tie_word_embeddings:
             out = self.lm_head(out / (self.args.hidden_size / self.args.dim_model_base))
         else:
             out = out @ self.model.embed_tokens.weight.T
 
-        return out, cache
+        return out
 
     def sanitize(self, weights):
         if "lm_head.weight" not in weights:
@@ -210,3 +206,11 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
+
+    @property
+    def head_dim(self):
+        return self.args.hidden_size // self.args.num_attention_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

@@ -14,10 +14,12 @@ from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
+from huggingface_hub.utils._errors import RepositoryNotFoundError
 from mlx.utils import tree_flatten
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers import PreTrainedTokenizer
 
 # Local imports
+from .models.base import KVCache
 from .sample_utils import top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
@@ -30,6 +32,12 @@ MODEL_REMAPPING = {
 }
 
 MAX_FILE_SIZE_GB = 5
+
+
+class ModelNotFoundError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
 
 
 def _get_classes(config: dict):
@@ -68,21 +76,29 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
     """
     model_path = Path(path_or_hf_repo)
     if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                revision=revision,
-                allow_patterns=[
-                    "*.json",
-                    "*.safetensors",
-                    "*.py",
-                    "tokenizer.model",
-                    "*.tiktoken",
-                    "*.txt",
-                ],
-                resume_download=True,
+        try:
+            model_path = Path(
+                snapshot_download(
+                    repo_id=path_or_hf_repo,
+                    revision=revision,
+                    allow_patterns=[
+                        "*.json",
+                        "*.safetensors",
+                        "*.py",
+                        "tokenizer.model",
+                        "*.tiktoken",
+                        "*.txt",
+                    ],
+                )
             )
-        )
+        except RepositoryNotFoundError:
+            raise ModelNotFoundError(
+                f"Model not found for path or HF repo: {path_or_hf_repo}.\n"
+                "Please make sure you specified the local path or Hugging Face"
+                " repo id correctly.\nIf you are trying to access a private or"
+                " gated Hugging Face repo, make sure you are authenticated:\n"
+                "https://huggingface.co/docs/huggingface_hub/en/guides/cli#huggingface-cli-login"
+            ) from None
     return model_path
 
 
@@ -161,7 +177,12 @@ def generate_step(
         )
 
     y = prompt
-    cache = None
+    kv_heads = (
+        [model.n_kv_heads] * len(model.layers)
+        if isinstance(model.n_kv_heads, int)
+        else model.n_kv_heads
+    )
+    cache = [KVCache(model.head_dim, n) for n in kv_heads]
 
     repetition_context = prompt.tolist()
 
@@ -169,8 +190,8 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     def _step(y):
-        nonlocal cache, repetition_context
-        logits, cache = model(y[None], cache=cache)
+        nonlocal repetition_context
+        logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if repetition_penalty:
@@ -294,7 +315,11 @@ def load_config(model_path: Path) -> dict:
     return config
 
 
-def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
+def load_model(
+    model_path: Path,
+    lazy: bool = False,
+    model_config: dict = {},
+) -> nn.Module:
     """
     Load and initialize the model from a given path.
 
@@ -303,6 +328,8 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
+        model_config(dict, optional): Configuration parameters for the model.
+            Defaults to an empty dictionary.
 
     Returns:
         nn.Module: The loaded and initialized model.
@@ -313,6 +340,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     """
 
     config = load_config(model_path)
+    config.update(model_config)
 
     weight_files = glob.glob(str(model_path / "model*.safetensors"))
 
@@ -338,10 +366,11 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 
     if (quantization := config.get("quantization", None)) is not None:
         # Handle legacy models which may not have everything quantized
-        class_predicate = (
-            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
-            and f"{p}.scales" in weights
-        )
+        def class_predicate(p, m):
+            if not hasattr(m, "to_quantized"):
+                return False
+            return f"{p}.scales" in weights
+
         nn.quantize(
             model,
             **quantization,
@@ -360,6 +389,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
 def load(
     path_or_hf_repo: str,
     tokenizer_config={},
+    model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
 ) -> Tuple[nn.Module, TokenizerWrapper]:
@@ -369,6 +399,8 @@ def load(
     Args:
         path_or_hf_repo (Path): The path or the huggingface repository to load the model from.
         tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
+            Defaults to an empty dictionary.
+        model_config(dict, optional): Configuration parameters specifically for the model.
             Defaults to an empty dictionary.
         adapter_path (str, optional): Path to the LoRA adapters. If provided, applies LoRA layers
             to the model. Default: ``None``.
@@ -384,7 +416,7 @@ def load(
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path, lazy)
+    model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
         model = apply_lora_layers(model, adapter_path)
         model.eval()
@@ -446,8 +478,9 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
     card.text = dedent(
         f"""
         # {upload_repo}
-        This model was converted to MLX format from [`{hf_path}`]() using mlx-lm version **{__version__}**.
-        Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+
+        The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path}) using mlx-lm version **{__version__}**.
+
         ## Use with mlx
 
         ```bash
