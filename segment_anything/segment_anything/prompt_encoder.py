@@ -148,7 +148,7 @@ class PromptEncoder(nn.Module):
                 [sparse_embeddings, point_embeddings], axis=1
             )
         if boxes is not None:
-            box_embeddings = self._embed_boxes(boxes)
+            box_embeddings = self._embed_boxes(boxes, pe_layer=pe_layer)
             sparse_embeddings = mx.concatenate(
                 [sparse_embeddings, box_embeddings], axis=1
             )
@@ -180,6 +180,7 @@ class MaskEmbed(nn.Module):
         )
         self.layer_norm2 = LayerNorm2d(mask_in_chans)
         self.conv3 = nn.Conv2d(mask_in_chans, embed_dim, kernel_size=1)
+        self.activation = activation()
 
     def __call__(self, x):
         x = self.activation(self.layer_norm1(self.conv1(x)))
