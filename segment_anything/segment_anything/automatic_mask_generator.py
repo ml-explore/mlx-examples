@@ -2,8 +2,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import mlx.core as mx
 import numpy as np
-import torch
-from torchvision.ops.boxes import batched_nms, box_area  # type: ignore
 
 from .predictor import SamPredictor
 from .sam import Sam
@@ -205,11 +203,10 @@ class SamAutomaticMaskGenerator:
         # Remove duplicate masks between crops
         if len(crop_boxes) > 1:
             # Prefer masks from smaller crops
-            scores = 1 / box_area(torch.tensor(np.array(data["crop_boxes"])))
-            keep_by_nms = batched_nms(
-                torch.tensor(np.array(data["boxes"])).float(),
+            scores = 1 / box_area_mlx(data["crop_boxes"])
+            keep_by_nms = nms_mlx(
+                data["boxes"].astype(mx.float32),
                 scores,
-                torch.zeros(data["boxes"][:, 0].shape),  # categories
                 iou_threshold=self.crop_nms_thresh,
             )
             data.filter(keep_by_nms)
@@ -245,10 +242,9 @@ class SamAutomaticMaskGenerator:
         self.predictor.reset_image()
 
         # Remove duplicates within this crop.
-        keep_by_nms = batched_nms(
-            torch.tensor(np.array(data["boxes"])).float(),
-            torch.tensor(np.array(data["iou_preds"])),
-            torch.zeros(data["boxes"][:, 0].shape),  # categories
+        keep_by_nms = nms_mlx(
+            data["boxes"].astype(mx.float32),
+            data["iou_preds"],
             iou_threshold=self.box_nms_thresh,
         )
         data.filter(keep_by_nms)
@@ -353,25 +349,83 @@ class SamAutomaticMaskGenerator:
             # Give score=0 to changed masks and score=1 to unchanged masks
             # so NMS will prefer ones that didn't need postprocessing
             scores.append(float(unchanged))
+        scores = mx.array(scores)
 
         # Recalculate boxes and remove any new duplicates
         masks = mx.concatenate(new_masks, axis=0)
         boxes = batched_mask_to_box(masks)
-        keep_by_nms = batched_nms(
-            torch.tensor(np.array(boxes)).float(),
-            torch.tensor(scores),
-            torch.zeros(boxes[:, 0].shape),  # categories
+        keep_by_nms = nms_mlx(
+            boxes.astype(mx.float32),
+            scores,
             iou_threshold=nms_thresh,
         )
-        keep_by_nms = keep_by_nms.numpy()
-
         # Only recalculate RLEs for masks that have changed
-        for i_mask in keep_by_nms:
-            i_mask = int(i_mask)
+        for i_mask, keep in enumerate(keep_by_nms):
+            if not keep:
+                continue
             if scores[i_mask] == 0.0:
-                mask_torch = masks[i_mask][None]
-                mask_data["rles"][i_mask] = mask_to_rle_mlx(mask_torch)[0]
+                mask_mlx = masks[i_mask][None]
+                mask_data["rles"][i_mask] = mask_to_rle_mlx(mask_mlx)[0]
                 mask_data["boxes"][i_mask] = boxes[i_mask]  # update res directly
         mask_data.filter(keep_by_nms)
 
         return mask_data
+
+
+def box_area_mlx(boxes: mx.array) -> mx.array:
+    """
+    Computes the area of a set of bounding boxes, which are specified by their
+    (x1, y1, x2, y2) coordinates.
+
+    Args:
+        boxes (mx.array[N, 4]): boxes for which the area will be computed. They
+            are expected to be in (x1, y1, x2, y2) format with
+            ``0 <= x1 < x2`` and ``0 <= y1 < y2``.
+
+    Returns:
+        mx.array[N]: the area for each box
+    """
+    return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+
+
+def batched_iou_mlx(boxes_a: mx.array, boxes_b: mx.array) -> mx.array:
+    """Compute IoU for batched boxes.
+
+    Args:
+        boxes_a (mx.array): [[x1, y1, x2, y2], ...] sized Mx4
+        boxes_b (mx.array): [[x1, y1, x2, y2], ...] sized Nx4
+
+    Returns:
+        mx.array: MxN
+    """
+
+    area_a = box_area_mlx(boxes_a)  # M
+    area_b = box_area_mlx(boxes_b)  # N
+
+    top_left = mx.maximum(boxes_a[:, None, :2], boxes_b[:, :2])
+    bottom_right = mx.minimum(boxes_a[:, None, 2:], boxes_b[:, 2:])
+
+    area_inter = mx.prod(mx.clip(bottom_right - top_left, a_min=0, a_max=None), 2)
+
+    return area_inter / (area_a[:, None] + area_b - area_inter)
+
+
+def nms_mlx(boxes: mx.array, scores: mx.array, iou_threshold: float = 0.5) -> mx.array:
+    sort_index = mx.argsort(scores)[::-1]
+    boxes = boxes[sort_index]
+    scores = scores[sort_index]
+
+    n_boxes = boxes.shape[0]
+    ious = batched_iou_mlx(boxes, boxes)
+    ious -= mx.eye(n_boxes)
+
+    keep = mx.ones(n_boxes, dtype=mx.bool_)
+
+    for i, iou in enumerate(ious):
+        if not keep[i]:
+            continue
+
+        condition = iou > iou_threshold
+        keep = keep & ~condition
+
+    return keep[mx.argsort(sort_index)]
