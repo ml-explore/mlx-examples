@@ -133,8 +133,9 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
+    return_step_logits: bool = False,
     logit_bias: Optional[Dict[int, float]] = None,
-) -> Generator[Tuple[mx.array, mx.array], None, None]:
+) -> Generator[Union[Tuple[mx.array, mx.array], Tuple[mx.array, mx.array, mx.array]], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
 
@@ -151,8 +152,8 @@ def generate_step(
           more less likely words.
 
     Yields:
-        Generator[Tuple[mx.array, mx.array]]: A generator producing
-        one token and probability per call.
+        Generator[Union[Tuple[mx.array, mx.array], Tuple[mx.array, mx.array, mx.array]]: A generator producing
+        one token and probability or one token, probability, and step logits per call (if return_step_logits True).
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
@@ -210,15 +211,15 @@ def generate_step(
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
-        return y, prob
+        return y, prob, logits
 
-    y, p = _step(y)
+    y, p, step_logits = _step(y)
 
     mx.async_eval(y)
     while True:
-        next_y, next_p = _step(y)
+        next_y, next_p, step_logits = _step(y)
         mx.async_eval(next_y)
-        yield y.item(), p
+        yield y.item(), p, step_logits if return_step_logits else y.item(), p
         y, p = next_y, next_p
 
 
