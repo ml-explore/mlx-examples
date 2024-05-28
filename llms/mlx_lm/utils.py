@@ -219,7 +219,10 @@ def generate_step(
     while True:
         next_y, next_p, step_logits = _step(y)
         mx.async_eval(next_y)
-        yield y.item(), p, step_logits if return_step_logits else y.item(), p
+        if return_step_logits:
+            yield y.item(), p, step_logits
+        else:
+            yield y.item(), p
         y, p = next_y, next_p
 
 
