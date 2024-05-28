@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
@@ -30,21 +31,25 @@ class ModelArgs(BaseModelArgs):
     blocksparse_vert_stride: int = 8
 
 
-def quick_gelu(x):
-    return x * mx.sigmoid(1.702 * x)
+@partial(mx.compile, shapeless=True)
+def gegelu_impl(a_gelu, a_linear, limit):
+    a_gelu = mx.where(
+        mx.isinf(a_gelu),
+        a_gelu,
+        mx.clip(a_gelu, a_min=None, a_max=limit),
+    )
+    a_linear = mx.where(
+        mx.isinf(a_linear),
+        a_linear,
+        mx.clip(a_linear, a_min=-limit, a_max=limit),
+    )
+    out_gelu = a_gelu * mx.sigmoid(1.702 * a_gelu)
+    return out_gelu * (a_linear + 1.0)
 
 
 def gegelu(x, limit):
     a_gelu, a_linear = x[..., ::2], x[..., 1::2]
-    # TODO add limit
-    # a_gelu = mx.where(
-    #    mx.isinf(a_gelu), a_gelu, a_gelu.clamp(min=None, max=limit)
-    # )
-    # a_linear = mx.where(
-    #    mx.isinf(a_linear), a_linear, a_linear.clamp(min=-limit, max=limit)
-    # )
-    out_gelu = quick_gelu(a_gelu)
-    return out_gelu * (a_linear + 1.0)
+    return gegelu_impl(a_gelu, a_linear, limit)
 
 
 class Attention(nn.Module):
@@ -123,13 +128,15 @@ class Attention(nn.Module):
         keys = mx.expand_dims(keys, 2)
         values = mx.expand_dims(values, 2)
 
+        # TODO get rid of dense mask if we have a fill value
         block_mask, dense_mask = self._block_sparse_mask(L, keys.shape[-2])
         scores = queries @ mx.swapaxes(keys, -1, -2)
+        # TODO, uncomment when faster
         # scores = mx.block_masked_mm(
-        #    queries,
-        #    mx.swapaxes(keys, -1, -2),
-        #    mask_out=block_mask,
-        #    block_size=self.blocksparse_block_size,
+        #   queries,
+        #   mx.swapaxes(keys, -1, -2),
+        #   mask_out=block_mask,
+        #   block_size=self.blocksparse_block_size,
         # )
 
         if mask is not None:
@@ -140,6 +147,7 @@ class Attention(nn.Module):
         scores = mx.softmax(scores, axis=-1, precise=True)
 
         output = scores @ values
+        # TODO, uncomment when faster
         # output = mx.block_masked_mm(
         #    scores, values, mask_lhs=block_mask, block_size=self.blocksparse_block_size
         # )
