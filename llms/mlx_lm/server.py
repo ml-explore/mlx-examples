@@ -7,7 +7,7 @@ import time
 import uuid
 import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import List, Literal, NamedTuple, Optional, Union, Tuple
+from typing import List, Literal, NamedTuple, Optional, Union, Tuple, Dict
 from transformers import PreTrainedTokenizer
 from functools import lru_cache
 
@@ -21,11 +21,6 @@ from .utils import generate_step, load
 class StopCondition(NamedTuple):
     stop_met: bool
     trim_length: int
-
-
-@lru_cache(maxsize=2000)
-def tok_encode(tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper], string: str) -> List[int]:
-    return tokenizer.encode(string)
 
 
 def stopping_criteria(
@@ -143,8 +138,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
         self.logit_bias = self.body.get("logit_bias", None)
-        self.logprobs = self.body.get("logprobs", False)
-        self.top_logprobs = self.body.get("top_logprobs", 5) if self.logprobs else -1
+        self.logprobs = self.body.get("logprobs", -1)
         self.validate_model_parameters()
 
         # Get stop id sequences, if provided
@@ -191,11 +185,8 @@ class APIHandler(BaseHTTPRequestHandler):
         ):
             raise ValueError("repetition_penalty must be a non-negative float")
 
-        if self.top_logprobs != -1 and not self.logprobs:
-            raise ValueError("Must use logprobs with top_logprobs")
-
-        if not (0 > self.top_logprobs > 5):
-            raise ValueError("top_logprobs must be between 0 and 5")
+        if self.logprobs != -1 and not (0 < self.logprobs <= 5):
+            raise ValueError(f"logprobs must be between 1 and 5 if specified (was {self.logprobs:,})")
 
         if (
             not isinstance(self.repetition_context_size, int)
@@ -223,7 +214,7 @@ class APIHandler(BaseHTTPRequestHandler):
         completion_token_count: Optional[int] = None,
         token_logprobs: Optional[List[Tuple[int, float]]] = None,
         tokenizer: Optional[Union[PreTrainedTokenizer, TokenizerWrapper]] = None,
-        top_tokens: Optional[List[Tuple[int, List[Tuple[int, float]]]]] = None
+        top_tokens: Optional[List[Tuple[int, Dict[int, float]]]] = None
     ) -> dict:
         """
         Generate a single response packet based on response type (stream or not), completion type and parameters.
@@ -262,16 +253,10 @@ class APIHandler(BaseHTTPRequestHandler):
                     "index": 0,
                     "logprobs": {
                         "content": [
-                            {"token": tok_encode(tokenizer, token),
-                             "logprob": logprob,
-                             "bytes": [token],
+                            {"token_logprobs": [l_prob for _, l_prob in token_logprobs],
                              "top_logprobs": [
-                                 {"token": tok_encode(tokenizer, step_top_token),
-                                  "logprob": step_top_token_logprob,
-                                  "bytes": [step_top_token]
-                                  } for step_top_token, step_top_token_logprob in top_token_info
+                                 top_token_info for _, top_token_info in top_tokens
                              ]}
-                            for (token, logprob), (_, top_token_info) in zip(token_logprobs, top_tokens)
                         ]
                     },
                     "finish_reason": finish_reason,
@@ -328,7 +313,7 @@ class APIHandler(BaseHTTPRequestHandler):
         logging.debug(f"Starting completion:")
         log_probabilities = []
         top_tokens = []
-        for token, probability, step_logits in zip(
+        for (token, probability, step_logits), _ in zip(
             generate_step(
                 prompt=prompt,
                 model=self.model,
@@ -345,17 +330,18 @@ class APIHandler(BaseHTTPRequestHandler):
             logging.debug(detokenizer.text)
             tokens.append(token)
 
-            log_probs = mx.log(mx.softmax(step_logits[0], axis=-1))
+            log_probs = mx.log(mx.softmax(step_logits, axis=-1))
 
-            if self.top_logprobs > 0:
-                top_n_indices = mx.argpartition(-log_probs, kth=self.top_logprobs, axis=-1)[:, :self.top_logprobs]
+            if self.logprobs > 0:
+                sorted_indices = mx.argpartition(-log_probs, kth=self.logprobs, axis=-1)
+                top_n_indices = sorted_indices[:, :self.logprobs]
                 top_n_log_probs = mx.take_along_axis(log_probs, top_n_indices, axis=1)
 
-                top_token_info = list(zip(top_n_indices[0], top_n_log_probs[0]))
+                top_token_info = {int(t.item()): l_prob.item() for t, l_prob in zip(top_n_indices[0], top_n_log_probs[0])}
             else:
-                top_token_info = []
+                top_token_info = {}
 
-            top_tokens.append((token, top_tokens.append((token, top_token_info))))
+            top_tokens.append((token, top_token_info))
 
             log_probabilities.append((token, mx.log(probability).item()))
             stop_condition = stopping_criteria(
