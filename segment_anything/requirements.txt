@@ -1,5 +1,3 @@
 matplotlib
 opencv-python
-torch
-torchvision
 huggingface_hub
