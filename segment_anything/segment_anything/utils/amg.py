@@ -191,12 +191,12 @@ def build_point_grid(n_per_side: int) -> np.ndarray:
 
 def build_all_layer_point_grids(
     n_per_side: int, n_layers: int, scale_per_layer: int
-) -> List[np.ndarray]:
+) -> List[mx.array]:
     """Generates point grids for all crop layers."""
     points_by_layer = []
     for i in range(n_layers + 1):
         n_points = int(n_per_side / (scale_per_layer**i))
-        points_by_layer.append(build_point_grid(n_points))
+        points_by_layer.append(mx.array(build_point_grid(n_points)))
     return points_by_layer
 
 

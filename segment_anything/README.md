@@ -12,11 +12,11 @@ pip install -r requirements.txt
 ## Convert
 
 ```bash
-python convert.py --hf-path facebook/sam-vit-base
+python convert.py --hf-path facebook/sam-vit-base --mlx-path sam-vit-base
 ```
 
-The `safetensors` weight file is downloaded from Hugging Face, converted, and
-saved in the directory `mlx_model/`.
+The `safetensors` weight file and configs are downloaded from Hugging Face,
+converted, and saved in the directory specified by `--mlx-path`.
 
 The model sizes are:
 

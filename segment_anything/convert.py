@@ -76,14 +76,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mlx-path",
         type=str,
-        default="models/mlx_models",
+        default="sam-vit-base",
         help="Path to save the MLX model.",
     )
     args = parser.parse_args()
 
     model_path = download(args.hf_path)
 
-    mlx_path = Path(args.mlx_path) / args.hf_path.split("/")[-1]
+    mlx_path = Path(args.mlx_path)
     mlx_path.mkdir(parents=True, exist_ok=True)
 
     mlx_weights = convert(model_path)

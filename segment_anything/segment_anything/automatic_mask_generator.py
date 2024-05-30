@@ -39,7 +39,7 @@ class SamAutomaticMaskGenerator:
         crop_nms_thresh: float = 0.7,
         crop_overlap_ratio: float = 512 / 1500,
         crop_n_points_downscale_factor: int = 1,
-        point_grids: Optional[List[np.ndarray]] = None,
+        point_grids: Optional[List[mx.array]] = None,
         min_mask_region_area: int = 0,
         output_mode: str = "binary_mask",
     ) -> None:
@@ -76,7 +76,7 @@ class SamAutomaticMaskGenerator:
                 the image length. Later layers with more crops scale down this overlap.
             crop_n_points_downscale_factor (int): The number of points-per-side
                 sampled in layer n is scaled down by crop_n_points_downscale_factor**n.
-            point_grids (list(np.ndarray) or None): A list over explicit grids
+            point_grids (list(mx.array) or None): A list over explicit grids
                 of points used for sampling, normalized to [0,1]. The nth grid in the
                 list is used in the nth crop layer. Exclusive with points_per_side.
             min_mask_region_area (int): If >0, postprocessing will be applied
@@ -228,7 +228,7 @@ class SamAutomaticMaskGenerator:
         self.predictor.set_image(cropped_im)
 
         # Get points for this crop
-        points_scale = np.array(cropped_im_size)[None, ::-1]
+        points_scale = mx.array(cropped_im_size[::-1])[None]
         points_for_image = self.point_grids[crop_layer_idx] * points_scale
 
         # Generate masks for this crop in batches
@@ -265,14 +265,9 @@ class SamAutomaticMaskGenerator:
     ) -> MaskData:
         orig_h, orig_w = orig_size
 
-        # Run model on this batch
-        transformed_points = self.predictor.transform.apply_coords(points, im_size)
-        in_points = mx.array(transformed_points)
-        in_labels = mx.ones(in_points.shape[0], dtype=mx.int64)
-
-        masks, iou_preds, _ = self.predictor.predict_mlx(
-            in_points[:, None, :],
-            in_labels[:, None],
+        masks, iou_preds, _ = self.predictor.predict(
+            points[:, None, :],
+            mx.ones((points.shape[0], 1), dtype=mx.int64),
             multimask_output=True,
             return_logits=True,
         )
@@ -282,7 +277,7 @@ class SamAutomaticMaskGenerator:
         data = MaskData(
             masks=masks.flatten(0, 1),
             iou_preds=iou_preds.flatten(0, 1),
-            points=mx.array(points.repeat(masks.shape[1], axis=0)),
+            points=mx.repeat(points, masks.shape[1], axis=0),
         )
         del masks
 

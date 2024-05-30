@@ -30,32 +30,6 @@ class ResizeLongestSide:
             )
         )
 
-    def apply_coords(
-        self, coords: np.ndarray, original_size: Tuple[int, ...]
-    ) -> np.ndarray:
-        """
-        Expects a numpy array of length 2 in the final dimension. Requires the
-        original image size in (H, W) format.
-        """
-        old_h, old_w = original_size
-        new_h, new_w = self.get_preprocess_shape(
-            original_size[0], original_size[1], self.target_length
-        )
-        coords = deepcopy(coords).astype(float)
-        coords[..., 0] = coords[..., 0] * (new_w / old_w)
-        coords[..., 1] = coords[..., 1] * (new_h / old_h)
-        return coords
-
-    def apply_boxes(
-        self, boxes: np.ndarray, original_size: Tuple[int, ...]
-    ) -> np.ndarray:
-        """
-        Expects a numpy array shape Bx4. Requires the original image size
-        in (H, W) format.
-        """
-        boxes = self.apply_coords(boxes.reshape(-1, 2, 2), original_size)
-        return boxes.reshape(-1, 4)
-
     def apply_image_mlx(self, image: mx.array) -> mx.array:
         """
         Expects batched images with shape BxHxWxC and float format. This
@@ -74,7 +48,7 @@ class ResizeLongestSide:
             image, scale_factor=scale_factor, mode="linear", align_corners=False
         )
 
-    def apply_coords_mlx(
+    def apply_coords(
         self, coords: mx.array, original_size: Tuple[int, ...]
     ) -> mx.array:
         """
@@ -85,18 +59,14 @@ class ResizeLongestSide:
         new_h, new_w = self.get_preprocess_shape(
             original_size[0], original_size[1], self.target_length
         )
-        coords = deepcopy(coords).astype(mx.float32)
-        coords *= mx.array([new_w / old_w, new_h / old_h])
-        return coords
+        return coords * mx.array([new_w / old_w, new_h / old_h])
 
-    def apply_boxes_mlx(
-        self, boxes: mx.array, original_size: Tuple[int, ...]
-    ) -> mx.array:
+    def apply_boxes(self, boxes: mx.array, original_size: Tuple[int, ...]) -> mx.array:
         """
-        Expects a mlx tensor with shape Bx4. Requires the original image
+        Expects a mlx tensor with shape ...x4. Requires the original image
         size in (H, W) format.
         """
-        boxes = self.apply_coords_mlx(boxes.reshape(-1, 2, 2), original_size)
+        boxes = self.apply_coords(boxes.reshape(-1, 2, 2), original_size)
         return boxes.reshape(-1, 4)
 
     @staticmethod
