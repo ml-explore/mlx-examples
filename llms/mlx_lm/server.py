@@ -215,7 +215,6 @@ class APIHandler(BaseHTTPRequestHandler):
         prompt_token_count: Optional[int] = None,
         completion_token_count: Optional[int] = None,
         token_logprobs: Optional[List[Tuple[int, float]]] = None,
-        tokenizer: Optional[Union[PreTrainedTokenizer, TokenizerWrapper]] = None,
         top_tokens: Optional[List[Tuple[int, Dict[int, float]]]] = None,
     ) -> dict:
         """
@@ -372,7 +371,6 @@ class APIHandler(BaseHTTPRequestHandler):
             len(prompt),
             len(tokens),
             token_logprobs=log_probabilities,
-            tokenizer=self.tokenizer,
             top_tokens=top_tokens,
         )
 
