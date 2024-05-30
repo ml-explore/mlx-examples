@@ -135,7 +135,9 @@ def generate_step(
     top_p: float = 1.0,
     return_step_logits: bool = False,
     logit_bias: Optional[Dict[int, float]] = None,
-) -> Generator[Union[Tuple[mx.array, mx.array], Tuple[mx.array, mx.array, mx.array]], None, None]:
+) -> Generator[
+    Union[Tuple[mx.array, mx.array], Tuple[mx.array, mx.array, mx.array]], None, None
+]:
     """
     A generator producing token ids based on the given prompt from the model.
 

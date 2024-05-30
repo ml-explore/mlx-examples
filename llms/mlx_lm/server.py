@@ -6,13 +6,13 @@ import logging
 import time
 import uuid
 import warnings
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import List, Literal, NamedTuple, Optional, Union, Tuple, Dict
-from transformers import PreTrainedTokenizer
 from functools import lru_cache
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
+from transformers import PreTrainedTokenizer
 
 from .tokenizer_utils import TokenizerWrapper
 from .utils import generate_step, load
@@ -185,8 +185,10 @@ class APIHandler(BaseHTTPRequestHandler):
         ):
             raise ValueError("repetition_penalty must be a non-negative float")
 
-        if self.logprobs != -1 and not (0 < self.logprobs <= 5):
-            raise ValueError(f"logprobs must be between 1 and 5 if specified (was {self.logprobs:,})")
+        if self.logprobs != -1 and not (0 < self.logprobs <= 10):
+            raise ValueError(
+                f"logprobs must be between 1 and 10 if specified (was {self.logprobs:,})"
+            )
 
         if (
             not isinstance(self.repetition_context_size, int)
@@ -214,7 +216,7 @@ class APIHandler(BaseHTTPRequestHandler):
         completion_token_count: Optional[int] = None,
         token_logprobs: Optional[List[Tuple[int, float]]] = None,
         tokenizer: Optional[Union[PreTrainedTokenizer, TokenizerWrapper]] = None,
-        top_tokens: Optional[List[Tuple[int, Dict[int, float]]]] = None
+        top_tokens: Optional[List[Tuple[int, Dict[int, float]]]] = None,
     ) -> dict:
         """
         Generate a single response packet based on response type (stream or not), completion type and parameters.
@@ -252,12 +254,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 {
                     "index": 0,
                     "logprobs": {
-                        "content": [
-                            {"token_logprobs": [l_prob for _, l_prob in token_logprobs],
-                             "top_logprobs": [
-                                 top_token_info for _, top_token_info in top_tokens
-                             ]}
-                        ]
+                        # "content": [
+                        "token_logprobs": [l_prob for _, l_prob in token_logprobs],
+                        "top_logprobs": [
+                            top_token_info for _, top_token_info in top_tokens
+                        ],
+                        # ]
                     },
                     "finish_reason": finish_reason,
                 }
@@ -334,10 +336,13 @@ class APIHandler(BaseHTTPRequestHandler):
 
             if self.logprobs > 0:
                 sorted_indices = mx.argpartition(-log_probs, kth=self.logprobs, axis=-1)
-                top_n_indices = sorted_indices[:, :self.logprobs]
+                top_n_indices = sorted_indices[:, : self.logprobs]
                 top_n_log_probs = mx.take_along_axis(log_probs, top_n_indices, axis=1)
 
-                top_token_info = {int(t.item()): l_prob.item() for t, l_prob in zip(top_n_indices[0], top_n_log_probs[0])}
+                top_token_info = {
+                    int(t.item()): l_prob.item()
+                    for t, l_prob in zip(top_n_indices[0], top_n_log_probs[0])
+                }
             else:
                 top_token_info = {}
 
@@ -361,10 +366,15 @@ class APIHandler(BaseHTTPRequestHandler):
             if stop_sequence_suffix is None
             else detokenizer.text[: -len(stop_sequence_suffix)]
         )
-        response = self.generate_response(text, finish_reason, len(prompt), len(tokens),
-                                          token_logprobs=log_probabilities,
-                                          tokenizer=self.tokenizer,
-                                          top_tokens=top_tokens)
+        response = self.generate_response(
+            text,
+            finish_reason,
+            len(prompt),
+            len(tokens),
+            token_logprobs=log_probabilities,
+            tokenizer=self.tokenizer,
+            top_tokens=top_tokens,
+        )
 
         response_json = json.dumps(response).encode()
         indent = "\t"  # Backslashes can't be inside of f-strings
@@ -500,8 +510,12 @@ class APIHandler(BaseHTTPRequestHandler):
 
         assert "prompt" in self.body, "Request did not contain a prompt"
         prompt_text = self.body["prompt"]
-
-        prompt = self.tokenizer.encode(prompt_text)
+        logging.debug(f"Prompt type: '{type(prompt_text)}'")
+        prompt = (
+            prompt_text[0]
+            if isinstance(prompt_text, list)
+            else self.tokenizer.encode(prompt_text)
+        )
         return mx.array(prompt)
 
 
