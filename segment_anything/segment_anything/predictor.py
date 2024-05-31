@@ -143,7 +143,6 @@ class SamPredictor:
         if not return_logits:
             masks = masks > self.model.mask_threshold
 
-        # Squeeze batch dimension
         return masks, iou_predictions, low_res_masks
 
     def get_image_embedding(self) -> mx.array:

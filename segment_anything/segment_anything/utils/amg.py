@@ -36,16 +36,17 @@ class MaskData:
         return self._stats.items()
 
     def filter(self, keep: mx.array) -> None:
-        keep = np.where(keep)[0]
+        if keep.dtype == mx.bool_:
+            keep = mx.array(np.where(keep)[0])
         for k, v in self._stats.items():
             if v is None:
                 self._stats[k] = None
             elif isinstance(v, mx.array):
-                self._stats[k] = v[keep.tolist()]
+                self._stats[k] = v[keep]
             elif isinstance(v, np.ndarray):
                 self._stats[k] = v[keep]
             elif isinstance(v, list):
-                self._stats[k] = [v[i.item()] for i in keep]
+                self._stats[k] = [v[i] for i in keep.tolist()]
             else:
                 raise TypeError(f"MaskData key {k} has an unsupported type {type(v)}.")
 
