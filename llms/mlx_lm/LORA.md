@@ -129,7 +129,7 @@ For example, to fuse and upload a model derived from Mistral-7B-v0.1, run:
 ```shell
 mlx_lm.fuse \
     --model mistralai/Mistral-7B-v0.1 \
-    --upload-repo mlx-community/my-4bit-lora-mistral \
+    --upload-repo mlx-community/my-lora-mistral-7b \
     --hf-path mistralai/Mistral-7B-v0.1
 ```
 
@@ -249,7 +249,7 @@ of memory. Here are some tips to reduce memory use should you need to do so:
 For example, for a machine with 32 GB the following should run reasonably fast:
 
 ```
-python lora.py \
+mlx_lm.lora \
     --model mistralai/Mistral-7B-v0.1 \
     --train \
     --batch-size 1 \
