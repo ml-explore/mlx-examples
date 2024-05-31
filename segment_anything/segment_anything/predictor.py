@@ -51,7 +51,7 @@ class SamPredictor:
         input_image = mx.array(input_image)[None, :, :, :]
 
         self.original_size = image.shape[:2]
-        self.input_size = tuple(image.shape[1:3])
+        self.input_size = input_image.shape[1:3]
         input_image = self.model.preprocess(input_image)
         self.features = self.model.vision_encoder(input_image)
         self.is_image_set = True
@@ -112,14 +112,9 @@ class SamPredictor:
                 point_labels is not None
             ), "point_labels must be supplied if point_coords is supplied."
             point_coords = self.transform.apply_coords(point_coords, self.original_size)
-            # point_labels = point_labels[None]
-            # point_coords = point_coords[None]
             points = (point_coords, point_labels)
         if box is not None:
             box = self.transform.apply_boxes(box, self.original_size)
-            # box = box[None]
-        # if mask_input is not None:
-        #    mask_input = mask_input[None]
 
         # Embed prompts
         sparse_embeddings, dense_embeddings = self.model.prompt_encoder(

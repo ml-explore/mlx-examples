@@ -36,16 +36,14 @@ class MaskData:
         return self._stats.items()
 
     def filter(self, keep: mx.array) -> None:
+        keep = np.where(keep)[0]
         for k, v in self._stats.items():
             if v is None:
                 self._stats[k] = None
             elif isinstance(v, mx.array):
-                # TODO: fix this with mlx
-                self._stats[k] = mx.array(np.array(v)[np.array(keep)])
+                self._stats[k] = v[keep.tolist()]
             elif isinstance(v, np.ndarray):
-                self._stats[k] = v[np.array(keep)]
-            elif isinstance(v, list) and keep.dtype == mx.bool_:
-                self._stats[k] = [a for i, a in enumerate(v) if keep[i]]
+                self._stats[k] = v[keep]
             elif isinstance(v, list):
                 self._stats[k] = [v[i.item()] for i in keep]
             else:

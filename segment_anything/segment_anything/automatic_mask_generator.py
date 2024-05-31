@@ -204,7 +204,7 @@ class SamAutomaticMaskGenerator:
         if len(crop_boxes) > 1:
             # Prefer masks from smaller crops
             scores = 1 / box_area_mlx(data["crop_boxes"])
-            keep_by_nms = nms_mlx(
+            keep_by_nms = non_max_supression(
                 data["boxes"].astype(mx.float32),
                 scores,
                 iou_threshold=self.crop_nms_thresh,
@@ -242,7 +242,7 @@ class SamAutomaticMaskGenerator:
         self.predictor.reset_image()
 
         # Remove duplicates within this crop.
-        keep_by_nms = nms_mlx(
+        keep_by_nms = non_max_supression(
             data["boxes"].astype(mx.float32),
             data["iou_preds"],
             iou_threshold=self.box_nms_thresh,
@@ -253,7 +253,6 @@ class SamAutomaticMaskGenerator:
         data["boxes"] = uncrop_boxes_xyxy(data["boxes"], crop_box)
         data["points"] = uncrop_points(data["points"], crop_box)
         data["crop_boxes"] = mx.array([crop_box for _ in range(len(data["rles"]))])
-
         return data
 
     def _process_batch(
@@ -272,7 +271,6 @@ class SamAutomaticMaskGenerator:
             return_logits=True,
         )
         masks = masks.transpose(0, 3, 1, 2)
-
         # Serialize predictions and store in MaskData
         data = MaskData(
             masks=masks.flatten(0, 1),
@@ -349,7 +347,7 @@ class SamAutomaticMaskGenerator:
         # Recalculate boxes and remove any new duplicates
         masks = mx.concatenate(new_masks, axis=0)
         boxes = batched_mask_to_box(masks)
-        keep_by_nms = nms_mlx(
+        keep_by_nms = non_max_supression(
             boxes.astype(mx.float32),
             scores,
             iou_threshold=nms_thresh,
@@ -383,12 +381,12 @@ def box_area_mlx(boxes: mx.array) -> mx.array:
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
 
-def batched_iou_mlx(boxes_a: mx.array, boxes_b: mx.array) -> mx.array:
+def batched_iou(boxes_a: mx.array, boxes_b: mx.array) -> mx.array:
     """Compute IoU for batched boxes.
 
     Args:
-        boxes_a (mx.array): [[x1, y1, x2, y2], ...] sized Mx4
-        boxes_b (mx.array): [[x1, y1, x2, y2], ...] sized Nx4
+        boxes_a (mx.array): [..., [x1, y1, x2, y2]] sized Mx4
+        boxes_b (mx.array): [..., [x1, y1, x2, y2]] sized Nx4
 
     Returns:
         mx.array: MxN
@@ -405,24 +403,23 @@ def batched_iou_mlx(boxes_a: mx.array, boxes_b: mx.array) -> mx.array:
     return area_inter / (area_a[:, None] + area_b - area_inter)
 
 
-def nms_mlx(boxes: mx.array, scores: mx.array, iou_threshold: float = 0.5) -> mx.array:
-    sort_index = mx.argsort(scores)[::-1]
+def non_max_supression(
+    boxes: mx.array, scores: mx.array, iou_threshold: float = 0.5
+) -> mx.array:
+    sort_index = mx.argsort(-scores)
     boxes = boxes[sort_index]
-    scores = scores[sort_index]
 
     n_boxes = boxes.shape[0]
-    ious = batched_iou_mlx(boxes, boxes)
+    ious = batched_iou(boxes, boxes)
     ious -= mx.eye(n_boxes)
 
-    keep = mx.ones(n_boxes, dtype=mx.bool_)
-
+    ious = np.array(ious)
+    keep = np.ones(n_boxes, dtype=np.bool_)
     for i, iou in enumerate(ious):
         if not keep[i]:
             continue
 
-        condition = iou > iou_threshold
-        keep = keep & ~condition
+        condition = iou <= iou_threshold
+        keep = keep & condition
 
-    sort_index = np.array(sort_index)
-    keep = np.array(keep)
-    return mx.array(sort_index[keep])
+    return sort_index[mx.array(np.where(keep)[0])]
