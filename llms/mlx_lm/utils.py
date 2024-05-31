@@ -230,7 +230,8 @@ def generate(
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
     logit_bias: Optional[Dict[int, float]] = None,
-) -> str:
+    streaming: bool = False,
+) -> Union[str, Generator[str, None, None]]:
     """
     Generate text from the model.
 
@@ -257,52 +258,63 @@ def generate(
     prompt_tokens = mx.array(tokenizer.encode(prompt))
     detokenizer = tokenizer.detokenizer
 
-    tic = time.perf_counter()
-    detokenizer.reset()
+    def _generate(prompt_tokens: mx.array) -> Generator[str, None, None]:
+        """Internal generator function for handling both streaming and non-streaming text generation."""
+        tic = time.perf_counter()
+        detokenizer.reset()
 
-    for (token, prob), n in zip(
-        generate_step(
-            prompt_tokens,
-            model,
-            temp,
-            repetition_penalty,
-            repetition_context_size,
-            top_p,
-            logit_bias,
-        ),
-        range(max_tokens),
-    ):
-        if n == 0:
-            prompt_time = time.perf_counter() - tic
-            tic = time.perf_counter()
-        if token == tokenizer.eos_token_id:
-            break
-        detokenizer.add_token(token)
+        for (token, prob), n in zip(
+            generate_step(
+                prompt_tokens,
+                model,
+                temp,
+                repetition_penalty,
+                repetition_context_size,
+                top_p,
+                logit_bias,
+            ),
+            range(max_tokens),
+        ):
+            if n == 0:
+                prompt_time = time.perf_counter() - tic
+                tic = time.perf_counter()
+            if token == tokenizer.eos_token_id:
+                break
+            detokenizer.add_token(token)
+
+            if verbose:
+                if formatter:
+                    # We have to finalize so that the prob corresponds to the last segment
+                    detokenizer.finalize()
+                    formatter(detokenizer.last_segment, prob.item())
+                else:
+                    print(detokenizer.last_segment, end="", flush=True)
+
+            # Yield the last segment if streaming
+            if streaming:
+                yield detokenizer.last_segment
+
+        token_count = n + 1
+        detokenizer.finalize()
 
         if verbose:
-            if formatter:
-                # We have to finalize so that the prob corresponds to the last segment
-                detokenizer.finalize()
-                formatter(detokenizer.last_segment, prob.item())
-            else:
-                print(detokenizer.last_segment, end="", flush=True)
+            gen_time = time.perf_counter() - tic
+            print(detokenizer.last_segment, flush=True)
+            print("=" * 10)
+            if token_count == 0:
+                print("No tokens generated for this prompt")
+                return
+            prompt_tps = prompt_tokens.size / prompt_time
+            gen_tps = (token_count - 1) / gen_time
+            print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
+            print(f"Generation: {gen_tps:.3f} tokens-per-sec")
 
-    token_count = n + 1
-    detokenizer.finalize()
-
-    if verbose:
-        gen_time = time.perf_counter() - tic
-        print(detokenizer.last_segment, flush=True)
-        print("=" * 10)
-        if token_count == 0:
-            print("No tokens generated for this prompt")
-            return
-        prompt_tps = prompt_tokens.size / prompt_time
-        gen_tps = (token_count - 1) / gen_time
-        print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
-        print(f"Generation: {gen_tps:.3f} tokens-per-sec")
-
-    return detokenizer.text
+        # Yield the final text if not streaming
+        if not streaming:
+            yield detokenizer.text
+    
+    # Return a generator for streaming or the full text if not streaming
+    return _generate(prompt_tokens) if streaming else next(_generate(prompt_tokens))
 
 
 def load_config(model_path: Path) -> dict:
