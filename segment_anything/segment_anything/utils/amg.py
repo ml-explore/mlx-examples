@@ -47,7 +47,7 @@ class MaskData:
             elif isinstance(v, list) and keep.dtype == mx.bool_:
                 self._stats[k] = [a for i, a in enumerate(v) if keep[i]]
             elif isinstance(v, list):
-                self._stats[k] = [v[i] for i in keep]
+                self._stats[k] = [v[i.item()] for i in keep]
             else:
                 raise TypeError(f"MaskData key {k} has an unsupported type {type(v)}.")
 

@@ -428,4 +428,6 @@ def nms_mlx(boxes: mx.array, scores: mx.array, iou_threshold: float = 0.5) -> mx
         condition = iou > iou_threshold
         keep = keep & ~condition
 
-    return keep[mx.argsort(sort_index)]
+    sort_index = np.array(sort_index)
+    keep = np.array(keep)
+    return mx.array(sort_index[keep])
