@@ -237,27 +237,3 @@ def print_trainable_parameters(model):
         f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
         f"({trainable_p:.3f}M/{total_p:.3f}M)"
     )
-
-
-def pre_processing_for_train(
-    model: nn.Module,
-    lora_layers: int,
-    lora_config: dict,
-    resume_adapter_file: str,
-) -> nn.Module:
-    """
-    Pre-processing model for QLoRA/LoRA training.
-    """
-    # Freeze all layers
-    model.freeze()
-
-    # Convert linear layers to lora layers and unfreeze in the process
-    linear_to_lora_layers(model, lora_layers, lora_config)
-
-    # Resume training the given adapters.
-    if resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {resume_adapter_file}")
-        model.load_weights(resume_adapter_file, strict=False)
-
-    print_trainable_parameters(model)
-    return model

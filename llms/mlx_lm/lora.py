@@ -14,7 +14,12 @@ import yaml
 from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import apply_lora_layers, build_schedule, pre_processing_for_train
+from .tuner.utils import (
+    apply_lora_layers,
+    build_schedule,
+    linear_to_lora_layers,
+    print_trainable_parameters,
+)
 from .utils import load, save_config
 
 yaml_loader = yaml.SafeLoader
@@ -157,6 +162,19 @@ def train_model(
     valid_set,
     training_callback: TrainingCallback = None,
 ):
+    # Freeze all layers
+    model.freeze()
+
+    # Convert linear layers to lora layers and unfreeze in the process
+    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+
+    # Resume training the given adapters.
+    if args.resume_adapter_file is not None:
+        print(f"Loading pretrained adapters from {resume_adapter_file}")
+        model.load_weights(args.resume_adapter_file, strict=False)
+
+    print_trainable_parameters(model)
+
     adapter_path = Path(args.adapter_path)
     adapter_path.mkdir(parents=True, exist_ok=True)
     adapter_file = adapter_path / "adapters.safetensors"
@@ -216,36 +234,25 @@ def run(args, training_callback: TrainingCallback = None):
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
-    model = pre_processing_model(
-        model=model,
-        adapter_path=args.adapter_path,
-        is_train=args.train,
-        is_test=args.test,
-        lora_layers=args.lora_layers,
-        lora_config=args.lora_parameters,
-        resume_adapter_file=args.resume_adapter_file,
-    )
-
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
-    if args.train:
-        print("Training")
-        model = pre_processing_for_train(
-            model=model,
-            lora_layers=args.lora_layers,
-            lora_config=args.lora_parameters,
-            resume_adapter_file=args.resume_adapter_file,
-        )
+    adapter_path = Path(args.adapter_path)
+    adapter_file = adapter_path / "adapters.safetensors"
 
+    if args.test and not args.train:
+        # Allow testing without LoRA layers by providing empty path
+        if args.adapter_path != "":
+            apply_lora_layers(model, adapter_path)
+
+    elif args.train:
+        print("Training")
         train_model(args, model, tokenizer, train_set, valid_set, training_callback)
+    else:
+        raise ValueError("Must provide at least one of --train or --test")
 
     if args.test:
         print("Testing")
-        if not args.train:
-            adapter_path = Path(args.adapter_path)
-            model = apply_lora_layers(model, adapter_path)
-
         evaluate_model(args, model, tokenizer, test_set)
 
 
