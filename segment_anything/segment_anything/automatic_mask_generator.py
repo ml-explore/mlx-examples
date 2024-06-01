@@ -203,7 +203,7 @@ class SamAutomaticMaskGenerator:
         # Remove duplicate masks between crops
         if len(crop_boxes) > 1:
             # Prefer masks from smaller crops
-            scores = 1 / box_area_mlx(data["crop_boxes"])
+            scores = 1 / box_area(data["crop_boxes"])
             keep_by_nms = non_max_supression(
                 data["boxes"].astype(mx.float32),
                 scores,
@@ -365,7 +365,7 @@ class SamAutomaticMaskGenerator:
         return mask_data
 
 
-def box_area_mlx(boxes: mx.array) -> mx.array:
+def box_area(boxes: mx.array) -> mx.array:
     """
     Computes the area of a set of bounding boxes, which are specified by their
     (x1, y1, x2, y2) coordinates.
@@ -392,8 +392,8 @@ def batched_iou(boxes_a: mx.array, boxes_b: mx.array) -> mx.array:
         mx.array: MxN
     """
 
-    area_a = box_area_mlx(boxes_a)  # M
-    area_b = box_area_mlx(boxes_b)  # N
+    area_a = box_area(boxes_a)  # M
+    area_b = box_area(boxes_b)  # N
 
     top_left = mx.maximum(boxes_a[:, None, :2], boxes_b[:, :2])
     bottom_right = mx.minimum(boxes_a[:, None, 2:], boxes_b[:, 2:])
