@@ -48,7 +48,7 @@ def linear_to_lora_layers(
         num_lora_layers (int): The number of blocks to convert to lora layers
         starting from the last layer.
         config (dict): More configuration parameters for LoRA, including the
-          rank, alpha, scale, and optional layer keys.
+          rank, scale, and optional layer keys.
         use_dora (bool): If True, uses DoRA instead of LoRA.
           Default: ``False``
     """
@@ -79,7 +79,6 @@ def linear_to_lora_layers(
         return LoRALayer.from_linear(
             layer,
             r=config["rank"],
-            alpha=config["alpha"],
             scale=config["scale"],
             dropout=config["dropout"],
         )
