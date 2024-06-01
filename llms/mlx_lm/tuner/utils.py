@@ -222,7 +222,7 @@ def remove_lora_layers(model: nn.Module) -> nn.Module:
 
 def print_trainable_parameters(model):
     def nparams(m):
-        if isinstance(m, nn.QuantizedLinear):
+        if isinstance(m, (nn.QuantizedLinear, nn.QuantizedEmbedding)):
             return m.weight.size * (32 // m.bits)
         return sum(v.size for _, v in tree_flatten(m.parameters()))
 

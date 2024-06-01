@@ -237,13 +237,10 @@ def run(args, training_callback: TrainingCallback = None):
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
-    adapter_path = Path(args.adapter_path)
-    adapter_file = adapter_path / "adapters.safetensors"
-
     if args.test and not args.train:
         # Allow testing without LoRA layers by providing empty path
         if args.adapter_path != "":
-            apply_lora_layers(model, adapter_path)
+            apply_lora_layers(model, args.adapter_path)
 
     elif args.train:
         print("Training")

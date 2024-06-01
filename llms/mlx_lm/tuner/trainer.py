@@ -29,9 +29,6 @@ def grad_checkpoint(layer):
 
 @dataclass
 class TrainingArgs:
-    lora_layers: int = field(
-        default=16, metadata={"help": "Number of layers to fine-tune"}
-    )
     batch_size: int = field(default=4, metadata={"help": "Minibatch size."})
     iters: int = field(default=100, metadata={"help": "Iterations to train for."})
     val_batches: int = field(
