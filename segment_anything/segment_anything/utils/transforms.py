@@ -30,24 +30,6 @@ class ResizeLongestSide:
             )
         )
 
-    def apply_image_mlx(self, image: mx.array) -> mx.array:
-        """
-        Expects batched images with shape BxHxWxC and float format. This
-        transformation may not exactly match apply_image. apply_image is
-        the transformation expected by the model.
-        """
-        # Expects an image in BHWC format. May not exactly match apply_image.
-        target_size = self.get_preprocess_shape(
-            image.shape[2], image.shape[3], self.target_length
-        )
-        scale_factor = (
-            target_size[0] / image.shape[1],
-            target_size[1] / image.shape[2],
-        )
-        return nn.Upsampling(
-            image, scale_factor=scale_factor, mode="linear", align_corners=False
-        )
-
     def apply_coords(
         self, coords: mx.array, original_size: Tuple[int, ...]
     ) -> mx.array:
