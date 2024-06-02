@@ -76,7 +76,7 @@ class MLP(nn.Module):
         self.c_proj = nn.Linear(4 * self.n_embd, self.n_embd)
 
     def __call__(self, x) -> mx.array:
-        return self.c_proj(nn.gelu(self.c_fc(x)))
+        return self.c_proj(nn.gelu_approx(self.c_fc(x)))
 
 
 class TransformerBlock(nn.Module):
