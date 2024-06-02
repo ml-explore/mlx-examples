@@ -1,0 +1,1 @@
+from .automatic_mask_generator import SamAutomaticMaskGenerator
