@@ -187,20 +187,14 @@ class APIHandler(BaseHTTPRequestHandler):
         if not isinstance(self.max_tokens, int) or self.max_tokens < 0:
             raise ValueError("max_tokens must be a non-negative integer")
 
-        if isinstance(self.temperature, int):
-            self.temperature = float(self.temperature)
-        if not isinstance(self.temperature, float) or self.temperature < 0:
+        if not isinstance(self.temperature, (float, int)) or self.temperature < 0:
             raise ValueError("temperature must be a non-negative float")
 
-        if isinstance(self.top_p, int):
-            self.top_p = float(self.top_p)
-        if not isinstance(self.top_p, float) or self.top_p < 0 or self.top_p > 1:
+        if not isinstance(self.top_p, (float, int)) or self.top_p < 0 or self.top_p > 1:
             raise ValueError("top_p must be a float between 0 and 1")
 
-        if isinstance(self.repetition_penalty, int):
-            self.top_p = float(self.repetition_penalty)
         if (
-            not isinstance(self.repetition_penalty, float)
+            not isinstance(self.repetition_penalty, (float, int))
             or self.repetition_penalty < 0
         ):
             raise ValueError("repetition_penalty must be a non-negative float")
