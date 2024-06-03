@@ -10,11 +10,16 @@ import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import yaml
-from mlx.utils import tree_flatten
 
+from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.utils import apply_lora_layers, build_schedule, linear_to_lora_layers
+from .tuner.utils import (
+    apply_lora_layers,
+    build_schedule,
+    linear_to_lora_layers,
+    print_trainable_parameters,
+)
 from .utils import load, save_config
 
 yaml_loader = yaml.SafeLoader
@@ -32,7 +37,6 @@ yaml_loader.add_implicit_resolver(
     ),
     list("-+0123456789."),
 )
-
 
 CONFIG_DEFAULTS = {
     "model": "mlx_model",
@@ -150,23 +154,78 @@ def build_parser():
     return parser
 
 
-def print_trainable_parameters(model):
-    def nparams(m):
-        if isinstance(m, nn.QuantizedLinear):
-            return m.weight.size * (32 // m.bits)
-        return sum(v.size for _, v in tree_flatten(m.parameters()))
+def train_model(
+    args,
+    model: nn.Module,
+    tokenizer: TokenizerWrapper,
+    train_set,
+    valid_set,
+    training_callback: TrainingCallback = None,
+):
+    # Freeze all layers
+    model.freeze()
 
-    leaf_modules = tree_flatten(
-        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
+    # Convert linear layers to lora layers and unfreeze in the process
+    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+
+    # Resume training the given adapters.
+    if args.resume_adapter_file is not None:
+        print(f"Loading pretrained adapters from {resume_adapter_file}")
+        model.load_weights(args.resume_adapter_file, strict=False)
+
+    print_trainable_parameters(model)
+
+    adapter_path = Path(args.adapter_path)
+    adapter_path.mkdir(parents=True, exist_ok=True)
+    adapter_file = adapter_path / "adapters.safetensors"
+    save_config(vars(args), adapter_path / "adapter_config.json")
+
+    # init training args
+    training_args = TrainingArgs(
+        batch_size=args.batch_size,
+        iters=args.iters,
+        val_batches=args.val_batches,
+        steps_per_report=args.steps_per_report,
+        steps_per_eval=args.steps_per_eval,
+        steps_per_save=args.save_every,
+        adapter_file=adapter_file,
+        max_seq_length=args.max_seq_length,
+        grad_checkpoint=args.grad_checkpoint,
     )
-    total_p = sum(nparams(m) for _, m in leaf_modules) / 10**6
-    trainable_p = (
-        sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
+
+    model.train()
+    opt = optim.Adam(
+        learning_rate=(
+            build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
+        )
     )
-    print(
-        f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
-        f"({trainable_p:.3f}M/{total_p:.3f}M)"
+    # Train model
+    train(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        optimizer=opt,
+        train_dataset=train_set,
+        val_dataset=valid_set,
+        training_callback=training_callback,
     )
+
+
+def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set):
+    model.eval()
+
+    test_loss = evaluate(
+        model=model,
+        dataset=test_set,
+        tokenizer=tokenizer,
+        batch_size=args.batch_size,
+        num_batches=args.test_batches,
+        max_seq_length=args.max_seq_length,
+    )
+
+    test_ppl = math.exp(test_loss)
+
+    print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
 
 def run(args, training_callback: TrainingCallback = None):
@@ -175,86 +234,23 @@ def run(args, training_callback: TrainingCallback = None):
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
-    # Freeze all layers
-    model.freeze()
-
-    adapter_path = Path(args.adapter_path)
-    adapter_file = adapter_path / "adapters.safetensors"
+    print("Loading datasets")
+    train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
     if args.test and not args.train:
         # Allow testing without LoRA layers by providing empty path
         if args.adapter_path != "":
-            apply_lora_layers(model, adapter_path)
-    elif args.train:
-        adapter_path.mkdir(parents=True, exist_ok=True)
-        save_config(vars(args), adapter_path / "adapter_config.json")
+            apply_lora_layers(model, args.adapter_path)
 
-        # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(
-            model, args.lora_layers, args.lora_parameters, args.use_dora
-        )
-        print_trainable_parameters(model)
+    elif args.train:
+        print("Training")
+        train_model(args, model, tokenizer, train_set, valid_set, training_callback)
     else:
         raise ValueError("Must provide at least one of --train or --test")
 
-    print("Loading datasets")
-    train_set, valid_set, test_set = load_dataset(args, tokenizer)
-
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file, strict=False)
-
-    if args.train:
-        print("Training")
-        # init training args
-        training_args = TrainingArgs(
-            batch_size=args.batch_size,
-            iters=args.iters,
-            val_batches=args.val_batches,
-            steps_per_report=args.steps_per_report,
-            steps_per_eval=args.steps_per_eval,
-            steps_per_save=args.save_every,
-            adapter_file=adapter_file,
-            max_seq_length=args.max_seq_length,
-            grad_checkpoint=args.grad_checkpoint,
-        )
-
-        model.train()
-        opt = optim.Adam(
-            learning_rate=(
-                build_schedule(args.lr_schedule)
-                if args.lr_schedule
-                else args.learning_rate
-            )
-        )
-        # Train model
-        train(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,
-            optimizer=opt,
-            train_dataset=train_set,
-            val_dataset=valid_set,
-            training_callback=training_callback,
-        )
-
     if args.test:
         print("Testing")
-        model.eval()
-
-        test_loss = evaluate(
-            model=model,
-            dataset=test_set,
-            tokenizer=tokenizer,
-            batch_size=args.batch_size,
-            num_batches=args.test_batches,
-            max_seq_length=args.max_seq_length,
-        )
-
-        test_ppl = math.exp(test_loss)
-
-        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
+        evaluate_model(args, model, tokenizer, test_set)
 
 
 def main():
