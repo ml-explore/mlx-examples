@@ -51,22 +51,6 @@ def stopping_criteria(
     return StopCondition(stop_met=False, trim_length=0)
 
 
-def fold_in_system_prompt(messages: List[dict]):
-    n = len(messages)
-    if n>0 and messages[0]["role"] == "system":
-        message_system = messages[0]
-        if n>1:
-            message_user = messages[1]
-            assert message_user["role"] == "user"
-            message_user.update(
-                {"content": "System: " + message_system["content"] + "\n" + message_user["content"]}
-            )
-            messages = [message_user] + messages[2:]
-        else:
-            messages_system.update({"role": "user"})
-    return messages
-
-
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     default_role_mapping = {
         "system_prompt": "A chat between a curious user and an artificial intelligence assistant. The assistant follows the given rules no matter what.",
@@ -449,11 +433,8 @@ class APIHandler(BaseHTTPRequestHandler):
             hasattr(self.tokenizer, "apply_chat_template")
             and self.tokenizer.chat_template
         ):
-            messages = body["messages"]
-            if "raise_exception('System role not supported')" in self.tokenizer.chat_template:
-                messages = fold_in_system_prompt(messages)
             prompt = self.tokenizer.apply_chat_template(
-                messages,
+                body["messages"],
                 tokenize=True,
                 add_generation_prompt=True,
             )
