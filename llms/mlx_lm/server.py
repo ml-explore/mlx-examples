@@ -447,7 +447,8 @@ class APIHandler(BaseHTTPRequestHandler):
             and self.tokenizer.chat_template
         ):
             messages = body["messages"]
-            messages = openai_to_common_denominator(messages)
+            if self.tokenizer.chat_to_common_denominator:
+                messages = openai_to_common_denominator(messages)
             prompt = self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=True,
@@ -547,6 +548,11 @@ def main():
         action="store_true",
         help="Use the default chat template",
     )
+    parser.add_argument(
+        "--chat-to-common-denominator",
+        action="store_true",
+        help="Transform OpenAI incoming messages to fuse server and user role and stricly alternate roles (as required by e.g. Google Gemma)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -568,6 +574,8 @@ def main():
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
+
+    tokenizer.chat_to_common_denominator = args.chat_to_common_denominator
 
     run(args.host, args.port, model, tokenizer)
 
