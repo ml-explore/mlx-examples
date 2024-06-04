@@ -51,6 +51,19 @@ def stopping_criteria(
     return StopCondition(stop_met=False, trim_length=0)
 
 
+def openai_to_common_denominator(messages: List[dict]):
+    # fuse system and user, and strictly alternate with roles
+    for m in messages:
+        m["role"] = m["role"].replace("system", "user")
+    t_messages = []
+    for m in messages:
+        if t_messages == [] or t_messages[-1]["role"] != m["role"]:
+            t_messages.append(m)
+        else:
+            t_messages[-1]["content"] = "\n" + m["content"]
+    return t_messages
+
+
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     default_role_mapping = {
         "system_prompt": "A chat between a curious user and an artificial intelligence assistant. The assistant follows the given rules no matter what.",
@@ -433,8 +446,10 @@ class APIHandler(BaseHTTPRequestHandler):
             hasattr(self.tokenizer, "apply_chat_template")
             and self.tokenizer.chat_template
         ):
+            messages = body["messages"]
+            messages = openai_to_common_denominator(messages)
             prompt = self.tokenizer.apply_chat_template(
-                body["messages"],
+                messages,
                 tokenize=True,
                 add_generation_prompt=True,
             )
