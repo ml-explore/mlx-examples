@@ -542,6 +542,11 @@ def main():
         help="Set the MLX cache limit in GB",
         required=False,
     )
+    parser.add_argument(
+        "--use-default-chat-template",
+        action="store_true",
+        help="Use the default chat template",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -559,6 +564,11 @@ def main():
     model, tokenizer = load(
         args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
     )
+
+    if args.use_default_chat_template:
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = tokenizer.default_chat_template
+
     run(args.host, args.port, model, tokenizer)
 
 
