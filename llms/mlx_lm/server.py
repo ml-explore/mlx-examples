@@ -60,7 +60,7 @@ def openai_to_common_denominator(messages: List[dict]):
         if t_messages == [] or t_messages[-1]["role"] != m["role"]:
             t_messages.append(m)
         else:
-            t_messages[-1]["content"] = "\n" + m["content"]
+            t_messages[-1]["content"] += "\n" + m["content"]
     return t_messages
 
 
