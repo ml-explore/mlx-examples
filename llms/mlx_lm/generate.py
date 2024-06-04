@@ -149,10 +149,10 @@ def main():
         model,
         tokenizer,
         prompt,
-        args.temp,
         args.max_tokens,
-        True,
+        verbose=True,
         formatter=formatter,
+        temp=args.temp,
         top_p=args.top_p,
     )
 

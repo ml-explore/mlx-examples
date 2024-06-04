@@ -136,15 +136,19 @@ def generate_step(
     logit_bias: Optional[Dict[int, float]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
-    A generator producing text based on the given prompt from the model.
+    A generator producing token ids based on the given prompt from the model.
 
     Args:
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
-        repetition_penalty (float, optional): The penalty factor for repeating tokens.
-        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty (default 20).
-        top_p (float, optional): Nulceus sampling, higher means model considers more less likely words
+          Default: ``0``.
+        repetition_penalty (float, optional): The penalty factor for repeating
+          tokens.
+        repetition_context_size (int, optional): The number of tokens to
+          consider for repetition penalty. Default: ``20``.
+        top_p (float, optional): Nulceus sampling, higher means model considers
+          more less likely words.
 
     Yields:
         Generator[Tuple[mx.array, mx.array]]: A generator producing
@@ -218,34 +222,71 @@ def generate_step(
         y, p = next_y, next_p
 
 
+def stream_generate(
+    model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
+    prompt: str,
+    max_tokens: int = 100,
+    **kwargs,
+) -> Union[str, Generator[str, None, None]]:
+    """
+    A generator producing text based on the given prompt from the model.
+
+    Args:
+        prompt (mx.array): The input prompt.
+        model (nn.Module): The model to use for generation.
+        max_tokens (int): The ma
+        kwargs: The remaining options get passed to :func:`generate_step`.
+          See :func:`generate_step` for more details.
+
+    Yields:
+        Generator[Tuple[mx.array, mx.array]]: A generator producing text.
+    """
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
+
+    prompt_tokens = mx.array(tokenizer.encode(prompt))
+    detokenizer = tokenizer.detokenizer
+
+    detokenizer.reset()
+    for (token, prob), n in zip(
+        generate_step(prompt_tokens, model, **kwargs),
+        range(max_tokens),
+    ):
+        if token == tokenizer.eos_token_id:
+            break
+        detokenizer.add_token(token)
+
+        # Yield the last segment if streaming
+        yield detokenizer.last_segment
+
+    detokenizer.finalize()
+    yield detokenizer.last_segment
+
+
 def generate(
     model: nn.Module,
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
     prompt: str,
-    temp: float = 0.0,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Optional[Callable] = None,
-    repetition_penalty: Optional[float] = None,
-    repetition_context_size: Optional[int] = None,
-    top_p: float = 1.0,
-    logit_bias: Optional[Dict[int, float]] = None,
-) -> str:
+    **kwargs,
+) -> Union[str, Generator[str, None, None]]:
     """
-    Generate text from the model.
+    Generate a complete response from the model.
 
     Args:
        model (nn.Module): The language model.
        tokenizer (PreTrainedTokenizer): The tokenizer.
        prompt (str): The string prompt.
-       temp (float): The temperature for sampling (default 0).
-       max_tokens (int): The maximum number of tokens (default 100).
-       verbose (bool): If ``True``, print tokens and timing information
-           (default ``False``).
+       max_tokens (int): The maximum number of tokens. Default: ``100``.
+       verbose (bool): If ``True``, print tokens and timing information.
+           Default: ``False``.
        formatter (Optional[Callable]): A function which takes a token and a
            probability and displays it.
-       repetition_penalty (float, optional): The penalty factor for repeating tokens.
-       repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
+       kwargs: The remaining options get passed to :func:`generate_step`.
+          See :func:`generate_step` for more details.
     """
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
@@ -261,15 +302,7 @@ def generate(
     detokenizer.reset()
 
     for (token, prob), n in zip(
-        generate_step(
-            prompt_tokens,
-            model,
-            temp,
-            repetition_penalty,
-            repetition_context_size,
-            top_p,
-            logit_bias,
-        ),
+        generate_step(prompt_tokens, model, **kwargs),
         range(max_tokens),
     ):
         if n == 0:
