@@ -92,6 +92,9 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
         for i in indices:
             # Encode batch
             batch = [tokenizer.encode(dataset[j]) for j in batch_idx[i]]
+            for b in batch:
+                b.append(tokenizer.eos_token_id)
+
             lengths = [len(x) for x in batch]
 
             if max(lengths) > max_seq_length:
