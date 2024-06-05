@@ -170,7 +170,7 @@ def train_model(
 
     # Resume training the given adapters.
     if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {resume_adapter_file}")
+        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
         model.load_weights(args.resume_adapter_file, strict=False)
 
     print_trainable_parameters(model)
