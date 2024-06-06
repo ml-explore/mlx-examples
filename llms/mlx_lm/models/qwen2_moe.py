@@ -224,7 +224,7 @@ class Model(nn.Module):
         for l in range(self.args.num_hidden_layers):
             prefix = f"model.layers.{l}"
             for n in ["up_proj", "down_proj", "gate_proj"]:
-                for k in ["weight", "scales", "biases"]:
+                for k in ["weight", "biases"]:
                     if f"{prefix}.mlp.experts.0.{n}.{k}" in weights:
                         to_join = [
                             weights.pop(f"{prefix}.mlp.experts.{e}.{n}.{k}")
