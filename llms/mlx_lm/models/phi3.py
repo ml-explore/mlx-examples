@@ -5,7 +5,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
-from .su_rope import Phi3SuScaledRotaryEmbedding
+from .su_rope import SuScaledRotaryEmbedding
 
 
 @dataclass
@@ -58,7 +58,7 @@ class Attention(nn.Module):
 
         rope_scale = 1.0
         if args.rope_scaling and args.rope_scaling["type"] == "su":
-            self.rope = Phi3SuScaledRotaryEmbedding(
+            self.rope = SuScaledRotaryEmbedding(
                 head_dim,
                 traditional=False,
                 base=args.rope_theta,

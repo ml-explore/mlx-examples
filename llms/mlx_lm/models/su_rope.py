@@ -1,8 +1,9 @@
 import math
+
 import mlx.core as mx
 
 
-class Phi3SuScaledRotaryEmbedding:
+class SuScaledRotaryEmbedding:
     def __init__(
         self,
         dims: int,
@@ -21,11 +22,22 @@ class Phi3SuScaledRotaryEmbedding:
             dims (int): The feature dimensions to be rotated.
             traditional (bool, optional): Unused. Default: ``False``.
             base (int, optional): Base for the exponential scaling.
-            scale (float, optional): The scale used to scale the positions. Default: 1.0.
-            max_position_embeddings (int, optional): The maximum sequence length that this model was trained with. This is used to determine the size of the original RoPE embeddings when using long scaling. Default: 131072.
-            original_max_position_embeddings (int, optional): The maximum sequence length that this model was trained with. This is used to determine the size of the original RoPE embeddings when using long scaling. Default: 4096.
-            short_factor (float or list of floats, optional): Scaling factors for sequences of length lesser than original_max_position_embeddings. Default: 1.0.
-            long_factor (float or list of floats, optional): List of scaling factors for sequences of length greater than original_max_position_embeddings.  Default: 1.0.
+            scale (float, optional): The scale used to scale the positions.
+              Default: ``1.0``.
+            max_position_embeddings (int, optional): The maximum sequence
+              length that this model was trained with. This is used to determine
+              the size of the original RoPE embeddings when using long scaling.
+              Default: ``131072``.
+            original_max_position_embeddings (int, optional): The maximum
+              sequence length that this model was trained with. This is used to
+              determine the size of the original RoPE embeddings when using long
+              scaling. Default: ``4096``.
+            short_factor (float or list[float], optional): Scaling factors
+              for sequences of length lesser than
+              ``original_max_position_embeddings``. Default: ``1.0``.
+            long_factor (float or list[float], optional): List of scaling
+              factors for sequences of length greater than
+              ``original_max_position_embeddings``.  Default: ``1.0``.
         """
         self.inv_freq_short = 1.0 / (
             mx.array(short_factor, dtype=mx.float32)
@@ -44,21 +56,17 @@ class Phi3SuScaledRotaryEmbedding:
         )
 
     def _get_cos_sin(self, offset, L):
-        position_ids = mx.arange(offset, offset + L, dtype=mx.float32)[None]
+        position_ids = mx.arange(offset, offset + L, dtype=mx.float32)
         inv_freq = (
             self.inv_freq_long
-            if position_ids.max() + 1 > self.original_max_position_embeddings
+            if (offset + L) > self.original_max_position_embeddings
             else self.inv_freq_short
         )
-        inv_freq_expanded = mx.repeat(
-            inv_freq[None, :, None], position_ids.shape[0], axis=0
-        )
-        position_ids_expanded = position_ids[:, None, :]
-        freqs = (inv_freq_expanded @ position_ids_expanded).transpose(0, 2, 1)
+        freqs = position_ids[:, None] * inv_freq[None, :]
         emb = mx.concatenate([freqs, freqs], axis=-1)
         cos = mx.cos(emb) * self.scaling_factor
         sin = mx.sin(emb) * self.scaling_factor
-        return mx.expand_dims(cos, axis=1), mx.expand_dims(sin, axis=1)
+        return cos, sin
 
     def __call__(self, x, offset: int = 0):
         def _rotate_half(_x):
