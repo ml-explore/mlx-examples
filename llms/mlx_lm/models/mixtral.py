@@ -1,11 +1,12 @@
+import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
 from .base import BaseModelArgs
+from .switch_layers import SwitchGLU
 
 
 @dataclass
@@ -91,24 +92,6 @@ class MixtralAttention(nn.Module):
         return self.o_proj(output)
 
 
-class MixtralBLockSparseTop2MLP(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        self.ffn_dim = args.intermediate_size
-        self.hidden_dim = args.hidden_size
-
-        self.w1 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
-        self.w2 = nn.Linear(self.ffn_dim, self.hidden_dim, bias=False)
-        self.w3 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
-
-        self.act_fn = nn.silu
-
-    def __call__(self, x: mx.array) -> mx.array:
-        current_hidden_states = self.act_fn(self.w1(x)) * self.w3(x)
-        current_hidden_states = self.w2(current_hidden_states)
-        return current_hidden_states
-
-
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -120,43 +103,20 @@ class MixtralSparseMoeBlock(nn.Module):
         # gating
         self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
 
-        self.experts = [
-            MixtralBLockSparseTop2MLP(args=args) for _ in range(self.num_experts)
-        ]
+        self.switch_mlp = SwitchGLU(self.hidden_dim, self.ffn_dim, self.num_experts)
 
     def __call__(self, x: mx.array) -> mx.array:
-        ne = self.num_experts_per_tok
-        orig_shape = x.shape
-        x = x.reshape(-1, x.shape[-1])
-
         gates = self.gate(x)
 
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne])
+        k = self.num_experts_per_tok
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=k - 1, axis=-1)[..., :k])
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        scores = mx.softmax(scores, axis=-1, precise=True)
 
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
+        y = self.switch_mlp(x, inds)
+        y = (y * scores[..., None]).sum(axis=-2)
 
-        if self.training:
-            inds = np.array(inds)
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
-            for e, expert in enumerate(self.experts):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
-
-            y = (y * scores[:, :, None]).sum(axis=1)
-        else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
-            y = mx.concatenate(y)
-
-        return y.reshape(orig_shape)
+        return y
 
 
 class MixtralDecoderLayer(nn.Module):
@@ -234,6 +194,25 @@ class Model(nn.Module):
     ):
         out = self.model(inputs, cache)
         return self.lm_head(out)
+
+    def sanitize(self, weights):
+        if "model.layers.0.block_sparse_moe.experts.0.w1.weight" not in weights:
+            return weights
+        for l in range(self.args.num_hidden_layers):
+            prefix = f"model.layers.{l}"
+            for n, m in [("w1", "gate_proj"), ("w2", "down_proj"), ("w3", "up_proj")]:
+                for k in ["weight", "scales", "biases"]:
+                    if f"{prefix}.block_sparse_moe.experts.0.{n}.{k}" in weights:
+                        to_join = [
+                            weights.pop(
+                                f"{prefix}.block_sparse_moe.experts.{e}.{n}.{k}"
+                            )
+                            for e in range(self.args.num_local_experts)
+                        ]
+                        weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}.{k}"] = (
+                            mx.stack(to_join)
+                        )
+        return weights
 
     @property
     def layers(self):

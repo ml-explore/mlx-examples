@@ -16,25 +16,24 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     rms_norm_eps: float
     vocab_size: int
+    bias: bool = True
     num_key_value_heads: int = None
     rope_theta: float = 10000
     rope_traditional: bool = False
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+    tie_word_embeddings: bool = False
 
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
 
         if self.rope_scaling:
-            required_keys = {"long_factor", "type"}
+            required_keys = {"factor", "type"}
             if not all(key in self.rope_scaling for key in required_keys):
                 raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
             if self.rope_scaling["type"] != "linear":
-                print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear' setting rope scaling to false."
-                )
-                self.rope_scaling = None
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
 
 
 class Attention(nn.Module):
@@ -44,14 +43,15 @@ class Attention(nn.Module):
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
-        self.num_hidden_layers = args.num_hidden_layers
+        self.n_kv_groups = n_heads // args.num_key_value_heads
 
         self.head_dim = head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
 
-        op_size = n_heads * head_dim + 2 * (n_kv_heads * head_dim)
-        self.qkv_proj = nn.Linear(dim, op_size, bias=False)
-        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
+        self.wqkv = nn.Linear(
+            dim, (n_heads + 2 * n_kv_heads) * head_dim, bias=args.bias
+        )
+        self.wo = nn.Linear(n_heads * head_dim, dim, bias=args.bias)
 
         rope_scale = (
             1 / args.rope_scaling["factor"]
@@ -73,11 +73,13 @@ class Attention(nn.Module):
     ) -> mx.array:
         B, L, D = x.shape
 
-        qkv = self.qkv_proj(x)
-        query_pos = self.n_heads * self.head_dim
-        queries, keys, values = mx.split(
-            qkv, [query_pos, query_pos + self.n_kv_heads * self.head_dim], axis=-1
-        )
+        qkv_states = self.wqkv(x)
+        qkv_states = qkv_states.reshape(B, L, -1, 2 + self.n_kv_groups, self.head_dim)
+
+        queries = qkv_states[..., : self.n_kv_groups, :]
+        queries = queries.reshape(B, L, -1, self.head_dim)
+        keys = qkv_states[..., -2, :]
+        values = qkv_states[..., -1, :]
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
@@ -96,33 +98,27 @@ class Attention(nn.Module):
             queries, keys, values, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.o_proj(output)
+        return self.wo(output)
 
 
 class MLP(nn.Module):
     def __init__(self, dim, hidden_dim):
         super().__init__()
-        self.gate_up_proj = nn.Linear(dim, 2 * hidden_dim, bias=False)
-        self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
+        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
+        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
 
     def __call__(self, x) -> mx.array:
-        x = self.gate_up_proj(x)
-        gate, x = mx.split(x, 2, axis=-1)
-        return self.down_proj(nn.silu(gate) * x)
+        return self.w2(nn.silu(self.w1(x)) * self.w3(x))
 
 
 class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.num_attention_heads = args.num_attention_heads
-        self.hidden_size = args.hidden_size
-        self.self_attn = Attention(args)
-        self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.post_attention_layernorm = nn.RMSNorm(
-            args.hidden_size, eps=args.rms_norm_eps
-        )
-        self.args = args
+        self.attention = Attention(args)
+        self.feed_forward = MLP(args.hidden_size, args.intermediate_size)
+        self.attention_norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.ffn_norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
     def __call__(
         self,
@@ -130,21 +126,18 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r = self.self_attn(self.input_layernorm(x), mask, cache)
+        r = self.attention(self.attention_norm(x), mask, cache)
         h = x + r
-        r = self.mlp(self.post_attention_layernorm(h))
+        r = self.feed_forward(self.ffn_norm(h))
         out = h + r
         return out
 
 
-class Phi3Model(nn.Module):
+class InternLM2Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.args = args
-        self.vocab_size = args.vocab_size
-        self.num_hidden_layers = args.num_hidden_layers
-        assert self.vocab_size > 0
-        self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
+        assert args.vocab_size > 0
+        self.tok_embeddings = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
@@ -155,7 +148,7 @@ class Phi3Model(nn.Module):
         inputs: mx.array,
         cache=None,
     ):
-        h = self.embed_tokens(inputs)
+        h = self.tok_embeddings(inputs)
 
         mask = None
         if h.shape[1] > 1:
@@ -166,7 +159,7 @@ class Phi3Model(nn.Module):
             cache = [None] * len(self.layers)
 
         for layer, c in zip(self.layers, cache):
-            h = layer(h, mask, c)
+            h = layer(h, mask, cache=c)
 
         return self.norm(h)
 
@@ -174,10 +167,11 @@ class Phi3Model(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.model_type = args.model_type
-        self.model = Phi3Model(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
         self.args = args
+        self.model_type = args.model_type
+        self.model = InternLM2Model(args)
+        if not args.tie_word_embeddings:
+            self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
         self,
@@ -185,7 +179,11 @@ class Model(nn.Module):
         cache=None,
     ):
         out = self.model(inputs, cache)
-        return self.lm_head(out)
+        if self.args.tie_word_embeddings:
+            out = self.model.tok_embeddings.as_linear(out)
+        else:
+            out = self.output(out)
+        return out
 
     @property
     def layers(self):

@@ -60,8 +60,7 @@ lora_parameters:
   # These will be applied for the last lora_layers
   keys: ["self_attn.q_proj", "self_attn.v_proj"]
   rank: 8
-  alpha: 16.0
-  scale: 10.0
+  scale: 20.0
   dropout: 0.0
 
 # Schedule can only be specified in a config file, uncomment to use.

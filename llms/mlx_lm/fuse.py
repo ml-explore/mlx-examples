@@ -7,7 +7,7 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 from .gguf import convert_to_gguf
 from .tuner.dora import DoRALinear
-from .tuner.lora import LoRALinear
+from .tuner.lora import LoRALinear, LoRASwitchLinear
 from .tuner.utils import apply_lora_layers, dequantize
 from .utils import (
     fetch_from_hub,
@@ -82,7 +82,7 @@ def main() -> None:
     fused_linears = [
         (n, m.to_linear())
         for n, m in model.named_modules()
-        if isinstance(m, (LoRALinear, DoRALinear))
+        if isinstance(m, (LoRASwitchLinear, LoRALinear, DoRALinear))
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
