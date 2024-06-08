@@ -140,7 +140,8 @@ class APIHandler(BaseHTTPRequestHandler):
         self.validate_model_parameters()
 
         # Get stop id sequences, if provided
-        stop_words = self.body.get("stop", [])
+        stop_words = self.body.get("stop")
+        stop_words = stop_words or []
         stop_words = [stop_words] if isinstance(stop_words, str) else stop_words
         stop_id_sequences = [
             self.tokenizer.encode(stop_word, add_special_tokens=False)
