@@ -32,8 +32,8 @@ class SuScaledRotaryEmbedding:
               sequence length that this model was trained with. This is used to
               determine the size of the original RoPE embeddings when using long
               scaling. Default: ``4096``.
-            short_factor (float or list[float], optional): Scaling factors
-              for sequences of length lesser than
+            short_factor (float or list[float], optional): List of scaling
+              factors for sequences of length lesser than
               ``original_max_position_embeddings``. Default: ``1.0``.
             long_factor (float or list[float], optional): List of scaling
               factors for sequences of length greater than
