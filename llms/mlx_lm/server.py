@@ -544,6 +544,13 @@ def main():
         required=False,
     )
     parser.add_argument(
+        "--chat-template",
+        type=str,
+        default="",
+        help="Specify a chat template for the tokenizer",
+        required=False,
+    )
+    parser.add_argument(
         "--use-default-chat-template",
         action="store_true",
         help="Use the default chat template",
@@ -566,6 +573,8 @@ def main():
 
     # Building tokenizer_config
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
+    if args.chat_template:
+        tokenizer_config['chat_template'] = args.chat_template
 
     model, tokenizer = load(
         args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
