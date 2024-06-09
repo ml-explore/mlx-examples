@@ -1,6 +1,7 @@
 import math
 
 import mlx.core as mx
+from typing import List, Union
 
 
 class SuScaledRotaryEmbedding:
@@ -12,8 +13,8 @@ class SuScaledRotaryEmbedding:
         scale: float = 1.0,
         max_position_embeddings: int = 131072,
         original_max_position_embeddings: int = 4096,
-        short_factor: list[float] | float = 1.0,
-        long_factor: list[float] | float = 1.0,
+        short_factor: Union[List[float], float] = 1.0,
+        long_factor: Union[List[float], float] = 1.0,
     ):
         """
         Phi3Su Scaled Rotary Embedding layer for Phi-3 models.
