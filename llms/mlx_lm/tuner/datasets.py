@@ -1,21 +1,27 @@
 import json
 from pathlib import Path
-from typing import Iterable
 
 from transformers import PreTrainedTokenizer
 
 
 class Dataset:
     """
-    Light-weight wrapper to hold lines from a jsonl file
+    Light-weight wrapper to hold lines from a jsonl file or iterable mapping
     """
 
-    def __init__(self, path: Path):
-        with open(path, "r") as fid:
-            self._data = [json.loads(l) for l in fid]
+    def __init__(self, path: Path = None, text_key: str = "text"):
+        self._text_key = text_key
+        if path:
+            with open(path, "r") as fid:
+                self._data = [json.loads(l) for l in fid]
+        else:
+            self._data = None
+
+    def set_data(self, data):
+        self._data = data
 
     def __getitem__(self, idx: int):
-        return self._data[idx]["text"]
+        return self._data[idx][self._text_key]
 
     def __len__(self):
         if self._data is None:
@@ -44,19 +50,28 @@ class ChatDataset(Dataset):
 class CompletionsDataset(Dataset):
     """
     A dataset for prompt-completion data in the format of {"prompt": ..., "completion": ...}
+    or using user-provided keys for prompt and completion values
     https://platform.openai.com/docs/guides/fine-tuning/example-format
     """
 
-    def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
+    def __init__(
+        self,
+        path: Path,
+        tokenizer: PreTrainedTokenizer,
+        prompt_key: str = "prompt",
+        completion_key: str = "completion",
+    ):
         super().__init__(path)
         self._tokenizer = tokenizer
+        self._prompt_key = prompt_key
+        self._completion_key = completion_key
 
     def __getitem__(self, idx: int):
         data = self._data[idx]
         text = self._tokenizer.apply_chat_template(
             [
-                {"role": "user", "content": data["prompt"]},
-                {"role": "assistant", "content": data["completion"]},
+                {"role": "user", "content": data[self._prompt_key]},
+                {"role": "assistant", "content": data[self._completion_key]},
             ],
             tokenize=False,
             add_generation_prompt=True,
@@ -84,73 +99,22 @@ def create_dataset(path: Path, tokenizer: PreTrainedTokenizer = None):
         )
 
 
-class TextHFDataset(Dataset):
-    """
-    A Huggingface dataset for a single blob of text per record
-    https://huggingface.co/docs/datasets/en/access
-    """
-
-    def __init__(self, hf_dataset, tokenizer, text_feature):
-        self._data = hf_dataset
-        self._tokenizer = tokenizer
-        self._text_feature = text_feature
-
-    def __getitem__(self, idx: int):
-        return self._data[idx][self._text_feature]
-
-
-class CompletionsHFDataset(CompletionsDataset):
-    """
-    Prompt/completion data from a Huggingface dataset
-    https://huggingface.co/docs/datasets/en/access
-    """
-
-    def __init__(
-        self,
-        hf_dataset: Iterable,
-        tokenizer: PreTrainedTokenizer,
-        prompt_feature: str = None,
-        completion_feature: str = None,
-    ):
-        """
-
-        :param hf_dataset: Iterable HF dataset instance in a 'split' and/or configuration
-        :param prompt_feature: The HF dataset 'feature' or column name for the instruction input
-        :param completion_feature: The HF dataset 'feature' or column name for the instruction completion
-        """
-        self._data = hf_dataset
-        self._tokenizer = tokenizer
-        self._prompt_feature = prompt_feature
-        self._completion_feature = completion_feature
-
-    def __getitem__(self, idx: int):
-        data = self._data[idx]
-        text = self._tokenizer.apply_chat_template(
-            [
-                {"role": "user", "content": data[self._prompt_feature]},
-                {"role": "assistant", "content": data[self._completion_feature]},
-            ],
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return text
-
-
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
     if args.hf_dataset:
-        from datasets import load_dataset, get_dataset_infos
+        from datasets import get_dataset_infos, load_dataset
+
         dataset_name = args.hf_dataset["name"]
         print(f"Loading HF dataset {dataset_name}: {get_dataset_infos(dataset_name)}")
         train_split = args.hf_dataset.get("train_split", "train[:80%]")
         valid_split = args.hf_dataset.get("valid_split", "train[-10%:]")
         test_split = args.hf_dataset.get("test_split")
-        train = load_dataset(
+        train_ds = load_dataset(
             dataset_name, args.hf_dataset.get("configuration"), split=train_split
         )
-        valid = load_dataset(
+        valid_ds = load_dataset(
             dataset_name, args.hf_dataset.get("configuration"), split=valid_split
         )
-        test = (
+        test_ds = (
             load_dataset(
                 dataset_name, args.hf_dataset.get("configuration"), split=test_split
             )
@@ -162,27 +126,35 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
         completion_feature = args.hf_dataset.get("completion_feature")
         if (
             prompt_feature
-            and prompt_feature in train.features
+            and prompt_feature in train_ds.features
             and completion_feature
-            and completion_feature in train.features
+            and completion_feature in train_ds.features
         ):
-            train = CompletionsHFDataset(
-                train, tokenizer, prompt_feature, completion_feature
+            train = CompletionsDataset(
+                None, tokenizer, prompt_feature, completion_feature
             )
-            valid = CompletionsHFDataset(
-                valid, tokenizer, prompt_feature, completion_feature
+            train.set_data(train_ds)
+            valid = CompletionsDataset(
+                None, tokenizer, prompt_feature, completion_feature
             )
-            test = (
-                CompletionsHFDataset(
-                    test, tokenizer, prompt_feature, completion_feature
+            valid.set_data(valid_ds)
+            if args.test:
+                test = CompletionsDataset(
+                    None, tokenizer, prompt_feature, completion_feature
                 )
-                if args.test
-                else None
-            )
-        elif text_feature and text_feature in train.features:
-            train = TextHFDataset(train, tokenizer, text_feature)
-            valid = TextHFDataset(valid, tokenizer, text_feature)
-            test = TextHFDataset(test, tokenizer, text_feature) if args.test else None
+                test.set_data(test_ds)
+            else:
+                test = None
+        elif text_feature and text_feature in train_ds.features:
+            train = Dataset(text_key=text_feature)
+            train.set_data(train_ds)
+            valid = Dataset(text_feature)
+            valid.set_data(valid_ds)
+            if args.test:
+                test = Dataset(text_key=text_feature)
+                test.set_data(test_ds)
+            else:
+                test = None
         else:
             raise ValueError(
                 "Need to specify either a prompt and completion feature or a text feature which are "
@@ -205,6 +177,6 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
         )
     if args.test and len(test) == 0:
         raise ValueError(
-            "Test set not found or empty. Must provide test set for ev aluation."
+            "Test set not found or empty. Must provide test set for evaluation."
         )
     return train, valid, test
