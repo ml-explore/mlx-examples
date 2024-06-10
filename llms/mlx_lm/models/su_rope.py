@@ -1,7 +1,7 @@
 import math
+from typing import List, Union
 
 import mlx.core as mx
-from typing import List, Union
 
 
 class SuScaledRotaryEmbedding:
