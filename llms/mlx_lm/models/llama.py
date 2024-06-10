@@ -4,7 +4,7 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_additive_causal_mask, KVCache
+from .base import BaseModelArgs, KVCache, create_additive_causal_mask
 
 
 @dataclass
