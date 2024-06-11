@@ -4,7 +4,7 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_additive_causal_mask
+from .base import BaseModelArgs, KVCache, create_additive_causal_mask
 
 
 @dataclass
@@ -16,7 +16,7 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     rms_norm_eps: float
     vocab_size: int
-    num_key_value_heads: int = None
+    num_key_value_heads: Optional[int] = None
     attention_bias: bool = False
     mlp_bias: bool = False
     rope_theta: float = 10000
@@ -73,7 +73,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[KVCache] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -135,7 +135,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[KVCache] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
