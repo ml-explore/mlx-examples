@@ -133,11 +133,9 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
-    return_step_logits: bool = False,
     logit_bias: Optional[Dict[int, float]] = None,
-) -> Generator[
-    Union[Tuple[mx.array, mx.array], Tuple[mx.array, mx.array, mx.array]], None, None
-]:
+    return_logprobs: bool = False,
+) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
 
@@ -152,10 +150,11 @@ def generate_step(
           consider for repetition penalty. Default: ``20``.
         top_p (float, optional): Nulceus sampling, higher means model considers
           more less likely words.
+        logit_bias (dictionary, optional): Additive logit bias.
 
     Yields:
-        Generator[Union[Tuple[mx.array, mx.array], Tuple[mx.array, mx.array, mx.array]]: A generator producing
-        one token and probability or one token, probability, and step logits per call (if return_step_logits True).
+        Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
+          one token and and a vector of log probabilities.
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
@@ -163,7 +162,7 @@ def generate_step(
             indices = mx.array(list(logit_bias.keys()))
             values = mx.array(list(logit_bias.values()))
             logits[:, indices] += values
-        softmax_logits = mx.softmax(logits)
+        logprobs = logits - mx.logsumexp(logits)
 
         if temp == 0:
             token = mx.argmax(logits, axis=-1)
@@ -173,8 +172,7 @@ def generate_step(
             else:
                 token = mx.random.categorical(logits * (1 / temp))
 
-        prob = softmax_logits[0, token]
-        return token, prob
+        return token, logprobs
 
     if repetition_penalty and (
         repetition_penalty < 0 or not isinstance(repetition_penalty, float)
@@ -205,27 +203,24 @@ def generate_step(
             logits = apply_repetition_penalty(
                 logits, repetition_context, repetition_penalty
             )
-            y, prob = sample(logits)
+            y, logprobs = sample(logits)
             repetition_context.append(y.item())
         else:
-            y, prob = sample(logits)
+            y, logprobs = sample(logits)
 
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
-        return y, prob, logits
+        return y, logprobs
 
-    y, p, step_logits = _step(y)
+    y, logprobs = _step(y)
 
     mx.async_eval(y)
     while True:
-        next_y, next_p, step_logits = _step(y)
+        next_y, next_logprobs = _step(y)
         mx.async_eval(next_y)
-        if return_step_logits:
-            yield y.item(), p, step_logits
-        else:
-            yield y.item(), p
-        y, p = next_y, next_p
+        yield y.item(), logprobs
+        y, logprobs = next_y, next_logprobs
 
 
 def stream_generate(
@@ -307,7 +302,7 @@ def generate(
     tic = time.perf_counter()
     detokenizer.reset()
 
-    for (token, prob), n in zip(
+    for (token, logprobs), n in zip(
         generate_step(prompt_tokens, model, **kwargs),
         range(max_tokens),
     ):
@@ -322,7 +317,7 @@ def generate(
             if formatter:
                 # We have to finalize so that the prob corresponds to the last segment
                 detokenizer.finalize()
-                formatter(detokenizer.last_segment, prob.item())
+                formatter(detokenizer.last_segment, logprobs[token].item())
             else:
                 print(detokenizer.last_segment, end="", flush=True)
 
