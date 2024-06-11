@@ -83,11 +83,11 @@ def build_parser():
         help="Directory with {train, valid, test}.jsonl files",
     )
     parser.add_argument(
-            "--train-full",
-            action="store_true",
-            help="Train the full model without LoRA layers.",
-            default=False,
-        )
+        "--train-full",
+        action="store_true",
+        help="Train the full model without LoRA layers.",
+        default=False,
+    )
     parser.add_argument(
         "--lora-layers",
         type=int,

@@ -57,6 +57,17 @@ mlx_lm.lora \
     --iters 600
 ```
 
+To fine-tune the full model weights, use the `--train-full` flag:
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --train-full \
+    --data <path_to_data> \
+    --iters 600
+```
+
 The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
 when using `--train` and a path to a `test.jsonl` when using `--test`. For more
 details on the data format see the section on [Data](#Data).
@@ -263,4 +274,5 @@ tokens-per-second, using the MLX Example
 data set.
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
+
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
