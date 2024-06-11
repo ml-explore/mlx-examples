@@ -154,7 +154,7 @@ def generate_step(
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
-          one token and and a vector of log probabilities.
+          one token and a vector of log probabilities.
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
@@ -211,7 +211,7 @@ def generate_step(
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
-        return y, logprobs
+        return y, logprobs.squeeze(0)
 
     y, logprobs = _step(y)
 
@@ -317,7 +317,7 @@ def generate(
             if formatter:
                 # We have to finalize so that the prob corresponds to the last segment
                 detokenizer.finalize()
-                formatter(detokenizer.last_segment, logprobs[token].item())
+                formatter(detokenizer.last_segment, mx.exp(logprobs[token]).item())
             else:
                 print(detokenizer.last_segment, end="", flush=True)
 
