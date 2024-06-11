@@ -17,12 +17,12 @@ mlx_lm.server --model <path_to_model_or_hf_repo>
 For example:
 
 ```shell
-mlx_lm.server --model mistralai/Mistral-7B-Instruct-v0.1
+mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit
 ```
 
 This will start a text generation server on port `8080` of the `localhost`
 using Mistral 7B instruct. The model will be downloaded from the provided
-Hugging Face repo if it is not already in the local cache.
+HuggingFace repo if it is not already in the local cache.
 
 To see a full list of options run:
 
@@ -74,3 +74,7 @@ curl localhost:8080/v1/chat/completions \
 
 - `logit_bias`: (Optional) A dictionary mapping token IDs to their bias
   values. Defaults to `None`.
+
+- `logprobs`: (Optional) An integer specifying the number of top tokens and
+  corresponding log probabilities to return for each output in the generated
+  sequence. If set, this can be any value between 1 and 10, inclusive.
