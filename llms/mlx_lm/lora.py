@@ -59,6 +59,7 @@ CONFIG_DEFAULTS = {
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
     "use_dora": False,
+    "train_full": False,
 }
 
 
@@ -81,6 +82,12 @@ def build_parser():
         type=str,
         help="Directory with {train, valid, test}.jsonl files",
     )
+    parser.add_argument(
+            "--train-full",
+            action="store_true",
+            help="Train the full model without LoRA layers.",
+            default=False,
+        )
     parser.add_argument(
         "--lora-layers",
         type=int,
@@ -162,16 +169,16 @@ def train_model(
     valid_set,
     training_callback: TrainingCallback = None,
 ):
-    # Freeze all layers
-    model.freeze()
-
-    # Convert linear layers to lora layers and unfreeze in the process
-    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
-
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file, strict=False)
+    if args.train_full:
+            print("Training full model weights without LoRA layers.")
+            model.unfreeze()
+    else:
+        print("Training model with LoRA.")
+        model.freeze()
+        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+        if args.resume_adapter_file is not None:
+            print(f"Loading pretrained adapters from {args.resume_adapter_file}")
+            model.load_weights(args.resume_adapter_file, strict=False)
 
     print_trainable_parameters(model)
 
