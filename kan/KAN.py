@@ -1,491 +1,79 @@
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
-import math
-
-
-def B_batch(x, grid, k=0, extend=True):
-    """
-    evaludate x on B-spline bases
-
-    Args:
-    -----
-        x : 2D torch.tensor
-            inputs, shape (number of splines, number of samples)
-        grid : 2D torch.tensor
-            grids, shape (number of splines, number of grid points)
-        k : int
-            the piecewise polynomial order of splines.
-        extend : bool
-            If True, k points are extended on both ends. If False, no extension (zero boundary condition). Default: True
-
-    Returns:
-    --------
-        spline values : 3D torch.tensor
-            shape (number of splines, number of B-spline bases (coeffcients), number of samples). The numbef of B-spline bases = number of grid points + k - 1.
-    """
-
-    # x shape: (size, x); grid shape: (size, grid)
-    def extend_grid(grid, k_extend=0):
-        # pad k to left and right
-        # grid shape: (batch, grid)
-        h = (grid[:, [-1]] - grid[:, [0]]) / (grid.shape[1] - 1)
-
-        for i in range(k_extend):
-            grid = mx.concatenate([grid[:, [0]] - h, grid], axis=1)
-            grid = mx.concatenate([grid, grid[:, [-1]] + h], axis=1)
-        return grid
-
-    if extend:
-        grid = extend_grid(grid, k_extend=k)
-
-    grid = grid.unsqueeze(dim=2)
-    x = x.unsqueeze(dim=1)
-
-    if k == 0:
-        value = (x >= grid[:, :-1]) * (x < grid[:, 1:])
-    else:
-        B_km1 = B_batch(
-            x[:, 0], grid=grid[:, :, 0], k=k - 1, extend=False
-        )
-        value = (x - grid[:, : -(k + 1)]) / (
-            grid[:, k:-1] - grid[:, : -(k + 1)]
-        ) * B_km1[:, :-1] + (grid[:, k + 1 :] - x) / (
-            grid[:, k + 1 :] - grid[:, 1:(-k)]
-        ) * B_km1[
-            :, 1:
-        ]
-    return value
-
-
-def curve2coef(x_eval, y_eval, grid, k):
-    """
-    converting B-spline curves to B-spline coefficients using least squares.
-
-    Args:
-    -----
-        x_eval : 2D torch.tensor
-            shape (number of splines, number of samples)
-        y_eval : 2D torch.tensor
-            shape (number of splines, number of samples)
-        grid : 2D torch.tensor
-            shape (number of splines, number of grid points)
-        k : int
-            the piecewise polynomial order of splines.
-    """
-    # x_eval: (size, batch); y_eval: (size, batch); grid: (size, grid); k: scalar
-    mat = B_batch(x_eval, grid, k).permute(0, 2, 1)
-
-    coef = np.linalg.lstsq(
-        mat,
-        y_eval.unsqueeze(dim=2)
-    ).solution[:, :, 0]
-    return coef
-
-
-def coef2curve(x_eval, grid, coef, k):
-    """
-    converting B-spline coefficients to B-spline curves. Evaluate x on B-spline curves (summing up B_batch results over B-spline basis).
-
-    Args:
-    -----
-        x_eval : 2D torch.tensor)
-            shape (number of splines, number of samples)
-        grid : 2D torch.tensor)
-            shape (number of splines, number of grid points)
-        coef : 2D torch.tensor)
-            shape (number of splines, number of coef params). number of coef params = number of grid intervals + k
-        k : int
-            the piecewise polynomial order of splines.
-
-    Returns:
-    --------
-        y_eval : 2D torch.tensor
-            shape (number of splines, number of samples)
-    """
-    # x_eval: (size, batch), grid: (size, grid), coef: (size, coef)
-    # coef: (size, coef), B_batch: (size, coef, batch), summer over coef
-    y_eval = np.einsum("ij,ijk->ik", coef, B_batch(x_eval, grid, k))
-    return y_eval
-
-
-class KANLayer(nn.Module):
-    def __init__(
-        self,
-        in_dim=3,
-        out_dim=2,
-
-        num=5,
-        k=3,
-
-        noise_scale=0.1,
-        scale_base=1.0,
-        scale_sp=1.0,
-
-        base_fun=nn.SiLU,
-
-        grid_eps=0.02,
-        grid_range=[-1, 1],
-
-        sp_trainable=True,
-        sb_trainable=True,
-    ):
-        """'
-        initialize a KANLayer
-
-        Args:
-        -----
-            in_dim : int
-                input dimension. Default: 2.
-            out_dim : int
-                output dimension. Default: 3.
-            num : int
-                the number of grid intervals = G. Default: 5.
-            k : int
-                the order of piecewise polynomial. Default: 3.
-            noise_scale : float
-                the scale of noise injected at initialization. Default: 0.1.
-            scale_base : float
-                the scale of the residual function b(x). Default: 1.0.
-            scale_sp : float
-                the scale of the base function spline(x). Default: 1.0.
-            base_fun : function
-                residual function b(x). Default: torch.nn.SiLU()
-            grid_eps : float
-                When grid_eps = 0, the grid is uniform; when grid_eps = 1, the grid is partitioned using percentiles of samples. 0 < grid_eps < 1 interpolates between the two extremes. Default: 0.02.
-            grid_range : list/np.array of shape (2,)
-                setting the range of grids. Default: [-1,1].
-            sp_trainable : bool
-                If true, scale_sp is trainable. Default: True.
-            sb_trainable : bool
-                If true, scale_base is trainable. Default: True.
-        """
-        super(KANLayer, self).__init__()
-        self.size = size = out_dim * in_dim
-
-        self.out_dim = out_dim
-        self.in_dim = in_dim
-        self.num = num
-        self.k = k
-
-        # shape: (size, num)
-        self.grid = np.einsum(
-            "i,j->ij",
-            np.ones(size),
-            np.linspace(start=grid_range[0], stop=grid_range[1], num=num + 1),
-        )
-
-        self.noises = (
-            (np.random.rand(size, self.grid.shape[1]) - 1 / 2) * noise_scale / num
-        )
-
-        # shape: (size, coef)
-        self.coef = curve2coef(self.grid, self.noises, self.grid, k)
-
-        if isinstance(scale_base, float):
-            self.scale_base = mx.ones(size) * scale_base
-        else:
-            self.scale_base = scale_base
-
-        self.scale_sp = mx.ones(size) * scale_sp
-        self.base_fun = base_fun
-        self.mask = mx.ones(size)
-        self.grid_eps = grid_eps
-        self.weight_sharing = np.arange(size)
-        self.lock_counter = 0
-        self.lock_id = mx.zeros(size)
-
-
-    def __call__(self, x):
-        """
-        KANLayer __call__ given input x
-
-        Args:
-        -----
-            x : 2D torch.float
-                inputs, shape (number of samples, input dimension)
-
-        Returns:
-        --------
-            y : 2D torch.float
-                outputs, shape (number of samples, output dimension)
-            preacts : 3D torch.float
-                fan out x into activations, shape (number of sampels, output dimension, input dimension)
-            postacts : 3D torch.float
-                the outputs of activation functions with preacts as inputs
-            postspline : 3D torch.float
-                the outputs of spline functions with preacts as inputs
-        """
-        batch = x.shape[0]
-        # x: shape (batch, in_dim) => shape (size, batch) (size = out_dim * in_dim)
-        x = (
-            np.einsum(
-                "ij,k->ikj",
-                x,
-                np.ones(self.out_dim)
-            )
-            .reshape(batch, self.size)
-            .permute(1, 0)
-        )
-
-        preacts = (
-            x.permute(1, 0).clone().reshape(batch, self.out_dim, self.in_dim)
-        )
-
-        base = self.base_fun(x).moveaxis(1, 0)  # shape (batch, size) --- .moveaxis(1, 0)
-
-        y = coef2curve(
-            x_eval=x,
-            grid=self.grid[self.weight_sharing],
-            coef=self.coef[self.weight_sharing],
-            k=self.k,
-        )  # shape (size, batch)
-
-        y = y.permute(1, 0)  # shape (batch, size)
-        postspline = y.clone().reshape(batch, self.out_dim, self.in_dim)
-
-        y = (
-            self.scale_base.unsqueeze(dim=0) * base
-            + self.scale_sp.unsqueeze(dim=0) * y
-        )
-
-        y = self.mask[None, :] * y
-        postacts = y.clone().reshape(batch, self.out_dim, self.in_dim)
-        y = mx.sum(y.reshape(batch, self.out_dim, self.in_dim), axis=2)  # shape (batch, out_dim)
-
-        # y shape: (batch, out_dim); preacts shape: (batch, in_dim, out_dim)
-        # postspline shape: (batch, in_dim, out_dim); postacts: (batch, in_dim, out_dim)
-        # postspline is for extension; postacts is for visualization
-        return y, preacts, postacts, postspline
-
-
-    def update_grid_from_samples(self, x):
-        """
-        update grid from samples
-
-        Args:
-        -----
-            x : 2D torch.float
-                inputs, shape (number of samples, input dimension)
-        """
-        batch = x.shape[0]
-        x = (
-            np.einsum(
-                "ij,k->ikj",
-                x,
-                np.ones(self.out_dim,),
-            )
-            .reshape(batch, self.size)
-            .permute(1, 0)
-        )
-        x_pos = mx.sort(x, axis=1)[0]
-
-        y_eval = coef2curve(x_pos, self.grid, self.coef, self.k)
-
-        num_interval = self.grid.shape[1] - 1
-        ids = [int(batch / num_interval * i) for i in range(num_interval)] + [-1]
-
-        grid_adaptive = x_pos[:, ids]
-        margin = 0.01
-
-        grid_uniform = mx.concatenate(
-            [
-                grid_adaptive[:, [0]]
-                - margin
-                + (grid_adaptive[:, [-1]] - grid_adaptive[:, [0]] + 2 * margin)
-                * a
-                for a in np.linspace(0, 1, num=self.grid.shape[1])
-            ],
-            axis=1,
-        )
-
-        self.grid.data = (
-            self.grid_eps * grid_uniform + (1 - self.grid_eps) * grid_adaptive
-        )
-
-        self.coef.data = curve2coef(x_pos, y_eval, self.grid, self.k)
-
-
-    def initialize_grid_from_parent(self, parent, x):
-        """
-        update grid from a parent KANLayer & samples
-
-        Args:
-        -----
-            parent : KANLayer
-                a parent KANLayer (whose grid is usually coarser than the current model)
-            x : 2D torch.float
-                inputs, shape (number of samples, input dimension)
-        """
-        batch = x.shape[0]
-        # preacts: shape (batch, in_dim) => shape (size, batch) (size = out_dim * in_dim)
-        x_eval = (
-            np.einsum(
-                "ij,k->ikj",
-                x,
-                np.ones(self.out_dim)
-            )
-            .reshape(batch, self.size)
-            .permute(1, 0)
-        )
-
-        x_pos = parent.grid
-
-        sp2 = KANLayer(
-            in_dim=1,
-            out_dim=self.size,
-            k=1,
-            num=x_pos.shape[1] - 1,
-            scale_base=0.0,
-        )
-
-        sp2.coef.data = curve2coef(sp2.grid, x_pos, sp2.grid, k=1)
-
-        y_eval = coef2curve(x_eval, parent.grid, parent.coef, parent.k)
-
-        percentile = mx.linspace(-1, 1, self.num + 1)
-
-        self.grid.data = sp2(percentile.unsqueeze(dim=1))[0].permute(1, 0)
-        self.coef.data = curve2coef(x_eval, y_eval, self.grid, self.k)
-
-
-    def get_subset(self, in_id, out_id):
-        """
-        get a smaller KANLayer from a larger KANLayer (used for pruning)
-
-        Args:
-        -----
-            in_id : list
-                id of selected input neurons
-            out_id : list
-                id of selected output neurons
-
-        Returns:
-        --------
-            spb : KANLayer
-        """
-        spb = KANLayer(len(in_id), len(out_id), self.num, self.k, base_fun=self.base_fun)
-
-        spb.grid.data = self.grid.reshape(
-            self.out_dim, self.in_dim, spb.num + 1
-        )[out_id][:, in_id].reshape(-1, spb.num + 1)
-
-        spb.coef.data = self.coef.reshape(
-            self.out_dim, self.in_dim, spb.coef.shape[1]
-        )[out_id][:, in_id].reshape(-1, spb.coef.shape[1])
-
-        spb.scale_base.data = self.scale_base.reshape(
-            self.out_dim, self.in_dim
-        )[out_id][:, in_id].reshape(
-            -1,
-        )
-
-        spb.scale_sp.data = self.scale_sp.reshape(self.out_dim, self.in_dim)[
-            out_id
-        ][:, in_id].reshape(
-            -1,
-        )
-
-        spb.mask.data = self.mask.reshape(self.out_dim, self.in_dim)[out_id][
-            :, in_id
-        ].reshape(
-            -1,
-        )
-
-        spb.in_dim = len(in_id)
-        spb.out_dim = len(out_id)
-        spb.size = spb.in_dim * spb.out_dim
-        return spb
-
-
-    def lock(self, ids):
-        """
-        lock activation functions to share parameters based on ids
-
-        Args:
-        -----
-            ids : list
-                list of ids of activation functions
-
-        """
-        self.lock_counter += 1
-        # ids: [[i1,j1],[i2,j2],[i3,j3],...]
-        for i in range(len(ids)):
-            if i != 0:
-                self.weight_sharing[ids[i][1] * self.in_dim + ids[i][0]] = (
-                    ids[0][1] * self.in_dim + ids[0][0]
-                )
-            self.lock_id[ids[i][1] * self.in_dim + ids[i][0]] = (
-                self.lock_counter
-            )
-
-
-    def unlock(self, ids):
-        """
-        unlock activation functions
-
-        Args:
-        -----
-            ids : list
-                list of ids of activation functions
-        """
-        # check ids are locked
-        num = len(ids)
-        locked = True
-        for i in range(num):
-            locked *= (
-                self.weight_sharing[ids[i][1] * self.in_dim + ids[i][0]]
-                == self.weight_sharing[ids[0][1] * self.in_dim + ids[0][0]]
-            )
-        if not locked:
-            print("they are not locked. unlock failed.")
-            return 0
-        for i in range(len(ids)):
-            self.weight_sharing[ids[i][1] * self.in_dim + ids[i][0]] = (
-                ids[i][1] * self.in_dim + ids[i][0]
-            )
-            self.lock_id[ids[i][1] * self.in_dim + ids[i][0]] = 0
-        self.lock_counter -= 1
-
 
 class KAN(nn.Module):
-    def __init__(
-        self,
-        layers_hidden,
-        num=5,
-        k=3,
-        noise_scale=0.1,
-        scale_base=1.0,
-        scale_sp=1.0,
-        base_fun=nn.SiLU,
-        grid_eps=0.02,
-        grid_range=[-1, 1],
-    ):
+    def __init__(self, layers_hidden, grid_size=5, spline_order=3, base_activation=nn.GELU, grid_range=[-1, 1]):
         super(KAN, self).__init__()
-        self.num = num
-        self.k = k
+        # List of hidden layer dimensions for the neural network.
+        self.layers_hidden = layers_hidden
+        # The number of points in the grid for the spline interpolation.
+        self.grid_size = grid_size
+        # The order of the spline used in the interpolation.
+        self.spline_order = spline_order
+        # Activation function used for the initial transformation of the input.
+        self.base_activation = base_activation()
+        # The range of values over which the grid for spline interpolation is defined.
+        self.grid_range = grid_range
 
-        self.layers = []
+        # Parameters and layer norms initialization
+        self.base_weights = nn.P()  # Parameters for the linear transformations in each layer.
+        self.spline_weights = nn.ParameterList()  # Parameters for the spline-based transformations in each layer.
+        self.layer_norms = nn.ModuleList()  # Layer normalization for each layer to ensure stable training.
+        self.prelus = nn.ModuleList()  # PReLU activations for each layer to introduce non-linearity.
+        self.grids = []  # Stores the computed grid values for spline calculations for each layer.
 
-        for in_dim, out_dim in zip(layers_hidden, layers_hidden[1:]):
-            self.layers.append(
-                KANLayer(
-                    in_dim,
-                    out_dim,
-                    num=num,
-                    k=k,
-                    noise_scale=noise_scale,
-                    scale_base=scale_base,
-                    scale_sp=scale_sp,
-                    base_fun=base_fun,
-                    grid_eps=grid_eps,
-                    grid_range=grid_range,
-                )
-            )
+        # Loop through the layers to initialize weights, norms, and grids
+        for i, (in_features, out_features) in enumerate(zip(layers_hidden, layers_hidden[1:])):
+            # Initialize the base weights with random values for the linear transformation.
+            self.base_weights.append(nn.Parameter(torch.randn(out_features, in_features)))
+            # Initialize the spline weights with random values for the spline transformation.
+            self.spline_weights.append(nn.Parameter(torch.randn(out_features, in_features, grid_size + spline_order)))
+            # Add a layer normalization for stabilizing the output of this layer.
+            self.layer_norms.append(nn.LayerNorm(out_features))
+            # Add a PReLU activation for this layer to provide a learnable non-linearity.
+            self.prelus.append(nn.PReLU())
 
-    def __call__(self, x: mx.array, update_grid=False):
-        for layer in self.layers:
-            if update_grid:
-                layer.update_grid(x)
-            x = layer(x)
+            # Compute the grid values based on the specified range and grid size.
+            h = (self.grid_range[1] - self.grid_range[0]) / grid_size
+            grid = mx.linspace(
+                self.grid_range[0] - h * spline_order,
+                self.grid_range[1] + h * spline_order,
+                grid_size + 2 * spline_order + 1,
+                dtype=torch.float32
+            ).expand(in_features, -1).contiguous()
+            self.grids.append(grid)
+
+        # Initialize the weights using Kaiming uniform distribution for better initial values.
+        for weight in self.base_weights:
+            nn.init.kaiming_uniform_(weight, nonlinearity='linear')
+        for weight in self.spline_weights:
+            nn.init.kaiming_uniform_(weight, nonlinearity='linear')
+
+    def forward(self, x):
+        # Process each layer using the defined base weights, spline weights, norms, and activations.
+        for i, (base_weight, spline_weight, layer_norm, prelu) in enumerate(zip(self.base_weights, self.spline_weights, self.layer_norms, self.prelus)):
+            grid = self._buffers[f'grid_{i}']
+            # Move the input tensor to the device where the weights are located.
+            x = x.to(base_weight.device)
+
+            # Perform the base linear transformation followed by the activation function.
+            base_output = F.linear(self.base_activation(x), base_weight)
+            x_uns = x.unsqueeze(-1)  # Expand dimensions for spline operations.
+            # Compute the basis for the spline using intervals and input values.
+            bases = ((x_uns >= grid[:, :-1]) & (x_uns < grid[:, 1:])).to(x.dtype)
+
+            # Compute the spline basis over multiple orders.
+            for k in range(1, self.spline_order + 1):
+                left_intervals = grid[:, :-(k + 1)]
+                right_intervals = grid[:, k:-1]
+                delta = torch.where(right_intervals == left_intervals, torch.ones_like(right_intervals), right_intervals - left_intervals)
+                bases = ((x_uns - left_intervals) / delta * bases[:, :, :-1]) + \
+                        ((grid[:, k + 1:] - x_uns) / (grid[:, k + 1:] - grid[:, 1:(-k)]) * bases[:, :, 1:])
+            bases = bases.contiguous()
+
+            # Compute the spline transformation and combine it with the base transformation.
+            spline_output = F.linear(bases.view(x.size(0), -1), spline_weight.view(spline_weight.size(0), -1))
+            # Apply layer normalization and PReLU activation to the combined output.
+            x = prelu(layer_norm(base_output + spline_output))
+
         return x
