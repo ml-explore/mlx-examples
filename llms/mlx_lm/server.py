@@ -238,13 +238,12 @@ class APIHandler(BaseHTTPRequestHandler):
               response, used to populate the "usage" field (not used when stream).
             token_logprobs (Optional[List[float]]): The log probabilities per token,
               in token order.
-            tokenizer: (Optional[Union[PreTrainedTokenizer, TokenizerWrapper]]):
-              The tokenizer.
             top_tokens (Optional[List[Tuple[int, float]]]): List of token, logprob
               pairs for the top N tokens at each token position.
 
         Returns:
-            dict: A dictionary containing the response, imitating OpenAI's API
+            dict: A dictionary containing the response, in the same format as
+              OpenAI's API.
         """
         token_logprobs = token_logprobs if token_logprobs else []
         top_logprobs = top_tokens if top_tokens else []
