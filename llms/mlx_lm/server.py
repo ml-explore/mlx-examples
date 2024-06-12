@@ -554,7 +554,7 @@ def main():
     # Building tokenizer_config
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
     if args.chat_template:
-        tokenizer_config['chat_template'] = args.chat_template
+        tokenizer_config["chat_template"] = args.chat_template
 
     model, tokenizer = load(
         args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
