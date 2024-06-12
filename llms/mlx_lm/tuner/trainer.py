@@ -3,7 +3,7 @@
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union, Dict, Any
+from typing import Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -286,12 +286,12 @@ def train(
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
-            save_adapter(model, args.adapter_model_file)
+            save_adapter_model(model, args.adapter_model_file)
             if args.fine_tune_type == "full":
                 checkpoint = (
                     Path(args.adapter_model_file).parent / f"{it:07d}_model.safetensors"
                 )
-                save_adapter(model, checkpoint)
+                save_adapter_model(model, checkpoint)
                 print(
                     f"Iter {it}: Saved adapter weights to "
                     f"{args.adapter_model_file} and {checkpoint}."
@@ -300,7 +300,7 @@ def train(
                 checkpoint = (
                     Path(args.adapter_model_file).parent / f"{it:07d}_adapters.safetensors"
                 )
-                save_adapter(model, checkpoint)
+                save_adapter_model(model, checkpoint)
                 print(
                     f"Iter {it}: Saved adapter weights to "
                     f"{args.adapter_model_file} and {checkpoint}."
