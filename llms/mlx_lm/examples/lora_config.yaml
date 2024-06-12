@@ -35,10 +35,10 @@ steps_per_report: 10
 steps_per_eval: 200
 
 # Load path to resume training with the given adapter weights.
-resume_adapter_file: null
+resume_adapter_model_file: null
 
 # Save/load path for the trained adapter weights.
-adapter_path: "adapters"
+adapter_model_path: "adapters"
 
 # Save the model every N iterations.
 save_every: 100
