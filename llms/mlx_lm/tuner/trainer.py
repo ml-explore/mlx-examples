@@ -3,11 +3,12 @@
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
+from typing import Union, Dict, Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+
 from mlx.utils import tree_flatten
 
 
@@ -50,9 +51,13 @@ class TrainingArgs:
     max_seq_length: int = field(
         default=2048, metadata={"help": "Maximum sequence length."}
     )
-    adapter_file: str = field(
+    adapter_model_file: str = field(
         default="adapters.safetensors",
         metadata={"help": "Save/load path for the trained adapter weights."},
+    )
+    fine_tune_type: str = field(
+            default="lora",
+            metadata={"help": "Type of fine-tuning to perform: lora, dora, or full."},
     )
     grad_checkpoint: bool = field(
         default=False,
@@ -281,22 +286,40 @@ def train(
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
-            save_adapter(model, args.adapter_file)
-            checkpoint = (
-                Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
-            )
-            save_adapter(model, checkpoint)
-            print(
-                f"Iter {it}: Saved adapter weights to "
-                f"{args.adapter_file} and {checkpoint}."
-            )
+            save_adapter(model, args.adapter_model_file)
+            if args.fine_tune_type == "full":
+                checkpoint = (
+                    Path(args.adapter_model_file).parent / f"{it:07d}_model.safetensors"
+                )
+                save_adapter(model, checkpoint)
+                print(
+                    f"Iter {it}: Saved adapter weights to "
+                    f"{args.adapter_model_file} and {checkpoint}."
+                )
+            else:
+                checkpoint = (
+                    Path(args.adapter_model_file).parent / f"{it:07d}_adapters.safetensors"
+                )
+                save_adapter(model, checkpoint)
+                print(
+                    f"Iter {it}: Saved adapter weights to "
+                    f"{args.adapter_model_file} and {checkpoint}."
+                )
 
-    # save final adapter weights
-    save_adapter(model, args.adapter_file)
-    print(f"Saved final adapter weights to {args.adapter_file}.")
+    # Save the full model state if fine-tune-type is full
+    if args.fine_tune_type == "full":
+        full_model_path = Path(args.adapter_model_file)
+        full_model_path.parent.mkdir(parents=True, exist_ok=True)
+        # save_weights(full_model_path, weights=model)
+        save_adapter_model(model, args.adapter_model_file)
+        print(f"Full model state saved to {full_model_path}.")
+    else:
+        # save final adapter weights
+        save_adapter_model(model, args.adapter_model_file)
+        print(f"Saved final adapter weights to {args.adapter_model_file}.")
 
 
-def save_adapter(
+def save_adapter_model(
     model: nn.Module,
     adapter_file: Union[str, Path],
 ):

@@ -2,7 +2,7 @@
 import json
 import types
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Union, Any
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -12,6 +12,9 @@ from mlx.utils import tree_flatten, tree_unflatten
 from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
 from .dora import DoRALinear
 from .lora import LoRALinear, LoRASwitchLinear
+
+
+MAX_FILE_SIZE_GB = 5
 
 
 def build_schedule(schedule_config: Dict):
