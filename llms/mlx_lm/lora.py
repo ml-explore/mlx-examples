@@ -41,7 +41,7 @@ yaml_loader.add_implicit_resolver(
 CONFIG_DEFAULTS = {
     "model": "mlx_model",
     "train": False,
-    "fine-tune-type": "lora",
+    "fine_tune_type": "lora",
     "data": "data/",
     "seed": 0,
     "lora_layers": 16,
