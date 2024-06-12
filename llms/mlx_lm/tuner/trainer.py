@@ -312,7 +312,7 @@ def train(
         full_model_path.parent.mkdir(parents=True, exist_ok=True)
         # save_weights(full_model_path, weights=model)
         save_adapter_model(model, args.adapter_model_file)
-        print(f"Full model state saved to {full_model_path}.")
+        print(f"Saved final full model weights to {full_model_path}.")
     else:
         # save final adapter weights
         save_adapter_model(model, args.adapter_model_file)

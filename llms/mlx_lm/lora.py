@@ -169,7 +169,7 @@ def train_model(
     if args.fine_tune_type == "full":
         print("Training full model weights without LoRA layers.")
         model.unfreeze()
-    elif args.fine_tune_type == "lora" or "dora":
+    elif args.fine_tune_type == "lora":
         print("Training model with LoRA.")
         model.freeze()
         linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
@@ -177,7 +177,7 @@ def train_model(
             print(f"Loading pretrained adapters from {args.resume_adapter_file}")
             model.load_weights(args.resume_adapter_file, strict=False)
     elif args.fine_tune_type == "dora":
-        print("Training model with LoRA.")
+        print("Training model with DoRA.")
         model.freeze()
         linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
         if args.resume_adapter_file is not None:
