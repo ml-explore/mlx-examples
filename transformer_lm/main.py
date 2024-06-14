@@ -157,7 +157,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         default="ptb",
-        choices=["ptb", "wikitext2", "wikitext103"],
+        choices=["enwik8", "ptb", "wikitext2", "wikitext103"],
         help="Dataset to train and evaluate on.",
     )
     parser.add_argument(
