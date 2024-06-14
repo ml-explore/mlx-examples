@@ -52,8 +52,6 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
 
-        assert args.rope_scaling is not None
-        assert isinstance(args.rope_scaling["factor"], float)
         rope_scale = (
             1 / args.rope_scaling["factor"]
             if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
