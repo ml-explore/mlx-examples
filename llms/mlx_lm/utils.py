@@ -134,7 +134,6 @@ def generate_step(
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
     logit_bias: Optional[Dict[int, float]] = None,
-    return_logprobs: bool = False,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.

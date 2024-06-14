@@ -223,6 +223,7 @@ class APIHandler(BaseHTTPRequestHandler):
         completion_token_count: Optional[int] = None,
         token_logprobs: Optional[List[float]] = None,
         top_tokens: Optional[List[Tuple[int, float]]] = None,
+        tokens: Optional[List[int]] = None,
     ) -> dict:
         """
         Generate a single response packet based on response type (stream or
@@ -240,6 +241,7 @@ class APIHandler(BaseHTTPRequestHandler):
               in token order.
             top_tokens (Optional[List[Tuple[int, float]]]): List of token, logprob
               pairs for the top N tokens at each token position.
+            tokens (Optional[List[int]]): List of tokens to return with logprobs structure
 
         Returns:
             dict: A dictionary containing the response, in the same format as
@@ -261,6 +263,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     "logprobs": {
                         "token_logprobs": token_logprobs,
                         "top_logprobs": top_logprobs,
+                        "tokens": tokens,
                     },
                     "finish_reason": finish_reason,
                 }
@@ -337,7 +340,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 top_indices = sorted_indices[: self.logprobs]
                 top_logprobs = logprobs[top_indices]
                 top_token_info = zip(top_indices.tolist(), top_logprobs.tolist())
-                top_tokens.append(list(top_token_info))
+                top_tokens.append(dict(top_token_info))
 
             token_logprobs.append(logprobs[token].item())
 
@@ -365,6 +368,7 @@ class APIHandler(BaseHTTPRequestHandler):
             len(tokens),
             token_logprobs=token_logprobs,
             top_tokens=top_tokens,
+            tokens=tokens,
         )
 
         response_json = json.dumps(response).encode()
