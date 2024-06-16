@@ -59,6 +59,8 @@ class TransformerEncoder(nn.Module):
 
 
 class BertEmbeddings(nn.Module):
+    """  Constructs the embeddings for the BERT model, consisting of word, position, and token type embeddings."""
+
     def __init__(self, config):
         super().__init__()
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
