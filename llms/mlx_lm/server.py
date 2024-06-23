@@ -506,12 +506,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         assert "prompt" in self.body, "Request did not contain a prompt"
         prompt_text = self.body["prompt"]
-        logging.debug(f"Prompt type: '{type(prompt_text)}'")
-        prompt = (
-            prompt_text[0]
-            if isinstance(prompt_text, list)
-            else self.tokenizer.encode(prompt_text)
-        )
+        prompt = self.tokenizer.encode(prompt_text)
         return mx.array(prompt)
 
 

@@ -22,7 +22,7 @@ mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit
 
 This will start a text generation server on port `8080` of the `localhost`
 using Mistral 7B instruct. The model will be downloaded from the provided
-HuggingFace repo if it is not already in the local cache.
+Hugging Face repo if it is not already in the local cache.
 
 To see a full list of options run:
 

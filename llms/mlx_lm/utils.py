@@ -249,7 +249,7 @@ def stream_generate(
     detokenizer = tokenizer.detokenizer
 
     detokenizer.reset()
-    for (token, prob), n in zip(
+    for (token, _), n in zip(
         generate_step(prompt_tokens, model, **kwargs),
         range(max_tokens),
     ):
