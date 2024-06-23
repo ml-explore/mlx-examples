@@ -223,7 +223,7 @@ class APIHandler(BaseHTTPRequestHandler):
         prompt_token_count: Optional[int] = None,
         completion_token_count: Optional[int] = None,
         token_logprobs: Optional[List[float]] = None,
-        top_tokens: Optional[List[Tuple[int, float]]] = None,
+        top_tokens: Optional[List[Dict[int, float]]] = None,
         tokens: Optional[List[int]] = None,
     ) -> dict:
         """
@@ -240,8 +240,8 @@ class APIHandler(BaseHTTPRequestHandler):
               response, used to populate the "usage" field (not used when stream).
             token_logprobs (Optional[List[float]]): The log probabilities per token,
               in token order.
-            top_tokens (Optional[List[Tuple[int, float]]]): List of token, logprob
-              pairs for the top N tokens at each token position.
+            top_tokens (Optional[List[Dict[int, float]]]): List of dictionaries mapping
+              tokens to logprobs for the top N tokens at each token position.
             tokens (Optional[List[int]]): List of tokens to return with logprobs structure
 
         Returns:
