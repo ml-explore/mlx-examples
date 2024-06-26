@@ -98,12 +98,13 @@ def enwik8(save_dir="/tmp"):
     if not os.path.exists(out_file):
         request.urlretrieve("http://mattmahoney.net/dc/enwik8.zip", out_file)
 
-    data = zipfile.ZipFile(out_file).read('enwik8')
+    with zipfile.ZipFile(out_file) as zf:
+        data = zf.read("enwik8")
 
-    num_test_bytes = 5000000 # 90 + 5 + 5 split
+    num_test_bytes = 5000000  # 90 + 5 + 5 split
 
-    train_data = data[:-2*num_test_bytes]
-    valid_data = data[-2*num_test_bytes:-num_test_bytes]
+    train_data = data[: -2 * num_test_bytes]
+    valid_data = data[-2 * num_test_bytes : -num_test_bytes]
     test_data = data[-num_test_bytes:]
 
     vocab = set(c for c in train_data)
