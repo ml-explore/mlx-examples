@@ -151,9 +151,14 @@ Examples GitHub repo has an [example of the WikiSQL
 data](https://github.com/ml-explore/mlx-examples/tree/main/lora/data) in the
 correct format.
 
+Datasets can be specified in `*.jsonl` files locally or loaded from Hugging
+Face. 
+
+### Local Datasets
+
 For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
-loader expects a `test.jsonl` in the data directory.
+loader expects a `test.jsonl` in the data directory. 
 
 Currently, `*.jsonl` files support three data formats: `chat`,
 `completions`, and `text`. Here are three examples of these formats:
@@ -199,7 +204,34 @@ Currently, `*.jsonl` files support three data formats: `chat`,
 Note, the format is automatically determined by the dataset. Note also, keys in
 each line not expected by the loader will be ignored.
 
-For the `chat` and `completions` formats, Hugging Face [chat
+### Hugging Face Datasets
+
+To use Hugging Face datasets, first install the `datasets` package:
+
+```
+pip install datasets
+```
+
+Specify the Hugging Face dataset arguments in a YAML config. For example:
+
+```
+hf_dataset:
+  name: "billsum"
+  prompt_feature: "text"
+  completion_feature: "summary"
+```
+
+- Use `prompt_feature` and `completion_feature` to specify keys for a
+  `completions` dataset. Use `text_feature` to specify the key for a `text`
+  dataset. 
+
+- To specify the train, valid, or test splits, set the corresponding
+  `{train,valid,test}_split` argument. 
+
+- Arguments specified in `config` will be passed as keyword arguments to
+  [`datasets.load_dataset`](https://huggingface.co/docs/datasets/v2.20.0/en/package_reference/loading_methods#datasets.load_dataset).
+
+In general, for the `chat` and `completions` formats, Hugging Face [chat
 templates](https://huggingface.co/blog/chat-templates) are used. This applies
 the model's chat template by default. If the model does not have a chat
 template, then Hugging Face will use a default. For example, the final text in

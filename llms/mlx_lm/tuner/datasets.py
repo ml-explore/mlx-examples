@@ -105,7 +105,9 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
 
         def create_hf_dataset(split: str = None):
             ds = datasets.load_dataset(
-                dataset_name, hf_args.get("configuration"), split=split
+                dataset_name,
+                split=split,
+                **hf_args.get("config", {}),
             )
             if prompt_feature and completion_feature:
                 return CompletionsDataset(
