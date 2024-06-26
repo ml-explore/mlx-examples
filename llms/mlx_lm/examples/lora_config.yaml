@@ -69,3 +69,11 @@ lora_parameters:
 #  warmup: 100 # 0 for no warmup
 #  warmup_init: 1e-7 # 0 if not specified
 #  arguments: [1e-5, 1000, 1e-7] # passed to scheduler
+
+#hf_dataset:
+#  name: "billsum"
+#  train_split: "train[:1000]"
+#  valid_split: "train[-100:]"
+#  prompt_feature: "text"
+#  completion_feature: "summary"
+
