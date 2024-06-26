@@ -1,23 +1,17 @@
 import json
 from pathlib import Path
+from typing import Dict, List
 
 from transformers import PreTrainedTokenizer
 
 
 class Dataset:
     """
-    Light-weight wrapper to hold lines from a jsonl file or iterable mapping
+    Light-weight wrapper to hold a dataset.
     """
 
-    def __init__(self, path: Path = None, text_key: str = "text"):
+    def __init__(self, data: List[Dict[str, str]], text_key: str = "text"):
         self._text_key = text_key
-        if path:
-            with open(path, "r") as fid:
-                self._data = [json.loads(l) for l in fid]
-        else:
-            self._data = None
-
-    def set_data(self, data):
         self._data = data
 
     def __getitem__(self, idx: int):
@@ -35,8 +29,8 @@ class ChatDataset(Dataset):
     https://platform.openai.com/docs/guides/fine-tuning/example-format
     """
 
-    def __init__(self, path: Path, tokenizer: PreTrainedTokenizer):
-        super().__init__(path)
+    def __init__(self, data: List[Dict[str, str]], tokenizer: PreTrainedTokenizer):
+        super().__init__(data)
         self._tokenizer = tokenizer
 
     def __getitem__(self, idx: int):
@@ -56,12 +50,12 @@ class CompletionsDataset(Dataset):
 
     def __init__(
         self,
-        path: Path,
+        data: List[Dict[str, str]],
         tokenizer: PreTrainedTokenizer,
         prompt_key: str = "prompt",
         completion_key: str = "completion",
     ):
-        super().__init__(path)
+        super().__init__(data)
         self._tokenizer = tokenizer
         self._prompt_key = prompt_key
         self._completion_key = completion_key
@@ -84,14 +78,13 @@ def create_dataset(path: Path, tokenizer: PreTrainedTokenizer = None):
     if not path.exists():
         return []
     with open(path, "r") as fid:
-        first_line = next(fid)
-        first_obj = json.loads(first_line)
-    if "messages" in first_obj:
-        return ChatDataset(path, tokenizer)
-    elif "prompt" in first_obj and "completion" in first_obj:
-        return CompletionsDataset(path, tokenizer)
-    elif "text" in first_obj:
-        return Dataset(path)
+        data = [json.loads(l) for l in fid]
+    if "messages" in data[0]:
+        return ChatDataset(data, tokenizer)
+    elif "prompt" in data[0] and "completion" in data[0]:
+        return CompletionsDataset(data, tokenizer)
+    elif "text" in data[0]:
+        return Dataset(data)
     else:
         raise ValueError(
             "Unsupported data format, check the supported formats here:\n"
@@ -100,70 +93,48 @@ def create_dataset(path: Path, tokenizer: PreTrainedTokenizer = None):
 
 
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
-    if args.hf_dataset:
-        from datasets import get_dataset_infos, load_dataset
+    if getattr(args, "hf_dataset", None) is not None:
+        import datasets
 
-        dataset_name = args.hf_dataset["name"]
-        print(f"Loading HF dataset {dataset_name}: {get_dataset_infos(dataset_name)}")
-        train_split = args.hf_dataset.get("train_split", "train[:80%]")
-        valid_split = args.hf_dataset.get("valid_split", "train[-10%:]")
-        test_split = args.hf_dataset.get("test_split")
-        train_ds = load_dataset(
-            dataset_name, args.hf_dataset.get("configuration"), split=train_split
-        )
-        valid_ds = load_dataset(
-            dataset_name, args.hf_dataset.get("configuration"), split=valid_split
-        )
-        test_ds = (
-            load_dataset(
-                dataset_name, args.hf_dataset.get("configuration"), split=test_split
+        hf_args = args.hf_dataset
+        dataset_name = hf_args["name"]
+        print(f"Loading Hugging Face dataset {dataset_name}.")
+        text_feature = hf_args.get("text_feature")
+        prompt_feature = hf_args.get("prompt_feature")
+        completion_feature = hf_args.get("completion_feature")
+
+        def create_hf_dataset(split: str = None):
+            ds = datasets.load_dataset(
+                dataset_name, hf_args.get("configuration"), split=split
             )
-            if args.test
-            else None
-        )
-        text_feature = args.hf_dataset.get("text_feature")
-        prompt_feature = args.hf_dataset.get("prompt_feature")
-        completion_feature = args.hf_dataset.get("completion_feature")
-        if (
-            prompt_feature
-            and prompt_feature in train_ds.features
-            and completion_feature
-            and completion_feature in train_ds.features
-        ):
-            train = CompletionsDataset(
-                None, tokenizer, prompt_feature, completion_feature
-            )
-            train.set_data(train_ds)
-            valid = CompletionsDataset(
-                None, tokenizer, prompt_feature, completion_feature
-            )
-            valid.set_data(valid_ds)
-            if args.test:
-                test = CompletionsDataset(
-                    None, tokenizer, prompt_feature, completion_feature
+            if prompt_feature and completion_feature:
+                return CompletionsDataset(
+                    ds, tokenizer, prompt_feature, completion_feature
                 )
-                test.set_data(test_ds)
+            elif text_feature:
+                return Dataset(train_ds, text_key=text_feature)
             else:
-                test = None
-        elif text_feature and text_feature in train_ds.features:
-            train = Dataset(text_key=text_feature)
-            train.set_data(train_ds)
-            valid = Dataset(text_feature)
-            valid.set_data(valid_ds)
-            if args.test:
-                test = Dataset(text_key=text_feature)
-                test.set_data(test_ds)
-            else:
-                test = None
+                raise ValueError(
+                    "Specify either a prompt and completion feature or a text "
+                    "feature for the Hugging Face dataset."
+                )
+
+        if args.train:
+            train_split = hf_args.get("train_split", "train[:80%]")
+            valid_split = hf_args.get("valid_split", "train[-10%:]")
+            train = create_hf_dataset(split=train_split)
+            valid = create_hf_dataset(split=valid_split)
         else:
-            raise ValueError(
-                "Need to specify either a prompt and completion feature or a text feature which are "
-                "features of the specified HF dataset"
-            )
+            train, valid = [], []
+        if args.test:
+            test = create_hf_dataset(split=hf_args.get("test_split"))
+        else:
+            test = []
 
     else:
         names = ("train", "valid", "test")
         data_path = Path(args.data)
+
         train, valid, test = [
             create_dataset(data_path / f"{n}.jsonl", tokenizer) for n in names
         ]
