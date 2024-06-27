@@ -32,7 +32,7 @@ jobs:
             pip install --upgrade pip
             pip install unittest-xml-reporting
             cd llms/
-            pip install -e .
+            pip install -e ".[testing]"
       - run:
           name: Run Python tests
           command: |
