@@ -38,6 +38,8 @@ To see a description of all the arguments you can do:
 >>> help(generate)
 ```
 
+For a detailed example of response generation with optional arguments, see `mlx_lm/examples/generate_response.py`. 
+
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
 
