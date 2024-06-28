@@ -1,5 +1,4 @@
-from mlx_lm import load, generate
-
+from mlx_lm import generate, load
 
 # Specify the checkpoint
 checkpoint = "mistralai/Mistral-7B-Instruct-v0.3"
@@ -13,9 +12,7 @@ conversation = [{"role": "user", "content": prompt}]
 
 # Transform the prompt into the chat template
 prompt = tokenizer.apply_chat_template(
-    conversation=conversation,
-    tokenize=False,
-    add_generation_prompt=True
+    conversation=conversation, tokenize=False, add_generation_prompt=True
 )
 
 # Specify the maximum number of tokens
@@ -29,7 +26,7 @@ generation_args = {
     "temp": 0.7,
     "repetition_penalty": 1.2,
     "repetition_context_size": 20,
-    "top_p": 0.95
+    "top_p": 0.95,
 }
 
 # Generate a response with the specified settings
@@ -39,5 +36,5 @@ response = generate(
     prompt=prompt,
     max_tokens=max_tokens,
     verbose=verbose,
-    **generation_args
+    **generation_args,
 )
