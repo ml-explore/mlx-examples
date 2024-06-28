@@ -2,7 +2,7 @@ from mlx_lm import load, generate
 
 
 # Specify the checkpoint
-checkpoint = "mlx-community/Mixtral-8x22B-Instruct-v0.1-4bit"
+checkpoint = "mistralai/Mistral-7B-Instruct-v0.3"
 
 # Load the corresponding model and tokenizer
 model, tokenizer = load(path_or_hf_repo=checkpoint)
@@ -25,7 +25,7 @@ max_tokens = 1_000
 verbose = True
 
 # Some optional arguments for causal language model generation
-generation_details = {
+generation_args = {
     "temp": 0.7,
     "repetition_penalty": 1.2,
     "repetition_context_size": 20,
@@ -39,7 +39,5 @@ response = generate(
     prompt=prompt,
     max_tokens=max_tokens,
     verbose=verbose,
-    **generation_details
+    **generation_args
 )
-
-print(response)
