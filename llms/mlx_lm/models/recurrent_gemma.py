@@ -5,19 +5,7 @@ from typing import List, Literal, Optional
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache, create_additive_causal_mask
-
-
-class RecurrentCache:
-
-    def __init__(self):
-        self._cache = (None, None)
-
-    def __getitem__(self, idx):
-        return self._cache[idx]
-
-    def update(self, conv_state, recurrent_state):
-        self._cache = (conv_state, recurrent_state)
+from .base import BaseModelArgs
 
 
 @dataclass
@@ -33,12 +21,58 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     num_hidden_layers: int
     num_key_value_heads: int
-    partial_rotary_factor: float
     rms_norm_eps: float
     rope_theta: float
     attention_window_size: int
     vocab_size: int
     _block_types: List[str]
+
+
+def create_window_causal_mask(N: int, window_size: int):
+    inds = mx.arange(N)
+    linds = inds[:, None]
+    rinds = inds[None]
+    mask = (linds < rinds) | (linds > rinds + window_size)
+    return mask * -1e9
+
+
+class RecurrentCache:
+
+    def __init__(self):
+        self._cache = (None, None)
+
+    def __getitem__(self, idx):
+        return self._cache[idx]
+
+    def update(self, conv_state, recurrent_state):
+        self._cache = (conv_state, recurrent_state)
+
+
+class WindowKVCache:
+
+    def __init__(self, window_size):
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        self.window_size = window_size
+
+    def update_and_fetch(self, keys, values):
+        # TODO consider using rotating buffer here
+        # especially for very long generations
+        def _update(x, v):
+            t = x.shape[2] - self.window_size
+            if t > 0:
+                x = x[..., t:, :]
+            return mx.concatenate([x, v], axis=2)
+
+        self.offset += keys.shape[2]
+        if self.keys is None:
+            self.keys = keys
+            self.values = values
+        else:
+            self.keys = _update(self.keys, keys)
+            self.values = _update(self.values, values)
+        return self.keys, self.values
 
 
 class RMSNorm(nn.Module):
@@ -188,14 +222,6 @@ class RecurrentBlock(nn.Module):
         lru_width: int = None,
         conv1d_temporal_width: int = 4,
     ):
-        """
-        Args:
-          width: The width of the block.
-          num_heads: The number of RG-LRU heads/blocks to use.
-          lru_width: Internal dimension to be projected into for RG-LRU to operate
-            on.
-          conv1d_temporal_width: The temporal width of the 1d convolution.
-        """
         super().__init__()
         self.width = width
         self.num_heads = num_heads
@@ -352,7 +378,6 @@ class ResidualBlock(nn.Module):
             self.temporal_block = RecurrentBlock(
                 width=self.width,
                 num_heads=self.num_heads,
-                # TODO use that?
                 lru_width=self.lru_width,
                 conv1d_temporal_width=self.conv1d_temporal_width,
             )
@@ -361,7 +386,6 @@ class ResidualBlock(nn.Module):
             self.temporal_block = LocalAttentionBlock(
                 width=self.width,
                 num_heads=self.num_heads,
-                # TODO use that?
                 window_size=self.attention_window_size,
             )
 
@@ -429,7 +453,9 @@ class Griffin(nn.Module):
 
         mask = None
         if x.shape[1] > 1:
-            mask = create_additive_causal_mask(x.shape[1])
+            mask = create_window_causal_mask(
+                x.shape[1], self.config.attention_window_size
+            )
             mask = mask.astype(x.dtype)
 
         for i, block in enumerate(self.layers):
@@ -462,14 +488,6 @@ class Model(nn.Module):
     def layers(self):
         return self.model.layers
 
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads
-
     def sanitize(self, weights):
         # Remove unused precomputed rotary freqs
         for k, v in weights.items():
@@ -483,5 +501,5 @@ class Model(nn.Module):
             if layer.temporal_block_type == "recurrent":
                 cache.append(RecurrentCache())
             else:
-                cache.append(KVCache(self.head_dim, self.n_kv_heads))
+                cache.append(WindowKVCache(self.args.attention_window_size))
         return cache
