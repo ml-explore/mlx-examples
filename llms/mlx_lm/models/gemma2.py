@@ -67,8 +67,6 @@ class Attention(nn.Module):
     ) -> mx.array:
         B, L, D = x.shape
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
-        # Detect whether each one has a NaN
-        # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
