@@ -66,11 +66,6 @@ class Attention(nn.Module):
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
         B, L, D = x.shape
-        # Detect NaNs in X
-        """if mx.any(mx.isnan(x)):
-            raise ValueError("x has NaNs")
-        else:
-            pass"""
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
         # Detect whether each one has a NaN
         # Prepare the queries, keys and values for the attention computation
@@ -89,12 +84,6 @@ class Attention(nn.Module):
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
-        # Detect whether the queries, keys and values have NaNs
-
-        """ output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
-        )"""
-        # Manually implement scaled dot product attention
         keys, values = map(repeat, (keys, values))
         scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
         old_dtype = scores.dtype
@@ -105,17 +94,8 @@ class Attention(nn.Module):
         if mask is not None:
             scores = scores + mask
         scores = mx.softmax(scores, axis=-1).astype(old_dtype)
-        """if mx.any(mx.isnan(scores)):
-            raise ValueError("scores has NaNs")"""
-        # Detect whether scores has NaNs
-   
-            #print("Scores is good")
         output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
         output = self.o_proj(output)
-        """if mx.any(mx.isnan(output)):
-            raise ValueError("output has NaNs")
-        else:
-            pass"""
         return  output
 
 
@@ -153,20 +133,10 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        """if mx.any(mx.isnan(x)):
-            raise ValueError("x has NaNs")"""
         r = self.self_attn(self.input_layernorm(x.astype(mx.float32)), mask, cache)
-        """if mx.any(mx.isnan(r)):
-            raise ValueError("r has NaNs")"""
         h = x + self.post_attention_layernorm(r)
-        """if mx.any(mx.isnan(h)):
-            raise ValueError("h has NaNs")"""
         r = self.mlp(self.pre_feedforward_layernorm(h).astype(mx.float16)).astype(mx.float32)
-        """if mx.any(mx.isnan(r)):
-            raise ValueError("r2 has NaNs")"""
         out = h + self.post_feedforward_layernorm(r)
-        """if mx.any(mx.isnan(out)):
-            raise ValueError("out has NaNs")"""
         return out
 
 
