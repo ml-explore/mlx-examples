@@ -22,14 +22,14 @@ def build_parser():
         help="the path to save model files, or the hugging face repo id to use",
     )
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         "-o",
         type=str,
         default=".",
         help="directory to save the outputs",
     )
     parser.add_argument(
-        "--output_format",
+        "--output-format",
         "-f",
         type=str,
         default="all",
@@ -42,7 +42,6 @@ def build_parser():
         default=True,
         help="whether to print out the progress and debug messages",
     )
-
     parser.add_argument(
         "--task",
         type=str,
@@ -58,12 +57,11 @@ def build_parser():
         + sorted([k.title() for k in TO_LANGUAGE_CODE.keys()]),
         help="language spoken in the audio, specify None to perform language detection",
     )
-
     parser.add_argument(
         "--temperature", type=float, default=0, help="temperature to use for sampling"
     )
     parser.add_argument(
-        "--best_of",
+        "--best-of",
         type=optional_int,
         default=5,
         help="number of candidates when sampling with non-zero temperature",
@@ -75,26 +73,25 @@ def build_parser():
         help="optional patience value to use in beam decoding, as in https://arxiv.org/abs/2204.05424, the default (1.0) is equivalent to conventional beam search",
     )
     parser.add_argument(
-        "--length_penalty",
+        "--length-penalty",
         type=float,
         default=None,
         help="optional token length penalty coefficient (alpha) as in https://arxiv.org/abs/1609.08144, uses simple length normalization by default",
     )
-
     parser.add_argument(
-        "--suppress_tokens",
+        "--suppress-tokens",
         type=str,
         default="-1",
         help="comma-separated list of token ids to suppress during sampling; '-1' will suppress most special characters except common punctuations",
     )
     parser.add_argument(
-        "--initial_prompt",
+        "--initial-prompt",
         type=str,
         default=None,
         help="optional text to provide as a prompt for the first window.",
     )
     parser.add_argument(
-        "--condition_on_previous_text",
+        "--condition-on-previous-text",
         type=str2bool,
         default=True,
         help="if True, provide the previous output of the model as a prompt for the next window; disabling may make the text inconsistent across windows, but the model becomes less prone to getting stuck in a failure loop",
@@ -105,75 +102,74 @@ def build_parser():
         default=True,
         help="whether to perform inference in fp16; True by default",
     )
-
     parser.add_argument(
-        "--compression_ratio_threshold",
+        "--compression-ratio-threshold",
         type=optional_float,
         default=2.4,
         help="if the gzip compression ratio is higher than this value, treat the decoding as failed",
     )
     parser.add_argument(
-        "--logprob_threshold",
+        "--logprob-threshold",
         type=optional_float,
         default=-1.0,
         help="if the average log probability is lower than this value, treat the decoding as failed",
     )
     parser.add_argument(
-        "--no_speech_threshold",
+        "--no-speech-threshold",
         type=optional_float,
         default=0.6,
-        help="if the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence",
+        help="if the probability of the  token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence",
     )
     parser.add_argument(
-        "--word_timestamps",
+        "--word-timestamps",
         type=str2bool,
         default=False,
         help="(experimental) extract word-level timestamps and refine the results based on them",
     )
     parser.add_argument(
-        "--prepend_punctuations",
+        "--prepend-punctuations",
         type=str,
         default="\"'“¿([{-",
         help="if word_timestamps is True, merge these punctuation symbols with the next word",
     )
     parser.add_argument(
-        "--append_punctuations",
+        "--append-punctuations",
         type=str,
         default="\"'.。,，!！?？:：”)]}、",
         help="if word_timestamps is True, merge these punctuation symbols with the previous word",
     )
     parser.add_argument(
-        "--highlight_words",
+        "--highlight-words",
         type=str2bool,
         default=False,
         help="(requires --word_timestamps True) underline each word as it is spoken in srt and vtt",
     )
     parser.add_argument(
-        "--max_line_width",
-        type=optional_int,
+        "--max-line-width",
+        type=int,
         default=None,
         help="(requires --word_timestamps True) the maximum number of characters in a line before breaking the line",
     )
     parser.add_argument(
-        "--max_line_count",
-        type=optional_int,
+        "--max-line-count",
+        type=int,
         default=None,
         help="(requires --word_timestamps True) the maximum number of lines in a segment",
     )
     parser.add_argument(
-        "--max_words_per_line",
-        type=optional_int,
+        "--max-words-per-line",
+        type=int,
         default=None,
         help="(requires --word_timestamps True, no effect with --max_line_width) the maximum number of words in a segment",
     )
     parser.add_argument(
-        "--clip_timestamps",
+        "--clip-timestamps",
         type=str,
         default="0",
         help="comma-separated list start,end,start,end,... timestamps (in seconds) of clips to process, where the last end timestamp defaults to the end of the file",
     )
     parser.add_argument(
-        "--hallucination_silence_threshold",
+        "--hallucination-silence-threshold",
         type=optional_float,
         help="(requires --word_timestamps True) skip silent periods longer than this threshold (in seconds) when a possible hallucination is detected",
     )
@@ -183,6 +179,14 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args().__dict__
+    print(f"Raw Args: {args}")
+    print(f"-----")
+    # Convert hyphenated args to underscore
+    args = {k.replace("-", "_"): v for k, v in args.items()}
+
+    if args["verbose"] is True:
+        print(f"Args: {args}")
+
     path_or_hf_repo: str = args.pop("model")
     output_dir: str = args.pop("output_dir")
     output_format: str = args.pop("output_format")
