@@ -23,7 +23,6 @@ class ModelArgs(BaseModelArgs):
     attn_logit_softcapping: float = 50.0
     final_logit_softcapping: float = 30.0
     query_pre_attn_scalar: float = 144.0
-    
 
 
 class RMSNorm(nn.Module):
@@ -46,7 +45,7 @@ class Attention(nn.Module):
         self.repeats = n_heads // n_kv_heads
         self.head_dim = head_dim = args.head_dim
 
-        self.scale=1.0/(args.query_pre_attn_scalar**0.5)
+        self.scale = 1.0 / (args.query_pre_attn_scalar**0.5)
 
         self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=False)
         self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
@@ -70,10 +69,6 @@ class Attention(nn.Module):
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-        def repeat(a):
-            a = mx.concatenate([mx.expand_dims(a, 2)] * self.repeats, axis=2)
-            return a.reshape([B, self.n_heads, a.shape[3], -1])
-
 
         if cache is not None:
             queries = self.rope(queries, offset=cache.offset)
@@ -82,19 +77,28 @@ class Attention(nn.Module):
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
-        keys, values = map(repeat, (keys, values))
-        scores = (queries * self.scale) @ keys.transpose(0, 1, 3, 2)
-        old_dtype = scores.dtype
-        scores = scores
-        scores /= self.attn_logit_softcapping
-        scores = mx.tanh(scores)
+
+        queries = queries * self.scale
+
+        if self.repeats > 1:
+            queries = queries.reshape(
+                B, self.n_kv_heads, self.repeats, L, self.head_dim
+            )
+            keys = mx.expand_dims(keys, 2)
+            values = mx.expand_dims(values, 2)
+
+        scores = queries @ keys.swapaxes(-1, -2)
+        scores = mx.tanh(scores / self.attn_logit_softcapping)
         scores *= self.attn_logit_softcapping
+
         if mask is not None:
             scores = scores + mask
-        scores = mx.softmax(scores, axis=-1).astype(old_dtype)
-        output = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        output = self.o_proj(output)
-        return  output
+        scores = mx.softmax(scores, precise=True, axis=-1)
+        output = scores @ values
+        if self.repeats > 1:
+            output = output.reshape(B, self.n_heads, L, self.head_dim)
+        output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        return self.o_proj(output)
 
 
 class MLP(nn.Module):
@@ -133,7 +137,9 @@ class TransformerBlock(nn.Module):
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x.astype(mx.float32)), mask, cache)
         h = x + self.post_attention_layernorm(r)
-        r = self.mlp(self.pre_feedforward_layernorm(h).astype(mx.float16)).astype(mx.float32)
+        r = self.mlp(self.pre_feedforward_layernorm(h).astype(mx.float16)).astype(
+            mx.float32
+        )
         out = h + self.post_feedforward_layernorm(r)
         return out
 
@@ -188,8 +194,7 @@ class Model(nn.Module):
     ):
         out = self.model(inputs, cache)
         out = self.model.embed_tokens.as_linear(out)
-        out = out / self.final_logit_softcapping
-        out = mx.tanh(out)
+        out = mx.tanh(out / self.final_logit_softcapping)
         out = out * self.final_logit_softcapping
         return out
 
