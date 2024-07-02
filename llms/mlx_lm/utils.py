@@ -181,12 +181,15 @@ def generate_step(
         )
 
     y = prompt
-    kv_heads = (
-        [model.n_kv_heads] * len(model.layers)
-        if isinstance(model.n_kv_heads, int)
-        else model.n_kv_heads
-    )
-    cache = [KVCache(model.head_dim, n) for n in kv_heads]
+    if hasattr(model, "make_cache"):
+        cache = model.make_cache()
+    else:
+        kv_heads = (
+            [model.n_kv_heads] * len(model.layers)
+            if isinstance(model.n_kv_heads, int)
+            else model.n_kv_heads
+        )
+        cache = [KVCache(model.head_dim, n) for n in kv_heads]
 
     repetition_context = prompt.tolist()
 
