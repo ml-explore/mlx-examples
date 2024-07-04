@@ -27,14 +27,13 @@ class ModelArgs(BaseModelArgs):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
 
+
         if self.rope_scaling:
-            required_keys = {"factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
-
             if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
-
+                print(
+                    "[WARNING] rope_scaling 'type' currently only supports 'linear' and 'su'; setting rope scaling to false."
+                )
+                self.rope_scaling = None
 
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
