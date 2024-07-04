@@ -31,7 +31,7 @@ class ModelArgs(BaseModelArgs):
         if self.rope_scaling:
             if self.rope_scaling["type"] != "linear":
                 print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear' and 'su'; setting rope scaling to false."
+                    "[WARNING] rope_scaling 'type' currently only supports 'linear'; setting rope scaling to false."
                 )
                 self.rope_scaling = None
 
