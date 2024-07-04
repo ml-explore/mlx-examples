@@ -96,6 +96,16 @@ mlx_lm.generate \
     --prompt "<your_model_prompt>"
 ```
 
+For Embeddings extraction, you simply have to add the `--generate-embeddings` argument:
+
+```shell
+mlx_lm.generate \
+    --model <path_to_model> \
+    --generate-embeddings \
+    --prompt "<your_model_prompt>"
+```
+
+
 ## Fuse
 
 You can generate a model fused with the low-rank adapters using the
