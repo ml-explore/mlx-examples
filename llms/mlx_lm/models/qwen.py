@@ -147,6 +147,9 @@ class Model(nn.Module):
         )
         self.args = config
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.transformer.wte(inputs)
+
     def __call__(
         self,
         x: mx.array,

@@ -263,6 +263,27 @@ def stream_generate(
     detokenizer.finalize()
     yield detokenizer.last_segment
 
+def generate_embeddings(
+    model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
+    text: str,
+) -> mx.array:
+    """
+    Generate the Embeddings based on the input tones from the model.
+
+    Args:
+       model (nn.Module): The language model.
+       tokenizer (PreTrainedTokenizer): The tokenizer.
+       text (str): The string prompt.
+    """
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
+
+    text_tokens = mx.array(tokenizer.encode(text))
+
+    output_embedings = model.get_input_embeddings(text_tokens)
+    print(f"Generated Embeddings:\n{output_embedings}")
+    return output_embedings
 
 def generate(
     model: nn.Module,

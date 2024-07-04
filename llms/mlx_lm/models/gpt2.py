@@ -157,6 +157,9 @@ class Model(nn.Module):
         self.model_type = args.model_type
         self.model = GPT2Model(args)
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.model.wte(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

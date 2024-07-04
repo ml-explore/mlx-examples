@@ -173,6 +173,9 @@ class Model(nn.Module):
         if not args.tie_word_embeddings:
             self.output = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.model.tok_embeddings(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

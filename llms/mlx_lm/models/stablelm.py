@@ -192,6 +192,9 @@ class Model(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.args = config
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.model.embed_tokens(inputs)
+
     def __call__(
         self,
         x: mx.array,

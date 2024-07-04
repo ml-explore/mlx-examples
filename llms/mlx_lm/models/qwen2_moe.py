@@ -211,6 +211,9 @@ class Model(nn.Module):
         self.model = Qwen2MoeModel(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.model.embed_tokens(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

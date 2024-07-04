@@ -170,6 +170,9 @@ class Model(nn.Module):
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.n_embd, args.vocab_size, bias=False)
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.transformer.wte(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

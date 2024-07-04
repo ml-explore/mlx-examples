@@ -4,7 +4,7 @@ import argparse
 
 import mlx.core as mx
 
-from .utils import generate, load
+from .utils import generate, generate_embeddings, load
 
 DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
@@ -32,6 +32,11 @@ def setup_arg_parser():
         "--trust-remote-code",
         action="store_true",
         help="Enable trusting remote code for tokenizer",
+    )
+    parser.add_argument(
+        "--generate-embeddings",
+        action="store_true",
+        help="Generate the Embeddings from the model",
     )
     parser.add_argument(
         "--eos-token",
@@ -145,16 +150,19 @@ def main():
 
     formatter = colorprint_by_t0 if args.colorize else None
 
-    generate(
-        model,
-        tokenizer,
-        prompt,
-        args.max_tokens,
-        verbose=True,
-        formatter=formatter,
-        temp=args.temp,
-        top_p=args.top_p,
-    )
+    if generate_embeddings:
+        generate_embeddings(model, tokenizer, prompt)
+    else:
+        generate(
+            model,
+            tokenizer,
+            prompt,
+            args.max_tokens,
+            verbose=True,
+            formatter=formatter,
+            temp=args.temp,
+            top_p=args.top_p,
+        )
 
 
 if __name__ == "__main__":

@@ -222,6 +222,9 @@ class Model(nn.Module):
         self.lm_head = nn.Linear(args.d_model, args.vocab_size, bias=False)
         self.args = args
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.transformer.wte(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

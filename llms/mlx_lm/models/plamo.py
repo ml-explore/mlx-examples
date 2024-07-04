@@ -195,6 +195,9 @@ class Model(nn.Module):
         )
         self.args = args
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.model.embed_tokens(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

@@ -150,6 +150,9 @@ class OlmoModel(nn.Module):
         super().__init__()
         self.transformer = Transformer(args)
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.transformer.wte(inputs)
+
     def __call__(
         self,
         inputs: mx.array,

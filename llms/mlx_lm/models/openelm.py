@@ -203,6 +203,9 @@ class Model(nn.Module):
         if not args.share_input_output_layers:
             self.lm_head = nn.Linear(args.model_dim, args.vocab_size, bias=False)
 
+    def get_input_embeddings(self, inputs: mx.array):
+        return self.transformer.token_embeddings(inputs)
+
     def __call__(
         self,
         inputs: mx.array,
