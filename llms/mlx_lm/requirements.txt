@@ -1,6 +1,6 @@
 mlx>=0.14.1
 numpy
-transformers>=4.39.3
+transformers[sentencepiece]>=4.39.3
 protobuf
 pyyaml
 jinja2
