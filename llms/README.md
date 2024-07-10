@@ -38,6 +38,8 @@ To see a description of all the arguments you can do:
 >>> help(generate)
 ```
 
+Check out the [generation example](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm/examples/generate_response.py) to see how to use the API in more detail.
+
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
 

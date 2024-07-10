@@ -173,6 +173,7 @@ class APIHandler(BaseHTTPRequestHandler):
         endpoints = {
             "/v1/completions": self.handle_text_completions,
             "/v1/chat/completions": self.handle_chat_completions,
+            "/chat/completions": self.handle_chat_completions,
         }
 
         if self.path not in endpoints:
