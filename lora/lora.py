@@ -221,12 +221,11 @@ def evaluate(model, dataset, loss, tokenizer, batch_size, num_batches):
     all_losses = []
     ntokens = 0
 
-    # CLI arguments may set num_batches to -1; if so, find the true count
-    if num_batches == -1:
-        num_batches = len(dataset)
+    # num_batches can be -1 to indicate the entire set
+    index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
         
     for it, batch in zip(
-        range(num_batches),
+        index_iterator,
         iterate_batches(dataset, tokenizer, batch_size),
     ):
         losses, toks = loss(model, *batch)
