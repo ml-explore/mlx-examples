@@ -76,6 +76,24 @@ class TestDatasets(unittest.TestCase):
         self.assertTrue(len(valid[0]) > 0)
         self.assertTrue(isinstance(train, datasets.ChatDataset))
 
+    def test_hf(self):
+        args = types.SimpleNamespace(
+            hf_dataset={
+                "name": "billsum",
+                "prompt_feature": "text",
+                "completion_feature": "summary",
+            },
+            test=False,
+            train=True,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_PATH)
+        train, valid, test = datasets.load_dataset(args, tokenizer)
+        self.assertTrue(len(train) > 0)
+        self.assertTrue(len(train[0]) > 0)
+        self.assertTrue(len(valid) > 0)
+        self.assertTrue(len(valid[0]) > 0)
+        self.assertEqual(len(test), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

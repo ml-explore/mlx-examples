@@ -95,6 +95,7 @@ def linear_to_lora_layers(
         "qwen2",
         "qwen2_moe",
         "gemma",
+        "gemma2",
         "starcoder2",
         "cohere",
         "minicpm",

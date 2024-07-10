@@ -120,7 +120,7 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         self.trim_space = trim_space
 
         # Extract the tokens in a list from id to text
-        self.tokenmap = [None] * len(tokenizer.vocab)
+        self.tokenmap = [""] * (max(tokenizer.vocab.values()) + 1)
         for value, tokenid in tokenizer.vocab.items():
             self.tokenmap[tokenid] = value
 

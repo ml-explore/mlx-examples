@@ -26,6 +26,9 @@ setup(
     install_requires=requirements,
     packages=["mlx_lm", "mlx_lm.models", "mlx_lm.tuner"],
     python_requires=">=3.8",
+    extras_require={
+        "testing": ["datasets"],
+    },
     entry_points={
         "console_scripts": [
             "mlx_lm.convert = mlx_lm.convert:main",

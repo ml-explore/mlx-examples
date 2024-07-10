@@ -6,11 +6,14 @@ import logging
 import time
 import uuid
 import warnings
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import List, Literal, NamedTuple, Optional, Union
+from pathlib import Path
+from typing import Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
+from transformers import PreTrainedTokenizer
 
 from .tokenizer_utils import TokenizerWrapper
 from .utils import generate_step, load
@@ -27,18 +30,22 @@ def stopping_criteria(
     eos_token_id: Union[int, None],
 ) -> StopCondition:
     """
-    Determines whether the token generation should stop based on predefined conditions.
+    Determines whether the token generation should stop based on predefined
+    conditions.
 
     Args:
         tokens (List[int]): The current sequence of generated tokens.
-        stop_id_sequences (List[List[[int]]): A list of integer lists, each representing a sequence of token IDs.
-            If the end of the `tokens` list matches any of these sequences, the generation should stop.
-        eos_token_id (Union[int, None]): The token ID that represents the end-of-sequence. If the last token in `tokens` matches this,
-            the generation should stop.
+        stop_id_sequences (List[List[[int]]): A list of integer lists, each
+          representing a sequence of token IDs. If the end of the `tokens`
+          list matches any of these sequences, the generation should stop.
+        eos_token_id (Union[int, None]): The token ID that represents the
+          end-of-sequence. If the last token in `tokens` matches this, the
+          generation should stop.
 
     Returns:
-        StopCondition: A named tuple indicating whether the stop condition has been met (`stop_met`)
-            and how many tokens should be trimmed from the end if it has (`trim_length`).
+        StopCondition: A named tuple indicating whether the stop condition has
+          been met (`stop_met`) and how many tokens should be trimmed from the
+          end if it has (`trim_length`).
     """
     if tokens and tokens[-1] == eos_token_id:
         return StopCondition(stop_met=True, trim_length=1)
@@ -53,7 +60,10 @@ def stopping_criteria(
 
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     default_role_mapping = {
-        "system_prompt": "A chat between a curious user and an artificial intelligence assistant. The assistant follows the given rules no matter what.",
+        "system_prompt": (
+            "A chat between a curious user and an artificial intelligence "
+            "assistant. The assistant follows the given rules no matter what."
+        ),
         "system": "ASSISTANT's RULE: ",
         "user": "USER: ",
         "assistant": "ASSISTANT: ",
@@ -72,14 +82,68 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     return prompt.rstrip()
 
 
+class ModelProvider:
+    def __init__(self, cli_args: argparse.Namespace):
+        """Load models on demand and persist them across the whole process."""
+        self.cli_args = cli_args
+        self.model_key = None
+        self.model = None
+        self.tokenizer = None
+
+        # Preload the default model if it is provided
+        if self.cli_args.model is not None:
+            self.load("default_model")
+
+    def _validate_model_path(self, model_path: str):
+        model_path = Path(model_path)
+        if model_path.exists() and not model_path.is_relative_to(Path.cwd()):
+            raise RuntimeError(
+                "Local models must be relative to the current working dir."
+            )
+
+    def load(self, model_path):
+        if self.model_key == model_path:
+            return self.model, self.tokenizer
+
+        # Remove the old model if it exists.
+        self.model = None
+        self.tokenizer = None
+
+        # Building tokenizer_config
+        tokenizer_config = {
+            "trust_remote_code": True if self.cli_args.trust_remote_code else None
+        }
+        if self.cli_args.chat_template:
+            tokenizer_config["chat_template"] = self.cli_args.chat_template
+
+        if model_path == "default_model" and self.cli_args.model is not None:
+            model, tokenizer = load(
+                self.cli_args.model,
+                adapter_path=self.cli_args.adapter_path,
+                tokenizer_config=tokenizer_config,
+            )
+        else:
+            self._validate_model_path(model_path)
+            model, tokenizer = load(model_path, tokenizer_config=tokenizer_config)
+
+        if self.cli_args.use_default_chat_template:
+            if tokenizer.chat_template is None:
+                tokenizer.chat_template = tokenizer.default_chat_template
+
+        self.model_key = model_path
+        self.model = model
+        self.tokenizer = tokenizer
+
+        return self.model, self.tokenizer
+
+
 class APIHandler(BaseHTTPRequestHandler):
-    def __init__(self, model: nn.Module, tokenizer: TokenizerWrapper, *args, **kwargs):
+    def __init__(self, model_provider: ModelProvider, *args, **kwargs):
         """
         Create static request specific metadata
         """
-        self.model = model
-        self.tokenizer = tokenizer
         self.created = int(time.time())
+        self.model_provider = model_provider
         super().__init__(*args, **kwargs)
 
     def _set_cors_headers(self):
@@ -109,6 +173,7 @@ class APIHandler(BaseHTTPRequestHandler):
         endpoints = {
             "/v1/completions": self.handle_text_completions,
             "/v1/chat/completions": self.handle_chat_completions,
+            "/chat/completions": self.handle_chat_completions,
         }
 
         if self.path not in endpoints:
@@ -136,8 +201,17 @@ class APIHandler(BaseHTTPRequestHandler):
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
         self.logit_bias = self.body.get("logit_bias", None)
-
+        self.logprobs = self.body.get("logprobs", -1)
         self.validate_model_parameters()
+
+        # Load the model if needed
+        try:
+            self.model, self.tokenizer = self.model_provider.load(self.requested_model)
+        except:
+            self._set_completion_headers(404)
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+            return
 
         # Get stop id sequences, if provided
         stop_words = self.body.get("stop")
@@ -184,6 +258,11 @@ class APIHandler(BaseHTTPRequestHandler):
         ):
             raise ValueError("repetition_penalty must be a non-negative float")
 
+        if self.logprobs != -1 and not (0 < self.logprobs <= 10):
+            raise ValueError(
+                f"logprobs must be between 1 and 10 but got {self.logprobs:,}"
+            )
+
         if (
             not isinstance(self.repetition_context_size, int)
             or self.repetition_context_size < 0
@@ -208,24 +287,34 @@ class APIHandler(BaseHTTPRequestHandler):
         finish_reason: Union[Literal["length", "stop"], None],
         prompt_token_count: Optional[int] = None,
         completion_token_count: Optional[int] = None,
+        token_logprobs: Optional[List[float]] = None,
+        top_tokens: Optional[List[Dict[int, float]]] = None,
+        tokens: Optional[List[int]] = None,
     ) -> dict:
         """
-        Generate a single response packet based on response type (stream or not), completion type and parameters.
+        Generate a single response packet based on response type (stream or
+        not), completion type and parameters.
 
         Args:
             text (str): Text generated by model
-            finish_reason (Union[Literal["length", "stop"], None]):
-                The reason the response is being sent: "length", "stop" or None
-            prompt_token_count (Optional[int]):
-                The amount of tokens in the prompt,
-                used to populate the "usage" field (not used when stream)
-            completion_token_count (Optional[int]):
-                The amount of tokens in the response,
-                used to populate the "usage" field (not used when stream)
+            finish_reason (Union[Literal["length", "stop"], None]): The reason the
+              response is being sent: "length", "stop" or `None`.
+            prompt_token_count (Optional[int]): The number of tokens in the prompt,
+              used to populate the "usage" field (not used when stream).
+            completion_token_count (Optional[int]): The number of tokens in the
+              response, used to populate the "usage" field (not used when stream).
+            token_logprobs (Optional[List[float]]): The log probabilities per token,
+              in token order.
+            top_tokens (Optional[List[Dict[int, float]]]): List of dictionaries mapping
+              tokens to logprobs for the top N tokens at each token position.
+            tokens (Optional[List[int]]): List of tokens to return with logprobs structure
 
         Returns:
-            dict: A dictionary containing the response, imitating OpenAI's API
+            dict: A dictionary containing the response, in the same format as
+              OpenAI's API.
         """
+        token_logprobs = token_logprobs if token_logprobs else []
+        top_logprobs = top_tokens if top_tokens else []
 
         # Static response
         response = {
@@ -237,7 +326,11 @@ class APIHandler(BaseHTTPRequestHandler):
             "choices": [
                 {
                     "index": 0,
-                    "logprobs": None,
+                    "logprobs": {
+                        "token_logprobs": token_logprobs,
+                        "top_logprobs": top_logprobs,
+                        "tokens": tokens,
+                    },
                     "finish_reason": finish_reason,
                 }
             ],
@@ -281,8 +374,8 @@ class APIHandler(BaseHTTPRequestHandler):
 
         Args:
             prompt (mx.array): The prompt, in token form inside of a mlx array
-            stop_id_sequences (List[List[int]]):
-                A list of stop words passed to the stopping_criteria function
+            stop_id_sequences (List[List[int]]): A list of stop words passed
+              to the stopping_criteria function
         """
         detokenizer = self.tokenizer.detokenizer
         detokenizer.reset()
@@ -290,7 +383,9 @@ class APIHandler(BaseHTTPRequestHandler):
         finish_reason = "length"
         stop_sequence_suffix = None
         logging.debug(f"Starting completion:")
-        for (token, _), _ in zip(
+        token_logprobs = []
+        top_tokens = []
+        for (token, logprobs), _ in zip(
             generate_step(
                 prompt=prompt,
                 model=self.model,
@@ -305,6 +400,16 @@ class APIHandler(BaseHTTPRequestHandler):
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
+
+            if self.logprobs > 0:
+                sorted_indices = mx.argpartition(-logprobs, kth=self.logprobs - 1)
+                top_indices = sorted_indices[: self.logprobs]
+                top_logprobs = logprobs[top_indices]
+                top_token_info = zip(top_indices.tolist(), top_logprobs.tolist())
+                top_tokens.append(dict(top_token_info))
+
+            token_logprobs.append(logprobs[token].item())
+
             stop_condition = stopping_criteria(
                 tokens, stop_id_sequences, self.tokenizer.eos_token_id
             )
@@ -322,7 +427,15 @@ class APIHandler(BaseHTTPRequestHandler):
             if stop_sequence_suffix is None
             else detokenizer.text[: -len(stop_sequence_suffix)]
         )
-        response = self.generate_response(text, finish_reason, len(prompt), len(tokens))
+        response = self.generate_response(
+            text,
+            finish_reason,
+            len(prompt),
+            len(tokens),
+            token_logprobs=token_logprobs,
+            top_tokens=top_tokens,
+            tokens=tokens,
+        )
 
         response_json = json.dumps(response).encode()
         indent = "\t"  # Backslashes can't be inside of f-strings
@@ -458,7 +571,6 @@ class APIHandler(BaseHTTPRequestHandler):
 
         assert "prompt" in self.body, "Request did not contain a prompt"
         prompt_text = self.body["prompt"]
-
         prompt = self.tokenizer.encode(prompt_text)
         return mx.array(prompt)
 
@@ -466,15 +578,14 @@ class APIHandler(BaseHTTPRequestHandler):
 def run(
     host: str,
     port: int,
-    model: nn.Module,
-    tokenizer: TokenizerWrapper,
+    model_provider: ModelProvider,
     server_class=HTTPServer,
     handler_class=APIHandler,
 ):
     server_address = (host, port)
     httpd = server_class(
         server_address,
-        lambda *args, **kwargs: handler_class(model, tokenizer, *args, **kwargs),
+        lambda *args, **kwargs: handler_class(model_provider, *args, **kwargs),
     )
     warnings.warn(
         "mlx_lm.server is not recommended for production as "
@@ -489,7 +600,6 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        required=True,
         help="The path to the MLX model weights, tokenizer, and config",
     )
     parser.add_argument(
@@ -551,20 +661,7 @@ def main():
         logging.debug(f"Setting cache limit to {args.cache_limit_gb} GB")
         mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
 
-    # Building tokenizer_config
-    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
-    if args.chat_template:
-        tokenizer_config["chat_template"] = args.chat_template
-
-    model, tokenizer = load(
-        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
-    )
-
-    if args.use_default_chat_template:
-        if tokenizer.chat_template is None:
-            tokenizer.chat_template = tokenizer.default_chat_template
-
-    run(args.host, args.port, model, tokenizer)
+    run(args.host, args.port, ModelProvider(args))
 
 
 if __name__ == "__main__":
