@@ -223,7 +223,7 @@ def evaluate(model, dataset, loss, tokenizer, batch_size, num_batches):
 
     # num_batches can be -1 to indicate the entire set
     index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
-        
+
     for it, batch in zip(
         index_iterator,
         iterate_batches(dataset, tokenizer, batch_size),
