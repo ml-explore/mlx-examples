@@ -111,6 +111,8 @@ def linear_to_lora_layers(
         keys = set(["attn.c_attn"])
     elif model.model_type == "gpt2":
         keys = set(["attn.c_attn"])
+    elif model.model_type == "gpt_neox":
+        keys = set(["attention.query_key_value"])
     elif model.model_type == "olmo":
         keys = set(["att_proj"])
     elif model.model_type == "openelm":

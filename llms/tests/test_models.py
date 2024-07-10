@@ -355,6 +355,25 @@ class TestModels(unittest.TestCase):
         model = gpt2.Model(args)
         self.model_test_runner(model, args.model_type, args.vocab_size, args.n_layer)
 
+    def test_gpt_neox(self):
+        from mlx_lm.models import gpt_neox
+
+        args = gpt_neox.ModelArgs(
+            model_type="gpt_neox",
+            max_position_embeddings=2048,
+            hidden_size=6144,
+            num_attention_heads=64,
+            num_hidden_layers=44,
+            layer_norm_eps=1e-5,
+            vocab_size=50432,
+            rotary_emb_base=10_000,
+            rotary_pct=0.25,
+        )
+        model = gpt_neox.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
     def test_openelm(self):
         from mlx_lm.models import openelm
 
