@@ -166,7 +166,7 @@ def train_model(
     model.freeze()
 
     # Convert linear layers to lora layers and unfreeze in the process
-    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, args.use_dora)
 
     # Resume training the given adapters.
     if args.resume_adapter_file is not None:
