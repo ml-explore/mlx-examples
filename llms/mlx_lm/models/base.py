@@ -29,17 +29,17 @@ class DynamicNTKScalingRoPE(nn.Module):
     def __call__(self, x, offset: int = 0):
         seq_len = x.shape[1] + offset
         if seq_len > self.max_position_embeddings:
-            self.base = self.original_base * (
+            base = self.original_base * (
                 (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
             ) ** (self.dims / (self.dims - 2))
         else:
-            self.base = self.original_base
+            base = self.original_base
 
         return mx.fast.rope(
             x,
             self.dims,
             traditional=self.traditional,
-            base=self.base,
+            base=base,
             scale=self.scale,
             offset=offset,
         )
