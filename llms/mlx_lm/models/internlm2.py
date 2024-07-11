@@ -4,7 +4,7 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, DynamicNTKScalingRoPE
 
 
 @dataclass
@@ -14,6 +14,7 @@ class ModelArgs(BaseModelArgs):
     num_hidden_layers: int
     intermediate_size: int
     num_attention_heads: int
+    max_position_embeddings: int
     rms_norm_eps: float
     vocab_size: int
     bias: bool = True
@@ -29,11 +30,15 @@ class ModelArgs(BaseModelArgs):
 
 
         if self.rope_scaling:
-            if self.rope_scaling["type"] != "linear":
-                print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear'; setting rope scaling to false."
+            required_keys = {"factor", "type"}
+            if not all(key in self.rope_scaling for key in required_keys):
+                raise ValueError(f"rope_scaling must contain keys {required_keys}")
+
+            if self.rope_scaling["type"] not in ["linear", "dynamic"]:
+                raise ValueError(
+                    "rope_scaling 'type' currently only supports 'linear' or 'dynamic"
                 )
-                self.rope_scaling = None
+
 
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -55,10 +60,11 @@ class Attention(nn.Module):
         rope_scale = (
             1 / args.rope_scaling["factor"]
             if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
+            else 2.0
         )
-        self.rope = nn.RoPE(
+        self.rope = DynamicNTKScalingRoPE(
             head_dim,
+            max_position_embeddings=args.max_position_embeddings,
             traditional=args.rope_traditional,
             base=args.rope_theta,
             scale=rope_scale,
@@ -183,6 +189,10 @@ class Model(nn.Module):
         else:
             out = self.output(out)
         return out
+
+    def sanitize(self, weights):
+        # Remove unused precomputed rotary freqs
+        return {k: v for k, v in weights.items() if "attention.rope.inv_freq" not in k}
 
     @property
     def layers(self):

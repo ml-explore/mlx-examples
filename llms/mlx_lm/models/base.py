@@ -2,6 +2,47 @@ import inspect
 from dataclasses import dataclass
 
 import mlx.core as mx
+import mlx.nn as nn
+
+
+class DynamicNTKScalingRoPE(nn.Module):
+    """Implements the rotary positional encoding with Dynamic NTK scaling."""
+
+    def __init__(
+        self,
+        dims: int,
+        max_position_embeddings: int = 2048,
+        traditional: bool = False,
+        base: float = 10000,
+        scale: float = 1.0,
+    ):
+        super().__init__()
+        self.max_position_embeddings = max_position_embeddings
+        self.original_base = base
+        self.dims = dims
+        self.traditional = traditional
+        self.scale = scale
+
+    def extra_repr(self):
+        return f"{self.dims}, traditional={self.traditional}, max_position_embeddings={self.max_position_embeddings}, scaling_factor={self.scaling_factor}"
+
+    def __call__(self, x, offset: int = 0):
+        seq_len = x.shape[1] + offset
+        if seq_len > self.max_position_embeddings:
+            self.base = self.original_base * (
+                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
+            ) ** (self.dims / (self.dims - 2))
+        else:
+            self.base = self.original_base
+
+        return mx.fast.rope(
+            x,
+            self.dims,
+            traditional=self.traditional,
+            base=self.base,
+            scale=self.scale,
+            offset=offset,
+        )
 
 
 def create_additive_causal_mask(N: int, offset: int = 0):
