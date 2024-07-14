@@ -115,8 +115,10 @@ class ModelProvider:
         }
         if self.cli_args.chat_template:
             tokenizer_config["chat_template"] = self.cli_args.chat_template
-
-        if model_path == "default_model" and self.cli_args.model is not None:
+        inputed_model_path = Path(self.cli_args.model)
+        if (model_path == "default_model" and self.cli_args.model is not None) or (
+            inputed_model_path.name == model_path
+        ):
             model, tokenizer = load(
                 self.cli_args.model,
                 adapter_path=self.cli_args.adapter_path,
