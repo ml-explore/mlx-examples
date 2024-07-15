@@ -5,11 +5,12 @@ from typing import Dict, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
+from .base import BaseModelArgs
 from .switch_layers import SwitchGLU
 
 
 @dataclass
-class ModelArgs:
+class ModelArgs(BaseModelArgs):
     model_type: str = "deepseek_v2"
     vocab_size: int = 102400
     hidden_size: int = 4096
@@ -20,7 +21,6 @@ class ModelArgs:
     num_key_value_heads: int = 32
     n_shared_experts: Optional[int] = None
     n_routed_experts: Optional[int] = None
-    ep_size: int = 1
     routed_scaling_factor: float = 1.0
     kv_lora_rank: int = 512
     q_lora_rank: int = 1536
@@ -34,34 +34,19 @@ class ModelArgs:
     moe_layer_freq: int = 1
     first_k_dense_replace: int = 0
     norm_topk_prob: bool = False
-    scoring_func: str = "softmax"
-    aux_loss_alpha: float = 0.001
-    seq_aux: bool = True
     hidden_act: str = "silu"
     max_position_embeddings: int = 2048
-    initializer_range: float = 0.02
     rms_norm_eps: float = 1e-6
     use_cache: bool = True
-    pad_token_id: Optional[int] = None
-    bos_token_id: int = 100000
-    eos_token_id: int = 100001
-    pretraining_tp: int = 1
     tie_word_embeddings: bool = False
     rope_theta: float = 10000.0
     rope_scaling: Optional[Dict] = None
     attention_bias: bool = False
     attention_dropout: float = 0.0
-    keys_to_ignore_at_inference: list = field(
-        default_factory=lambda: ["past_key_values"]
-    )
 
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
-
-    @classmethod
-    def from_dict(cls, params: Dict):
-        return cls(**{k: v for k, v in params.items() if k in cls.__dataclass_fields__})
 
 
 def yarn_find_correction_dim(
@@ -353,28 +338,25 @@ class MoEGate(nn.Module):
         self.top_k = config.num_experts_per_tok
         self.n_routed_experts = config.n_routed_experts
         self.routed_scaling_factor = config.routed_scaling_factor
-        self.scoring_func = config.scoring_func
-        self.alpha = config.aux_loss_alpha
-        self.seq_aux = config.seq_aux
         self.topk_method = config.topk_method
         self.n_group = config.n_group
         self.topk_group = config.topk_group
 
         self.norm_topk_prob = config.norm_topk_prob
         self.gating_dim = config.hidden_size
-        init_fn = nn.init.he_uniform()
-        self.weight = init_fn(mx.zeros((self.n_routed_experts, self.gating_dim)))
+        self.weight = mx.zeros((self.n_routed_experts, self.gating_dim))
 
     def __call__(self, x):
         gates = x @ self.weight.T
 
+        scores = mx.softmax(gates, axis=-1, precise=True)
+
         if self.topk_method == "greedy":
             k = self.top_k
             inds = mx.stop_gradient(
-                mx.argpartition(-gates, kth=k - 1, axis=-1)[..., :k]
+                mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k]
             )
-            scores = mx.take_along_axis(gates, inds, axis=-1)
-            scores = mx.softmax(scores, axis=-1, precise=True)
+            scores = mx.take_along_axis(scores, inds, axis=-1)
         elif self.topk_method == "group_limited_greedy":
             raise NotImplementedError("Group limited greedy not implemented")
 
@@ -388,8 +370,6 @@ class DeepseekV2MoE(nn.Module):
         super().__init__()
         self.config = config
         self.num_experts_per_tok = config.num_experts_per_tok
-        self.ep_size = config.ep_size
-        self.experts_per_rank = config.n_routed_experts
         self.switch_mlp = SwitchGLU(
             config.hidden_size, config.moe_intermediate_size, config.n_routed_experts
         )
