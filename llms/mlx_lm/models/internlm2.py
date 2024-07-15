@@ -4,7 +4,7 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, DynamicNTKScalingRoPE
+from .base import BaseModelArgs
 
 
 @dataclass
@@ -28,7 +28,6 @@ class ModelArgs(BaseModelArgs):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
 
-
         if self.rope_scaling:
             required_keys = {"factor", "type"}
             if not all(key in self.rope_scaling for key in required_keys):
@@ -38,6 +37,46 @@ class ModelArgs(BaseModelArgs):
                 raise ValueError(
                     "rope_scaling 'type' currently only supports 'linear' or 'dynamic"
                 )
+
+
+class DynamicNTKScalingRoPE(nn.Module):
+    """Implements the rotary positional encoding with Dynamic NTK scaling."""
+
+    def __init__(
+        self,
+        dims: int,
+        max_position_embeddings: int = 2048,
+        traditional: bool = False,
+        base: float = 10000,
+        scale: float = 1.0,
+    ):
+        super().__init__()
+        self.max_position_embeddings = max_position_embeddings
+        self.original_base = base
+        self.dims = dims
+        self.traditional = traditional
+        self.scale = scale
+
+    def extra_repr(self):
+        return f"{self.dims}, traditional={self.traditional}, max_position_embeddings={self.max_position_embeddings}, scaling_factor={self.scaling_factor}"
+
+    def __call__(self, x, offset: int = 0):
+        seq_len = x.shape[1] + offset
+        if seq_len > self.max_position_embeddings:
+            base = self.original_base * (
+                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
+            ) ** (self.dims / (self.dims - 2))
+        else:
+            base = self.original_base
+
+        return mx.fast.rope(
+            x,
+            self.dims,
+            traditional=self.traditional,
+            base=base,
+            scale=self.scale,
+            offset=offset,
+        )
 
 
 class Attention(nn.Module):
@@ -62,6 +101,7 @@ class Attention(nn.Module):
             if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
             else 2.0
         )
+
         self.rope = DynamicNTKScalingRoPE(
             head_dim,
             max_position_embeddings=args.max_position_embeddings,
