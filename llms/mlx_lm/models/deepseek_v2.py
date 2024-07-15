@@ -1,11 +1,11 @@
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, KVCache
 from .switch_layers import SwitchGLU
 
 
@@ -34,19 +34,11 @@ class ModelArgs(BaseModelArgs):
     moe_layer_freq: int = 1
     first_k_dense_replace: int = 0
     norm_topk_prob: bool = False
-    hidden_act: str = "silu"
     max_position_embeddings: int = 2048
     rms_norm_eps: float = 1e-6
-    use_cache: bool = True
-    tie_word_embeddings: bool = False
     rope_theta: float = 10000.0
     rope_scaling: Optional[Dict] = None
     attention_bias: bool = False
-    attention_dropout: float = 0.0
-
-    def __post_init__(self):
-        if self.num_key_value_heads is None:
-            self.num_key_value_heads = self.num_attention_heads
 
 
 def yarn_find_correction_dim(
@@ -187,7 +179,6 @@ class DeepseekV2Attention(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.config = config
-        self.attention_dropout = config.attention_dropout
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.max_position_embeddings = config.max_position_embeddings
@@ -263,8 +254,8 @@ class DeepseekV2Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[mx.array, Optional[mx.array], Tuple[mx.array, mx.array]]:
+        cache: Optional[KVCache] = None,
+    ) -> mx.array:
         B, L, D = x.shape
 
         if self.q_lora_rank is None:
@@ -324,10 +315,9 @@ class DeepseekV2MLP(nn.Module):
         self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
-        self.act_fn = nn.silu
 
     def __call__(self, x):
-        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        down_proj = self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
         return down_proj
 
 
@@ -413,7 +403,7 @@ class DeepseekV2DecoderLayer(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[KVCache] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
@@ -436,7 +426,7 @@ class DeepseekV2Model(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        cache=None,
+        cache: Optional[KVCache] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
         mask = None
@@ -465,7 +455,7 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
-        cache=None,
+        cache: Optional[KVCache] = None,
     ):
         out = self.model(inputs, cache)
         return self.lm_head(out)
