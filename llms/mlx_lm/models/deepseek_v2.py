@@ -83,7 +83,6 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
         max_position_embeddings=2048,
         base=10000,
         scaling_factor=1.0,
-        original_max_position_embeddings=4096,
         beta_fast=32,
         beta_slow=1,
         mscale=1,
@@ -94,7 +93,6 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.scaling_factor = scaling_factor
-        self.original_max_position_embeddings = original_max_position_embeddings
         self.beta_fast = beta_fast
         self.beta_slow = beta_slow
         self.mscale = mscale
@@ -133,46 +131,30 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
             self.scaling_factor, self.mscale_all_dim
         )
 
-        emb = mx.concatenate((freqs, freqs), axis=-1)
-        self._cos_cached = (mx.cos(emb) * mscale).astype(mx.float32)
-        self._sin_cached = (mx.sin(emb) * mscale).astype(mx.float32)
+        self._cos_cached = mx.cos(freqs) * mscale
+        self._sin_cached = mx.sin(freqs) * mscale
 
-    def __call__(self, x, seq_len: None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
+    def apply_rotary_pos_emb(self, x, cos, sin):
+        x1 = x[..., ::2]
+        x2 = x[..., 1::2]
+        rx1 = x1 * cos - x2 * sin
+        rx2 = x1 * sin + x2 * cos
+        return mx.concatenate([rx1, rx2], axis=-1)
+
+    def __call__(self, x, offset=0):
+        seq_len = offset + x.shape[2]
         if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
             self.set_cos_sin_cache(seq_len=seq_len)
 
-        return (
-            self._cos_cached[:seq_len],
-            self._sin_cached[:seq_len],
+        if self._cos_cached.dtype != x.dtype:
+            self._cos_cached = self._cos_cached.astype(x.dtype)
+            self._sin_cached = self._sin_cached.astype(x.dtype)
+
+        return self.apply_rotary_pos_emb(
+            x,
+            self._cos_cached[offset:seq_len],
+            self._sin_cached[offset:seq_len],
         )
-
-
-def mlx_rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return mx.concatenate((-x2, x1), axis=-1)
-
-
-def mlx_apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=0):
-    cos = mx.expand_dims(cos[position_ids], axis=unsqueeze_dim)
-    sin = mx.expand_dims(sin[position_ids], axis=unsqueeze_dim)
-
-    b, h, s, d = q.shape
-    q = mx.reshape(
-        mx.transpose(mx.reshape(q, (b, h, s, d // 2, 2)), (0, 1, 2, 4, 3)), (b, h, s, d)
-    )
-
-    b, h, s, d = k.shape
-    k = mx.reshape(
-        mx.transpose(mx.reshape(k, (b, h, s, d // 2, 2)), (0, 1, 2, 4, 3)), (b, h, s, d)
-    )
-
-    q_embed = (q * cos) + (mlx_rotate_half(q) * sin)
-    k_embed = (k * cos) + (mlx_rotate_half(k) * sin)
-
-    return q_embed, k_embed
 
 
 class DeepseekV2Attention(nn.Module):
@@ -274,22 +256,16 @@ class DeepseekV2Attention(nn.Module):
         k_nope, values = mx.split(kv, [self.qk_nope_head_dim], axis=-1)
 
         k_pe = mx.concatenate([k_pe] * self.num_heads, axis=1)
-        kv_seq_len = values.shape[-2]
-        if cache is not None:
-            cos, sin = self.rope(q_pe, seq_len=kv_seq_len)
-            N = x.shape[1] + cache.offset
-            positions = mx.arange(cache.offset, N)
-            q_pe, k_pe = mlx_apply_rotary_pos_emb(q_pe, k_pe, cos, sin, positions)
 
+        if cache is not None:
+            q_pe = self.rope(q_pe, cache.offset)
+            k_pe = self.rope(k_pe, cache.offset)
             keys, values = cache.update_and_fetch(
                 mx.concatenate([k_nope, k_pe], axis=-1), values
             )
         else:
-            cos, sin = self.rope(q_pe, seq_len=kv_seq_len)
-            N = x.shape[1] + cache.offset
-            positions = mx.arange(cache.offset, N)
-            q_pe, k_pe = mlx_apply_rotary_pos_emb(q_pe, k_pe, cos, sin, positions)
-
+            q_pe = self.rope(q_pe)
+            k_pe = self.rope(k_pe)
             keys = mx.concatenate([k_nope, k_pe], axis=-1)
 
         queries = mx.concatenate([q_nope, q_pe], axis=-1)
