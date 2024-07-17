@@ -218,6 +218,7 @@ class DeepseekV2Attention(nn.Module):
         rope_kwargs = {
             key: self.config.rope_scaling[key]
             for key in [
+                "original_max_position_embeddings",
                 "beta_fast",
                 "beta_slow",
                 "mscale",
