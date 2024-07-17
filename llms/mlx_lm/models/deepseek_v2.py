@@ -83,6 +83,7 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
         max_position_embeddings=2048,
         base=10000,
         scaling_factor=1.0,
+        original_max_position_embeddings=4096,
         beta_fast=32,
         beta_slow=1,
         mscale=1,
@@ -93,6 +94,7 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.scaling_factor = scaling_factor
+        self.original_max_position_embeddings = original_max_position_embeddings
         self.beta_fast = beta_fast
         self.beta_slow = beta_slow
         self.mscale = mscale
@@ -216,7 +218,6 @@ class DeepseekV2Attention(nn.Module):
         rope_kwargs = {
             key: self.config.rope_scaling[key]
             for key in [
-                "original_max_position_embeddings",
                 "beta_fast",
                 "beta_slow",
                 "mscale",
