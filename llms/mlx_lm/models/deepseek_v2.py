@@ -33,7 +33,6 @@ class ModelArgs(BaseModelArgs):
     num_experts_per_tok: Optional[int] = None
     moe_layer_freq: int = 1
     first_k_dense_replace: int = 0
-    norm_topk_prob: bool = False
     max_position_embeddings: int = 2048
     rms_norm_eps: float = 1e-6
     rope_theta: float = 10000.0
@@ -309,25 +308,27 @@ class MoEGate(nn.Module):
         self.topk_method = config.topk_method
         self.n_group = config.n_group
         self.topk_group = config.topk_group
-
-        self.norm_topk_prob = config.norm_topk_prob
-        self.gating_dim = config.hidden_size
-        self.weight = mx.zeros((self.n_routed_experts, self.gating_dim))
+        self.weight = mx.zeros((self.n_routed_experts, config.hidden_size))
 
     def __call__(self, x):
         gates = x @ self.weight.T
 
         scores = mx.softmax(gates, axis=-1, precise=True)
 
-        if self.topk_method == "greedy":
-            k = self.top_k
-            inds = mx.stop_gradient(
-                mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k]
-            )
-            scores = mx.take_along_axis(scores, inds, axis=-1)
-        elif self.topk_method == "group_limited_greedy":
-            raise NotImplementedError("Group limited greedy not implemented")
+        if self.topk_method == "group_limited_greedy":
+            bsz, seq_len = x.shape[:2]
+            scores = scores.reshape(bsz, seq_len, self.n_group, -1)
+            group_scores = scores.max(axis=-1)
+            k = self.n_group - self.topk_group
+            group_idx = mx.argpartition(group_scores, kth=k - 1, axis=-1)[..., :k]
+            batch_idx = mx.expand_dims(mx.arange(bsz), (1, 2))
+            seq_idx = mx.expand_dims(mx.arange(seq_len), (0, 2))
+            scores[batch_idx, seq_idx, group_idx] = 0.0
+            scores = scores.reshape(bsz, seq_len, -1)
 
+        k = self.top_k
+        inds = mx.stop_gradient(mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k])
+        scores = mx.take_along_axis(scores, inds, axis=-1)
         scores = scores * self.routed_scaling_factor
 
         return inds, scores
