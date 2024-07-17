@@ -14,10 +14,10 @@ class ModelArgs(BaseModelArgs):
     num_hidden_layers: int
     intermediate_size: int
     num_attention_heads: int
-    max_position_embeddings: int
     rms_norm_eps: float
     vocab_size: int
     bias: bool = True
+    max_position_embeddings: int = 32768
     num_key_value_heads: int = None
     rope_theta: float = 10000
     rope_traditional: bool = False
