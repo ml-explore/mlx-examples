@@ -16,6 +16,7 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     rms_norm_eps: float
     vocab_size: int
+    head_dim: Optional[int] = None
     num_key_value_heads: Optional[int] = None
     attention_bias: bool = False
     mlp_bias: bool = False
@@ -45,7 +46,8 @@ class Attention(nn.Module):
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        head_dim = args.hidden_size // n_heads
+        self.head_dim = head_dim = args.head_dim if args.head_dim else args.hidden_size // n_heads
+
         self.scale = head_dim**-0.5
         if hasattr(args, "attention_bias"):
             attention_bias = args.attention_bias
