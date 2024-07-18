@@ -46,7 +46,7 @@ class Attention(nn.Module):
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        self.head_dim = head_dim = args.head_dim if args.head_dim else args.hidden_size // n_heads
+        self.head_dim = head_dim = args.head_dim or args.hidden_size // n_heads
 
         self.scale = head_dim**-0.5
         if hasattr(args, "attention_bias"):
