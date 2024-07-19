@@ -115,7 +115,7 @@ class MambaBlock(nn.Module):
         deltaB = unsqueeze(delta, -1) * unsqueeze(B, 1)
         BX = deltaB * unsqueeze(x, -1)
         if h is None:
-            h = mx.zeros([x.shape[0], self.args.d_inner, self.args.d_state])
+            h = mx.zeros([x.shape[0], self.args.d_inner, self.args.state_size])
         h = deltaA * h + BX
         y = (h @ unsqueeze(C, -1)).squeeze(2)
         y = y + D * x
@@ -189,6 +189,31 @@ class MambaBlock(nn.Module):
         # inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)
         return self.out_proj(output), None # (h, inputs)
 
+    def step(self, x, cache):
+        h, inputs = cache
+
+        xz = self.in_proj(x) # (B, 2*ED)
+        x, z = xz.split(indices_or_sections=2, axis=1) # (B, ED), (B, ED)
+
+        # x branch
+        x_cache = unsqueeze(x, 1)
+        x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.args.conv_kernel-1, :] # (B, ED)
+
+        x = nn.silu(x)
+        y, h = self.ssm_step(x, h)
+
+        # z branch
+        z = nn.silu(z)
+
+        output = y * z
+        output = self.out_proj(output) # (B, D)
+
+        # prepare cache for next call
+        inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1) # (B, conv_kernel-1, ED)
+        cache = (h, inputs)
+
+        return output, cache
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -197,7 +222,7 @@ class ResidualBlock(nn.Module):
         self.norm = nn.RMSNorm(args.d_model)
 
     def __call__(self, inputs: mx.array, cache: Optional[mx.array] = None):
-        output, cache = self.mixer(self.norm(inputs), cache)
+        output, cache = self.mixer.step(self.norm(inputs), cache)
         output = output + inputs
         return output, cache
 
@@ -231,15 +256,47 @@ class Model(nn.Module):
             self.lm_head = nn.Linear(args.d_model, args.vocab_size, bias=False)
 
     def __call__(self, inputs: mx.array, cache=None):
-        out = self.backbone(inputs, cache)
+        out, cache = self.backbone(inputs, cache)
 
         if self.args.tie_word_embeddings:
             out = self.model.embed_tokens.as_linear(out)
-        return out
+        return out, cache
+
+
+    def generate(self, tokenizer=None, prompt: str="Hello", n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
+        self.eval()
+
+        input_ids = mx.array([[3, 3, 3]]) # mx.array(tokenizer(prompt, return_tensors='np').input_ids) # (1, tokens_prompt) # (1, num_tokens)
+
+        caches = [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.d_inner])) for _ in range(self.args.n_layer)]
+
+        for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
+            next_token_logits, caches = self(input_ids[:, i], caches) # (1, vocab_size), caches
+
+            # sample (no sampling when the prompt is being processed)
+            if i+1 >= input_ids.shape[1]:
+
+                if top_k is not None:
+                    values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
+                    mask = next_token_logits < (values[:, 0, None])
+                    next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
+
+                if sample and temperature > 0:
+                    next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
+                else:
+                    next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
+
+                input_ids = mx.concatenate([input_ids, next_token], axis=1)
+
+        # output = [tokenizer.decode(output.tolist()) for output in input_ids][0]
+
+        self.train()
+
+        return next_token # output
 
 
 model = Model(ModelArgs())
 print(model)
 
-logits = model(mx.array([[3, 3, 3]]))
+logits = model.generate()
 print(logits)
