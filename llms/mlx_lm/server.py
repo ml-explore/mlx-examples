@@ -108,6 +108,7 @@ class ModelProvider:
         # Remove the old model if it exists.
         self.model = None
         self.tokenizer = None
+        self.model_key = None
 
         # Building tokenizer_config
         tokenizer_config = {
@@ -173,6 +174,7 @@ class APIHandler(BaseHTTPRequestHandler):
         endpoints = {
             "/v1/completions": self.handle_text_completions,
             "/v1/chat/completions": self.handle_chat_completions,
+            "/chat/completions": self.handle_chat_completions,
         }
 
         if self.path not in endpoints:
