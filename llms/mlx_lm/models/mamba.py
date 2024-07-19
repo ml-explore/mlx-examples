@@ -23,6 +23,10 @@ class ModelArgs(BaseModelArgs):
     conv_kernel: int = 4
     state_size: int = 16
     expand: int = 2
+    time_step_init_scheme: str = "random"
+    time_step_max: float = 0.1
+    time_step_min: float = 0.001
+    time_step_floor: float = 0.0001
 
     def __post_init__(self):
         self.d_inner = self.expand * self.d_model
@@ -30,6 +34,19 @@ class ModelArgs(BaseModelArgs):
         if self.dt_rank == 'auto':
             self.dt_rank = math.ceil(self.d_model / 16)
 
+
+def clamp(x, min=None, max=None):
+    if min is not None:
+        mask_lower = x < min
+    if max is not None:
+        mask_upper = x > max
+
+    if min is not None:
+        if max is not None:
+            return mx.where(mask_upper, max, mx.where(mask_lower, min, x))
+        return mx.where(mask_lower, min, x)
+
+    return mx.where(mask_upper, max, x)
 
 class DepthWiseConv1d(nn.Module):
     def __init__(self, channels, kernel_size, bias, padding):
@@ -45,6 +62,16 @@ class MambaBlock(nn.Module):
         self.dt_proj = nn.Linear(args.dt_rank, args.d_inner, bias=True)
 
         dt_init_std = args.dt_rank**-0.5 * args.state_size
+        if args.time_step_init_scheme == "constant":
+            self.dt_proj.weight = dt_init_std * mx.ones_like(self.dt_proj.weight)
+        elif args.time_step_init_scheme == "random":
+            self.dt_proj.weight = mx.random.uniform(-dt_init_std, dt_init_std, self.dt_proj.weight.shape)
+        else:
+            raise NotImplementedError
+
+        dt = clamp(mx.exp(mx.random.uniform(shape=[args.d_inner]) * (math.log(args.time_step_max) - math.log(args.time_step_min)) + math.log(args.time_step_min)), min=args.time_step_floor)
+        inv_dt = dt + mx.log1p(-mx.exp(-dt))
+        self.dt_proj.bias = inv_dt
 
 
 class ResidualBlock(nn.Module):
