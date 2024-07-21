@@ -3,37 +3,88 @@ from typing import Dict, Optional, Tuple, Union
 
 import math
 
+import torch
+
 import mlx.core as mx
 import mlx.nn as nn
 
-from base import BaseModelArgs, KVCache, create_additive_causal_mask
+from .base import BaseModelArgs
 
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    model_type: str = "mamba"
-    dt_rank: Union[int, str] = "auto"
-    d_model: int = 12 # hidden_size
-    d_inner: int = 2
-    vocab_size: int = 623
-    n_layer: int = 3 # num_hidden_layers
-    tie_word_embeddings: bool = False
-    use_bias: bool = False
-    use_conv_bias: bool = False
-    conv_kernel: int = 4
-    state_size: int = 16
-    expand: int = 2
-    time_step_init_scheme: str = "random"
-    time_step_max: float = 0.1
-    time_step_min: float = 0.001
-    time_step_floor: float = 0.0001
+    model_type: str
+    dt_rank: Union[int, str]
+    d_model: int
+    d_inner: int
+    vocab_size: int
+    n_layer: int
+    use_bias: bool
+    use_conv_bias: bool
+    conv_kernel: int
+    state_size: int
+    expand: int
+    time_step_init_scheme: str
+    time_step_max: float
+    time_step_min: float
+    time_step_floor: float
     pscan: bool = False
+    tie_word_embeddings: bool = False
+    num_hidden_layers: int = None
+    hidden_size: int = None
 
     def __post_init__(self):
         self.d_inner = self.expand * self.d_model
-
+        if self.n_layer is None:
+            self.n_layer = self.num_hidden_layers
+        if self.d_model is None:
+            self.d_model = self.hidden_size
         if self.dt_rank == 'auto':
             self.dt_rank = math.ceil(self.d_model / 16)
+
+
+def pscan_f(A, X):
+    Aa = A
+    Xa = X
+    B, D, L, _ = A.shape
+    num_steps = int(math.log2(L))
+
+    for k in range(num_steps):
+        T = 2 * (Xa.shape[2] // 2)
+        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
+        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
+        Xa[:, :, :, 1] += Aa[:, :, :, 1] * Xa[:, :, :, 0]
+        Aa[:, :, :, 1] *= Aa[:, :, :, 0]
+        A[:, :, 2**(k+1)-1::2**(k+1)] = Aa[:, :, :, 1]
+        X[:, :, 2**(k+1)-1::2**(k+1)] = Xa[:, :, :, 1]
+        Aa = Aa[:, :, :, 1]
+        Xa = Xa[:, :, :, 1]
+
+    for k in range(num_steps-1, -1, -1):
+        Aa = A[:, :, 2**k-1::2**k]
+        Xa = X[:, :, 2**k-1::2**k]
+        step_len = Xa.shape[2]
+        T = 2 * (step_len // 2)
+        if T < step_len:
+            last_val_aa = Aa[:, :, -1] * Aa[:, :, -2]
+            last_val_xa = Xa[:, :, -1] + Aa[:, :, -1] * Xa[:, :, -2]
+        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
+        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
+        Xa[:, :, 1:, 0] += Aa[:, :, 1:, 0] * Xa[:, :, :-1, 1]
+        Aa[:, :, 1:, 0] *= Aa[:, :, :-1, 1]
+        if T == step_len:
+            A[:, :, 2**k-1::2**(k+1)] = Aa[:, :, :, 0]
+            X[:, :, 2**k-1::2**(k+1)] = Xa[:, :, :, 0]
+        else:
+            A[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Aa[:, :, :, 0], mx.array([last_val_aa]).reshape(B, D, 1, -1)], axis=2)
+            X[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Xa[:, :, :, 0], mx.array([last_val_xa]).reshape(B, D, 1, -1)], axis=2)
+
+
+def pscan(A_in, X_in):
+    A = A_in[:].transpose(0, 2, 1, 3)
+    X = X_in[:].transpose(0, 2, 1, 3)
+    pscan_f(A, X)
+    return X.transpose(0, 2, 1, 3)
 
 
 def clamp(x, min=None, max=None):
@@ -41,13 +92,12 @@ def clamp(x, min=None, max=None):
         mask_lower = x < min
     if max is not None:
         mask_upper = x > max
-
     if min is not None:
         if max is not None:
             return mx.where(mask_upper, max, mx.where(mask_lower, min, x))
         return mx.where(mask_lower, min, x)
-
     return mx.where(mask_upper, max, x)
+
 
 def unsqueeze(x, axis):
     assert axis <= len(x.shape)
@@ -61,14 +111,11 @@ def unsqueeze(x, axis):
 class DepthWiseConv1d(nn.Module):
     def __init__(self, channels, kernel_size, bias, padding):
         super().__init__()
-
         self.channels = channels
         self.kernel_size = kernel_size
         self.bias = bias
         self.padding = padding
-
         self.conv1d = nn.Conv1d(in_channels=channels, out_channels=channels, kernel_size=kernel_size, bias=True, padding=padding)
-
         indices = mx.arange(channels)
         mask = mx.zeros_like(self.conv1d.weight)
         mask[indices, :, indices] = 1
@@ -97,13 +144,11 @@ class MambaBlock(nn.Module):
 
         dt = clamp(mx.exp(mx.random.uniform(shape=[args.d_inner]) * (math.log(args.time_step_max) - math.log(args.time_step_min)) + math.log(args.time_step_min)), min=args.time_step_floor)
         self.dt_proj.bias = dt + mx.log1p(-mx.exp(-dt))
-
         A = mx.repeat(mx.arange(1., 16 + 1.).reshape([1, 16]), repeats=args.d_inner, axis=0)
         self.A_log = mx.log(A)
         self.D = mx.ones([args.d_inner])
 
         self.out_proj = nn.Linear(args.d_inner, args.d_model, bias=args.use_bias)
-
 
     def ssm_step(self, x, h):
         A = -mx.exp(self.A_log)
@@ -121,98 +166,70 @@ class MambaBlock(nn.Module):
         y = y + D * x
         return y, h
 
-    def ssm(self, x):
-        A = -mx.exp(self.A_log) # (ED, N)
+    def ssm(self, x): # DONE
+        A = -mx.exp(self.A_log)
         D = self.D
-
-        deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
-
-        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.args.dt_rank, self.args.dt_rank+self.args.state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
-        delta = nn.softplus(self.dt_proj(delta)) # (B, L, ED)
+        delta, B, C = self.x_proj(x).split(indices_or_sections=[self.args.dt_rank, self.args.dt_rank+self.args.state_size], axis=-1)
+        delta = nn.softplus(self.dt_proj(delta))
         if self.args.pscan:
             y = self.selective_scan(x, delta, A, B, C, D)
         else:
             y = self.selective_scan_seq(x, delta, A, B, C, D)
         return y
 
-
-    def selective_scan(self, x, delta, A, B, C, D):
-        deltaA = mx.exp(unsqueeze(delta, -1) * A) # (B, L, ED, N)
-        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2) # (B, L, ED, N)
-
-        BX = deltaB * unsqueeze(x, -1) # (B, L, ED, N)
-
+    def selective_scan(self, x, delta, A, B, C, D): # DONE
+        deltaA = mx.exp(unsqueeze(delta, -1) * A)
+        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2)
+        BX = deltaB * unsqueeze(x, -1)
         hs = pscan(deltaA, BX)
-
-        y = (hs @ unsqueeze(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-
-        y = y + D * x
-
-        return y
+        y = (hs @ unsqueeze(C, -1)).squeeze(3)
+        return y + D * x
 
     def selective_scan_seq(self, x, delta, A, B, C, D):
         _, L, _ = x.shape
-
-        deltaA = mx.exp(unsqueeze(delta, -1) * A) # (B, L, ED, N)
-        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2) # (B, L, ED, N)
-
-        BX = deltaB * unsqueeze(x, -1) # (B, L, ED, N)
-
-        h = mx.zeros([x.shape[0], self.args.d_inner, self.args.state_size]) # (B, ED, N)
+        deltaA = mx.exp(unsqueeze(delta, -1) * A)
+        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2)
+        BX = deltaB * unsqueeze(x, -1)
+        h = mx.zeros([x.shape[0], self.args.d_inner, self.args.state_size])
         hs = []
-
         for t in range(0, L):
             h = deltaA[:, t] * h + BX[:, t]
             hs.append(h)
-
         hs = mx.stack(hs, axis=1)
+        y = (hs @ unsqueeze(C, -1)).squeeze(3)
+        return y + D * x
 
-        y = (hs @ unsqueeze(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-
-        y = y + D * x
-
-        return y
-
-
-    def __call__(self, inputs: mx.array, cache = None):
-        _, L, _ = inputs.shape
-
-        if cache is not None:
-            h, inputs = cache
-
-        x, z = self.in_proj(inputs).split(indices_or_sections=2, axis=2)
-        x_cache = unsqueeze(x, 1)
-        # x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.args.conv_kernel-1, :]
-        x = self.conv1d(x)[:, :L, :]
-        # y, h = self.ssm_step(nn.silu(x), h)
-        output = self.ssm(nn.silu(x)) * nn.silu(z)
-        # inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)
-        return self.out_proj(output), None # (h, inputs)
-
-    def step(self, x, cache):
+    def step(self, x, cache): # Done
         h, inputs = cache
-
-        xz = self.in_proj(x) # (B, 2*ED)
-        x, z = xz.split(indices_or_sections=2, axis=1) # (B, ED), (B, ED)
-
-        # x branch
+        x, z = self.in_proj(x).split(indices_or_sections=2, axis=1)
         x_cache = unsqueeze(x, 1)
-        x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.args.conv_kernel-1, :] # (B, ED)
+        x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.args.conv_kernel-1, :]
+        y, h = self.ssm_step(nn.silu(x), h)
+        output = y * nn.silu(z)
+        output = self.out_proj(output)
+        inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)
+        return output, (h, inputs)
 
-        x = nn.silu(x)
-        y, h = self.ssm_step(x, h)
+    def ssm_step(self, x, h): # Done
+        A = -mx.exp(self.A_log)
+        D = self.D
+        delta, B, C = self.x_proj(x).split(indices_or_sections=[self.args.dt_rank, self.args.dt_rank+self.args.state_size], axis=-1) # (B, dt_rank), (B, N), (B, N)
+        delta = nn.softplus(self.dt_proj(delta))
+        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 1)
+        BX = deltaB * unsqueeze(x, -1)
+        if h is None:
+            h = mx.zeros([x.shape[0], self.args.d_inner, self.args.d_state])
+        h = deltaA * h + BX
+        y = (h @ unsqueeze(C, -1)).squeeze(2)
+        y = y + D * x
+        return y, h
 
-        # z branch
-        z = nn.silu(z)
-
-        output = y * z
-        output = self.out_proj(output) # (B, D)
-
-        # prepare cache for next call
-        inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1) # (B, conv_kernel-1, ED)
-        cache = (h, inputs)
-
-        return output, cache
+    def __call__(self, x): # DONE
+        _, L, _ = x.shape
+        x, z = self.in_proj(x).split(indices_or_sections=2, axis=2)
+        x = self.conv1d(x)[:, :L, :]
+        output = self.ssm(nn.silu(x)) * nn.silu(z)
+        return self.out_proj(output)
 
 
 class ResidualBlock(nn.Module):
@@ -236,13 +253,10 @@ class Mamba(nn.Module):
 
     def __call__(self, inputs: mx.array, cache=None):
         tokens = self.embedding(inputs)
-
         if cache is None:
             cache = [None] * len(self.layers)
-
         for i, layer in enumerate(self.layers):
             h, cache[i] = layer(tokens, cache[i])
-
         h = self.norm_f(h)
         return h, cache
 
@@ -262,41 +276,74 @@ class Model(nn.Module):
             out = self.model.embed_tokens.as_linear(out)
         return out, cache
 
+    def torch_to_mlx_depthwise_weights(self, torch_weights):
+        torch_weights = torch_weights.transpose(2, 1)
+        channels, kernel_size, _ = torch_weights.shape
 
-    def generate(self, tokenizer=None, prompt: str="Hello", n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
-        self.eval()
+        mlx_weights = torch.zeros(channels, kernel_size, channels)
 
-        input_ids = mx.array([[3, 3, 3]]) # mx.array(tokenizer(prompt, return_tensors='np').input_ids) # (1, tokens_prompt) # (1, num_tokens)
+        indices = torch.arange(channels)
+        if torch_weights[:, :, 0].type() == 'torch.BFloat16Tensor':
+            mlx_weights[indices, :, indices] = torch_weights[:, :, 0].float()
+        else:
+            mlx_weights[indices, :, indices] = torch_weights[:, :, 0]
 
-        caches = [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.d_inner])) for _ in range(self.args.n_layer)]
+        return mlx_weights
 
-        for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
-            next_token_logits, caches = self(input_ids[:, i], caches) # (1, vocab_size), caches
+    def sanitize(self, torch_state_dict):
+        new_state_dict = {}
+        for key, value in torch_state_dict.items():
+            if 'conv1d.weight' in key:
+                value = self.torch_to_mlx_depthwise_weights(value)
 
-            # sample (no sampling when the prompt is being processed)
-            if i+1 >= input_ids.shape[1]:
+            if 'conv1d' in key:
+                key = key.replace('conv1d', 'conv1d.conv1d')
 
-                if top_k is not None:
-                    values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
-                    mask = next_token_logits < (values[:, 0, None])
-                    next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
+            if value.type() == 'torch.BFloat16Tensor':
+                new_state_dict[key] = value.half().numpy()
+            else:
+                new_state_dict[key] = value.numpy()
 
-                if sample and temperature > 0:
-                    next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
-                else:
-                    next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
+        return new_state_dict
 
-                input_ids = mx.concatenate([input_ids, next_token], axis=1)
-
-        # output = [tokenizer.decode(output.tolist()) for output in input_ids][0]
-
-        self.train()
-
-        return next_token # output
+    @property
+    def layers(self):
+        return self.model.layers
 
 
-model = Model(ModelArgs())
-print(model)
+#     def generate(self, tokenizer=None, prompt: str="Hello", n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
+#         self.eval()
 
-logits = model.generate()
-print(logits)
+#         input_ids = mx.array([[3, 3, 3]]) # mx.array(tokenizer(prompt, return_tensors='np').input_ids) # (1, tokens_prompt) # (1, num_tokens)
+
+#         caches = [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.d_inner])) for _ in range(self.args.n_layer)]
+
+#         for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
+#             next_token_logits, caches = self(input_ids[:, i], caches) # (1, vocab_size), caches
+
+#             # sample (no sampling when the prompt is being processed)
+#             if i+1 >= input_ids.shape[1]:
+
+#                 if top_k is not None:
+#                     values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
+#                     mask = next_token_logits < (values[:, 0, None])
+#                     next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
+
+#                 if sample and temperature > 0:
+#                     next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
+#                 else:
+#                     next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
+
+#                 input_ids = mx.concatenate([input_ids, next_token], axis=1)
+
+#         # output = [tokenizer.decode(output.tolist()) for output in input_ids][0]
+
+#         self.train()
+
+#         return next_token # output
+
+# model = Model(ModelArgs())
+# print(model)
+
+# logits = model.generate()
+# print(logits)
