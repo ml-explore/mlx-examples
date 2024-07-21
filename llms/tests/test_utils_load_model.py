@@ -32,7 +32,7 @@ class TestLoadModelCustomGetClasses(unittest.TestCase):
             return CustomQwenModel, CustomQwenConfig
 
         model_path = get_model_path(HF_MODEL_PATH)
-        model = load_model(model_path, get_classes=custom_get_classes)
+        model = load_model(model_path, get_model_classes=custom_get_classes)
 
         self.assertIsInstance(model, CustomQwenModel)
         self.assertTrue(hasattr(model, "custom_attribute"))

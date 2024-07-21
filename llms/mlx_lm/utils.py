@@ -355,7 +355,7 @@ def load_model(
     model_path: Path,
     lazy: bool = False,
     model_config: dict = {},
-    get_classes: Callable[[dict], Tuple[Type[nn.Module], Type]] = _get_classes,
+    get_model_classes: Callable[[dict], Tuple[Type[nn.Module], Type]] = _get_classes,
 ) -> nn.Module:
     """
     Load and initialize the model from a given path.
@@ -367,7 +367,7 @@ def load_model(
             when needed. Default: ``False``
         model_config (dict, optional): Configuration parameters for the model.
             Defaults to an empty dictionary.
-        get_classes (Callable[[dict], Tuple[Type[nn.Module], Type]], optional):
+        get_model_classes (Callable[[dict], Tuple[Type[nn.Module], Type]], optional):
             A function that returns the model class and model args class given a config.
             Defaults to the _get_classes function.
 
@@ -396,7 +396,7 @@ def load_model(
     for wf in weight_files:
         weights.update(mx.load(wf))
 
-    model_class, model_args_class = get_classes(config=config)
+    model_class, model_args_class = get_model_classes(config=config)
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
