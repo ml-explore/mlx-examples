@@ -176,7 +176,7 @@ def train_model(
     linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, args.use_dora)
 
     # Resume training the given adapters.
-    if (args.resume_adapter_file and args.resume_training) is not None:
+    if args.resume_adapter_file is not None and args.resume_training:
         raise ValueError(
             "Invalid Arguments: Please select either `--resume-adapter-file` or `--resume-training`, avoid both."
         )
