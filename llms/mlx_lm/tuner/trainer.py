@@ -58,6 +58,12 @@ class TrainingArgs:
         default=False,
         metadata={"help": "Use gradient checkpointing to reduce memory use."},
     )
+    adapters_found_count: int = field(
+        default=0,
+        metadata={
+            "help": "Preserve pre-existing adapters in the adapter path with this offset."
+        },
+    )
 
 
 def default_loss(model, inputs, targets, lengths):
@@ -285,13 +291,33 @@ def train(
             n_tokens = 0
             start = time.perf_counter()
 
-        # Save adapter weights
+        # Save adapter weights, but preserve original adapters if the count of them is known
         if it % args.steps_per_save == 0:
+            # First, save the `adapters.safetensors` file
             save_adapter(model, args.adapter_file)
-            checkpoint = (
-                Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
-            )
+
+            # Preserve all original adapter files if the count is available
+            if args.adapters_found_count == 0:
+                next_adapter_number = it
+            else:
+                next_adapter_number = args.adapters_found_count + it
+
+            # Handle the scenario, if there are ten million adapter filenames in `--resume-training` mode...
+            if next_adapter_number > 9999999 and (args.resume_training is not None):
+                # This is a crash, but re-assure that it will be okay, after minor adjustments
+                print(
+                    f"Iter {it}: Saved adapter weights to {args.adapter_file}, but no more available filenames for checkpoints. Please restart with a new `--adapter-path` directory, and `--resume-adapter-file` from these last saved adapter weights.",
+                    file=sys.stderr,
+                )
+                raise Error(
+                    "Error: Ten million (1e7) adapter filenames have been allocated (and perhaps written, too), but the filenames only support seven (7) digit numbers. Please restart with a new `--adapter-path` directory and `--resume-adapter-file` with the `adapters.safetensors` file from the previous `--adapter-path` directory. After at least one `--save-every` iteration, revert back to the `--resume-training` argument, but with the new adapters directory."
+                )
+
+            # Write the new file
+            next_filename = f"{next_adapter_number:07d}_adapters.safetensors"
+            checkpoint = Path(args.adapter_file).parent / next_filename
             save_adapter(model, checkpoint)
+
             print(
                 f"Iter {it}: Saved adapter weights to "
                 f"{args.adapter_file} and {checkpoint}."

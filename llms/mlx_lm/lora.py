@@ -51,6 +51,7 @@ CONFIG_DEFAULTS = {
     "steps_per_report": 10,
     "steps_per_eval": 200,
     "resume_adapter_file": None,
+    "resume_training": False,
     "adapter_path": "adapters",
     "save_every": 100,
     "test": False,
@@ -108,6 +109,12 @@ def build_parser():
         "--resume-adapter-file",
         type=str,
         help="Load path to resume training with the given adapters.",
+    )
+    parser.add_argument(
+        "--resume-training",
+        action="store_true",
+        help="Resume training from the last saved adapter file found in the adapter path, without overwriting older adapters.",
+        default=None,
     )
     parser.add_argument(
         "--adapter-path",
@@ -169,9 +176,28 @@ def train_model(
     linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, args.use_dora)
 
     # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
+    if (args.resume_adapter_file and args.resume_training) is not None:
+        raise ValueError(
+            "Invalid Arguments: Please select either `--resume-adapter-file` or `--resume-training`, avoid both."
+        )
+    elif args.resume_adapter_file is not None:
         print(f"Loading pretrained adapters from {args.resume_adapter_file}")
         model.load_weights(args.resume_adapter_file, strict=False)
+    elif args.resume_training is not None:
+        if not args.adapter_path:
+            raise ValueError(
+                "Missing Argument: Please include an --adapter-path when using --resume-training, yeah?"
+            )
+        # Determine the highest integer adapter file in --adapter-path
+        search_adapter_path = Path(args.adapter_path)
+        # Cute puzzle math right here: the result is a six digit integer
+        adapters_found_count = int(
+            str(list(search_adapter_path.glob("**/*.safetensors"))[-1])[
+                : -1 * len("_adapters.safetensors")
+            ][-6:]
+        )
+    else:
+        adapters_found_count = 0
 
     print_trainable_parameters(model)
 
@@ -191,6 +217,7 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
+        adapters_found_count=adapters_found_count,
     )
 
     model.train()
@@ -271,6 +298,7 @@ def main():
     for k, v in CONFIG_DEFAULTS.items():
         if args.get(k, None) is None:
             args[k] = v
+
     run(types.SimpleNamespace(**args))
 
 
