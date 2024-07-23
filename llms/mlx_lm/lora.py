@@ -181,7 +181,7 @@ def train_model(
         print("Training model with DoRA.")
         model.freeze()
         # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, use_dora=True)
         if args.resume_adapter_file is not None:
             print(f"Loading pretrained adapters from {args.resume_adapter_file}")
             model.load_weights(args.resume_adapter_file, strict=False, use_dora=True)
