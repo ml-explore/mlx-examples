@@ -184,6 +184,16 @@ def train_model(
             print(f"Loading pretrained adapters from {args.resume_adapter_file}")
             model.load_weights(args.resume_adapter_file, strict=False, use_dora=True)
 
+<<<<<<< HEAD
+=======
+    # Convert linear layers to lora layers and unfreeze in the process
+    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, args.use_dora)
+
+    # Resume training the given adapters.
+    if args.resume_adapter_file is not None:
+        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
+        model.load_weights(args.resume_adapter_file, strict=False)
+>>>>>>> 3f337e0f0ad766379ff6325e29dc6b9b2328e960
 
     print_trainable_parameters(model)
 
