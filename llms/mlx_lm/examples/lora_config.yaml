@@ -4,7 +4,7 @@ model: "mlx_model"
 # Whether or not to train (boolean)
 train: true
 
-# Set the training type, possible types are "lora", "dora", or "full" for full training. Default is lora.
+# Set the training method, possible types are "lora", "dora", or "full" for full training. Default is lora.
 fine_tune_type: lora
 
 # Directory with {train, valid, test}.jsonl files
@@ -35,10 +35,10 @@ steps_per_report: 10
 steps_per_eval: 200
 
 # Load path to resume training with the given adapter weights.
-resume_adapter_model_file: null
+resume_adapter_file: null
 
 # Save/load path for the trained adapter weights.
-adapter_model_path: "adapters"
+adapter_path: "adapters"
 
 # Save the model every N iterations.
 save_every: 100
