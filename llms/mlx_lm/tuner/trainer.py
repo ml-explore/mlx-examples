@@ -296,7 +296,7 @@ def train(
 
             if args.fine_tune_type == "full":
                 checkpoint = (
-                    Path(args.adapter_file).parent / "checkpoints" / f"{it:07d}_model.safetensors"
+                    Path(args.adapter_file).parent / f"{it:07d}_checkpoint.safetensors"
                 )
                 save_adapter_model(model, checkpoint)
                 print(
@@ -318,7 +318,7 @@ def train(
         full_model_path = Path(args.adapter_file)
         full_model_path.parent.mkdir(parents=True, exist_ok=True)
         # save final full model weights
-        save_adapter_model(model, args.adapter_file)
+        save_adapter_model(model, args.adapter_file, is_adapter=False)
         print(f"Saved final full model weights to {full_model_path}.")
     else:
         # save final adapter weights
@@ -329,6 +329,11 @@ def train(
 def save_adapter_model(
     model: nn.Module,
     adapter_file: Union[str, Path],
+    is_adapter: bool = True
 ):
-    flattened_tree = tree_flatten(model.trainable_parameters())
-    mx.save_safetensors(str(adapter_file), dict(flattened_tree))
+    if is_adapter:
+        weights = dict(tree_flatten(model.parameters()))
+        mx.save_safetensors(str(adapter_file), weights)
+    else:
+        adapter_weights = tree_flatten(model.trainable_parameters())
+        mx.save_safetensors(str(adapter_file), dict(adapter_weights))
