@@ -100,8 +100,8 @@ class ModelProvider:
             raise RuntimeError(
                 "Local models must be relative to the current working dir."
             )
-        
-    #Added in adapter_path to load dynamically 
+
+    # Added in adapter_path to load dynamically
     def load(self, model_path, adapter_path=None):
         if self.model_key == model_path:
             return self.model, self.tokenizer
@@ -121,12 +121,16 @@ class ModelProvider:
         if model_path == "default_model" and self.cli_args.model is not None:
             model, tokenizer = load(
                 self.cli_args.model,
-                adapter_path= adapter_path if adapter_path else self.cli_args.adapter_path, #if the user doesn't change the model but adds an adapter path
+                adapter_path=(
+                    adapter_path if adapter_path else self.cli_args.adapter_path
+                ),  # if the user doesn't change the model but adds an adapter path
                 tokenizer_config=tokenizer_config,
             )
         else:
             self._validate_model_path(model_path)
-            model, tokenizer = load(model_path, adapter_path=adapter_path, tokenizer_config=tokenizer_config)
+            model, tokenizer = load(
+                model_path, adapter_path=adapter_path, tokenizer_config=tokenizer_config
+            )
 
         if self.cli_args.use_default_chat_template:
             if tokenizer.chat_template is None:
@@ -209,7 +213,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Load the model if needed
         try:
-            self.model, self.tokenizer = self.model_provider.load(self.requested_model, self.adapter)
+            self.model, self.tokenizer = self.model_provider.load(
+                self.requested_model, self.adapter
+            )
         except:
             self._set_completion_headers(404)
             self.end_headers()
