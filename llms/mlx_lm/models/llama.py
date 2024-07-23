@@ -18,7 +18,7 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float
     vocab_size: int
     head_dim: Optional[int] = None
-    max_position_embeddings: int = None
+    max_position_embeddings: Optional[int] = None
     num_key_value_heads: Optional[int] = None
     attention_bias: bool = False
     mlp_bias: bool = False
@@ -45,6 +45,7 @@ class ModelArgs(BaseModelArgs):
                 raise ValueError(
                     "rope_scaling 'type' currently only supports 'linear', 'dynamic' or 'llama3'"
                 )
+
 
 class DynamicNTKScalingRoPE(nn.Module):
     """Implements the rotary positional encoding with Dynamic NTK scaling and Llama 3 RoPE."""
@@ -76,44 +77,51 @@ class DynamicNTKScalingRoPE(nn.Module):
 
     # source: https://github.com/huggingface/transformers/blob/d5a99dfcee6e94065cb7c83cc8ab6fc5daa0cc4e/src/transformers/modeling_rope_utils.py#L318
     def compute_llama3_base_freq(self):
-        factor = self.rope_scaling["factor"] # `8` in the original implementation
-        low_freq_factor = self.rope_scaling.get("low_freq_factor", 1.0) # `1` in the original implementation
-        high_freq_factor = self.rope_scaling.get("high_freq_factor", 4.0) # `4` in the original implementation
+        factor = self.rope_scaling["factor"]
+        low_freq_factor = self.rope_scaling.get("low_freq_factor", 1.0)
+        high_freq_factor = self.rope_scaling.get("high_freq_factor", 4.0)
         old_context_len = self.rope_scaling.get(
-            "original_max_position_embeddings", 8192 # `8192` in the original implementation
+            "original_max_position_embeddings",
+            8192,
         )
 
         low_freq_wavelen = old_context_len / low_freq_factor
         high_freq_wavelen = old_context_len / high_freq_factor
 
-        freqs = self.original_base ** (
-            mx.arange(0, self.dims, 2).astype(mx.float32) / self.dims
-        )
+        freqs = self.original_base ** (mx.arange(0, self.dims, 2) / self.dims)
         wavelens = 2 * math.pi * freqs
         new_base_freqs = []
 
-        new_base_freqs = mx.zeros_like(freqs)
+        smooths = (wavelens - high_freq_wavelen) / (
+            low_freq_wavelen - high_freq_wavelen
+        )
+        new_base_freqs = freqs * (1 - smooths) * factor + smooths
         new_base_freqs = mx.where(wavelens < high_freq_wavelen, freqs, new_base_freqs)
-        new_base_freqs = mx.where(wavelens > low_freq_wavelen, freqs * factor, new_base_freqs)
-        smooths = (wavelens - high_freq_wavelen) / (low_freq_wavelen - high_freq_wavelen)
-        new_base_freqs = mx.where(mx.logical_and(wavelens <= low_freq_wavelen, wavelens >= high_freq_wavelen), freqs * (1 - smooths) * factor + smooths, new_base_freqs)
-
-        # TODO: It's not so great to have a graph evaluation at each call to RopE (e.g. item). That will be slow.
-        return mx.array(new_base_freqs).mean().item()
+        new_base_freqs = mx.where(
+            wavelens > low_freq_wavelen, freqs * factor, new_base_freqs
+        )
+        return new_base_freqs.mean().item()
 
     def extra_repr(self):
-        return f"{self.dims}, traditional={self.traditional}, max_position_embeddings={self.max_position_embeddings}, scaling_factor={self.scale}, rope_type={self.rope_type}"
+        return (
+            f"{self.dims}, traditional={self.traditional}, "
+            f"max_position_embeddings={self.max_position_embeddings}, "
+            f"scaling_factor={self.scale}, rope_type={self.rope_type}"
+        )
 
     def __call__(self, x, offset: int = 0):
         seq_len = x.shape[1] + offset
+        base = self.base
+        if seq_len > self.max_position_embeddings:
+            base *= (
+                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
+            ) ** (self.dims / (self.dims - 2))
 
         return mx.fast.rope(
             x,
             self.dims,
             traditional=self.traditional,
-            base=self.base * (
-                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
-            ) ** (self.dims / (self.dims - 2)) if seq_len > self.max_position_embeddings else self.base,
+            base=base,
             scale=self.scale,
             offset=offset,
         )
@@ -127,7 +135,9 @@ def initialize_rope(args: ModelArgs):
     rope_scale = 1.0
 
     if rope_scaling is not None:
-        rope_type = rope_scaling.get("type") or rope_scaling.get("rope_type") or "default"
+        rope_type = (
+            rope_scaling.get("type") or rope_scaling.get("rope_type") or "default"
+        )
         if rope_type == "linear":
             rope_scale = 1 / rope_scaling["factor"]
         elif rope_type == "llama3":
