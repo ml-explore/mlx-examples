@@ -32,7 +32,6 @@ class ModelArgs(BaseModelArgs):
             self.num_key_value_heads = self.num_attention_heads
 
         if self.rope_scaling:
-            required_keys = {"factor", "type", "rope_type"}
             if not any(key in self.rope_scaling for key in ["type", "rope_type"]):
                 raise ValueError(
                     f"rope_scaling must contain either 'type' or 'rope_type'"
