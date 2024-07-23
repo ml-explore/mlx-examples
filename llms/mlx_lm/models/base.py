@@ -11,6 +11,19 @@ def create_additive_causal_mask(N: int, offset: int = 0):
     return mask * -1e9
 
 
+class MambaCache:
+    def __init__(self, batch_size, intermediate_size, ssm_state_size, conv_kernel_size):
+        self.h = mx.zeros((batch_size, intermediate_size, ssm_state_size))
+        self.conv_states = mx.zeros((batch_size, conv_kernel_size - 1, intermediate_size))
+
+    def update(self, new_h, new_conv_state):
+        self.h = new_h
+        self.conv_states = mx.concatenate([self.conv_states[:, 1:, :], new_conv_state], axis=1)
+
+    @classmethod
+    def init_cache(cls, batch_size, intermediate_size, ssm_state_size, conv_kernel_size):
+        return cls(batch_size, intermediate_size, ssm_state_size, conv_kernel_size)
+    
 class KVCache:
 
     def __init__(self, head_dim, n_kv_heads):
