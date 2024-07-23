@@ -67,6 +67,7 @@ class DynamicNTKScalingRoPE(nn.Module):
         self.scale = scale
         self.rope_type = rope_type
         self.rope_scaling = rope_scaling
+        self.base = self.compute_base_freq()
 
     def compute_base_freq(self):
         if self.rope_type == "llama3":
@@ -105,18 +106,14 @@ class DynamicNTKScalingRoPE(nn.Module):
 
     def __call__(self, x, offset: int = 0):
         seq_len = x.shape[1] + offset
-        base = self.compute_base_freq()
-
-        if seq_len > self.max_position_embeddings:
-            base *= (
-                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
-            ) ** (self.dims / (self.dims - 2))
 
         return mx.fast.rope(
             x,
             self.dims,
             traditional=self.traditional,
-            base=base,
+            base=self.base * (
+                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
+            ) ** (self.dims / (self.dims - 2)) if seq_len > self.max_position_embeddings else self.base,
             scale=self.scale,
             offset=offset,
         )
