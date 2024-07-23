@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
@@ -17,6 +18,7 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float
     vocab_size: int
     head_dim: Optional[int] = None
+    max_position_embeddings: int = None
     num_key_value_heads: Optional[int] = None
     attention_bias: bool = False
     mlp_bias: bool = False
@@ -30,12 +32,129 @@ class ModelArgs(BaseModelArgs):
             self.num_key_value_heads = self.num_attention_heads
 
         if self.rope_scaling:
-            required_keys = {"factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
+            required_keys = {"factor", "type", "rope_type"}
+            if not any(key in self.rope_scaling for key in ["type", "rope_type"]):
+                raise ValueError(
+                    f"rope_scaling must contain either 'type' or 'rope_type'"
+                )
+            if not "factor" in self.rope_scaling:
+                raise ValueError(f"rope_scaling must contain 'factor'")
+            rope_type = self.rope_scaling.get("type") or self.rope_scaling.get(
+                "rope_type"
+            )
+            if rope_type not in ["linear", "dynamic", "llama3"]:
+                raise ValueError(
+                    "rope_scaling 'type' currently only supports 'linear', 'dynamic' or 'llama3'"
+                )
 
-            if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
+
+class DynamicNTKScalingRoPE(nn.Module):
+    """Implements the rotary positional encoding with Dynamic NTK scaling and Llama 3 RoPE."""
+
+    def __init__(
+        self,
+        dims: int,
+        max_position_embeddings: int = 2048,
+        traditional: bool = False,
+        base: float = 10000,
+        scale: float = 1.0,
+        rope_type: str = "default",
+        rope_scaling: dict = None,
+    ):
+        super().__init__()
+        self.dims = dims
+        self.max_position_embeddings = max_position_embeddings
+        self.traditional = traditional
+        self.original_base = base
+        self.scale = scale
+        self.rope_type = rope_type
+        self.rope_scaling = rope_scaling
+
+    def compute_base_freq(self):
+        if self.rope_type == "llama3":
+            return self.compute_llama3_base_freq()
+        return self.original_base
+
+    def compute_llama3_base_freq(self):
+        factor = self.rope_scaling["factor"]
+        low_freq_factor = self.rope_scaling.get("low_freq_factor", 1.0)
+        high_freq_factor = self.rope_scaling.get("high_freq_factor", 4.0)
+        old_context_len = self.rope_scaling.get(
+            "original_max_position_embeddings", 8192
+        )
+
+        low_freq_wavelen = old_context_len / low_freq_factor
+        high_freq_wavelen = old_context_len / high_freq_factor
+
+        freqs = self.original_base ** (
+            mx.arange(0, self.dims, 2).astype(mx.float32) / self.dims
+        )
+        new_base_freqs = []
+
+        for freq in freqs:
+            wavelen = 2 * math.pi * freq
+            if wavelen < high_freq_wavelen:
+                new_base_freqs.append(freq)
+            elif wavelen > low_freq_wavelen:
+                new_base_freqs.append(freq * factor)
+            else:
+                assert low_freq_wavelen != high_freq_wavelen
+                smooth = (wavelen - high_freq_wavelen) / (
+                    low_freq_wavelen - high_freq_wavelen
+                )
+                new_base_freqs.append(freq * ((1 - smooth) * factor + smooth))
+
+        return mx.array(new_base_freqs).mean()
+
+    def extra_repr(self):
+        return f"{self.dims}, traditional={self.traditional}, max_position_embeddings={self.max_position_embeddings}, scaling_factor={self.scale}, rope_type={self.rope_type}"
+
+    def __call__(self, x, offset: int = 0):
+        seq_len = x.shape[1] + offset
+        base = self.compute_base_freq()
+
+        if seq_len > self.max_position_embeddings:
+            base *= (
+                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
+            ) ** (self.dims / (self.dims - 2))
+
+        return mx.fast.rope(
+            x,
+            self.dims,
+            traditional=self.traditional,
+            base=base,
+            scale=self.scale,
+            offset=offset,
+        )
+
+
+def initialize_rope(args: ModelArgs):
+    head_dim = args.head_dim or args.hidden_size // args.num_attention_heads
+
+    rope_scaling = args.rope_scaling
+    rope_type = "default"
+    rope_scale = 1.0
+
+    if rope_scaling is not None:
+        scaling_type = rope_scaling.get("type") or rope_scaling.get("rope_type")
+        if scaling_type == "linear":
+            rope_scale = 1 / rope_scaling["factor"]
+            rope_type = "default"
+        elif scaling_type == "llama3":
+            rope_scale = 1.0  # The scaling is handled internally for llama3
+            rope_type = "llama3"
+        else:
+            rope_scale = 2.0  # Default scale if type is not recognized
+
+    return DynamicNTKScalingRoPE(
+        dims=head_dim,
+        max_position_embeddings=args.max_position_embeddings,
+        traditional=args.rope_traditional,
+        base=args.rope_theta,
+        scale=rope_scale,
+        rope_type=rope_type,
+        rope_scaling=rope_scaling,
+    )
 
 
 class Attention(nn.Module):
@@ -59,17 +178,7 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
 
-        rope_scale = (
-            1 / args.rope_scaling["factor"]
-            if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
-        )
-        self.rope = nn.RoPE(
-            head_dim,
-            traditional=args.rope_traditional,
-            base=args.rope_theta,
-            scale=rope_scale,
-        )
+        self.rope = initialize_rope(args)
 
     def __call__(
         self,
