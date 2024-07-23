@@ -135,8 +135,6 @@ def initialize_rope(args: ModelArgs):
             rope_scale = 1 / rope_scaling["factor"]
         elif rope_type == "llama3":
             rope_scale = 1.0  # The scaling is handled internally for llama3
-        else:
-            rope_scale = 2.0  # Default scale if type is not recognized
 
     return DynamicNTKScalingRoPE(
         dims=head_dim,
