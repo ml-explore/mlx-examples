@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from einops import rearrange, repeat, einsum
 from typing import Optional , Union ,Tuple
-
+l
 # Dear contributors of the https://github.com/johnma2006/mamba-minimal/tree/master repository, special thanks to Albert Gu and Tri Dao for their articles. (https://arxiv.org/abs/2312.00752)
 
 
@@ -55,14 +55,12 @@ class MambaBlock(nn.Module):
         self.A_log = nn.Parameter(torch.log(A))
         self.D = nn.Parameter(torch.ones(config.d_inner))
         self.out_proj = nn.Linear(config.d_inner, config.d_model, bias=config.bias)
-        self.norm = MambaRMSNorm(config.d_model)
+        # self.norm = MambaRMSNorm(config.d_model)
 
     def forward(self, x):
         (b, l, d) = x.shape
         x_copy = x # There was a separate class for residual, I deleted that part and added it here.
-        x = self.norm(x)
-        x_and_res = self.in_proj(x)  # shape (b, l, 2 * d_in)
-        (x, res) = x_and_res.split(split_size=[self.config.d_inner, self.config.d_inner], dim=-1)
+        x, res = self.in_proj(self.norm(x)).split(split_size=[self.config.d_inner, self.config.d_inner], dim=-1)
 
         x = rearrange(x, 'b l d_in -> b d_in l')
         x = self.conv1d(x)[:, :, :l]
