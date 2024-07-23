@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
@@ -89,7 +88,7 @@ class DynamicNTKScalingRoPE(nn.Module):
         high_freq_wavelen = old_context_len / high_freq_factor
 
         freqs = self.original_base ** (mx.arange(0, self.dims, 2) / self.dims)
-        wavelens = 2 * math.pi * freqs
+        wavelens = 2 * mx.pi * freqs
         new_base_freqs = []
 
         smooths = (wavelens - high_freq_wavelen) / (
