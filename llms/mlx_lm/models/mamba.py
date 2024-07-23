@@ -1,9 +1,11 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Union
 
 import math
 
 import torch
+
+# import tokenizer
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -13,7 +15,7 @@ from .base import BaseModelArgs
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    model_type: str
+    model_type: str = "mamba"
     dt_rank: Union[int, str]
     d_model: int
     d_inner: int
@@ -43,7 +45,7 @@ class ModelArgs(BaseModelArgs):
             self.dt_rank = math.ceil(self.d_model / 16)
 
 
-def pscan_f(A, X):
+def pscan_main(A, X):
     Aa = A
     Xa = X
     B, D, L, _ = A.shape
@@ -83,7 +85,7 @@ def pscan_f(A, X):
 def pscan(A_in, X_in):
     A = A_in[:].transpose(0, 2, 1, 3)
     X = X_in[:].transpose(0, 2, 1, 3)
-    pscan_f(A, X)
+    pscan_main(A, X)
     return X.transpose(0, 2, 1, 3)
 
 
@@ -310,37 +312,35 @@ class Model(nn.Module):
     def layers(self):
         return self.model.layers
 
+    def generate(self, tokenizer=None, prompt: str="Hello", n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
+        self.eval()
 
-#     def generate(self, tokenizer=None, prompt: str="Hello", n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
-#         self.eval()
+        input_ids = mx.array(tokenizer(prompt, return_tensors='np').input_ids)
 
-#         input_ids = mx.array([[3, 3, 3]]) # mx.array(tokenizer(prompt, return_tensors='np').input_ids) # (1, tokens_prompt) # (1, num_tokens)
+        caches = [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.d_inner])) for _ in range(self.args.n_layer)]
 
-#         caches = [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.d_inner])) for _ in range(self.args.n_layer)]
+        for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
+            next_token_logits, caches = self(input_ids[:, i], caches)
 
-#         for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
-#             next_token_logits, caches = self(input_ids[:, i], caches) # (1, vocab_size), caches
+            if i+1 >= input_ids.shape[1]:
 
-#             # sample (no sampling when the prompt is being processed)
-#             if i+1 >= input_ids.shape[1]:
+                if top_k is not None:
+                    values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
+                    mask = next_token_logits < (values[:, 0, None])
+                    next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
 
-#                 if top_k is not None:
-#                     values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
-#                     mask = next_token_logits < (values[:, 0, None])
-#                     next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
+                if sample and temperature > 0:
+                    next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
+                else:
+                    next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
 
-#                 if sample and temperature > 0:
-#                     next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
-#                 else:
-#                     next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
+                input_ids = mx.concatenate([input_ids, next_token], axis=1)
 
-#                 input_ids = mx.concatenate([input_ids, next_token], axis=1)
+        output = [tokenizer.decode(output.tolist()) for output in input_ids][0]
 
-#         # output = [tokenizer.decode(output.tolist()) for output in input_ids][0]
+        self.train()
 
-#         self.train()
-
-#         return next_token # output
+        return output
 
 # model = Model(ModelArgs())
 # print(model)

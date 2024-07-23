@@ -28,7 +28,8 @@ from .tuner.utils import dequantize as dequantize_model
 # Constants
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
-    "phi-msft": "phixtral"
+    "phi-msft": "phixtral",
+    "mamba": "mamba"
 }
 
 MAX_FILE_SIZE_GB = 5
