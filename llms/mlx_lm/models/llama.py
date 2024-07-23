@@ -88,20 +88,14 @@ class DynamicNTKScalingRoPE(nn.Module):
         freqs = self.original_base ** (
             mx.arange(0, self.dims, 2).astype(mx.float32) / self.dims
         )
+        wavelens = 2 * math.pi * freqs
         new_base_freqs = []
 
-        for freq in freqs:
-            wavelen = 2 * math.pi * freq
-            if wavelen < high_freq_wavelen:
-                new_base_freqs.append(freq)
-            elif wavelen > low_freq_wavelen:
-                new_base_freqs.append(freq * factor)
-            else:
-                assert low_freq_wavelen != high_freq_wavelen
-                smooth = (wavelen - high_freq_wavelen) / (
-                    low_freq_wavelen - high_freq_wavelen
-                )
-                new_base_freqs.append(freq * ((1 - smooth) * factor + smooth))
+        new_base_freqs = mx.zeros_like(freqs)
+        new_base_freqs = mx.where(wavelens < high_freq_wavelen, freqs, new_base_freqs)
+        new_base_freqs = mx.where(wavelens > low_freq_wavelen, freqs * factor, new_base_freqs)
+        smooths = (wavelens - high_freq_wavelen) / (low_freq_wavelen - high_freq_wavelen)
+        new_base_freqs = mx.where(mx.logical_and(wavelens <= low_freq_wavelen, wavelens >= high_freq_wavelen), freqs * (1 - smooths) * factor + smooths, new_base_freqs)
 
         # TODO: It's not so great to have a graph evaluation at each call to RopE (e.g. item). That will be slow.
         return mx.array(new_base_freqs).mean().item()
