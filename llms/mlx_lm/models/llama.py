@@ -110,7 +110,7 @@ class DynamicNTKScalingRoPE(nn.Module):
 
     def __call__(self, x, offset: int = 0):
         seq_len = x.shape[1] + offset
-        base = self.compute_base_freq()
+        base = self.original_base
 
         if seq_len > self.max_position_embeddings:
             base *= (
