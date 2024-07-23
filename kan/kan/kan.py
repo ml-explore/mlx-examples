@@ -50,3 +50,14 @@ class KANLinear(nn.Module):
         self.grid_eps = grid_eps
 
         self.reset_parameters()
+
+    def reset_parameters(self):
+        # Initialize base_weight with random values scaled by scale_base
+        self.base_weight = mx.random.uniform(shape=self.base_weight.shape) * self.scale_base
+
+        # Initialize spline_weight with random values scaled by scale_spline
+        self.spline_weight = mx.random.uniform(shape=self.spline_weight.shape) * self.scale_spline
+
+        if self.enable_standalone_scale_spline:
+            # Initialize spline_scaler with random values scaled by scale_spline
+            self.spline_scaler = mx.random.uniform(shape=self.spline_scaler.shape) * self.scale_spline
