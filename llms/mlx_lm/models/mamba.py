@@ -181,31 +181,3 @@ class Model(nn.Module):
     @property
     def n_kv_heads(self):
         return self.args.num_hidden_layers
-    
-    def generate(self, input_ids: mx.array, n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
-        self.eval()
-
-        if input_ids.ndim == 1:
-            input_ids = input_ids.unsqueeze(0)
-
-        caches = [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
-
-        for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
-            next_token_logits, caches = self(input_ids[:, i], caches)
-
-            if i+1 >= input_ids.shape[1]:
-
-                if top_k is not None:
-                    values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
-                    mask = next_token_logits < (values[:, 0, None])
-                    next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
-
-                if sample and temperature > 0:
-                    next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
-                else:
-                    next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
-
-                input_ids = mx.concatenate([input_ids, next_token], axis=1)
-
-        self.train()
-        return input_ids

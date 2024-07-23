@@ -28,8 +28,7 @@ from .tuner.utils import dequantize as dequantize_model
 # Constants
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
-    "phi-msft": "phixtral",
-    "mamba": "mamba"
+    "phi-msft": "phixtral"
 }
 
 MAX_FILE_SIZE_GB = 5
@@ -199,27 +198,22 @@ def generate_step(
 
     def _step(y):
         nonlocal repetition_context
-        if model.args.model_type == "mamba":
-            output_ids = model.generate(input_ids=y, n_tokens_to_gen=1, sample=temp > 0, temperature=temp)
-            next_token = output_ids[:, -1:]  # Get the last generated token
-            logprobs = mx.zeros_like(next_token)  # Dummy logprobs as we don't have actual logprobs from generate method
+        logits = model(y[None], cache=cache)
+        logits = logits[:, -1, :]
+
+        if repetition_penalty:
+            logits = apply_repetition_penalty(
+                logits, repetition_context, repetition_penalty
+            )
+            next_token, logprobs = sample(logits)
+            repetition_context.append(next_token.item())
         else:
-            logits = model(y[None], cache=cache)
-            logits = logits[:, -1, :]
+            next_token, logprobs = sample(logits)
 
-            if repetition_penalty:
-                logits = apply_repetition_penalty(
-                    logits, repetition_context, repetition_penalty
-                )
-                next_token, logprobs = sample(logits)
-                repetition_context.append(next_token.item())
-            else:
-                next_token, logprobs = sample(logits)
-
-            if repetition_context_size:
-                if len(repetition_context) > repetition_context_size:
-                    repetition_context = repetition_context[-repetition_context_size:]
-        
+        if repetition_context_size:
+            if len(repetition_context) > repetition_context_size:
+                repetition_context = repetition_context[-repetition_context_size:]
+    
         return next_token, logprobs.squeeze(0)
 
     y, logprobs = _step(y)
@@ -255,11 +249,7 @@ def stream_generate(
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
 
-    if model.args.model_type == "mamba":
-        prompt_tokens = mx.array(tokenizer.encode(prompt, return_tensors='np'))
-    else:
-        prompt_tokens = mx.array(tokenizer.encode(prompt))
-
+    prompt_tokens = mx.array(tokenizer.encode(prompt))
     detokenizer = tokenizer.detokenizer
 
     detokenizer.reset()
@@ -309,10 +299,7 @@ def generate(
         print("=" * 10)
         print("Prompt:", prompt)
 
-    if model.args.model_type == "mamba":
-        prompt_tokens = mx.array(tokenizer.encode(prompt, return_tensors='np'))
-    else:
-        prompt_tokens = mx.array(tokenizer.encode(prompt))
+    prompt_tokens = mx.array(tokenizer.encode(prompt))
         
     detokenizer = tokenizer.detokenizer
 
