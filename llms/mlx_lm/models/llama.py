@@ -103,6 +103,7 @@ class DynamicNTKScalingRoPE(nn.Module):
                 )
                 new_base_freqs.append(freq * ((1 - smooth) * factor + smooth))
 
+        # TODO: It's not so great to have a graph evaluation at each call to RopE (e.g. item). That will be slow.
         return mx.array(new_base_freqs).mean().item()
 
     def extra_repr(self):
