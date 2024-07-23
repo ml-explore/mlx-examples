@@ -103,7 +103,7 @@ class DynamicNTKScalingRoPE(nn.Module):
                 )
                 new_base_freqs.append(freq * ((1 - smooth) * factor + smooth))
 
-        return mx.array(new_base_freqs).mean()
+        return mx.array(new_base_freqs).mean().item()
 
     def extra_repr(self):
         return f"{self.dims}, traditional={self.traditional}, max_position_embeddings={self.max_position_embeddings}, scaling_factor={self.scale}, rope_type={self.rope_type}"
