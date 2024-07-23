@@ -32,20 +32,19 @@ class ModelArgs(BaseModelArgs):
             self.num_key_value_heads = self.num_attention_heads
 
         if self.rope_scaling:
-            if not any(key in self.rope_scaling for key in ["type", "rope_type"]):
-                raise ValueError(
-                    f"rope_scaling must contain either 'type' or 'rope_type'"
-                )
             if not "factor" in self.rope_scaling:
                 raise ValueError(f"rope_scaling must contain 'factor'")
             rope_type = self.rope_scaling.get("type") or self.rope_scaling.get(
                 "rope_type"
             )
+            if rope_type is None:
+                raise ValueError(
+                    f"rope_scaling must contain either 'type' or 'rope_type'"
+                )
             if rope_type not in ["linear", "dynamic", "llama3"]:
                 raise ValueError(
                     "rope_scaling 'type' currently only supports 'linear', 'dynamic' or 'llama3'"
                 )
-
 
 class DynamicNTKScalingRoPE(nn.Module):
     """Implements the rotary positional encoding with Dynamic NTK scaling and Llama 3 RoPE."""
@@ -74,12 +73,13 @@ class DynamicNTKScalingRoPE(nn.Module):
             return self.compute_llama3_base_freq()
         return self.original_base
 
+    # source: https://github.com/huggingface/transformers/blob/d5a99dfcee6e94065cb7c83cc8ab6fc5daa0cc4e/src/transformers/modeling_rope_utils.py#L318
     def compute_llama3_base_freq(self):
-        factor = self.rope_scaling["factor"]
-        low_freq_factor = self.rope_scaling.get("low_freq_factor", 1.0)
-        high_freq_factor = self.rope_scaling.get("high_freq_factor", 4.0)
+        factor = self.rope_scaling["factor"] # `8` in the original implementation
+        low_freq_factor = self.rope_scaling.get("low_freq_factor", 1.0) # `1` in the original implementation
+        high_freq_factor = self.rope_scaling.get("high_freq_factor", 4.0) # `4` in the original implementation
         old_context_len = self.rope_scaling.get(
-            "original_max_position_embeddings", 8192
+            "original_max_position_embeddings", 8192 # `8192` in the original implementation
         )
 
         low_freq_wavelen = old_context_len / low_freq_factor
@@ -135,13 +135,11 @@ def initialize_rope(args: ModelArgs):
     rope_scale = 1.0
 
     if rope_scaling is not None:
-        scaling_type = rope_scaling.get("type") or rope_scaling.get("rope_type")
-        if scaling_type == "linear":
+        rope_type = rope_scaling.get("type") or rope_scaling.get("rope_type") or "default"
+        if rope_type == "linear":
             rope_scale = 1 / rope_scaling["factor"]
-            rope_type = "default"
-        elif scaling_type == "llama3":
+        elif rope_type == "llama3":
             rope_scale = 1.0  # The scaling is handled internally for llama3
-            rope_type = "llama3"
         else:
             rope_scale = 2.0  # Default scale if type is not recognized
 
