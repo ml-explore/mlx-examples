@@ -51,7 +51,7 @@ class TrainingArgs:
     max_seq_length: int = field(
         default=2048, metadata={"help": "Maximum sequence length."}
     )
-    adapter_model_file: str = field(
+    adapter_file: str = field(
         default="adapters.safetensors",
         metadata={"help": "Save/load path for the trained adapter weights."},
     )
@@ -292,37 +292,37 @@ def train(
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
-            save_adapter_model(model, args.adapter_model_file)
+            save_adapter_model(model, args.adapter_file)
             if args.fine_tune_type == "full":
                 checkpoint = (
-                    Path(args.adapter_model_file).parent / f"{it:07d}_model.safetensors"
+                    Path(args.adapter_file).parent / f"{it:07d}_model.safetensors"
                 )
                 save_adapter_model(model, checkpoint)
                 print(
                     f"Iter {it}: Saved adapter weights to "
-                    f"{args.adapter_model_file} and {checkpoint}."
+                    f"{args.adapter_file} and {checkpoint}."
                 )
             else:
                 checkpoint = (
-                    Path(args.adapter_model_file).parent / f"{it:07d}_adapters.safetensors"
+                    Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
                 )
                 save_adapter_model(model, checkpoint)
                 print(
                     f"Iter {it}: Saved adapter weights to "
-                    f"{args.adapter_model_file} and {checkpoint}."
+                    f"{args.adapter_file} and {checkpoint}."
                 )
 
     # Save the full model state if fine-tune-type is full
     if args.fine_tune_type == "full":
-        full_model_path = Path(args.adapter_model_file)
+        full_model_path = Path(args.adapter_file)
         full_model_path.parent.mkdir(parents=True, exist_ok=True)
         # save_weights(full_model_path, weights=model)
-        save_adapter_model(model, args.adapter_model_file)
+        save_adapter_model(model, args.adapter_file)
         print(f"Saved final full model weights to {full_model_path}.")
     else:
         # save final adapter weights
-        save_adapter_model(model, args.adapter_model_file)
-        print(f"Saved final adapter weights to {args.adapter_model_file}.")
+        save_adapter_model(model, args.adapter_file)
+        print(f"Saved final adapter weights to {args.adapter_file}.")
 
 
 def save_adapter_model(

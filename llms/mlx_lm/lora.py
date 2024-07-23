@@ -51,8 +51,8 @@ CONFIG_DEFAULTS = {
     "learning_rate": 1e-5,
     "steps_per_report": 10,
     "steps_per_eval": 200,
-    "resume_adapter_model_file": None,
-    "adapter_model_path": "adapters",
+    "resume_adapter_file": None,
+    "adapter_path": "adapters",
     "save_every": 100,
     "test": False,
     "test_batches": 500,
@@ -112,12 +112,12 @@ def build_parser():
         help="Number of training steps between validations.",
     )
     parser.add_argument(
-        "--resume-adapter-model-file",
+        "--resume-adapter-file",
         type=str,
         help="Load path to resume training with the given adapters or full model weights when in full training mode.",
     )
     parser.add_argument(
-        "--adapter-model-path",
+        "--adapter-path",
         type=str,
         help="Save/load path for the adapters or full model or full model weights when in full training mode.",
     )
@@ -167,7 +167,7 @@ def train_model(
     training_callback: TrainingCallback = None,
 ):
     if args.fine_tune_type == "full":
-        print("Training full model weights without LoRA layers.")
+        print("Training full model weights.")
         model.unfreeze()
     elif args.fine_tune_type == "lora":
         print("Training model with LoRA.")
@@ -188,14 +188,14 @@ def train_model(
 
     print_trainable_parameters(model)
 
-    adapter_model_path = Path(args.adapter_model_path)
-    adapter_model_path.mkdir(parents=True, exist_ok=True)
+    adapter_path = Path(args.adapter_path)
+    adapter_path.mkdir(parents=True, exist_ok=True)
 
     if args.fine_tune_type == "full":
-        adapter_model_file = adapter_model_path / "model.safetensors"
+        adapter_file = adapter_path / "model.safetensors"
     else:
-        adapter_model_file = adapter_model_path / "adapter.safetensors"
-        save_config(vars(args), adapter_model_path / "adapter_config.json")
+        adapter_file = adapter_path / "adapter.safetensors"
+        save_config(vars(args), adapter_path / "adapter_config.json")
 
     # init training args
     training_args = TrainingArgs(
@@ -205,7 +205,7 @@ def train_model(
         steps_per_report=args.steps_per_report,
         steps_per_eval=args.steps_per_eval,
         steps_per_save=args.save_every,
-        adapter_model_file=adapter_model_file,
+        adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
         fine_tune_type=args.fine_tune_type
@@ -252,12 +252,12 @@ def run(args, training_callback: TrainingCallback = None):
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
-    # Load the full model state if available
-    if args.fine_tune_type != "full" and args.adapter_path:
-        model_file = Path(args.adapter_path) / "model.safetensors"
-        if model_file.exists():
-            print(f"Loading full model state from {model_file}")
-            model.load_weights(model_file, strict=True)
+    # # Load the full model state if available
+    # if args.fine_tune_type != "full" and args.adapter_path:
+    #     model_file = Path(args.adapter_path) / "model.safetensors"
+    #     if model_file.exists():
+    #         print(f"Loading full model state from {model_file}")
+    #         model.load_weights(str(args.adapter_path) / "model.safetensors", strict=True)
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)

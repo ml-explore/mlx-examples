@@ -68,6 +68,8 @@ mlx_lm.lora \
     --iters 600
 ```
 
+Methods of fine-tuning are `lora` `dora`, and `full`, default is `lora`.
+
 The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
 when using `--train` and a path to a `test.jsonl` when using `--test`. For more
 details on the data format see the section on [Data](#Data).
@@ -78,11 +80,11 @@ mistralai/Mistral-7B-v0.1`.
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
-By default, the adapter config and weights are saved in `adapters/`. You can
-specify the output location with `--adapter-model-path`.
+By default, the adapter config and (full) weights are saved in `adapters/`. You can
+specify the output location with `--adapter-path`.
 
 You can resume fine-tuning with an existing adapter with
-`--resume-adapter-model-file <path_to_adapters.safetensors>`.
+`--resume-adapter-file <path_to_adapters.safetensors>`.
 
 ### Evaluate
 
@@ -91,7 +93,7 @@ To compute test set perplexity use:
 ```shell
 mlx_lm.lora \
     --model <path_to_model> \
-    --adapter-model-path <path_to_adapters> \
+    --adapter-path <path_to_adapters> \
     --data <path_to_data> \
     --test
 ```
@@ -103,7 +105,7 @@ For generation use `mlx_lm.generate`:
 ```shell
 mlx_lm.generate \
     --model <path_to_model> \
-    --adapter-model-path <path_to_adapters> \
+    --adapter-path <path_to_adapters> \
     --prompt "<your_model_prompt>"
 ```
 
