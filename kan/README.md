@@ -30,7 +30,8 @@ You can run the script `main.py` to train the KAN model on the MNIST dataset. Th
 
 ### Arguments
 
-- `--gpu`: Use the Metal back-end.
+- `--cpu`: Use the Metal back-end.
+- `--use-kan-convolution`: Use the Convolution KAN architecture. Will give a error because its not implemented yet.
 - `--dataset`: The dataset to use (`mnist` or `fashion_mnist`). Default is `mnist`.
 - `--num_layers`: Number of layers in the model. Default is `2`.
 - `--in-features`: Number input features. Default is `28`.
@@ -40,6 +41,7 @@ You can run the script `main.py` to train the KAN model on the MNIST dataset. Th
 - `--num_epochs`: Number of epochs to train. Default is `10`.
 - `--batch_size`: Batch size for training. Default is `64`.
 - `--learning_rate`: Learning rate for the optimizer. Default is `1e-3`.
+- `--weight-decay`: Weight decay for the optimizer. Default is `1e-4`.
 - `--eval-report-count`: Number of epochs to report validations / test accuracy values. Default is `10`.
 - `--save-path`: Path with the model name where the trained KAN model will be saved. Default is `traned_kan_model.safetensors`.
 - `--seed`: Random seed for reproducibility. Default is `0`.

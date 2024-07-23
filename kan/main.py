@@ -30,6 +30,7 @@ def main(args):
     batch_size = args.batch_size
     num_epochs = args.num_epochs
     learning_rate = args.learning_rate
+    weight_decay = args.weight_decay
     in_features = args.in_features
     out_features = args.out_features
     save_path = args.save_path
@@ -60,7 +61,7 @@ def main(args):
     print_trainable_parameters(model)
 
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
-    optimizer = optim.AdamW(learning_rate=learning_rate, weight_decay=1e-4)
+    optimizer = optim.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)
 
     print(f"starting to train for {num_epochs} epochs")
     for e in range(num_epochs):
@@ -103,6 +104,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-epochs", type=int, default=10, help="Number of epochs to train.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size for training.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Learning rate for the optimizer.")
+    parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay for the optimizer.")
     parser.add_argument("--eval-report-count", type=int, default=10, help="Number of epochs to report validations / test accuracy.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility.")
     parser.add_argument("--save-path", type=str, default="traned_kan_model", help="Random seed for reproducibility.")
