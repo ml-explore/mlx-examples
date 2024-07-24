@@ -69,15 +69,6 @@ def clamp(x, min=None, max=None):
     return mx.where(mask_upper, max, x)
 
 
-def unsqueeze(x, axis):
-    assert axis <= len(x.shape)
-    if axis >= 0:
-        new_shape = x.shape[:axis] + tuple([1]) + x.shape[axis:]
-    else:
-        new_shape = x.shape + tuple([1])
-    return x.reshape(new_shape)
-
-
 def pscan_f(A, X):
     Aa = A
     Xa = X
@@ -203,78 +194,102 @@ class MambaBlock(nn.Module):
 
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
+    # def ssm_old(self, x):
+    #     A = -mx.exp(self.A_log) # (ED, N)
+    #     D = self.D
+
+    #     deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
+
+    #     delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
+    #     delta = mx.softplus(self.dt_proj(delta)) # (B, L, ED)
+
+    #     if self.args.use_mambapy:
+    #         y = self.selective_scan(x, delta, A, B, C, D)
+    #     else:
+    #         y = self.selective_scan_seq(x, delta, A, B, C, D)
+    #     return y
+    
+    # def selective_scan(self, x, delta, A, B, C, D):
+    #     deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
+    #     deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
+    #     BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
+    #     hs = pscan(deltaA, BX)
+    #     y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
+    #     y = y + D * x
+    #     return y
+
+    # def selective_scan_seq(self, x, delta, A, B, C, D):
+    #     _, L, _ = x.shape
+    #     deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
+    #     deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
+    #     BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
+    #     h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size]) # (B, ED, N)
+    #     hs = []
+    #     for t in range(0, L):
+    #         h = deltaA[:, t] * h + BX[:, t]
+    #         hs.append(h)
+    #     hs = mx.stack(hs, axis=1)
+    #     y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
+    #     y = y + D * x
+    #     return y
+
     def ssm(self, x, h):
-        A = -mx.exp(self.A_log)
+        A = -mx.exp(self.A_log)  # (ED, N)
         D = self.D
-        delta, B, C = self.x_proj(x).split(split_size=[self.intermediate_size, self.intermediate_size], axis=-1)
-        delta = nn.softplus(self.dt_proj(delta))
-        deltaA = mx.exp(mx.unsqueeze(delta, -1) * A)
-        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 1)
-        BX = deltaB * unsqueeze(x, -1)
+
+        deltaBC = self.x_proj(x)  # (B, dt_rank+2*N)
+
+        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1)  # (B, dt_rank), (B, N), (B, N)
+        delta = nn.softplus(self.dt_proj(delta))  # (B, ED)
+
+        deltaA = mx.exp(mx.expand_dims(delta, -1) * A)  # (B, ED, N)
+        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 1)  # (B, ED, N)
+
+        BX = deltaB * mx.expand_dims(x, -1)  # (B, ED, N)
+
         if h is None:
-            h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size])
-        h = deltaA * h + BX
-        y = (h @ mx.unsqueeze(C, -1)).squeeze(2)
+            h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size])  # (B, ED, N)
+
+        h = deltaA * h + BX  # (B, ED, N)
+
+        y = (h @ mx.expand_dims(C, -1)).squeeze(2)  # (B, ED, N) @ (B, N, 1) -> (B, ED, 1)
+
         y = y + D * x
         return y, h
     
-    def ssm_old(self, x):
-        # x : (B, L, ED)
-
-        # y : (B, L, ED)
-
-        A = -mx.exp(self.A_log) # (ED, N)
-        D = self.D
-
-        deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
-
-        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
-        delta = mx.softplus(self.dt_proj(delta)) # (B, L, ED)
-
-        if self.args.use_mambapy:
-            y = self.selective_scan(x, delta, A, B, C, D)
-        else:
-            y = self.selective_scan_seq(x, delta, A, B, C, D)
-
-        return y
-    
-    def selective_scan(self, x, delta, A, B, C, D):
-        deltaA = mx.exp(unsqueeze(delta, -1) * A) # (B, L, ED, N)
-        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2) # (B, L, ED, N)
-        BX = deltaB * unsqueeze(x, -1) # (B, L, ED, N)
-        hs = pscan(deltaA, BX)
-        y = (hs @ unsqueeze(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-        y = y + D * x
-        return y
-
-    def selective_scan_seq(self, x, delta, A, B, C, D):
-        _, L, _ = x.shape
-        deltaA = mx.exp(unsqueeze(delta, -1) * A) # (B, L, ED, N)
-        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2) # (B, L, ED, N)
-        BX = deltaB * unsqueeze(x, -1) # (B, L, ED, N)
-        h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size]) # (B, ED, N)
-        hs = []
-        for t in range(0, L):
-            h = deltaA[:, t] * h + BX[:, t]
-            hs.append(h)
-        hs = mx.stack(hs, axis=1)
-        y = (hs @ unsqueeze(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-        y = y + D * x
-        return y
-
-    def __call__(self, x, cache=None):
+    def __call__(self, x, cache):
         h, inputs = cache
-        xz = self.in_proj(x)
-        split_dim = xz.shape[-1] // 2  # Correct the axis for splitting, ensuring the dimensions can be split equally
-        x, z = mx.split(xz, indices_or_sections=[split_dim], axis=1) # [split_dim] instead of 2
-        x_cache = unsqueeze(x, 1)
-        x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.conv_kernel_size-1, :]
-        y, h = self.ssm(nn.silu(x), h)
-        output = y * nn.silu(z)
-        inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)
-        cache.update(h, inputs)
-        return self.out_proj(output), cache
 
+        xz = self.in_proj(x)  # (B, 2*ED)
+        x, z = mx.split(xz, indices_or_sections=2, axis=-1)  # (B, ED), (B, ED)
+
+        # x branch
+        x_cache = mx.expand_dims(x, 1)  # (B, 1, ED)
+
+        # Ensure inputs has the correct shape
+        if inputs.ndim == 2:
+            inputs = mx.expand_dims(inputs, 1)  # Add a dimension if it's missing
+
+        print(f"inputs shape: {inputs.shape}")
+        print(f"x_cache shape: {x_cache.shape}")
+            
+        conv_input = mx.concatenate([inputs, x_cache], axis=1)  # (B, d_conv, ED)
+        x = self.conv1d(conv_input)[:, -1, :]  # (B, ED)
+
+        x = nn.silu(x)
+        y, h = self.ssm(x, h)
+
+        # z branch
+        z = nn.silu(z)
+
+        output = y * z
+        output = self.out_proj(output)  # (B, D)
+
+        # prepare cache for next call
+        inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)  # (B, d_conv-1, ED)
+        cache = (h, inputs)
+
+        return output, cache
 
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -328,6 +343,7 @@ class Model(nn.Module):
         return self.args.num_hidden_layers
     
     def make_cache(self):
+        # return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
         return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
         # return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
     
@@ -335,7 +351,7 @@ class Model(nn.Module):
         self.eval()
 
         if input_ids.ndim == 1:
-            input_ids = input_ids.unsqueeze(0)
+            input_ids = mx.expand_dims(input_ids, 0)
 
         caches = self.make_cache()
 
@@ -363,7 +379,7 @@ class Model(nn.Module):
         self.eval()
 
         if input_ids.ndim == 1:
-            input_ids = unsqueeze(input_ids, 0)
+            input_ids = mx.expand_dims(input_ids, 0)
 
         caches = self.make_cache()
 
