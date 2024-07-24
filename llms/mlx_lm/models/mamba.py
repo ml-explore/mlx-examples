@@ -16,7 +16,7 @@ class ModelArgs(BaseModelArgs):
     hidden_size: int # d_model
     intermediate_size: int # d_inner
     state_size: int # d_state
-    num_hidden_layers: int # n_layer
+    num_hidden_layers: int # n_layer, n_layer
     layer_norm_epsilon: float
     expand: int
     conv_kernel: int # d_conv
@@ -43,6 +43,8 @@ class ModelArgs(BaseModelArgs):
             self.state_size = self.d_state
         if not hasattr(self, 'num_hidden_layers') and hasattr(self, 'n_layer'):
             self.num_hidden_layers = self.n_layer
+        if not hasattr(self, 'num_hidden_layers') and hasattr(self, 'n_layers'):
+            self.num_hidden_layers = self.n_layers
         if not hasattr(self, 'conv_kernel') and hasattr(self, 'd_conv'):
             self.conv_kernel = self.d_conv
         if not hasattr(self, 'use_bias') and hasattr(self, 'bias'):
@@ -77,14 +79,6 @@ def unsqueeze(x, axis):
 
 
 def pscan_f(A, X):
-    # A : (B, D, L, N)
-    # X : (B, D, L, N)
-
-    # modifies X in place by doing a parallel scan.
-    # more formally, X will be populated by these values :
-    # H[t] = A[t] * H[t-1] + X[t] with H[0] = 0
-    # which are computed in parallel (2*log2(T) sequential steps (ideally), instead of T sequential steps)
-    
     Aa = A
     Xa = X
 
@@ -133,24 +127,10 @@ def pscan_f(A, X):
             A[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Aa[:, :, :, 0], mx.array([last_val_aa]).reshape(B, D, 1, -1)], axis=2)
             X[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Xa[:, :, :, 0], mx.array([last_val_xa]).reshape(B, D, 1, -1)], axis=2)
 
-# main function, used in the Mamba model (mamba_mlx.py)
 def pscan(A_in, X_in):
-    """
-    Applies the parallel scan operation, as defined above. Returns a new tensor.
-
-    Args:
-        A_in : (B, L, ED, N)
-        X_in : (B, L, ED, N)
-
-    Returns:
-        H : (B, L, ED, N)
-    """
-
     A = A_in[:].transpose(0, 2, 1, 3)
     X = X_in[:].transpose(0, 2, 1, 3)
-
     pscan_f(A, X)
-
     return X.transpose(0, 2, 1, 3)
 
 
@@ -211,12 +191,13 @@ class MambaBlock(nn.Module):
         else:
             raise NotImplementedError
 
-        dt = clamp(mx.exp(mx.random.uniform(shape=[self.intermediate_size]) * (math.log(args.time_step_max) - math.log(args.time_step_min)) + math.log(args.time_step_min)), min=args.time_step_floor)
-        self.dt_proj.bias = dt + mx.log1p(-mx.exp(-dt))
+        dt = clamp(mx.exp(
+            mx.random.uniform(shape=[args.intermediate_size]) * (math.log(args.time_step_max) - math.log(args.time_step_min)) + math.log(args.time_step_min)
+        ), min=args.time_step_floor)
         inv_dt = dt + mx.log1p(-mx.exp(-dt))
         self.dt_proj.bias = inv_dt
 
-        A = mx.repeat(mx.arange(1, self.ssm_state_size + 1).reshape([1, self.ssm_state_size]), repeats=self.intermediate_size, axis=0)
+        A = mx.repeat(mx.arange(1., self.ssm_state_size + 1.).reshape([1, self.ssm_state_size]), repeats=self.intermediate_size, axis=0)
         self.A_log = mx.log(A)
         self.D = mx.ones([self.intermediate_size])
 
@@ -250,7 +231,7 @@ class MambaBlock(nn.Module):
         delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
         delta = mx.softplus(self.dt_proj(delta)) # (B, L, ED)
 
-        if self.config.pscan:
+        if self.args.use_mambapy:
             y = self.selective_scan(x, delta, A, B, C, D)
         else:
             y = self.selective_scan_seq(x, delta, A, B, C, D)
@@ -284,8 +265,8 @@ class MambaBlock(nn.Module):
     def __call__(self, x, cache=None):
         h, inputs = cache
         xz = self.in_proj(x)
-        split_dim = xz.shape[-1] // 2 # Correct the axis for splitting, ensuring the dimensions can be split equally
-        x, z = mx.split(xz, indices_or_sections=[split_dim], axis=-1)
+        split_dim = xz.shape[-1] // 2  # Correct the axis for splitting, ensuring the dimensions can be split equally
+        x, z = mx.split(xz, indices_or_sections=[split_dim], axis=1) # [split_dim] instead of 2
         x_cache = unsqueeze(x, 1)
         x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.conv_kernel_size-1, :]
         y, h = self.ssm(nn.silu(x), h)
@@ -314,10 +295,8 @@ class Mamba(nn.Module):
         self.layers = [ResidualBlock(args) for _ in range(args.num_hidden_layers)]
         self.norm_f = nn.RMSNorm(args.hidden_size)
 
-    def __call__(self, inputs: mx.array, cache=None):
+    def __call__(self, inputs: mx.array, cache):
         tokens = self.embeddings(inputs)
-        if cache is None:
-            cache = [None] * len(self.layers)
         for i, layer in enumerate(self.layers):
             h, cache[i] = layer(tokens, cache[i])
         h = self.norm_f(h)
@@ -330,7 +309,6 @@ class Model(nn.Module):
         self.args = args
         self.model_type = args.model_type
         self.backbone = Mamba(args)
-        # self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(self, inputs: mx.array, cache=None):
         out, cache = self.backbone(inputs, cache)
@@ -350,8 +328,8 @@ class Model(nn.Module):
         return self.args.num_hidden_layers
     
     def make_cache(self):
-        # return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
-        return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
+        return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
+        # return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
     
     def generate(self, input_ids: mx.array, n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
         self.eval()
