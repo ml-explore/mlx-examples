@@ -71,6 +71,7 @@ For example:
 
 ```shell
 mlx_lm.server --model mlx-community/Meta-Llama-3.1-8B-Instruct-8bit --trust-remote-code --port 8722
+mlx_lm.server --model mlx-community/Mistral-Nemo-Instruct-2407-8bit --trust-remote-code --port 8722
 mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit --trust-remote-code --port 8722
 mlx_lm.server --model mlx-community/internlm2_5-7b-chat-8bit --trust-remote-code --port 8722
 ```
