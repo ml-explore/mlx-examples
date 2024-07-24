@@ -216,11 +216,17 @@ def generate_step(
     
         return next_token, logprobs.squeeze(0)
 
-    y, logprobs = _step(y)
+    if hasattr(model, 'generate_step'):
+        y, logprobs = model.generate_step(prompt)
+    else:
+        y, logprobs = _step(y)
 
     mx.async_eval(y)
     while True:
-        next_y, next_logprobs = _step(y)
+        if hasattr(model, 'generate_step'):
+            next_y, next_logprobs = model.generate_step(y)
+        else:
+            next_y, next_logprobs = _step(y)
         mx.async_eval(next_y)
         yield y.item(), logprobs
         y, logprobs = next_y, next_logprobs

@@ -76,22 +76,105 @@ def unsqueeze(x, axis):
     return x.reshape(new_shape)
 
 
+def pscan_f(A, X):
+    # A : (B, D, L, N)
+    # X : (B, D, L, N)
+
+    # modifies X in place by doing a parallel scan.
+    # more formally, X will be populated by these values :
+    # H[t] = A[t] * H[t-1] + X[t] with H[0] = 0
+    # which are computed in parallel (2*log2(T) sequential steps (ideally), instead of T sequential steps)
+    
+    Aa = A
+    Xa = X
+
+    B, D, L, _ = A.shape
+
+    num_steps = int(math.log2(L))
+
+    # up sweep
+    for k in range(num_steps):
+        T = 2 * (Xa.shape[2] // 2)
+
+        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
+        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
+
+        Xa[:, :, :, 1] += Aa[:, :, :, 1] * Xa[:, :, :, 0]
+        Aa[:, :, :, 1] *= Aa[:, :, :, 0]
+
+        A[:, :, 2**(k+1)-1::2**(k+1)] = Aa[:, :, :, 1]
+        X[:, :, 2**(k+1)-1::2**(k+1)] = Xa[:, :, :, 1]
+
+        Aa = Aa[:, :, :, 1]
+        Xa = Xa[:, :, :, 1]
+
+    # down sweep
+    for k in range(num_steps-1, -1, -1):
+        Aa = A[:, :, 2**k-1::2**k]
+        Xa = X[:, :, 2**k-1::2**k]
+
+        step_len = Xa.shape[2]
+        T = 2 * (step_len // 2)
+
+        if T < step_len:
+            last_val_aa = Aa[:, :, -1] * Aa[:, :, -2]
+            last_val_xa = Xa[:, :, -1] + Aa[:, :, -1] * Xa[:, :, -2]
+
+        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
+        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
+
+        Xa[:, :, 1:, 0] += Aa[:, :, 1:, 0] * Xa[:, :, :-1, 1]
+        Aa[:, :, 1:, 0] *= Aa[:, :, :-1, 1]
+
+        if T == step_len:
+            A[:, :, 2**k-1::2**(k+1)] = Aa[:, :, :, 0]
+            X[:, :, 2**k-1::2**(k+1)] = Xa[:, :, :, 0]
+        else:
+            A[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Aa[:, :, :, 0], mx.array([last_val_aa]).reshape(B, D, 1, -1)], axis=2)
+            X[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Xa[:, :, :, 0], mx.array([last_val_xa]).reshape(B, D, 1, -1)], axis=2)
+
+# main function, used in the Mamba model (mamba_mlx.py)
+def pscan(A_in, X_in):
+    """
+    Applies the parallel scan operation, as defined above. Returns a new tensor.
+
+    Args:
+        A_in : (B, L, ED, N)
+        X_in : (B, L, ED, N)
+
+    Returns:
+        H : (B, L, ED, N)
+    """
+
+    A = A_in[:].transpose(0, 2, 1, 3)
+    X = X_in[:].transpose(0, 2, 1, 3)
+
+    pscan_f(A, X)
+
+    return X.transpose(0, 2, 1, 3)
+
+
 class DepthWiseConv1d(nn.Module):
     def __init__(self, channels, kernel_size, bias, padding):
         super().__init__()
-        self.channels = channels
-        self.kernel_size = kernel_size
+        self.channels = int(channels)
+        self.kernel_size = int(kernel_size)
         self.bias = bias
         self.padding = padding
-        self.weight = mx.random.normal(shape=(channels, 1, kernel_size))
-        scale = math.sqrt(1.0 / (channels * kernel_size))
+        self.weight = mx.random.normal(shape=(self.channels, 1, self.kernel_size))
+        scale = math.sqrt(1.0 / (self.channels * self.kernel_size))
         self.weight *= scale  # Ensure scaling is applied correctly
         if bias:
-            self.bias = mx.zeros((channels,))
+            self.bias = mx.zeros((self.channels,))
         else:
             self.bias = None
 
     def __call__(self, x):
+        B, D, L = x.shape
+        assert D == self.channels, f"Input channels ({D}) must match the initialized channels ({self.channels})."
+        print("FORWARD PASS THROUGH CONV")
+        print(self.kernel_size)
+        print(self.weight)
         out = nn.Conv1d(x, self.weight, kernel_size=self.kernel_size, bias=self.bias, padding=self.padding)
         return out
     
@@ -153,12 +236,58 @@ class MambaBlock(nn.Module):
         y = (h @ mx.unsqueeze(C, -1)).squeeze(2)
         y = y + D * x
         return y, h
+    
+    def ssm_old(self, x):
+        # x : (B, L, ED)
 
-    def __call__(self, x, cache = None):
+        # y : (B, L, ED)
+
+        A = -mx.exp(self.A_log) # (ED, N)
+        D = self.D
+
+        deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
+
+        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
+        delta = mx.softplus(self.dt_proj(delta)) # (B, L, ED)
+
+        if self.config.pscan:
+            y = self.selective_scan(x, delta, A, B, C, D)
+        else:
+            y = self.selective_scan_seq(x, delta, A, B, C, D)
+
+        return y
+    
+    def selective_scan(self, x, delta, A, B, C, D):
+        deltaA = mx.exp(unsqueeze(delta, -1) * A) # (B, L, ED, N)
+        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2) # (B, L, ED, N)
+        BX = deltaB * unsqueeze(x, -1) # (B, L, ED, N)
+        hs = pscan(deltaA, BX)
+        y = (hs @ unsqueeze(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
+        y = y + D * x
+        return y
+
+    def selective_scan_seq(self, x, delta, A, B, C, D):
+        _, L, _ = x.shape
+        deltaA = mx.exp(unsqueeze(delta, -1) * A) # (B, L, ED, N)
+        deltaB = unsqueeze(delta, -1) * unsqueeze(B, 2) # (B, L, ED, N)
+        BX = deltaB * unsqueeze(x, -1) # (B, L, ED, N)
+        h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size]) # (B, ED, N)
+        hs = []
+        for t in range(0, L):
+            h = deltaA[:, t] * h + BX[:, t]
+            hs.append(h)
+        hs = mx.stack(hs, axis=1)
+        y = (hs @ unsqueeze(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
+        y = y + D * x
+        return y
+
+    def __call__(self, x, cache=None):
         h, inputs = cache
-        x, z = self.in_proj(x).split(indices_or_sections=2, axis=1)
+        xz = self.in_proj(x)
+        split_dim = xz.shape[-1] // 2 # Correct the axis for splitting, ensuring the dimensions can be split equally
+        x, z = mx.split(xz, indices_or_sections=[split_dim], axis=-1)
         x_cache = unsqueeze(x, 1)
-        x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.conv_kernel_size-1, :] # (B, ED)
+        x = self.conv1d(mx.concatenate([inputs, x_cache], axis=1))[:, self.conv_kernel_size-1, :]
         y, h = self.ssm(nn.silu(x), h)
         output = y * nn.silu(z)
         inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)
@@ -238,9 +367,9 @@ class Model(nn.Module):
             if i+1 >= input_ids.shape[1]:
 
                 if top_k is not None:
-                    values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to biggest
+                    values = mx.topk(next_token_logits, k=top_k)
                     mask = next_token_logits < (values[:, 0, None])
-                    next_token_logits = mx.where(mask, -5000, next_token_logits) # TODO -mx.inf is problematic for now
+                    next_token_logits = mx.where(mask, -5000, next_token_logits)
 
                 if sample and temperature > 0:
                     next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
@@ -251,3 +380,32 @@ class Model(nn.Module):
 
         self.train()
         return input_ids
+    
+    def generate_step(self, input_ids: mx.array, sample: bool = True, temperature: float = 1.0, top_k: int = None):
+        self.eval()
+
+        if input_ids.ndim == 1:
+            input_ids = unsqueeze(input_ids, 0)
+
+        caches = self.make_cache()
+
+        # Generate the next token logits
+        next_token_logits, caches = self(input_ids, caches)
+
+        # Apply top_k filtering if specified
+        if top_k is not None:
+            values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to highest
+            mask = next_token_logits < (values[:, -1, None])
+            next_token_logits = mx.where(mask, -5000, next_token_logits) # -mx.inf is problematic for now
+
+        # Sample the next token or take the argmax based on the temperature
+        if sample and temperature > 0:
+            next_token = mx.random.categorical(next_token_logits * (1 / temperature), num_samples=1)
+        else:
+            next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
+
+        # Concatenate the next token to the input_ids
+        input_ids = mx.concatenate([input_ids, next_token], axis=1)
+
+        self.train()
+        return input_ids, caches
