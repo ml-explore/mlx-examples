@@ -19,7 +19,7 @@ from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
 # Local imports
-from .models.base import KVCache
+from .models.base import KVCache, MambaCache
 from .sample_utils import top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
