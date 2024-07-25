@@ -1,5 +1,6 @@
 import inspect
 from dataclasses import dataclass
+from typing import List, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -64,7 +65,7 @@ def create_additive_causal_mask(N: int, offset: int = 0):
     return mask * -1e9
 
 
-def create_attention_mask(h: mx.array, cache: list[KVCache] = None):
+def create_attention_mask(h: mx.array, cache: Optional[List[KVCache]] = None):
     T = h.shape[1]
     if T > 1:
         # Input consists of multiple tokens, create a causal mask so that prior
