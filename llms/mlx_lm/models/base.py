@@ -58,12 +58,10 @@ class BaseModelArgs:
 
 
 def create_additive_causal_mask(N: int, offset: int = 0):
-    if offset > 0:
-        rinds = mx.arange(offset + N)
-        linds = mx.arange(offset, offset + N) if offset else rinds
-        mask = linds[:, None] < rinds[None]
-        return mask * -1e9
-    return nn.MultiHeadAttention.create_additive_causal_mask(N)
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    return mask * -1e9
 
 
 def create_attention_mask(h: mx.array, cache: list[KVCache] = None):
