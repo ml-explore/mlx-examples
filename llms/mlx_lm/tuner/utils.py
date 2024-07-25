@@ -10,7 +10,7 @@ import mlx.optimizers as opt
 from mlx.utils import tree_flatten, tree_unflatten
 
 from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
-from .dora import DoRALinear
+from .dora import DoRAEmbedding, DoRALinear
 from .lora import LoRAEmbedding, LoRALinear, LoRASwitchLinear
 
 
@@ -72,9 +72,7 @@ def linear_to_lora_layers(
                 raise ValueError(f"{type(layer).__name__} doesn't support DoRA yet.")
             LoRALayer = LoRASwitchLinear
         elif isinstance(layer, (nn.Embedding, nn.QuantizedEmbedding)):
-            if use_dora:
-                raise ValueError(f"{type(layer).__name__} doesn't support DoRA yet.")
-            LoRALayer = LoRAEmbedding
+            LoRALayer = DoRAEmbedding if use_dora else LoRAEmbedding
         else:
             raise ValueError(
                 f"Can't convert layer of type {type(layer).__name__} to LoRA"

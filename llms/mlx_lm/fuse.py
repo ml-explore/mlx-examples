@@ -6,7 +6,7 @@ from pathlib import Path
 from mlx.utils import tree_flatten, tree_unflatten
 
 from .gguf import convert_to_gguf
-from .tuner.dora import DoRALinear
+from .tuner.dora import DoRAEmbedding, DoRALinear
 from .tuner.lora import LoRAEmbedding, LoRALinear, LoRASwitchLinear
 from .tuner.utils import apply_lora_layers, dequantize
 from .utils import (
@@ -82,7 +82,9 @@ def main() -> None:
     fused_linears = [
         (n, m.fuse())
         for n, m in model.named_modules()
-        if isinstance(m, (LoRASwitchLinear, LoRALinear, LoRAEmbedding, DoRALinear))
+        if isinstance(
+            m, (LoRASwitchLinear, LoRALinear, LoRAEmbedding, DoRALinear, DoRAEmbedding)
+        )
     ]
 
     model.update_modules(tree_unflatten(fused_linears))
