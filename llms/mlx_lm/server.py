@@ -537,7 +537,7 @@ class APIHandler(BaseHTTPRequestHandler):
         response = {
             "id": self.request_id,
             "system_fingerprint": f"fp_{uuid.uuid4()}",
-            "object": self.object_type,
+            "object": "chat.completion",
             "model": self.requested_model,
             "created": self.created,
             "choices": [],
