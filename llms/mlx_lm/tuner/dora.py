@@ -28,6 +28,8 @@ class DoRALinear(nn.Module):
         dora_lin.linear = linear
         return dora_lin
 
+    from_base = from_linear
+
     def to_linear(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
@@ -48,6 +50,8 @@ class DoRALinear(nn.Module):
         if bias:
             fused_linear.bias = linear.bias
         return fused_linear
+
+    fuse = to_linear
 
     def __init__(
         self,
@@ -92,4 +96,104 @@ class DoRALinear(nn.Module):
 
         if "bias" in self.linear:
             out = out + self.linear.bias
+        return out
+
+
+class DoRAEmbedding(nn.Module):
+    def from_embedding(
+        embedding: nn.Embedding,
+        r: int = 8,
+        dropout: float = 0.0,
+        scale: float = 20.0,
+    ):
+        num_embeddings, dims = embedding.weight.shape
+
+        # TODO support quantized weights in DoRALinear
+        if isinstance(embedding, nn.QuantizedLinear):
+            raise ValueError("DoRAEmbedding does not yet support quantization.")
+        dora_embedding = DoRAEmbedding(
+            num_embeddings=num_embeddings,
+            dims=dims,
+            r=r,
+            dropout=dropout,
+            scale=scale,
+        )
+        dora_embedding.set_embedding(embedding)
+        return dora_embedding
+
+    def to_embedding(self, de_quantize: bool = False):
+        embedding = self.embedding
+        weight = embedding.weight
+
+        # Use the same type as the linear weight if not quantized
+        dtype = weight.dtype
+
+        num_embeddings, dims = weight.shape
+        fused_embedding = nn.Embedding(num_embeddings, dims)
+
+        lora_a = (self.scale * self.lora_a).astype(dtype)
+        lora_b = self.lora_b.astype(dtype)
+        weight = weight + lora_a @ lora_b
+        norm_scale = self.m / mx.linalg.norm(weight, axis=1)
+        fused_embedding.weight = norm_scale[:, None] * weight
+
+        return fused_embedding
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        dims: int,
+        r: int = 8,
+        dropout: float = 0.0,
+        scale: float = 20.0,
+    ):
+        super().__init__()
+
+        # Regular embedding layer weights
+        self.set_embedding(nn.Embedding(num_embeddings, dims))
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Scale for low-rank update
+        self.scale = scale
+
+        # Low rank lora weights
+        scale = 1 / math.sqrt(num_embeddings)
+        self.lora_a = mx.random.uniform(
+            low=-scale,
+            high=scale,
+            shape=(num_embeddings, r),
+        )
+        self.lora_b = mx.zeros(shape=(r, dims))
+
+    def set_embedding(self, embedding: nn.Module):
+        self.embedding = embedding
+        self.m = mx.linalg.norm(embedding.weight, axis=1)
+
+    def __call__(self, x):
+        x = mx.array(x)
+        y = self.embedding(x)
+        z = self.dropout((self.lora_a[x] @ self.lora_b))
+        out = y + (self.scale * z).astype(x.dtype)
+
+        # Compute the norm of the adapted weights for the individual embeddings
+        adapted = y + self.scale * (self.lora_a[x] @ self.lora_b)
+        denom = mx.stop_gradient(mx.linalg.norm(adapted, axis=-1))
+
+        # Remove the norm and scale by the learned magnitude
+        out = (self.m[x] / denom).reshape((*x.shape, 1)) * out
+
+        return out
+
+    def as_linear(self, x):
+        y = self.embedding.as_linear(x)
+        z = (self.dropout(x) @ self.lora_b.T) @ self.lora_a.T
+        out = y + (self.scale * z).astype(x.dtype)
+
+        # Compute the norm of the adapted weights
+        adapted = self.embedding.weight + (self.scale * self.lora_a) @ self.lora_b
+        denom = mx.stop_gradient(mx.linalg.norm(adapted, axis=1))
+
+        # Remove the norm and scale by the learned magnitude
+        out = (self.m / denom) * out
+
         return out
