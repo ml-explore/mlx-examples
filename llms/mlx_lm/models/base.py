@@ -23,9 +23,10 @@ class KVCache:
     def update_and_fetch(self, keys, values):
         prev = self.offset
         if self.keys is None or (prev + keys.shape[2]) > self.keys.shape[2]:
+            B = keys.shape[0]
             n_steps = (self.step + keys.shape[2] - 1) // self.step
-            k_shape = (1, self.n_kv_heads, n_steps * self.step, self.k_head_dim)
-            v_shape = (1, self.n_kv_heads, n_steps * self.step, self.v_head_dim)
+            k_shape = (B, self.n_kv_heads, n_steps * self.step, self.k_head_dim)
+            v_shape = (B, self.n_kv_heads, n_steps * self.step, self.v_head_dim)
             new_k = mx.zeros(k_shape, keys.dtype)
             new_v = mx.zeros(v_shape, values.dtype)
             if self.keys is not None:
