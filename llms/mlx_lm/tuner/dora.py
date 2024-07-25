@@ -121,6 +121,8 @@ class DoRAEmbedding(nn.Module):
         dora_embedding.set_embedding(embedding)
         return dora_embedding
 
+    from_base = from_embedding
+
     def to_embedding(self, de_quantize: bool = False):
         embedding = self.embedding
         weight = embedding.weight
@@ -138,6 +140,8 @@ class DoRAEmbedding(nn.Module):
         fused_embedding.weight = norm_scale[:, None] * weight
 
         return fused_embedding
+
+    fuse = to_embedding
 
     def __init__(
         self,
