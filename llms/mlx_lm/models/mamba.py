@@ -13,15 +13,15 @@ from .base import BaseModelArgs
 class ModelArgs(BaseModelArgs):
     model_type: str
     vocab_size: int
-    hidden_size: int # d_model
-    intermediate_size: int # d_inner
-    state_size: int # d_state
-    num_hidden_layers: int # n_layer, n_layer
+    hidden_size: int
+    intermediate_size: int
+    state_size: int
+    num_hidden_layers: int
     layer_norm_epsilon: float
     expand: int
-    conv_kernel: int # d_conv
-    use_bias: bool # bias
-    use_conv_bias: bool # conv_bias
+    conv_kernel: int
+    use_bias: bool
+    use_conv_bias: bool
     initializer_range: float
     time_step_rank: int
     time_step_scale: float
@@ -31,7 +31,7 @@ class ModelArgs(BaseModelArgs):
     time_step_floor: float
     rescale_prenorm_residual: bool
     use_cache: bool
-    use_mambapy: bool = False # pscan
+    use_mambapy: bool = False
     dt_rank: str = "auto"
 
     def __post_init__(self):
@@ -55,75 +55,6 @@ class ModelArgs(BaseModelArgs):
         self.intermediate_size = self.expand * self.hidden_size
         if self.dt_rank == "auto":
             self.dt_rank = math.ceil(self.hidden_size / 16)
-
-
-def clamp(x, min=None, max=None):
-    if min is not None:
-        mask_lower = x < min
-    if max is not None:
-        mask_upper = x > max
-    if min is not None:
-        if max is not None:
-            return mx.where(mask_upper, max, mx.where(mask_lower, min, x))
-        return mx.where(mask_lower, min, x)
-    return mx.where(mask_upper, max, x)
-
-
-def pscan_f(A, X):
-    Aa = A
-    Xa = X
-
-    B, D, L, _ = A.shape
-
-    num_steps = int(math.log2(L))
-
-    # up sweep
-    for k in range(num_steps):
-        T = 2 * (Xa.shape[2] // 2)
-
-        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
-        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
-
-        Xa[:, :, :, 1] += Aa[:, :, :, 1] * Xa[:, :, :, 0]
-        Aa[:, :, :, 1] *= Aa[:, :, :, 0]
-
-        A[:, :, 2**(k+1)-1::2**(k+1)] = Aa[:, :, :, 1]
-        X[:, :, 2**(k+1)-1::2**(k+1)] = Xa[:, :, :, 1]
-
-        Aa = Aa[:, :, :, 1]
-        Xa = Xa[:, :, :, 1]
-
-    # down sweep
-    for k in range(num_steps-1, -1, -1):
-        Aa = A[:, :, 2**k-1::2**k]
-        Xa = X[:, :, 2**k-1::2**k]
-
-        step_len = Xa.shape[2]
-        T = 2 * (step_len // 2)
-
-        if T < step_len:
-            last_val_aa = Aa[:, :, -1] * Aa[:, :, -2]
-            last_val_xa = Xa[:, :, -1] + Aa[:, :, -1] * Xa[:, :, -2]
-
-        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
-        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
-
-        Xa[:, :, 1:, 0] += Aa[:, :, 1:, 0] * Xa[:, :, :-1, 1]
-        Aa[:, :, 1:, 0] *= Aa[:, :, :-1, 1]
-
-        if T == step_len:
-            A[:, :, 2**k-1::2**(k+1)] = Aa[:, :, :, 0]
-            X[:, :, 2**k-1::2**(k+1)] = Xa[:, :, :, 0]
-        else:
-            A[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Aa[:, :, :, 0], mx.array([last_val_aa]).reshape(B, D, 1, -1)], axis=2)
-            X[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Xa[:, :, :, 0], mx.array([last_val_xa]).reshape(B, D, 1, -1)], axis=2)
-
-def pscan(A_in, X_in):
-    A = A_in[:].transpose(0, 2, 1, 3)
-    X = X_in[:].transpose(0, 2, 1, 3)
-    pscan_f(A, X)
-    return X.transpose(0, 2, 1, 3)
-
 
 class DepthWiseConv1d(nn.Module):
     def __init__(self, channels, kernel_size, bias, padding):
@@ -193,45 +124,6 @@ class MambaBlock(nn.Module):
         self.D = mx.ones([self.intermediate_size])
 
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
-
-    # def ssm_old(self, x):
-    #     A = -mx.exp(self.A_log) # (ED, N)
-    #     D = self.D
-
-    #     deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
-
-    #     delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
-    #     delta = mx.softplus(self.dt_proj(delta)) # (B, L, ED)
-
-    #     if self.args.use_mambapy:
-    #         y = self.selective_scan(x, delta, A, B, C, D)
-    #     else:
-    #         y = self.selective_scan_seq(x, delta, A, B, C, D)
-    #     return y
-    
-    # def selective_scan(self, x, delta, A, B, C, D):
-    #     deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
-    #     deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
-    #     BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
-    #     hs = pscan(deltaA, BX)
-    #     y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-    #     y = y + D * x
-    #     return y
-
-    # def selective_scan_seq(self, x, delta, A, B, C, D):
-    #     _, L, _ = x.shape
-    #     deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
-    #     deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
-    #     BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
-    #     h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size]) # (B, ED, N)
-    #     hs = []
-    #     for t in range(0, L):
-    #         h = deltaA[:, t] * h + BX[:, t]
-    #         hs.append(h)
-    #     hs = mx.stack(hs, axis=1)
-    #     y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-    #     y = y + D * x
-    #     return y
 
     def ssm(self, x, h):
         A = -mx.exp(self.A_log)  # (ED, N)
