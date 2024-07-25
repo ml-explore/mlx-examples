@@ -4,7 +4,7 @@ from typing import Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -122,11 +122,7 @@ class QwenModel(nn.Module):
     def __call__(self, inputs, mask=None, cache=None):
         x = self.wte(inputs)
 
-        mask = None
-        T = x.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(x.dtype)
+        mask = create_attention_mask(x, cache)
 
         if cache is None:
             cache = [None] * len(self.h)

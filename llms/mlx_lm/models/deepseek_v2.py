@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache
+from .base import BaseModelArgs, KVCache, create_attention_mask
 from .switch_layers import SwitchGLU
 
 
@@ -408,11 +408,7 @@ class DeepseekV2Model(nn.Module):
         cache: Optional[KVCache] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
-        mask = None
-        T = h.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
