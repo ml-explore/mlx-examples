@@ -25,7 +25,7 @@ class DoRALinear(nn.Module):
             dropout=dropout,
             scale=scale,
         )
-        dora_lin.linear = linear
+        dora_lin.set_linear(linear)
         return dora_lin
 
     from_base = from_linear
@@ -65,7 +65,7 @@ class DoRALinear(nn.Module):
         super().__init__()
 
         # Regular linear layer weights
-        self.linear = nn.Linear(input_dims, output_dims, bias=bias)
+        self.set_linear(nn.Linear(input_dims, output_dims, bias=bias))
         self.dropout = nn.Dropout(p=dropout)
 
         # Scale for low-rank update
@@ -79,6 +79,9 @@ class DoRALinear(nn.Module):
             shape=(input_dims, r),
         )
         self.lora_b = mx.zeros(shape=(r, output_dims))
+
+    def set_linear(self, linear: nn.Linear):
+        self.linear = linear
         self.m = mx.linalg.norm(self.linear.weight, axis=1)
 
     def __call__(self, x):
