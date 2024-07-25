@@ -1,9 +1,8 @@
 run:
-	#mlx_lm.server --model mlx-community/Meta-Llama-3.1-8B-Instruct-8bit --trust-remote-code --port 8722
 	mlx_lm.server --model mlx-community/Mistral-Nemo-Instruct-2407-8bit --trust-remote-code --port 8722
 
 k:
-	ps -ef|grep 'mlx_lm.server'|awk '{print $2}'|xargs kill -9
+	./kill.sh
 
 w:
 	curl -X GET "http://127.0.0.1:9000/api/ai/WriteBlogRandomlyWithLLM?model=MLXLMServer" -H  "Request-Origion:SwaggerBootstrapUi" -H  "accept:*/*"
