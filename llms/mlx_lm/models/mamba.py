@@ -79,7 +79,19 @@ class DepthWiseConv1d(nn.Module):
         print(self.weight)
         out = nn.Conv1d(x, self.weight, kernel_size=self.kernel_size, bias=self.bias, padding=self.padding)
         return out
-    
+
+
+def clamp(x, min=None, max=None):
+    if min is not None:
+        mask_lower = x < min
+    if max is not None:
+        mask_upper = x > max
+    if min is not None:
+        if max is not None:
+            return mx.where(mask_upper, max, mx.where(mask_lower, min, x))
+        return mx.where(mask_lower, min, x)
+    return mx.where(mask_upper, max, x)
+
 
 class MambaBlock(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -151,13 +163,9 @@ class MambaBlock(nn.Module):
     
     def __call__(self, x, cache):
         h, inputs = cache
-
-        xz = self.in_proj(x)  # (B, 2*ED)
-        x, z = mx.split(xz, indices_or_sections=2, axis=-1)  # (B, ED), (B, ED)
-
+        x, z = self.in_proj(x).split(indices_or_sections=2, axis=-1)  # (B, ED), (B, ED)
         # x branch
         x_cache = mx.expand_dims(x, 1)  # (B, 1, ED)
-
         # Ensure inputs has the correct shape
         if inputs.ndim == 2:
             inputs = mx.expand_dims(inputs, 1)  # Add a dimension if it's missing
@@ -165,23 +173,13 @@ class MambaBlock(nn.Module):
         print(f"inputs shape: {inputs.shape}")
         print(f"x_cache shape: {x_cache.shape}")
             
-        conv_input = mx.concatenate([inputs, x_cache], axis=1)  # (B, d_conv, ED)
+        conv_input = mx.concatenate([inputs, x_cache], axis=1)  # (B, d_conv, ED) <---------- Here is the problem ValueError: [concatenate] All the input arrays must have the same number of dimensions. However, got arrays with dimensions 3 and 4. ||| inputs shape: (1, 3, 1536) x_cache shape: (1, 1, 5, 1536)
         x = self.conv1d(conv_input)[:, -1, :]  # (B, ED)
-
-        x = nn.silu(x)
-        y, h = self.ssm(x, h)
-
-        # z branch
-        z = nn.silu(z)
-
-        output = y * z
-        output = self.out_proj(output)  # (B, D)
-
+        y, h = self.ssm(nn.silu(x), h)
+        output = y * nn.silu(z) # * z branch
         # prepare cache for next call
         inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)  # (B, d_conv-1, ED)
-        cache = (h, inputs)
-
-        return output, cache
+        return self.out_proj(output), (h, inputs) # (B, D), cache
 
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -236,8 +234,7 @@ class Model(nn.Module):
     
     def make_cache(self):
         # return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
-        return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
-        # return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
+        return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
     
     def generate(self, input_ids: mx.array, n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
         self.eval()
