@@ -31,6 +31,8 @@ class LoRALinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
+    from_base = from_linear
+
     def to_linear(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
@@ -66,6 +68,8 @@ class LoRALinear(nn.Module):
             )
 
         return fused_linear
+
+    fuse = to_linear
 
     def __init__(
         self,
@@ -120,6 +124,8 @@ class LoRASwitchLinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
+    from_base = from_linear
+
     def to_linear(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
@@ -151,6 +157,8 @@ class LoRASwitchLinear(nn.Module):
             fused_linear = fused_linear.to_quantized(linear.group_size, linear.bits)
 
         return fused_linear
+
+    fuse = to_linear
 
     def __init__(
         self,
@@ -190,4 +198,104 @@ class LoRASwitchLinear(nn.Module):
         z = mx.take_along_axis(z, indices[..., None], axis=-2)
         z = z[..., None, :] @ self.lora_b[indices].swapaxes(-2, -1)
 
+        return y + (self.scale * z).astype(x.dtype)
+
+
+class LoRAEmbedding(nn.Module):
+    @staticmethod
+    def from_embedding(
+        embedding: nn.Embedding,
+        r: int = 8,
+        dropout: float = 0.0,
+        scale: float = 20.0,
+    ):
+        num_embeddings, dims = embedding.weight.shape
+        if isinstance(embedding, nn.QuantizedEmbedding):
+            dims *= 32 // embedding.bits
+        lora_embedding = LoRAEmbedding(
+            num_embeddings=num_embeddings,
+            dims=dims,
+            r=r,
+            dropout=dropout,
+            scale=scale,
+        )
+        lora_embedding.embedding = embedding
+        return lora_embedding
+
+    from_base = from_embedding
+
+    def to_embedding(self, de_quantize: bool = False):
+        embedding = self.embedding
+        weight = embedding.weight
+        is_quantized = isinstance(embedding, nn.QuantizedEmbedding)
+
+        # Use the same type as the linear weight if not quantized
+        dtype = weight.dtype
+
+        if is_quantized:
+            dtype = mx.float16
+            weight = mx.dequantize(
+                weight,
+                embedding.scales,
+                embedding.biases,
+                embedding.group_size,
+                embedding.bits,
+            )
+        num_embeddings, dims = weight.shape
+        fused_embedding = nn.Embedding(num_embeddings, dims)
+
+        lora_a = (self.scale * self.lora_a).astype(dtype)
+        lora_b = self.lora_b.astype(dtype)
+        fused_embedding.weight = weight + lora_a @ lora_b
+
+        if is_quantized and not de_quantize:
+            fused_embedding = nn.QuantizedEmbedding.from_embedding(
+                fused_embedding,
+                embedding.group_size,
+                embedding.bits,
+            )
+
+        return fused_embedding
+
+    fuse = to_embedding
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        dims: int,
+        r: int = 8,
+        dropout: float = 0.0,
+        scale: float = 20.0,
+    ):
+        super().__init__()
+
+        # Regular embedding layer
+        self.embedding = nn.Embedding(num_embeddings, dims)
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Scale for low-rank update
+        self.scale = scale
+
+        # Low rank lora weights
+        scale = 1 / math.sqrt(num_embeddings)
+        self.lora_a = mx.random.uniform(
+            low=-scale,
+            high=scale,
+            shape=(num_embeddings, r),
+        )
+        self.lora_b = mx.zeros(shape=(r, dims))
+
+    def __call__(self, x):
+        x = mx.array(x)
+        y = self.embedding(x)
+        # Make a dropout mask in the shape of the token indexes + 1 dimension
+        # and use broadcasting to dropout individual token embeddings
+        # z = (self.dropout(mx.ones(shape=(*x.shape, 1))) * self.lora_a[x]) @ self.lora_b
+        z = self.dropout(self.lora_a[x] @ self.lora_b)
+        out = y + (self.scale * z).astype(x.dtype)
+        return out
+
+    def as_linear(self, x):
+        y = self.embedding.as_linear(x)
+        z = (self.dropout(x) @ self.lora_b.T) @ self.lora_a.T
         return y + (self.scale * z).astype(x.dtype)
