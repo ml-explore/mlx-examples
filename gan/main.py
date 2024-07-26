@@ -119,7 +119,7 @@ def main(args:dict):
 
         return gen_loss
 
-    # training
+    # TODO training...
     
 
 if __name__ == "__main__":
