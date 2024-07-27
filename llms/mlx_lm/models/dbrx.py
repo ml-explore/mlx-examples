@@ -5,7 +5,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -199,11 +199,7 @@ class DBRX(nn.Module):
     ):
         h = self.wte(inputs)
 
-        mask = None
-        T = h.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.blocks)

@@ -6,6 +6,7 @@ from typing import Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
+from .base import create_attention_mask
 from .switch_layers import SwitchMLP
 
 
@@ -167,10 +168,7 @@ class Model(nn.Module):
         mask: mx.array = None,
         cache: mx.array = None,
     ) -> Tuple[mx.array, mx.array]:
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
+        mask = create_attention_mask(x, cache)
 
         y = self.transformer(x, mask, cache)
         return self.lm_head(y)

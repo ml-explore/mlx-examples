@@ -1,14 +1,9 @@
 import inspect
 from dataclasses import dataclass
+from typing import List, Optional
 
 import mlx.core as mx
-
-
-def create_additive_causal_mask(N: int, offset: int = 0):
-    rinds = mx.arange(offset + N)
-    linds = mx.arange(offset, offset + N) if offset else rinds
-    mask = linds[:, None] < rinds[None]
-    return mask * -1e9
+import mlx.nn as nn
 
 
 class KVCache:
@@ -29,9 +24,10 @@ class KVCache:
     def update_and_fetch(self, keys, values):
         prev = self.offset
         if self.keys is None or (prev + keys.shape[2]) > self.keys.shape[2]:
+            B = keys.shape[0]
             n_steps = (self.step + keys.shape[2] - 1) // self.step
-            k_shape = (1, self.n_kv_heads, n_steps * self.step, self.k_head_dim)
-            v_shape = (1, self.n_kv_heads, n_steps * self.step, self.v_head_dim)
+            k_shape = (B, self.n_kv_heads, n_steps * self.step, self.k_head_dim)
+            v_shape = (B, self.n_kv_heads, n_steps * self.step, self.v_head_dim)
             new_k = mx.zeros(k_shape, keys.dtype)
             new_v = mx.zeros(v_shape, values.dtype)
             if self.keys is not None:
@@ -60,3 +56,24 @@ class BaseModelArgs:
                 if k in inspect.signature(cls).parameters
             }
         )
+
+
+def create_additive_causal_mask(N: int, offset: int = 0):
+    rinds = mx.arange(offset + N)
+    linds = mx.arange(offset, offset + N) if offset else rinds
+    mask = linds[:, None] < rinds[None]
+    return mask * -1e9
+
+
+def create_attention_mask(h: mx.array, cache: Optional[List[KVCache]] = None):
+    T = h.shape[1]
+    if T > 1:
+        # Input consists of multiple tokens, create a causal mask so that prior
+        # tokens do not give attention to later tokens. If a cache is in place
+        # (because e.g. prompt reuse), offset the mask accordingly.
+        offset = cache[0].offset if cache is not None and cache[0] is not None else 0
+        mask = create_additive_causal_mask(T, offset)
+        mask = mask.astype(h.dtype)
+    else:
+        mask = None
+    return mask
