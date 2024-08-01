@@ -78,3 +78,10 @@ curl localhost:8080/v1/chat/completions \
 - `logprobs`: (Optional) An integer specifying the number of top tokens and
   corresponding log probabilities to return for each output in the generated
   sequence. If set, this can be any value between 1 and 10, inclusive.
+
+- `model`: (Optional) A string path to a local model or Hugging Face repo id.
+  If the path is local is must be relative to the directory the server was
+  started in.
+
+- `adapters`: (Optional) A string path to low-rank adapters. The path must be
+  rlative to the directory the server was started in.

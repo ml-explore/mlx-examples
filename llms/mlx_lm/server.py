@@ -103,7 +103,7 @@ class ModelProvider:
 
     # Added in adapter_path to load dynamically
     def load(self, model_path, adapter_path=None):
-        if self.model_key == model_path:
+        if self.model_key == (model_path, adapter_path):
             return self.model, self.tokenizer
 
         # Remove the old model if it exists.
@@ -136,7 +136,7 @@ class ModelProvider:
             if tokenizer.chat_template is None:
                 tokenizer.chat_template = tokenizer.default_chat_template
 
-        self.model_key = model_path
+        self.model_key = (model_path, adapter_path)
         self.model = model
         self.tokenizer = tokenizer
 
@@ -201,7 +201,7 @@ class APIHandler(BaseHTTPRequestHandler):
         # Extract request parameters from the body
         self.stream = self.body.get("stream", False)
         self.requested_model = self.body.get("model", "default_model")
-        self.adapter = self.body.get("adapter-path", None)
+        self.adapter = self.body.get("adapters", None)
         self.max_tokens = self.body.get("max_tokens", 100)
         self.temperature = self.body.get("temperature", 1.0)
         self.top_p = self.body.get("top_p", 1.0)
