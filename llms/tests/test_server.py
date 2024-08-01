@@ -12,7 +12,7 @@ class DummyModelProvider:
         HF_MODEL_PATH = "mlx-community/Qwen1.5-0.5B-Chat-4bit"
         self.model, self.tokenizer = load(HF_MODEL_PATH)
 
-    def load(self, model):
+    def load(self, model, adapter=None):
         assert model in ["default_model", "chat_model"]
         return self.model, self.tokenizer
 
