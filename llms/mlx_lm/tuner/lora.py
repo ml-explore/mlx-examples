@@ -10,7 +10,7 @@ from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
 
 class LoRALinear(nn.Module):
     @staticmethod
-    def from_linear(
+    def from_base(
         linear: nn.Linear,
         r: int = 8,
         dropout: float = 0.0,
@@ -31,9 +31,7 @@ class LoRALinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
-    from_base = from_linear
-
-    def to_linear(self, de_quantize: bool = False):
+    def fuse(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
         weight = linear.weight
@@ -68,8 +66,6 @@ class LoRALinear(nn.Module):
             )
 
         return fused_linear
-
-    fuse = to_linear
 
     def __init__(
         self,
@@ -107,7 +103,7 @@ class LoRALinear(nn.Module):
 
 class LoRASwitchLinear(nn.Module):
     @staticmethod
-    def from_linear(
+    def from_base(
         linear: nn.Module,
         r: int = 8,
         dropout: float = 0.0,
@@ -124,9 +120,7 @@ class LoRASwitchLinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
-    from_base = from_linear
-
-    def to_linear(self, de_quantize: bool = False):
+    def fuse(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
         weight = linear.weight
@@ -157,8 +151,6 @@ class LoRASwitchLinear(nn.Module):
             fused_linear = fused_linear.to_quantized(linear.group_size, linear.bits)
 
         return fused_linear
-
-    fuse = to_linear
 
     def __init__(
         self,
@@ -203,7 +195,7 @@ class LoRASwitchLinear(nn.Module):
 
 class LoRAEmbedding(nn.Module):
     @staticmethod
-    def from_embedding(
+    def from_base(
         embedding: nn.Embedding,
         r: int = 8,
         dropout: float = 0.0,
@@ -222,9 +214,7 @@ class LoRAEmbedding(nn.Module):
         lora_embedding.embedding = embedding
         return lora_embedding
 
-    from_base = from_embedding
-
-    def to_embedding(self, de_quantize: bool = False):
+    def fuse(self, de_quantize: bool = False):
         embedding = self.embedding
         weight = embedding.weight
         is_quantized = isinstance(embedding, nn.QuantizedEmbedding)
@@ -256,8 +246,6 @@ class LoRAEmbedding(nn.Module):
             )
 
         return fused_embedding
-
-    fuse = to_embedding
 
     def __init__(
         self,
