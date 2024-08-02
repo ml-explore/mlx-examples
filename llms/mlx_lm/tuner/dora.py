@@ -8,7 +8,7 @@ import mlx.nn as nn
 
 class DoRALinear(nn.Module):
     @staticmethod
-    def from_linear(
+    def from_base(
         linear: nn.Linear,
         r: int = 8,
         dropout: float = 0.0,
@@ -28,9 +28,7 @@ class DoRALinear(nn.Module):
         dora_lin.set_linear(linear)
         return dora_lin
 
-    from_base = from_linear
-
-    def to_linear(self, de_quantize: bool = False):
+    def fuse(self, de_quantize: bool = False):
         linear = self.linear
         bias = "bias" in linear
         weight = linear.weight
@@ -50,8 +48,6 @@ class DoRALinear(nn.Module):
         if bias:
             fused_linear.bias = linear.bias
         return fused_linear
-
-    fuse = to_linear
 
     def __init__(
         self,
@@ -103,7 +99,7 @@ class DoRALinear(nn.Module):
 
 
 class DoRAEmbedding(nn.Module):
-    def from_embedding(
+    def from_base(
         embedding: nn.Embedding,
         r: int = 8,
         dropout: float = 0.0,
@@ -124,9 +120,7 @@ class DoRAEmbedding(nn.Module):
         dora_embedding.set_embedding(embedding)
         return dora_embedding
 
-    from_base = from_embedding
-
-    def to_embedding(self, de_quantize: bool = False):
+    def fuse(self, de_quantize: bool = False):
         embedding = self.embedding
         weight = embedding.weight
 
@@ -143,8 +137,6 @@ class DoRAEmbedding(nn.Module):
         fused_embedding.weight = norm_scale[:, None] * weight
 
         return fused_embedding
-
-    fuse = to_embedding
 
     def __init__(
         self,

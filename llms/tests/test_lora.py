@@ -118,8 +118,8 @@ class TestLoraEmbedding(unittest.TestCase):
             embedding.group_size,
             embedding.bits,
         )
-        lora_emb = LoRAEmbedding.from_embedding(embedding, r=8, dropout=0, scale=10)
-        new_embedding = lora_emb.to_embedding(de_quantize=True)
+        lora_emb = LoRAEmbedding.from_base(embedding, r=8, dropout=0, scale=10)
+        new_embedding = lora_emb.fuse(de_quantize=True)
         self.assertTrue(mx.array_equal(dequantized_weight, new_embedding.weight))
         self.assertTrue(mx.array_equal(embedding(tokens), lora_emb(tokens)))
 
@@ -136,7 +136,7 @@ class TestLoraEmbedding(unittest.TestCase):
 
         # change the value of lora_b and the embeddings will no longer be equal
         lora_emb.lora_b = mx.random.uniform(shape=lora_emb.lora_b.shape)
-        new_embedding = lora_emb.to_embedding(de_quantize=True)
+        new_embedding = lora_emb.fuse(de_quantize=True)
         self.assertFalse(mx.array_equal(dequantized_weight, new_embedding.weight))
         self.assertFalse(mx.array_equal(embedding(tokens), lora_emb(tokens)))
 

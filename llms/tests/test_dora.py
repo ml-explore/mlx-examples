@@ -19,8 +19,8 @@ class TestDoRAEmbedding(unittest.TestCase):
 
         embedding = nn.Embedding(num_embeddings, dims)
 
-        dora_emb = DoRAEmbedding.from_embedding(embedding, r=8, dropout=0, scale=10)
-        new_embedding = dora_emb.to_embedding()
+        dora_emb = DoRAEmbedding.from_base(embedding, r=8, dropout=0, scale=10)
+        new_embedding = dora_emb.fuse()
         self.assertTrue(mx.array_equal(embedding.weight, new_embedding.weight))
         self.assertTrue(mx.array_equal(embedding(tokens), dora_emb(tokens)))
 
@@ -37,6 +37,6 @@ class TestDoRAEmbedding(unittest.TestCase):
 
         # change the value of lora_b and the embeddings will no longer be equal
         dora_emb.lora_b = mx.random.uniform(shape=dora_emb.lora_b.shape)
-        new_embedding = dora_emb.to_embedding()
+        new_embedding = dora_emb.fuse()
         self.assertFalse(mx.array_equal(embedding.weight, new_embedding.weight))
         self.assertFalse(mx.array_equal(embedding(tokens), dora_emb(tokens)))
