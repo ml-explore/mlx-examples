@@ -56,11 +56,11 @@ def stopping_criteria(
 
 def sequence_overlap(s1: Sequence, s2: Sequence) -> bool:
     """
-    Checks if s1 has overlap with s2
+    Checks if a suffix of s1 has overlap with a prefix of s2
 
     Args:
-        s1 (Sequence): The first sequence, which end is checked
-        s2 (Sequence): The second sequence, which beginning is checked
+        s1 (Sequence): The first sequence
+        s2 (Sequence): The second sequence
 
     Returns:
         bool: If the two sequences have overlap
@@ -535,13 +535,13 @@ class APIHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         # check is there any remaining text to send
-        if stop_sequence_buffer:
-            next_chunk = (
-                detokenizer.last_segment
-                if stop_sequence_suffix is None
-                else detokenizer.last_segment[: -len(stop_sequence_suffix)]
-            )
-            response = self.generate_response(next_chunk, "length")
+        last_segment = detokenizer.last_segment
+        if last_segment:
+            if stop_sequence_suffix is not None:
+                last_segment = last_segment[: -len(stop_sequence_suffix)]
+            response = self.generate_response(last_segment, "length")
+            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+            self.wfile.flush()
 
         if self.stream_options is not None and self.stream_options["include_usage"]:
             response = self.completion_usage_response(len(prompt), len(tokens))
