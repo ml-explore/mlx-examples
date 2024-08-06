@@ -477,12 +477,13 @@ class APIHandler(BaseHTTPRequestHandler):
         stop_id_sequences: List[List[int]],
     ):
         """
-        Generate response to prompt and foward it to the client using a Server Sent Events (SSE) stream.
+        Generate response to prompt and foward it to the client using a Server
+        Sent Events (SSE) stream.
 
         Args:
             prompt (mx.array): The prompt, in token form inside of a mlx array
-            stop_id_sequences (List[List[int]]):
-                A list of stop words passed to the stopping_criteria function
+            stop_id_sequences (List[List[int]]): A list of stop words passed to
+              the stopping_criteria function
         """
         # No additional headers are needed, call end_headers
         self.end_headers()
@@ -521,8 +522,8 @@ class APIHandler(BaseHTTPRequestHandler):
                     )
                 break
 
-            # If the end of tokens overlaps with a stop sequence
-            # Generate new tokens until we know if the stop sequence is hit or not
+            # If the end of tokens overlaps with a stop sequence, generate new
+            # tokens until we know if the stop sequence is hit or not
             if any(
                 (sequence_overlap(tokens, sequence) for sequence in stop_id_sequences)
             ):
