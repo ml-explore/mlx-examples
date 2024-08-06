@@ -535,6 +535,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         # check is there any remaining text to send
+        detokenizer.finalize()
         last_segment = detokenizer.last_segment
         if last_segment:
             if stop_sequence_suffix is not None:
