@@ -163,7 +163,7 @@ def load_torch_weights_and_config(
 
         name_or_path = snapshot_download(
             repo_id=name_or_path,
-            allow_patterns=["*.json", "*.bin", "*.txt"],
+            allow_patterns=["*.json", "pytorch_model.bin", "*.txt"],
         )
     else:
         raise RuntimeError(
@@ -238,7 +238,7 @@ def convert(name_or_path: str, dtype: mx.Dtype = mx.float16):
 
     model_dims = ModelDimensions(**config)
     model = Whisper(model_dims, dtype)
-    model.load_weights(list(weights.items()))
+    model.load_weights(list(weights.items()), strict=False)
 
     if alignment_heads is not None:
         model.set_alignment_heads(alignment_heads)
