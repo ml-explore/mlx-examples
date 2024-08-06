@@ -225,22 +225,26 @@ class Whisper(nn.Module):
             (self.dims.n_text_layer, self.dims.n_text_head), dtype=bool
         )
         all_heads[self.dims.n_text_layer // 2 :] = True
-        self.alignment_heads = mx.array(np.asarray(all_heads.nonzero()).T)
+        self._alignment_heads = mx.array(np.asarray(all_heads.nonzero()).T)
 
     def set_alignment_heads(self, dump: Union[bytes, np.ndarray]):
         if isinstance(dump, np.ndarray):
-            self.alignment_heads = mx.array(dump)
+            self._alignment_heads = mx.array(dump)
         elif isinstance(dump, bytes):
             array = np.frombuffer(
                 gzip.decompress(base64.b85decode(dump)), dtype=bool
             ).copy()
             mask = array.reshape(self.dims.n_text_layer, self.dims.n_text_head)
-            self.alignment_heads = mx.array(np.asarray(mask.nonzero()).T)
+            self._alignment_heads = mx.array(np.asarray(mask.nonzero()).T)
         else:
             raise ValueError(
                 f"Invalid type for `dump`: {type(dump)}. Expected a np.ndarray or base85-encoded bytes containing"
                 " alignment_head information"
             )
+
+    @property
+    def alignment_heads(self):
+        return self._alignment_heads
 
     def embed_audio(self, mel):
         return self.encoder(mel)
