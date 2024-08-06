@@ -371,7 +371,7 @@ if __name__ == "__main__":
 
     # Save weights
     print("[INFO] Saving")
-    np.savez(str(mlx_path / "weights.safetensors"), **weights)
+    np.savez(str(mlx_path / "weights.npz"), **weights)
 
     # Save config.json with model_type
     with open(str(mlx_path / "config.json"), "w") as f:
