@@ -8,6 +8,7 @@ from typing import Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+
 from mlx.utils import tree_flatten
 
 
@@ -53,6 +54,10 @@ class TrainingArgs:
     adapter_file: str = field(
         default="adapters.safetensors",
         metadata={"help": "Save/load path for the trained adapter weights."},
+    )
+    fine_tune_type: str = field(
+            default="lora",
+            metadata={"help": "Type of fine-tuning to perform: lora, dora, or full."},
     )
     grad_checkpoint: bool = field(
         default=False,
@@ -287,24 +292,48 @@ def train(
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
-            save_adapter(model, args.adapter_file)
-            checkpoint = (
-                Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
-            )
-            save_adapter(model, checkpoint)
-            print(
-                f"Iter {it}: Saved adapter weights to "
-                f"{args.adapter_file} and {checkpoint}."
-            )
+            save_adapter_model(model, args.adapter_file)
 
-    # save final adapter weights
-    save_adapter(model, args.adapter_file)
-    print(f"Saved final adapter weights to {args.adapter_file}.")
+            if args.fine_tune_type == "full":
+                checkpoint = (
+                    Path(args.adapter_file).parent / f"{it:07d}_checkpoint.safetensors"
+                )
+                save_adapter_model(model, checkpoint)
+                print(
+                    f"Iter {it}: Saved model checkpoint weights to "
+                    f"{args.adapter_file} and {checkpoint}."
+                )
+            else:
+                checkpoint = (
+                    Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
+                )
+                save_adapter_model(model, checkpoint)
+                print(
+                    f"Iter {it}: Saved adapter weights to "
+                    f"{args.adapter_file} and {checkpoint}."
+                )
+
+    # Save the full model state if fine-tune-type is full
+    if args.fine_tune_type == "full":
+        full_model_path = Path(args.adapter_file)
+        full_model_path.parent.mkdir(parents=True, exist_ok=True)
+        # save final full model weights
+        save_adapter_model(model, args.adapter_file, is_adapter=False)
+        print(f"Saved final full model weights to {full_model_path}.")
+    else:
+        # save final adapter weights
+        save_adapter_model(model, args.adapter_file)
+        print(f"Saved final adapter weights to {args.adapter_file}.")
 
 
-def save_adapter(
+def save_adapter_model(
     model: nn.Module,
     adapter_file: Union[str, Path],
+    is_adapter: bool = True
 ):
-    flattened_tree = tree_flatten(model.trainable_parameters())
-    mx.save_safetensors(str(adapter_file), dict(flattened_tree))
+    if is_adapter:
+        weights = dict(tree_flatten(model.parameters()))
+        mx.save_safetensors(str(adapter_file), weights)
+    else:
+        adapter_weights = tree_flatten(model.trainable_parameters())
+        mx.save_safetensors(str(adapter_file), dict(adapter_weights))

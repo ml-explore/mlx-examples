@@ -57,6 +57,19 @@ mlx_lm.lora \
     --iters 600
 ```
 
+To fine-tune the full model weights, simply add the `--fine-tune-type full` flag:
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --fine-tune-type full \
+    --data <path_to_data> \
+    --iters 600
+```
+
+Methods of fine-tuning are `lora` `dora`, and `full`, default is `lora`.
+
 The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
 when using `--train` and a path to a `test.jsonl` when using `--test`. For more
 details on the data format see the section on [Data](#Data).
@@ -67,7 +80,7 @@ mistralai/Mistral-7B-v0.1`.
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
-By default, the adapter config and weights are saved in `adapters/`. You can
+By default, the adapter config and (full) weights are saved in `adapters/`. You can
 specify the output location with `--adapter-path`.
 
 You can resume fine-tuning with an existing adapter with
@@ -295,4 +308,5 @@ tokens-per-second, using the MLX Example
 data set.
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
+
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)

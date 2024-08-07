@@ -13,4 +13,5 @@ MLX Examples was developed with contributions from the following individuals:
 - Gabrijel Boduljak: Implemented `CLIP`.
 - Markus Enzweiler: Added the `cvae` examples.
 - Prince Canuma: Helped add support for `Starcoder2` models.
-- Shiyu Li: Added the `Segment Anything Model`.
+- Shiyu Li: Added the `Segment Anything` model.
+- Gökdeniz Gülmez: Added the `MiniCPM` model and support for full fine-tuning.

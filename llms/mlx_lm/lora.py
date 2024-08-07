@@ -41,6 +41,7 @@ yaml_loader.add_implicit_resolver(
 CONFIG_DEFAULTS = {
     "model": "mlx_model",
     "train": False,
+    "fine_tune_type": "lora",
     "data": "data/",
     "seed": 0,
     "lora_layers": 16,
@@ -58,7 +59,6 @@ CONFIG_DEFAULTS = {
     "max_seq_length": 2048,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
-    "use_dora": False,
 }
 
 
@@ -80,6 +80,13 @@ def build_parser():
         "--data",
         type=str,
         help="Directory with {train, valid, test}.jsonl files",
+    )
+    parser.add_argument(
+        "--fine-tune-type",
+        type=str,
+        choices=["lora", "dora", "full"],
+        default="lora",
+        help="Type of fine-tuning to perform: lora, dora, or full. Default is lora.",
     )
     parser.add_argument(
         "--lora-layers",
@@ -107,12 +114,12 @@ def build_parser():
     parser.add_argument(
         "--resume-adapter-file",
         type=str,
-        help="Load path to resume training with the given adapters.",
+        help="Load path to resume training with the given adapters or full model weights when in full training mode.",
     )
     parser.add_argument(
         "--adapter-path",
         type=str,
-        help="Save/load path for the adapters.",
+        help="Save/load path for the adapters or full model or full model weights when in full training mode.",
     )
     parser.add_argument(
         "--save-every",
@@ -148,9 +155,6 @@ def build_parser():
         default=None,
     )
     parser.add_argument("--seed", type=int, default=None, help="The PRNG seed")
-    parser.add_argument(
-        "--use-dora", action="store_true", default=None, help="Use DoRA to finetune."
-    )
     return parser
 
 
@@ -162,23 +166,36 @@ def train_model(
     valid_set,
     training_callback: TrainingCallback = None,
 ):
-    # Freeze all layers
-    model.freeze()
-
-    # Convert linear layers to lora layers and unfreeze in the process
-    linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, args.use_dora)
-
-    # Resume training the given adapters.
-    if args.resume_adapter_file is not None:
-        print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-        model.load_weights(args.resume_adapter_file, strict=False)
+    if args.fine_tune_type == "full":
+        print("Training full model weights.")
+        model.unfreeze()
+    elif args.fine_tune_type == "lora":
+        print("Training model with LoRA.")
+        model.freeze()
+        # Convert linear layers to lora layers and unfreeze in the process
+        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+        if args.resume_adapter_file is not None:
+            print(f"Loading pretrained adapters from {args.resume_adapter_file}")
+            model.load_weights(args.resume_adapter_file, strict=False)
+    elif args.fine_tune_type == "dora":
+        print("Training model with DoRA.")
+        model.freeze()
+        # Convert linear layers to lora layers and unfreeze in the process
+        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, use_dora=True)
+        if args.resume_adapter_file is not None:
+            print(f"Loading pretrained adapters from {args.resume_adapter_file}")
+            model.load_weights(args.resume_adapter_file, strict=False, use_dora=True)
 
     print_trainable_parameters(model)
 
     adapter_path = Path(args.adapter_path)
     adapter_path.mkdir(parents=True, exist_ok=True)
-    adapter_file = adapter_path / "adapters.safetensors"
-    save_config(vars(args), adapter_path / "adapter_config.json")
+
+    if args.fine_tune_type == "full":
+        adapter_file = adapter_path / "model.safetensors"
+    else:
+        adapter_file = adapter_path / "adapter.safetensors"
+        save_config(vars(args), adapter_path / "adapter_config.json")
 
     # init training args
     training_args = TrainingArgs(
@@ -191,6 +208,7 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
+        fine_tune_type=args.fine_tune_type
     )
 
     model.train()
@@ -233,6 +251,13 @@ def run(args, training_callback: TrainingCallback = None):
 
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
+
+    # # Load the full model state if available
+    # if args.fine_tune_type != "full" and args.adapter_path:
+    #     model_file = Path(args.adapter_path) / "model.safetensors"
+    #     if model_file.exists():
+    #         print(f"Loading full model state from {model_file}")
+    #         model.load_weights(str(args.adapter_path) / "model.safetensors", strict=True)
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
