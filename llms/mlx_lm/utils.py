@@ -19,7 +19,7 @@ from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
 # Local imports
-from .models.base import KVCache
+from .models.base import KVCache, MambaCache
 from .sample_utils import top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
@@ -28,7 +28,7 @@ from .tuner.utils import dequantize as dequantize_model
 # Constants
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
-    "phi-msft": "phixtral",
+    "phi-msft": "phixtral"
 }
 
 MAX_FILE_SIZE_GB = 5
@@ -140,7 +140,7 @@ def generate_step(
 
     Args:
         prompt (mx.array): The input prompt.
-        model (nn.Module): The model to use for generation.
+        model: The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
           Default: ``0``.
         repetition_penalty (float, optional): The penalty factor for repeating
@@ -205,21 +205,28 @@ def generate_step(
             logits = apply_repetition_penalty(
                 logits, repetition_context, repetition_penalty
             )
-            y, logprobs = sample(logits)
-            repetition_context.append(y.item())
+            next_token, logprobs = sample(logits)
+            repetition_context.append(next_token.item())
         else:
-            y, logprobs = sample(logits)
+            next_token, logprobs = sample(logits)
 
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
-        return y, logprobs.squeeze(0)
+    
+        return next_token, logprobs.squeeze(0)
 
-    y, logprobs = _step(y)
+    if hasattr(model, 'generate_step'):
+        y, logprobs = model.generate_step(prompt)
+    else:
+        y, logprobs = _step(y)
 
     mx.async_eval(y)
     while True:
-        next_y, next_logprobs = _step(y)
+        if hasattr(model, 'generate_step'):
+            next_y, next_logprobs = model.generate_step(y)
+        else:
+            next_y, next_logprobs = _step(y)
         mx.async_eval(next_y)
         yield y.item(), logprobs
         y, logprobs = next_y, next_logprobs
@@ -299,6 +306,7 @@ def generate(
         print("Prompt:", prompt)
 
     prompt_tokens = mx.array(tokenizer.encode(prompt))
+        
     detokenizer = tokenizer.detokenizer
 
     tic = time.perf_counter()
