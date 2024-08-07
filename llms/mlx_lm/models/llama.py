@@ -309,6 +309,36 @@ class Model(nn.Module):
             k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
         }
 
+    def shard(self, group: Optional[mx.distributed.Group] = None):
+        group = group or mx.distributed.init()
+
+        def all_to_sharded(l):
+            if isinstance(l, nn.QuantizedLinear):
+                return nn.QuantizedAllToShardedLinear.from_quantized_linear(l, group)
+            else:
+                return nn.AllToShardedLinear.from_linear(l, group)
+
+        def sharded_to_all(l):
+            if isinstance(l, nn.QuantizedLinear):
+                return nn.QuantizedShardedToAllLinear.from_quantized_linear(l, group)
+            else:
+                return nn.ShardedToAllLinear.from_linear(l, group)
+
+        N = group.size()
+        for layer in self.model.layers:
+            # Shard the self attention
+            layer.self_attn.q_proj = all_to_sharded(layer.self_attn.q_proj)
+            layer.self_attn.k_proj = all_to_sharded(layer.self_attn.k_proj)
+            layer.self_attn.v_proj = all_to_sharded(layer.self_attn.v_proj)
+            layer.self_attn.o_proj = sharded_to_all(layer.self_attn.o_proj)
+            layer.self_attn.n_heads //= N
+            layer.self_attn.n_kv_heads //= N
+
+            # Shard the MLP
+            layer.mlp.gate_proj = all_to_sharded(layer.mlp.gate_proj)
+            layer.mlp.down_proj = sharded_to_all(layer.mlp.down_proj)
+            layer.mlp.up_proj = all_to_sharded(layer.mlp.up_proj)
+
     @property
     def layers(self):
         return self.model.layers
@@ -321,4 +351,4 @@ class Model(nn.Module):
 
     @property
     def n_kv_heads(self):
-        return self.args.num_key_value_heads
+        return self.args.num_key_value_heads // mx.distributed.init().size()

@@ -150,7 +150,7 @@ def main():
         tokenizer,
         prompt,
         args.max_tokens,
-        verbose=True,
+        verbose=mx.distributed.init().rank() == 0,
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,

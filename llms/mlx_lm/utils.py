@@ -419,6 +419,11 @@ def load_model(
 
     model.load_weights(list(weights.items()))
 
+    if mx.distributed.init().size() > 1:
+        if not hasattr(model, "shard"):
+            raise RuntimeError("Model doesn't support distributed inference.")
+        model.shard()
+
     if not lazy:
         mx.eval(model.parameters())
 
