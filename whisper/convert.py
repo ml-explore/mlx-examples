@@ -157,7 +157,7 @@ def load_torch_weights_and_config(
     if name_or_path in _MODELS:
         alignment_heads = _ALIGNMENT_HEADS[name_or_path]
         name_or_path = _download(_MODELS[name_or_path], download_root)
-    elif not Path(name_or_path).is_file():
+    elif not Path(name_or_path).exists():
         # Try downloading from HF
         from huggingface_hub import snapshot_download
 
