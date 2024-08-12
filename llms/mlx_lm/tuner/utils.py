@@ -135,10 +135,7 @@ def linear_to_lora_layers(
         if lora_layers:
             l.update_modules(tree_unflatten(lora_layers))
 
-    non_layer_modules = [
-        (k, m) for k, m in model.named_modules() if "model.layers" not in k
-    ]
-    lora_modules = [(k, to_lora(m)) for k, m in non_layer_modules if k in keys]
+    lora_modules = [(k, to_lora(m)) for k, m in model.named_modules() if k in keys]
     if lora_modules:
         model.update_modules(tree_unflatten(lora_modules))
 
