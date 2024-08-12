@@ -171,7 +171,7 @@ class DoRAEmbedding(nn.Module):
     def __call__(self, x):
         x = mx.array(x)
         y = self.embedding(x)
-        z = self.dropout((self.lora_a[x] @ self.lora_b))
+        z = self.dropout(self.lora_a[x] @ self.lora_b)
         out = y + (self.scale * z).astype(x.dtype)
 
         # Compute the norm of the adapted weights for the individual embeddings

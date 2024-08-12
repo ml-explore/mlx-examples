@@ -276,9 +276,6 @@ class LoRAEmbedding(nn.Module):
     def __call__(self, x):
         x = mx.array(x)
         y = self.embedding(x)
-        # Make a dropout mask in the shape of the token indexes + 1 dimension
-        # and use broadcasting to dropout individual token embeddings
-        # z = (self.dropout(mx.ones(shape=(*x.shape, 1))) * self.lora_a[x]) @ self.lora_b
         z = self.dropout(self.lora_a[x] @ self.lora_b)
         out = y + (self.scale * z).astype(x.dtype)
         return out
