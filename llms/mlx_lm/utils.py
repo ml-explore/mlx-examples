@@ -137,7 +137,7 @@ def generate_step(
     min_tokens_to_keep: int = 1,
     logit_bias: Optional[Dict[int, float]] = None,
     prefill_step_size: int = 512,
-    max_kv_size: int = None,
+    max_kv_size: Optional[int] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -158,9 +158,9 @@ def generate_step(
         min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
           be filtered by min_p sampling.
         logit_bias (dictionary, optional): Additive logit bias.
-        prefill_step_size (int, optional): Step size for processing the prompt.
+        prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
-          entries (except the first few tokens) will be overwritten.
+          entries (except the first 4 tokens) will be overwritten.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
