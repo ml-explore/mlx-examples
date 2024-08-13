@@ -50,12 +50,10 @@ class TestModels(unittest.TestCase):
         k = mx.random.uniform(shape=(b, h, 4, d))
         v = mx.random.uniform(shape=(b, h, 4, d))
         k_up, v_up = cache.update_and_fetch(k, v)
-        self.assertTrue(mx.array_equal(k_up[..., -1:, :], k[..., :1, :]))
-        self.assertTrue(mx.array_equal(v_up[..., -1:, :], v[..., :1, :]))
-        self.assertTrue(mx.array_equal(k_up[..., :3, :], k[..., 1:, :]))
-        self.assertTrue(mx.array_equal(v_up[..., :3, :], v[..., 1:, :]))
+        self.assertTrue(mx.array_equal(k_up[..., -4:, :], k))
+        self.assertTrue(mx.array_equal(v_up[..., -4:, :], v))
 
-        idx = 3
+        idx = 0
         for _ in range(10):
             k = mx.random.uniform(shape=(b, h, 1, d))
             v = mx.random.uniform(shape=(b, h, 1, d))
@@ -72,32 +70,22 @@ class TestModels(unittest.TestCase):
         k = mx.random.uniform(shape=(b, h, 20, d))
         v = mx.random.uniform(shape=(b, h, 20, d))
         k_up, v_up = cache.update_and_fetch(k, v)
-        self.assertTrue(mx.array_equal(k_up[..., :2, :], k[..., :2, :]))
-        self.assertTrue(mx.array_equal(v_up[..., :2, :], v[..., :2, :]))
-        self.assertTrue(mx.array_equal(k_up[..., 2:, :], k[..., -6:, :]))
-        self.assertTrue(mx.array_equal(v_up[..., 2:, :], v[..., -6:, :]))
-
-        # Try with nonzero keep
-        cache = RotatingKVCache(d, h, max_size=8, step=4, keep=2)
+        self.assertTrue(mx.array_equal(k_up, k))
+        self.assertTrue(mx.array_equal(v_up, v))
 
         # A bunch of small updates
-        for i in range(8):
+        self.assertEqual(cache.offset, 20)
+        idx = 2
+        for i in range(10):
             k = mx.random.uniform(shape=(b, h, 1, d))
             v = mx.random.uniform(shape=(b, h, 1, d))
             k_up, v_up = cache.update_and_fetch(k, v)
-            self.assertTrue(mx.array_equal(k_up[..., i : i + 1, :], k))
-            self.assertTrue(mx.array_equal(v_up[..., i : i + 1, :], v))
-
-        i = 2
-        for _ in range(10):
-            k = mx.random.uniform(shape=(b, h, 1, d))
-            v = mx.random.uniform(shape=(b, h, 1, d))
-            k_up, v_up = cache.update_and_fetch(k, v)
-            self.assertTrue(mx.array_equal(k_up[..., i : i + 1, :], k))
-            self.assertTrue(mx.array_equal(v_up[..., i : i + 1, :], v))
-            i += 1
-            if i >= 8:
-                i = 2
+            self.assertTrue(mx.array_equal(k_up[..., idx : idx + 1, :], k))
+            self.assertTrue(mx.array_equal(v_up[..., idx : idx + 1, :], v))
+            self.assertEqual(cache.offset, 21 + i)
+            idx += 1
+            if idx >= 8:
+                idx = 2
 
     def model_test_runner(self, model, model_type, vocab_size, num_layers):
 
