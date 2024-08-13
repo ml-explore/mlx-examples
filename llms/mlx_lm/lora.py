@@ -161,6 +161,7 @@ def build_parser():
 def train_model(
     args,
     model: nn.Module,
+    base_model_path: str,
     tokenizer: TokenizerWrapper,
     train_set,
     valid_set,
@@ -192,7 +193,7 @@ def train_model(
     adapter_path.mkdir(parents=True, exist_ok=True)
 
     if args.fine_tune_type == "full":
-        adapter_file = adapter_path / "model.safetensors"
+        adapter_file = adapter_path
     else:
         adapter_file = adapter_path / "adapter.safetensors"
         save_config(vars(args), adapter_path / "adapter_config.json")
@@ -220,6 +221,7 @@ def train_model(
     # Train model
     train(
         model=model,
+        base_model_path=base_model_path,
         tokenizer=tokenizer,
         args=training_args,
         optimizer=opt,
@@ -269,7 +271,7 @@ def run(args, training_callback: TrainingCallback = None):
 
     elif args.train:
         print("Training")
-        train_model(args, model, tokenizer, train_set, valid_set, training_callback)
+        train_model(args, model, args.model, tokenizer, train_set, valid_set, training_callback)
     else:
         raise ValueError("Must provide at least one of --train or --test")
 

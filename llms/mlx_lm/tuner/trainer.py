@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
+import glob
+import shutil
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -177,6 +179,7 @@ class TrainingCallback:
 
 def train(
     model,
+    base_model_path,
     tokenizer,
     optimizer,
     train_dataset,
@@ -318,7 +321,7 @@ def train(
         full_model_path = Path(args.adapter_file)
         full_model_path.parent.mkdir(parents=True, exist_ok=True)
         # save final full model weights
-        save_adapter_model(model, args.adapter_file, is_adapter=False)
+        save_adapter_model(model, args.adapter_file, base_model_path=base_model_path)
         print(f"Saved final full model weights to {full_model_path}.")
     else:
         # save final adapter weights
@@ -329,11 +332,27 @@ def train(
 def save_adapter_model(
     model: nn.Module,
     adapter_file: Union[str, Path],
-    is_adapter: bool = True
+    base_model_path: str = None
 ):
-    if is_adapter:
-        weights = dict(tree_flatten(model.parameters()))
-        mx.save_safetensors(str(adapter_file), weights)
-    else:
+    if base_model_path is None:
         adapter_weights = tree_flatten(model.trainable_parameters())
         mx.save_safetensors(str(adapter_file), dict(adapter_weights))
+    else:
+        from ..utils import (
+            fetch_from_hub,
+            get_model_path,
+            save_config,
+            save_weights,
+        )
+        weights = dict(tree_flatten(model.parameters()))
+
+        model_path = get_model_path(base_model_path)
+        _, config, tokenizer = fetch_from_hub(model_path)
+        save_weights(str(adapter_file), weights)
+
+        py_files = glob.glob(str(model_path / "*.py"))
+        for file in py_files:
+            shutil.copy(file, str(adapter_file))
+
+        tokenizer.save_pretrained(str(adapter_file))
+        save_config(config, config_path=f"{str(adapter_file)}/config.json")
