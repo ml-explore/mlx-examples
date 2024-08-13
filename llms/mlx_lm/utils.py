@@ -133,7 +133,7 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
-    min_p: float = -1.0,
+    min_p: float = 0.0,
     min_tokens_to_keep: int = 1,
     logit_bias: Optional[Dict[int, float]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
@@ -173,7 +173,7 @@ def generate_step(
         else:
             if top_p > 0 and top_p < 1.0:
                 token = top_p_sampling(logits, top_p, temp)
-            elif min_p != -1.0:
+            elif min_p != 0.0:
                 token = min_p_sampling(logits, min_p, min_tokens_to_keep)
             else:
                 token = categorical_sampling(logits, temp)
