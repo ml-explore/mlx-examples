@@ -660,6 +660,16 @@ def convert(
     revision: Optional[str] = None,
     dequantize: bool = False,
 ):
+    # Check the save path is empty
+    if isinstance(mlx_path, str):
+        mlx_path = Path(mlx_path)
+
+    if mlx_path.exists():
+        raise ValueError(
+            f"Cannot save to the path {mlx_path} as it already exists."
+            " Please delete the file/directory or specify a new path to save to."
+        )
+
     print("[INFO] Loading")
     model_path = get_model_path(hf_path, revision=revision)
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
@@ -680,9 +690,6 @@ def convert(
         print("[INFO] Dequantizing")
         model = dequantize_model(model)
         weights = dict(tree_flatten(model.parameters()))
-
-    if isinstance(mlx_path, str):
-        mlx_path = Path(mlx_path)
 
     del model
     save_weights(mlx_path, weights, donate_weights=True)
