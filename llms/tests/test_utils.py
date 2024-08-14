@@ -82,6 +82,7 @@ class TestUtils(unittest.TestCase):
         self.assertTrue(isinstance(model.layers[-1].mlp.up_proj, nn.QuantizedLinear))
 
         # Check model weights have right type
+        mlx_path = os.path.join(self.test_dir, "mlx_model_bf16")
         utils.convert(HF_MODEL_PATH, mlx_path=mlx_path, dtype="bfloat16")
         model, _ = utils.load(mlx_path)
 
