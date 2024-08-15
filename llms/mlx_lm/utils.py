@@ -20,7 +20,7 @@ from transformers import PreTrainedTokenizer
 
 # Local imports
 from .models.base import KVCache
-from .sample_utils import categorical_sampling, top_p_sampling
+from .sample_utils import categorical_sampling, min_p_sampling, top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
@@ -133,6 +133,8 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
+    min_p: float = 0.0,
+    min_tokens_to_keep: int = 1,
     logit_bias: Optional[Dict[int, float]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
@@ -149,6 +151,10 @@ def generate_step(
           consider for repetition penalty. Default: ``20``.
         top_p (float, optional): Nulceus sampling, higher means model considers
           more less likely words.
+        min_p (float, optional): The minimum value (scaled by the top token's
+          probability) that a token probability must have to be considered.
+        min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
+          be filtered by min_p sampling.
         logit_bias (dictionary, optional): Additive logit bias.
 
     Yields:
@@ -168,6 +174,8 @@ def generate_step(
         else:
             if top_p > 0 and top_p < 1.0:
                 token = top_p_sampling(logits, top_p, temp)
+            elif min_p != 0.0:
+                token = min_p_sampling(logits, min_p, min_tokens_to_keep, temp)
             else:
                 token = categorical_sampling(logits, temp)
 
