@@ -151,9 +151,10 @@ def generate_step(
           consider for repetition penalty. Default: ``20``.
         top_p (float, optional): Nulceus sampling, higher means model considers
           more less likely words.
-        min_p (float, optional): minimum-p sampling value: the minimum percentage value
-          (scaled by the top token's probability) that a token must reach to be considered.
-        min_tokens_to_keep (int, optional): Minimum number of tokens that cannot be filtered by min_p sampling
+        min_p (float, optional): The minimum value (scaled by the top token's
+          probability) that a token probability must have to be considered.
+        min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
+          be filtered by min_p sampling.
         logit_bias (dictionary, optional): Additive logit bias.
 
     Yields:
@@ -174,7 +175,7 @@ def generate_step(
             if top_p > 0 and top_p < 1.0:
                 token = top_p_sampling(logits, top_p, temp)
             elif min_p != 0.0:
-                token = min_p_sampling(logits, min_p, min_tokens_to_keep)
+                token = min_p_sampling(logits, min_p, min_tokens_to_keep, temp)
             else:
                 token = categorical_sampling(logits, temp)
 
