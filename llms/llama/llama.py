@@ -212,6 +212,8 @@ def generate(args):
     skip = 0
     prompt_processing = None
     tokens = []
+    start_time = time.time()
+
     start = tic()
     for token in model.generate(x, args.temp):
         tokens.append(token)
@@ -238,7 +240,10 @@ def generate(args):
     print("------")
     print(prompt_processing)
     print(full_gen)
-
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    tokens_per_second = len(tokens) / elapsed_time
+    print(f"Tokens per second: {tokens_per_second:.2f}")
 
 def few_shot_generate(args):
     def possible_end(s):
