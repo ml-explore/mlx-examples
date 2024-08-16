@@ -31,9 +31,9 @@ mlx_whisper audio_file.mp3
 
 This will make a text file `audio_file.txt` with the results.
 
-Use `-f` to specify the output format, `--model` to specify the model. There
-are many other supported command line options. To see them all run `mlx_whisper
--h`.
+Use `-f` to specify the output format and `--model` to specify the model. There
+are many other supported command line options. To see them all, run
+`mlx_whisper -h`.
 
 #### API
 
