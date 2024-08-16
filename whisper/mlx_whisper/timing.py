@@ -276,7 +276,7 @@ def add_word_timestamps(
                         word=timing.word,
                         start=round(time_offset + timing.start, 2),
                         end=round(time_offset + timing.end, 2),
-                        probability=timing.probability,
+                        probability=float(timing.probability),
                     )
                 )
 

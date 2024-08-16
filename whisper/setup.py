@@ -29,4 +29,9 @@ setup(
     packages=find_namespace_packages(),
     include_package_data=True,
     python_requires=">=3.8",
+    entry_points={
+        "console_scripts": [
+            "mlx_whisper = mlx_whisper.cli:main",
+        ]
+    },
 )
