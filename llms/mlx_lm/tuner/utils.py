@@ -10,8 +10,8 @@ import mlx.optimizers as opt
 from mlx.utils import tree_flatten, tree_unflatten
 
 from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
-from .dora import DoRALinear
-from .lora import LoRALinear, LoRASwitchLinear
+from .dora import DoRAEmbedding, DoRALinear
+from .lora import LoRAEmbedding, LoRALinear, LoRASwitchLinear
 
 
 def build_schedule(schedule_config: Dict):
@@ -71,12 +71,14 @@ def linear_to_lora_layers(
             if use_dora:
                 raise ValueError(f"{type(layer).__name__} doesn't support DoRA yet.")
             LoRALayer = LoRASwitchLinear
+        elif isinstance(layer, (nn.Embedding, nn.QuantizedEmbedding)):
+            LoRALayer = DoRAEmbedding if use_dora else LoRAEmbedding
         else:
             raise ValueError(
                 f"Can't convert layer of type {type(layer).__name__} to LoRA"
             )
 
-        return LoRALayer.from_linear(
+        return LoRALayer.from_base(
             layer,
             r=config["rank"],
             scale=config["scale"],
@@ -130,7 +132,12 @@ def linear_to_lora_layers(
 
     for l in model.layers[num_layers - num_lora_layers :]:
         lora_layers = [(k, to_lora(m)) for k, m in l.named_modules() if k in keys]
-        l.update_modules(tree_unflatten(lora_layers))
+        if lora_layers:
+            l.update_modules(tree_unflatten(lora_layers))
+
+    lora_modules = [(k, to_lora(m)) for k, m in model.named_modules() if k in keys]
+    if lora_modules:
+        model.update_modules(tree_unflatten(lora_modules))
 
 
 def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:
