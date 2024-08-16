@@ -76,7 +76,12 @@ def setup_arg_parser():
         type=int,
         default=None,
         help="Set the MLX cache limit in GB",
-        required=False,
+    )
+    parser.add_argument(
+        "--max-kv-size",
+        type=int,
+        default=1024,
+        help="Set the maximum key-value cache size",
     )
     return parser
 
@@ -154,6 +159,7 @@ def main():
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,
+        max_kv_size=args.max_kv_size,
     )
 
 

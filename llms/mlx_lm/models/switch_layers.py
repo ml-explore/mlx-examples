@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 
 import mlx.core as mx
