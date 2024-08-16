@@ -11,6 +11,7 @@ import mlx.nn as nn
 import mlx.optimizers as opt
 from mlx.utils import tree_flatten
 from mlx_lm import lora, tuner
+from mlx_lm.tuner.dora import DoRAEmbedding
 from mlx_lm.tuner.lora import LoRAEmbedding, LoRALinear
 from mlx_lm.tuner.trainer import evaluate
 from mlx_lm.tuner.utils import build_schedule
@@ -103,8 +104,6 @@ class TestLora(unittest.TestCase):
         model.freeze()
         tuner.utils.linear_to_lora_layers(model, num_lora_layers, params)
 
-
-class TestLoraEmbedding(unittest.TestCase):
     def test_lora_embedding(self):
         num_embeddings = 256
         dims = 512
@@ -123,9 +122,6 @@ class TestLoraEmbedding(unittest.TestCase):
         self.assertTrue(mx.array_equal(dequantized_weight, new_embedding.weight))
         self.assertTrue(mx.array_equal(embedding(tokens), lora_emb(tokens)))
 
-        # works with ints
-        self.assertTrue(mx.array_equal(lora_emb(1), lora_emb([1])[0]))
-
         # as_linear
         attn_output = mx.random.uniform(shape=(dims,))
         embedding_lin_out = lora_emb.as_linear(attn_output)
@@ -139,6 +135,34 @@ class TestLoraEmbedding(unittest.TestCase):
         new_embedding = lora_emb.fuse(de_quantize=True)
         self.assertFalse(mx.array_equal(dequantized_weight, new_embedding.weight))
         self.assertFalse(mx.array_equal(embedding(tokens), lora_emb(tokens)))
+
+
+class TestDora(unittest.TestCase):
+    def test_dora_embedding(self):
+        num_embeddings = 256
+        dims = 512
+        tokens = mx.array([1, 2, 3])
+
+        embedding = nn.Embedding(num_embeddings, dims)
+
+        dora_emb = DoRAEmbedding.from_base(embedding, r=8, dropout=0, scale=10)
+        new_embedding = dora_emb.fuse()
+        self.assertTrue(mx.array_equal(embedding.weight, new_embedding.weight))
+        self.assertTrue(mx.array_equal(embedding(tokens), dora_emb(tokens)))
+
+        # as_linear
+        attn_output = mx.random.uniform(shape=(dims,))
+        embedding_lin_out = dora_emb.as_linear(attn_output)
+        self.assertEqual(embedding_lin_out.shape, (num_embeddings,))
+        self.assertTrue(
+            mx.array_equal(embedding_lin_out, embedding.as_linear(attn_output))
+        )
+
+        # change the value of lora_b and the embeddings will no longer be equal
+        dora_emb.lora_b = mx.random.uniform(shape=dora_emb.lora_b.shape)
+        new_embedding = dora_emb.fuse()
+        self.assertFalse(mx.array_equal(embedding.weight, new_embedding.weight))
+        self.assertFalse(mx.array_equal(embedding(tokens), dora_emb(tokens)))
 
 
 class TestScheduleConfig(unittest.TestCase):

@@ -41,7 +41,7 @@ class LoRALinear(nn.Module):
         dtype = weight.dtype
 
         if is_quantized:
-            dtype = mx.float16
+            dtype = linear.scales.dtype
             weight = mx.dequantize(
                 weight,
                 linear.scales,
@@ -223,7 +223,7 @@ class LoRAEmbedding(nn.Module):
         dtype = weight.dtype
 
         if is_quantized:
-            dtype = mx.float16
+            dtype = embedding.scales.dtype
             weight = mx.dequantize(
                 weight,
                 embedding.scales,
@@ -274,10 +274,9 @@ class LoRAEmbedding(nn.Module):
         self.lora_b = mx.zeros(shape=(r, dims))
 
     def __call__(self, x):
-        x = mx.array(x)
         y = self.embedding(x)
         z = self.dropout(self.lora_a[x] @ self.lora_b)
-        out = y + (self.scale * z).astype(x.dtype)
+        out = y + (self.scale * z).astype(y.dtype)
         return out
 
     def as_linear(self, x):

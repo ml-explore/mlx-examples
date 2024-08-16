@@ -169,17 +169,16 @@ class DoRAEmbedding(nn.Module):
         self.m = mx.linalg.norm(embedding.weight, axis=1)
 
     def __call__(self, x):
-        x = mx.array(x)
         y = self.embedding(x)
-        z = self.dropout(self.lora_a[x] @ self.lora_b)
-        out = y + (self.scale * z).astype(x.dtype)
+        z = self.scale * self.lora_a[x] @ self.lora_b
+        out = y + self.dropout(z).astype(y.dtype)
 
         # Compute the norm of the adapted weights for the individual embeddings
-        adapted = y + self.scale * (self.lora_a[x] @ self.lora_b)
+        adapted = y + z
         denom = mx.stop_gradient(mx.linalg.norm(adapted, axis=-1))
 
         # Remove the norm and scale by the learned magnitude
-        out = (self.m[x] / denom).reshape((*x.shape, 1)) * out
+        out = (self.m[x] / denom)[..., None] * out
 
         return out
 
