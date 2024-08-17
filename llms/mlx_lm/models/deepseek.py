@@ -20,7 +20,6 @@ class ModelArgs(BaseModelArgs):
     num_key_value_heads: int = 32
     n_shared_experts: Optional[int] = None
     n_routed_experts: Optional[int] = None
-    topk_method: str = "gready"
     num_experts_per_tok: Optional[int] = None
     moe_layer_freq: int = 1
     first_k_dense_replace: int = 0
@@ -131,7 +130,6 @@ class MoEGate(nn.Module):
         self.config = config
         self.top_k = config.num_experts_per_tok
         self.n_routed_experts = config.n_routed_experts
-        self.topk_method = config.topk_method
         self.weight = mx.zeros((self.n_routed_experts, config.hidden_size))
 
     def __call__(self, x):
