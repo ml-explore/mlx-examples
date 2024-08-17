@@ -39,13 +39,10 @@ class DeepseekAttention(nn.Module):
         self.num_attention_heads = config.num_attention_heads
         self.num_kv_heads = config.num_key_value_heads
         self.head_dim = config.hidden_size // config.num_attention_heads
-        self.scale: float = self.head_dim**-0.5
+        self.scale = self.head_dim**-0.5
         self.max_position_embeddings = config.max_position_embeddings
 
-        if hasattr(config, "attention_bias"):
-            attention_bias = config.attention_bias
-        else:
-            attention_bias = False
+        attention_bias = getattr(config, "attention_bias", False)
 
         self.q_proj = nn.Linear(
             self.hidden_size,
@@ -92,7 +89,7 @@ class DeepseekAttention(nn.Module):
             0, 2, 1, 3
         )
         keys = keys.reshape(B, L, self.num_kv_heads, -1).transpose(0, 2, 1, 3)
-        values = values.reshape(B, L, self.num_kvheads, -1).transpose(0, 2, 1, 3)
+        values = values.reshape(B, L, self.num_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if cache is not None:
             queries = self.rope(queries, offset=cache.offset)
@@ -118,10 +115,8 @@ class DeepseekMLP(nn.Module):
     ):
         super().__init__()
         self.config = config
-        self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        self.intermediate_size = (
-            config.intermediate_size if intermediate_size is None else intermediate_size
-        )
+        self.hidden_size = hidden_size or config.hidden_size
+        self.intermediate_size = intermediate_size or config.intermediate_size
         self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
@@ -146,7 +141,6 @@ class MoEGate(nn.Module):
         k = self.top_k
         inds = mx.stop_gradient(mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k])
         scores = mx.take_along_axis(scores, inds, axis=-1)
-
         return inds, scores
 
 
@@ -154,7 +148,6 @@ class DeepseekMoE(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.config = config
-        self.num_experts_per_tok = config.num_experts_per_tok
         self.switch_mlp = SwitchGLU(
             config.hidden_size, config.moe_intermediate_size, config.n_routed_experts
         )
@@ -179,7 +172,6 @@ class DeepseekMoE(nn.Module):
 class DeepseekDecoderLayer(nn.Module):
     def __init__(self, config: ModelArgs, layer_idx: int):
         super().__init__()
-        self.hidden_size = config.hidden_size
         self.self_attn = DeepseekAttention(config)
         self.mlp = (
             DeepseekMoE(config)
@@ -212,7 +204,6 @@ class DeepseekModel(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.config = config
-        self.vocab_size = config.vocab_size
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = [
             DeepseekDecoderLayer(config, idx) for idx in range(config.num_hidden_layers)
