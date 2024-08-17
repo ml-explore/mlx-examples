@@ -40,7 +40,6 @@ class DeepseekAttention(nn.Module):
         self.num_kv_heads = config.num_key_value_heads
         self.head_dim = config.hidden_size // config.num_attention_heads
         self.scale = self.head_dim**-0.5
-        self.max_position_embeddings = config.max_position_embeddings
 
         attention_bias = getattr(config, "attention_bias", False)
 
