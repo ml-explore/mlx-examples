@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 import math
 
@@ -56,30 +55,6 @@ class ModelArgs(BaseModelArgs):
         if self.dt_rank == "auto":
             self.dt_rank = math.ceil(self.hidden_size / 16)
 
-class DepthWiseConv1d(nn.Module):
-    def __init__(self, channels, kernel_size, bias, padding):
-        super().__init__()
-        self.channels = int(channels)
-        self.kernel_size = int(kernel_size)
-        self.bias = bias
-        self.padding = padding
-        self.weight = mx.random.normal(shape=(self.channels, 1, self.kernel_size))
-        scale = math.sqrt(1.0 / (self.channels * self.kernel_size))
-        self.weight *= scale  # Ensure scaling is applied correctly
-        if bias:
-            self.bias = mx.zeros((self.channels,))
-        else:
-            self.bias = None
-
-    def __call__(self, x):
-        B, D, L = x.shape
-        assert D == self.channels, f"Input channels ({D}) must match the initialized channels ({self.channels})."
-        print("FORWARD PASS THROUGH CONV")
-        print(self.kernel_size)
-        print(self.weight)
-        out = nn.Conv1d(x, self.weight, kernel_size=self.kernel_size, bias=self.bias, padding=self.padding)
-        return out
-
 
 def clamp(x, min=None, max=None):
     if min is not None:
@@ -91,6 +66,46 @@ def clamp(x, min=None, max=None):
             return mx.where(mask_upper, max, mx.where(mask_lower, min, x))
         return mx.where(mask_lower, min, x)
     return mx.where(mask_upper, max, x)
+
+
+class DepthWiseConv1d(nn.Module):
+    def __init__(self, channels, kernel_size, bias, padding):
+        super().__init__()
+        self.channels = channels
+        self.kernel_size = kernel_size
+        self.padding = padding
+        self.weight = mx.random.normal(shape=(channels, 1, kernel_size))
+        scale = math.sqrt(1.0 / (channels * kernel_size))
+        self.weight *= scale
+        if bias:
+            self.bias = mx.zeros((channels,))
+        else:
+            self.bias = None
+
+    def __call__(self, x):
+        # x shape is (B, C, L)
+        B, C, L = x.shape
+        
+        # Pad the input
+        if self.padding > 0:
+            padding = [(0, 0), (0, 0), (self.padding, self.padding)]
+            x_padded = mx.pad(x, padding)
+        else:
+            x_padded = x
+        
+        # Perform depthwise convolution manually
+        out = []
+        for i in range(L):
+            slice = x_padded[:, :, i:i+self.kernel_size]
+            out.append(mx.sum(slice * self.weight, axis=2))
+        
+        out = mx.stack(out, axis=2)
+        
+        # Apply bias if present
+        if self.bias is not None:
+            out = out + self.bias.reshape(1, -1, 1)
+        
+        return out
 
 
 class MambaBlock(nn.Module):
@@ -108,10 +123,10 @@ class MambaBlock(nn.Module):
         self.in_proj = nn.Linear(self.hidden_size, self.intermediate_size * 2, bias=args.use_bias)
 
         self.conv1d = DepthWiseConv1d(
-            channels=self.intermediate_size,
-            kernel_size=self.conv_kernel_size,
+            channels=int(self.intermediate_size),
+            kernel_size=int(self.conv_kernel_size),
             bias=self.use_conv_bias,
-            padding=self.conv_kernel_size-1
+            padding=int(self.conv_kernel_size - 1)
         )
 
         self.x_proj = nn.Linear(self.intermediate_size, self.time_step_rank + 2 * self.ssm_state_size, bias=False)
@@ -156,30 +171,36 @@ class MambaBlock(nn.Module):
 
         h = deltaA * h + BX  # (B, ED, N)
 
-        y = (h @ mx.expand_dims(C, -1)).squeeze(2)  # (B, ED, N) @ (B, N, 1) -> (B, ED, 1)
+        y = mx.sum(h * mx.expand_dims(C, 1), axis=-1)  # (B, ED)
 
         y = y + D * x
         return y, h
     
     def __call__(self, x, cache):
         h, inputs = cache
-        x, z = self.in_proj(x).split(indices_or_sections=2, axis=-1)  # (B, ED), (B, ED)
-        # x branch
-        x_cache = mx.expand_dims(x, 1)  # (B, 1, ED)
-        # Ensure inputs has the correct shape
-        if inputs.ndim == 2:
-            inputs = mx.expand_dims(inputs, 1)  # Add a dimension if it's missing
-
-        print(f"inputs shape: {inputs.shape}")
-        print(f"x_cache shape: {x_cache.shape}")
-            
-        conv_input = mx.concatenate([inputs, x_cache], axis=1)  # (B, d_conv, ED) <---------- Here is the problem ValueError: [concatenate] All the input arrays must have the same number of dimensions. However, got arrays with dimensions 3 and 4. ||| inputs shape: (1, 3, 1536) x_cache shape: (1, 1, 5, 1536)
-        x = self.conv1d(conv_input)[:, -1, :]  # (B, ED)
-        y, h = self.ssm(nn.silu(x), h)
-        output = y * nn.silu(z) # * z branch
-        # prepare cache for next call
-        inputs = mx.concatenate([inputs[:, 1:, :], x_cache], axis=1)  # (B, d_conv-1, ED)
-        return self.out_proj(output), (h, inputs) # (B, D), cache
+        
+        x, z = self.in_proj(x).split(indices_or_sections=2, axis=-1)
+        
+        # x is now (B, L, C), we need (B, C, L) for conv1d
+        x_cache = x.transpose(0, 2, 1)
+        
+        if inputs is None:
+            inputs = mx.zeros((x.shape[0], self.intermediate_size, self.conv_kernel_size - 1))
+        else:
+            inputs = inputs.transpose(0, 2, 1)  # Change to (batch, channels, sequence)
+        
+        conv_input = mx.concatenate([inputs, x_cache], axis=2)
+        
+        x = self.conv1d(conv_input)
+        x = x[:, :, -1]  # Take the last element of the sequence
+        
+        y, h = self.ssm(x, h)
+        output = y * nn.silu(z[:, -1, :])
+        
+        # Update inputs for the next iteration
+        inputs = conv_input[:, :, 1:]
+        
+        return self.out_proj(output), (h, inputs.transpose(0, 2, 1))
 
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -188,8 +209,9 @@ class ResidualBlock(nn.Module):
         self.norm = nn.RMSNorm(args.hidden_size)
 
     def __call__(self, inputs: mx.array, cache):
+        residual = inputs
         output, cache = self.mixer(self.norm(inputs), cache)
-        output = output + inputs
+        output = output + residual[:, -1, :]  # Add residual only for the last time step
         return output, cache
 
 
@@ -235,60 +257,3 @@ class Model(nn.Module):
     def make_cache(self):
         # return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
         return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
-    
-    def generate(self, input_ids: mx.array, n_tokens_to_gen: int = 50, sample: bool = True, temperature: float = 1.0, top_k: int = None):
-        self.eval()
-
-        if input_ids.ndim == 1:
-            input_ids = mx.expand_dims(input_ids, 0)
-
-        caches = self.make_cache()
-
-        for i in range(input_ids.shape[1] + n_tokens_to_gen - 1):
-            next_token_logits, caches = self(input_ids[:, i], caches)
-
-            if i+1 >= input_ids.shape[1]:
-
-                if top_k is not None:
-                    values = mx.topk(next_token_logits, k=top_k)
-                    mask = next_token_logits < (values[:, 0, None])
-                    next_token_logits = mx.where(mask, -5000, next_token_logits)
-
-                if sample and temperature > 0:
-                    next_token = mx.random.categorical(next_token_logits * (1/temperature), num_samples=1)
-                else:
-                    next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
-
-                input_ids = mx.concatenate([input_ids, next_token], axis=1)
-
-        self.train()
-        return input_ids
-    
-    def generate_step(self, input_ids: mx.array, sample: bool = True, temperature: float = 1.0, top_k: int = None):
-        self.eval()
-
-        if input_ids.ndim == 1:
-            input_ids = mx.expand_dims(input_ids, 0)
-
-        caches = self.make_cache()
-
-        # Generate the next token logits
-        next_token_logits, caches = self(input_ids, caches)
-
-        # Apply top_k filtering if specified
-        if top_k is not None:
-            values = mx.topk(next_token_logits, k=top_k) # (1, k) ordered from lowest to highest
-            mask = next_token_logits < (values[:, -1, None])
-            next_token_logits = mx.where(mask, -5000, next_token_logits) # -mx.inf is problematic for now
-
-        # Sample the next token or take the argmax based on the temperature
-        if sample and temperature > 0:
-            next_token = mx.random.categorical(next_token_logits * (1 / temperature), num_samples=1)
-        else:
-            next_token = mx.argmax(next_token_logits, axis=-1)[:, None]
-
-        # Concatenate the next token to the input_ids
-        input_ids = mx.concatenate([input_ids, next_token], axis=1)
-
-        self.train()
-        return input_ids, caches
