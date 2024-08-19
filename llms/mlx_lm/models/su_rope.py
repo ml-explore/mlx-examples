@@ -4,9 +4,10 @@ import math
 from typing import List, Union
 
 import mlx.core as mx
+import mlx.nn as nn
 
 
-class SuScaledRotaryEmbedding:
+class SuScaledRotaryEmbedding(nn.Module):
     def __init__(
         self,
         dims: int,
@@ -42,40 +43,34 @@ class SuScaledRotaryEmbedding:
               factors for sequences of length greater than
               ``original_max_position_embeddings``.  Default: ``1.0``.
         """
-        self.inv_freq_short = 1.0 / (
-            mx.array(short_factor, dtype=mx.float32)
-            * base ** (mx.arange(0, dims, 2, dtype=mx.float32) / dims)
+        super().__init__()
+        self._short_freqs = mx.array(short_factor, dtype=mx.float32) * base ** (
+            mx.arange(0, dims, 2, dtype=mx.float32) / dims
         )
-        self.inv_freq_long = 1.0 / (
+        self._long_freqs = (
             scale
             * mx.array(long_factor, dtype=mx.float32)
             * base ** (mx.arange(0, dims, 2, dtype=mx.float32) / dims)
         )
         self.original_max_position_embeddings = original_max_position_embeddings
-        self.scaling_factor = math.sqrt(
+        self.scale = math.sqrt(
             1
             + math.log(max_position_embeddings / original_max_position_embeddings)
             / math.log(original_max_position_embeddings)
         )
 
-    def _get_cos_sin(self, offset, L):
-        position_ids = mx.arange(offset, offset + L, dtype=mx.float32)
-        inv_freq = (
-            self.inv_freq_long
-            if (offset + L) > self.original_max_position_embeddings
-            else self.inv_freq_short
-        )
-        freqs = position_ids[:, None] * inv_freq[None, :]
-        emb = mx.concatenate([freqs, freqs], axis=-1)
-        cos = mx.cos(emb) * self.scaling_factor
-        sin = mx.sin(emb) * self.scaling_factor
-        return cos, sin
-
     def __call__(self, x, offset: int = 0):
-        def _rotate_half(_x):
-            midpoint = _x.shape[-1] // 2
-            x1, x2 = _x[..., :midpoint], _x[..., midpoint:]
-            return mx.concatenate([-x2, x1], axis=-1)
-
-        cos, sin = self._get_cos_sin(offset, x.shape[2])
-        return (x * cos) + (_rotate_half(x) * sin)
+        freqs = (
+            self._long_freqs
+            if (offset + L) > self.original_max_position_embeddings
+            else self._short_freqs
+        )
+        return mx.fast.rope(
+            x,
+            x.shape[-1],
+            traditional=False,
+            base=1.0,
+            scale=self.scale,
+            offset=offset,
+            freqs=freqs,
+        )
