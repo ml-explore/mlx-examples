@@ -62,7 +62,7 @@ class SuScaledRotaryEmbedding(nn.Module):
     def __call__(self, x, offset: int = 0):
         freqs = (
             self._long_freqs
-            if (offset + L) > self.original_max_position_embeddings
+            if (offset + x.shape[2]) > self.original_max_position_embeddings
             else self._short_freqs
         )
         return mx.fast.rope(
