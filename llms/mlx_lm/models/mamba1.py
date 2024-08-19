@@ -74,52 +74,28 @@ def clamp(x, min=None, max=None):
     return mx.where(mask_upper, max, x)
     
 
-class Conv1d(nn.Module):
-    def __init__(
-        self,
-        channels: int,
-        kernel_size: int,
-        bias: bool = True,
-        padding: int = 0
-    ):
+class DepthWiseConv1d(nn.Module):
+    def __init__(self, channels, kernel_size, bias, padding):
         super().__init__()
         self.channels = channels
         self.kernel_size = kernel_size
-        self.use_bias = bias
+        self.bias = bias
         self.padding = padding
-
-        # Change the weight initialization to match the expected shape
-        self.weight = mx.zeros((kernel_size, 1, channels))
-        if self.use_bias:
-            self.bias = mx.zeros((channels,))
-        else:
-            self.bias = None
-
-    def __call__(self, x, cache=None):
-        # Use the weight directly without transposing
-        w = self.weight
-        if cache is not None:
-            l = []
-            # Pad the cache if needed
-            if cache.shape[1] < self.kernel_size - 1:
-                l.append(
-                    mx.zeros(
-                        (x.shape[0], self.kernel_size - 1 - cache.shape[1], self.channels), dtype=x.dtype
-                    )
-                )
-            l.extend([cache, x])
-            x = mx.concatenate(l, axis=1)
-            y = mx.conv_general(x, w, padding=([0], [0]), groups=self.channels)
-        else:
-            y = mx.conv_general(x, w, padding=([self.padding], [0]), groups=self.channels)
-
-        # The cache is always kernel_size - 1
-        cache = x[:, max(x.shape[1] - self.kernel_size + 1, 0) :, :]
         
-        if self.use_bias:
-            y = y + self.bias
-
-        return y, cache
+        self.conv1d = nn.Conv1d(
+            in_channels=channels,
+            out_channels=channels,
+            kernel_size=kernel_size,
+            bias=True,
+            padding=padding
+        )
+        indices = mx.arange(channels)
+        mask = mx.zeros_like(self.conv1d.weight)
+        mask[indices, :, indices] = 1
+        self.conv1d.weight *= mask
+    
+    def __call__(self, x):
+        return self.conv1d(x)
 
 
 class MambaBlock(nn.Module):
@@ -131,7 +107,7 @@ class MambaBlock(nn.Module):
         self.in_proj = nn.Linear(args.hidden_size, 2 * args.intermediate_size, bias=args.use_bias)
 
         # short 1d conv over time
-        self.conv1d = Conv1d(
+        self.conv1d = DepthWiseConv1d(
             channels=args.intermediate_size,
             kernel_size=args.conv_kernel,
             bias=args.use_conv_bias,
@@ -159,7 +135,7 @@ class MambaBlock(nn.Module):
         dt = clamp(mx.exp(
             mx.random.uniform(shape=[args.intermediate_size]) * (math.log(args.time_step_max) - math.log(args.time_step_min)) + math.log(args.time_step_min)
         ), min=args.time_step_floor)
-        inv_dt = dt + mx.log1p(-mx.exp(-dt))
+        inv_dt = dt + mx.log1p(-mx.exp(-dt)) # inverse of softplus: https://github.com/pytorch/pytorch/issues/72759
         self.dt_proj.bias = inv_dt
 
         # S4D real initialization
@@ -212,10 +188,7 @@ class MambaBlock(nn.Module):
         
         h, inputs = cache
         
-        print("Input shape:", x.shape)
         xz = self.in_proj(x) # (B, 2*ED)
-        xz = xz.reshape(x.shape[0], -1)  # Ensure shape is (B, 2*ED)
-        print("After in_proj shape:", xz.shape)
         x, z = xz.split(indices_or_sections=2, axis=1) # (B, ED), (B, ED)
 
         # x branch
@@ -246,8 +219,8 @@ class ResidualBlock(nn.Module):
     def __call__(self, inputs: mx.array, cache):
         # x : (B, D)
         # cache : (h, inputs)
-        # h : (B, ED, N)
-        # inputs: (B, conv_kernel-1, ED)
+                # h : (B, ED, N)
+                # inputs: (B, conv_kernel-1, ED)
 
         # output : (B, D)
         # cache : (h, inputs)
@@ -307,16 +280,14 @@ class Model(nn.Module):
         return self.args.num_hidden_layers
     
     def make_cache(self):
-        return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
-
+        # return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
+        return [(None, mx.zeros([1, self.backbone.layers[0].mixer.conv_kernel_size-1, self.backbone.layers[0].mixer.intermediate_size])) for _ in range(len(self.backbone.layers))]
+    
     def sanitize(self, weights):
+        new_weights = {}
         for key, value in weights.items():
             if "mixer.conv1d.weight" in key:
-                # Ensure the weight is in the shape (kernel_size, 1, channels)
-                if value.shape != (self.args.conv_kernel, 1, self.args.intermediate_size):
-                    weights[key] = value.reshape(self.args.conv_kernel, 1, self.args.intermediate_size)
-            elif key == "backbone.embeddings.weight":
-                # Ensure the embedding weight is in the shape (vocab_size, hidden_size)
-                if value.shape != (self.args.vocab_size, self.args.hidden_size):
-                    weights[key] = value.T
-        return weights
+                weights[key] = value.T
+            new_key = key.replace('mixer.conv1d', 'mixer.conv1d.conv1d')
+            new_weights[new_key] = value
+        return new_weights
