@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 from dataclasses import dataclass
 from typing import List, Literal, Optional
@@ -53,6 +55,9 @@ class RecurrentCache:
     def update(self, conv_state, recurrent_state):
         self._cache = (conv_state, recurrent_state)
 
+    def state(self):
+        return self._cache
+
 
 class WindowKVCache:
 
@@ -78,6 +83,9 @@ class WindowKVCache:
         else:
             self.keys = _update(self.keys, keys)
             self.values = _update(self.values, values)
+        return self.keys, self.values
+
+    def state(self):
         return self.keys, self.values
 
 
