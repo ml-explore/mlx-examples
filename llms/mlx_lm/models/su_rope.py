@@ -69,7 +69,7 @@ class SuScaledRotaryEmbedding(nn.Module):
             x,
             x.shape[-1],
             traditional=False,
-            base=1.0,
+            base=None,
             scale=self.scale,
             offset=offset,
             freqs=freqs,

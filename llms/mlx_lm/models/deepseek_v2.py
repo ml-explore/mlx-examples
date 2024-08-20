@@ -116,7 +116,7 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
             x,
             x.shape[-1],
             traditional=True,
-            base=1.0,
+            base=None,
             scale=1.0,
             offset=offset,
             freqs=self._freqs,

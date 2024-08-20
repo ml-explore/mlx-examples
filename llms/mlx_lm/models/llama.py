@@ -73,6 +73,7 @@ class DynamicNTKScalingRoPE(nn.Module):
 
     def compute_freqs(self):
         if self.rope_type != "llama3":
+            self._freqs = None
             return
         factor = self.rope_scaling["factor"]
         low_freq_factor = self.rope_scaling.get("low_freq_factor", 1.0)
@@ -95,6 +96,7 @@ class DynamicNTKScalingRoPE(nn.Module):
         )
         smooth_freqs = freqs / ((1 - smooth_factors) / factor + smooth_factors)
         self._freqs = mx.where(is_medium_freq, smooth_freqs, freqs)
+        self.base = None
 
     def extra_repr(self):
         return (
@@ -111,7 +113,7 @@ class DynamicNTKScalingRoPE(nn.Module):
             base=self.base,
             scale=self.scale,
             offset=offset,
-            freqs=self.get("_freqs", None),
+            freqs=self._freqs,
         )
 
 
