@@ -128,6 +128,16 @@ def linear_to_lora_layers(
         keys = set(["norm_attn_norm.attn.Wqkv", "ffn.router.layer"])
     elif model.model_type == "internlm2":
         keys = set(["attention.wqkv", "attention.wo"])
+    elif model.model_type == "deepseek_v2":
+        keys = set(
+            [
+                "self_attn.q_proj",
+                "self_attn.q_a_proj",
+                "self_attn.q_b_proj",
+                "self_attn.kv_a_proj_with_mqa",
+                "self_attn.kv_b_proj",
+            ]
+        )
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 
