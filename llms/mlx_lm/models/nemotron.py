@@ -1,12 +1,10 @@
 # Copyright © 2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-
-from mlx_lm.activations import get_activation
 
 from .base import BaseModelArgs, KVCache, create_attention_mask
 
@@ -50,6 +48,15 @@ class ModelArgs(BaseModelArgs):
                 raise ValueError(
                     "rope_scaling 'type' currently only supports 'linear'"
                 )
+
+
+class ReLUSquared(nn.Module):
+    """
+    Applies the relu^2 activation introduced in https://arxiv.org/abs/2109.08668v2
+    """
+
+    def __call__(self, input):
+        return nn.relu(input).square()
 
 
 class NemotronLayerNorm1P(nn.LayerNorm):
@@ -134,7 +141,7 @@ class MLP(nn.Module):
 
         self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
         self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
-        self.act_fn = get_activation(args.hidden_act)()
+        self.act_fn = ReLUSquared()
 
     def __call__(self, x) -> mx.array:
         return self.down_proj(self.act_fn(self.up_proj(x)))
