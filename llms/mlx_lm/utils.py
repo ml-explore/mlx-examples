@@ -356,6 +356,8 @@ def generate(
             break
         if is_batch:
             output_toks.append(tokens)
+            if verbose:
+                print(".", end="", flush=True)
         else:
             token = tokens.item()
             logprobs = logprobs.squeeze(0)
@@ -385,6 +387,7 @@ def generate(
         if token_count <= 0:
             print("No tokens generated for this prompt")
         if is_batch:
+            print()
             for p, resp in zip(prompt, response):
                 print("=" * 10)
                 print("Prompt:", p)
