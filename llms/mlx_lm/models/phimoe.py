@@ -68,9 +68,7 @@ class Attention(nn.Module):
         if args.rope_scaling and args.rope_scaling["type"] in ["longrope", "su"]:
             self.rope = SuScaledRotaryEmbedding(
                 head_dim,
-                traditional=False,
                 base=args.rope_theta,
-                scale=rope_scale,
                 max_position_embeddings=args.max_position_embeddings,
                 original_max_position_embeddings=args.original_max_position_embeddings,
                 short_factor=args.rope_scaling["short_factor"],
