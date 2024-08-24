@@ -1,11 +1,12 @@
+# Copyright © 2024 Apple Inc.
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask
 from .su_rope import SuScaledRotaryEmbedding
 from .switch_layers import SwitchGLU
 
@@ -21,30 +22,11 @@ class ModelArgs(BaseModelArgs):
     num_key_value_heads: int = 8
     max_position_embeddings: int = 131072
     original_max_position_embeddings: int = 4096
-    initializer_range: float = 0.02
     rms_norm_eps: float = 1e-6
-    pad_token_id: Optional[int] = None
-    rope_traditional: bool = False
-    rope_scaling: Optional[Dict[str, Union[float, List[float]]]] = None
+    rope_scaling: Dict[str, Union[float, List[float]]] = None
     num_local_experts: int = 16
     num_experts_per_tok: int = 2
-    attention_bias: bool = False
     rope_theta: float = 10000.0
-
-    def __post_init__(self):
-        if self.num_key_value_heads is None:
-            self.num_key_value_heads = self.num_attention_heads
-
-        if self.rope_scaling:
-            required_keys = {"long_factor", "type"}
-            if not all(key in self.rope_scaling for key in required_keys):
-                raise ValueError(f"rope_scaling must contain keys {required_keys}")
-
-            if self.rope_scaling["type"] not in ["longrope", "su", "linear"]:
-                print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear', 'su', and 'longrope'; setting rope scaling to false."
-                )
-                self.rope_scaling = None
 
 
 class Attention(nn.Module):
@@ -53,7 +35,6 @@ class Attention(nn.Module):
 
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
-        assert args.num_key_value_heads is not None
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
         head_dim = args.hidden_size // n_heads
@@ -64,32 +45,22 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=True)
 
-        rope_scale = 1.0
-        if args.rope_scaling and args.rope_scaling["type"] in ["longrope", "su"]:
-            self.rope = SuScaledRotaryEmbedding(
-                head_dim,
-                base=args.rope_theta,
-                max_position_embeddings=args.max_position_embeddings,
-                original_max_position_embeddings=args.original_max_position_embeddings,
-                short_factor=args.rope_scaling["short_factor"],
-                long_factor=args.rope_scaling["long_factor"],
-            )
-        else:
-            if args.rope_scaling and args.rope_scaling["type"] == "linear":
-                assert isinstance(args.rope_scaling["factor"], float)
-                rope_scale = 1 / args.rope_scaling["factor"]
-            self.rope = nn.RoPE(
-                head_dim,
-                traditional=args.rope_traditional,
-                base=args.rope_theta,
-                scale=rope_scale,
-            )
+        self.rope = SuScaledRotaryEmbedding(
+            head_dim,
+            base=args.rope_theta,
+            max_position_embeddings=args.max_position_embeddings,
+            original_max_position_embeddings=args.original_max_position_embeddings,
+            short_factor=args.rope_scaling["short_factor"],
+            long_factor=args.rope_scaling["long_factor"],
+            short_mscale=args.rope_scaling["short_mscale"],
+            long_mscale=args.rope_scaling["long_mscale"],
+        )
 
     def __call__(
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache=None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -156,12 +127,11 @@ class PhiMoEDecoderLayer(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache=None,
     ) -> mx.array:
         residual = x
         hidden_states = self.input_layernorm(x)
-
-        hidden_states = self.self_attn(x=hidden_states, mask=mask, cache=cache)
+        hidden_states = self.self_attn(hidden_states, mask=mask, cache=cache)
         hidden_states = residual + hidden_states
 
         residual = hidden_states
