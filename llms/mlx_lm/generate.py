@@ -83,6 +83,12 @@ def setup_arg_parser():
         default=1024,
         help="Set the maximum key-value cache size",
     )
+    parser.add_argument(
+        "--kv-cache-file",
+        type=str,
+        default=None,
+        help="A file containing saved KV caches to avoid recomputing them",
+    )
     return parser
 
 
@@ -111,6 +117,24 @@ def colorprint_by_t0(s, t0):
     else:
         color = "red"
     colorprint(color, s)
+
+
+def load_kv_cache_from_file(kv_cache_file):
+    if kv_cache_file is None:
+        return None
+
+    kv_cache = mx.load(kv_cache_file)
+    cache_per_layer = {}
+    for k, x in kv_cache.items():
+        layer, kv_type = k.split("_")
+        if layer not in cache_per_layer:
+            cache_per_layer[layer] = {}
+        cache_per_layer[layer][kv_type] = x
+
+    cache_history = [None] * len(cache_per_layer)
+    for layer, c in cache_per_layer.items():
+        cache_history[int(layer)] = (c["keys"], c["values"])
+    return cache_history
 
 
 def main():
@@ -145,6 +169,16 @@ def main():
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+
+        # Treat the prompt as a suffix assuming that the prefix is in the
+        # stored kv cache.
+        if args.kv_cache_file is not None:
+            test_prompt = tokenizer.apply_chat_template(
+                [{"role": "user", "content": "<query>"}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            prompt = prompt[test_prompt.index("<query>") :]
     else:
         prompt = args.prompt
 
@@ -160,6 +194,7 @@ def main():
         temp=args.temp,
         top_p=args.top_p,
         max_kv_size=args.max_kv_size,
+        cache_history=load_kv_cache_from_file(args.kv_cache_file),
     )
 
 
