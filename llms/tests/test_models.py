@@ -8,7 +8,6 @@ from mlx_lm.models.base import KVCache, RotatingKVCache
 
 
 class TestModels(unittest.TestCase):
-
     def test_kv_cache(self):
         cache = KVCache(32, 4)
 
@@ -28,6 +27,16 @@ class TestModels(unittest.TestCase):
         self.assertTrue(mx.array_equal(k_up, expected))
         self.assertTrue(mx.array_equal(v_up, expected))
         self.assertEqual(cache.offset, cache.step + 1)
+
+        cache.drop(5)
+        k = mx.ones((1, 4, 3, 32), mx.float16)
+        v = mx.ones((1, 4, 3, 32), mx.float16)
+        k_up, v_up = cache.update_and_fetch(k, v)
+
+        expected = mx.ones((1, 4, cache.step - 1, 32), mx.float16)
+        self.assertTrue(mx.array_equal(k_up, expected))
+        self.assertTrue(mx.array_equal(v_up, expected))
+        self.assertEqual(cache.offset, cache.step - 1)
 
     def test_rotating_kv_cache(self):
         b, h, d = 1, 2, 32
@@ -88,7 +97,6 @@ class TestModels(unittest.TestCase):
                 idx = 2
 
     def model_test_runner(self, model, model_type, vocab_size, num_layers):
-
         self.assertEqual(len(model.layers), num_layers)
         self.assertEqual(model.model_type, model_type)
 

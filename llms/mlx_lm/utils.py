@@ -102,6 +102,24 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
     return model_path
 
 
+def create_cache(model: nn.Module, max_kv_size: Optional[int]) -> list[KVCache]:
+    if hasattr(model, "make_cache"):
+        return model.make_cache()
+    else:
+        kv_heads = (
+            [model.n_kv_heads] * len(model.layers)
+            if isinstance(model.n_kv_heads, int)
+            else model.n_kv_heads
+        )
+        if max_kv_size is not None:
+            return [
+                RotatingKVCache(model.head_dim, n, max_size=max_kv_size, keep=4)
+                for n in kv_heads
+            ]
+        else:
+            return [KVCache(model.head_dim, n) for n in kv_heads]
+
+
 def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
     """
     Apply repetition penalty to specific logits based on the given context.
@@ -129,6 +147,7 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
 def generate_step(
     prompts: mx.array,
     model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
     temp: float = 0.0,
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
@@ -138,6 +157,8 @@ def generate_step(
     logit_bias: Optional[Dict[int, float]] = None,
     prefill_step_size: int = 512,
     max_kv_size: Optional[int] = None,
+    draft_model: Optional[nn.Module] = None,
+    speculation_lookahead: int = 5,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -161,6 +182,11 @@ def generate_step(
         prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
+        draft_model (nn.Module, optional): The model to use for drafting
+          (speculative decoding). Speculative decoding is currently only
+          supported for bs=1, temp=0, max_kv_size=None.
+        speculation_lookahead (int, optional): Number of tokens to generate
+          speculatively. Only used if `draft_model` is provided.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
@@ -172,6 +198,24 @@ def generate_step(
         raise ValueError(
             f"Shape of prompts should be (bs, seq_len), got {prompts.shape}"
         )
+
+    if draft_model is not None:
+        if prompts.shape[0] != 1:
+            # https://github.com/huggingface/transformers/issues/32165
+            raise ValueError(
+                f"Speculative decoding currently only supports batch size 1, got batch size {prompts.shape[0]}"
+            )
+        if temp != 0:
+            # Samplers would need to be refactored to return
+            # transformed logprobs instead of sampled tokens
+            raise ValueError(
+                f"Speculative decoding currently only supports greedy sampling, got temp={temp}"
+            )
+        if max_kv_size is not None:
+            # `RotatingKVCache` assumes one token generated at a time per prompt
+            raise ValueError(
+                f"Speculative decoding currently does not support max_kv_size, got max_kv_size={max_kv_size}"
+            )
 
     def sample(logits: mx.array) -> Tuple[mx.array, mx.array]:
         if logit_bias:
@@ -200,21 +244,8 @@ def generate_step(
         )
 
     y = prompts
-    if hasattr(model, "make_cache"):
-        cache = model.make_cache()
-    else:
-        kv_heads = (
-            [model.n_kv_heads] * len(model.layers)
-            if isinstance(model.n_kv_heads, int)
-            else model.n_kv_heads
-        )
-        if max_kv_size is not None:
-            cache = [
-                RotatingKVCache(model.head_dim, n, max_size=max_kv_size, keep=4)
-                for n in kv_heads
-            ]
-        else:
-            cache = [KVCache(model.head_dim, n) for n in kv_heads]
+    cache = create_cache(model, max_kv_size)
+    draft_cache = create_cache(draft_model, max_kv_size) if draft_model else None
 
     repetition_context = prompts
 
@@ -243,16 +274,45 @@ def generate_step(
     while y.shape[1] > prefill_step_size:
         model(y[:, :prefill_step_size], cache=cache)
         mx.eval([c.state for c in cache])
+        if draft_model is not None:
+            draft_model(y[:, :prefill_step_size], cache=draft_cache)
+            mx.eval([c.state for c in draft_cache])
         y = y[:, prefill_step_size:]
 
+    old_y = y
     y, logprobs = _step(y)
     mx.async_eval(y)
-    while True:
-        next_y, next_logprobs = _step(y)
-        mx.async_eval(next_y)
+    if draft_model is not None:
+        draft_model(old_y, cache=draft_cache)
         mx.eval(y)
         yield y, logprobs
-        y, logprobs = next_y, next_logprobs
+    while True:
+        if draft_model is not None:
+            draft_input = y
+            draft = mx.zeros((1, 0), dtype=y.dtype)
+            for _ in range(speculation_lookahead):
+                draft_logits = draft_model(draft_input, cache=draft_cache)
+                draft_input = mx.argmax(draft_logits[:, -1, :], axis=-1, keepdims=True)
+                draft = mx.concatenate([draft, draft_input], axis=-1)
+                if draft_input.item() == tokenizer.eos_token_id:
+                    break
+            input_tokens = mx.concatenate([y, draft[:, :-1]], axis=-1)
+            logits = model(input_tokens, cache=cache)
+            logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+            output = logits.argmax(axis=-1)
+            n_accepted = (output == draft).astype(mx.uint8).cummin().sum().item()
+            n_used = min(n_accepted + 1, draft.shape[1])
+            for i in range(n_used):
+                y = output[:, i : i + 1]
+                yield y, logprobs[:, i, :]
+            for c in cache + draft_cache:
+                c.drop(draft.shape[1] - n_used)
+        else:
+            next_y, next_logprobs = _step(y)
+            mx.async_eval(next_y)
+            mx.eval(y)
+            yield y, logprobs
+            y, logprobs = next_y, next_logprobs
 
 
 def stream_generate(
@@ -283,7 +343,7 @@ def stream_generate(
 
     detokenizer.reset()
     for (token, _), n in zip(
-        generate_step(prompt_tokens[None], model, **kwargs),
+        generate_step(prompt_tokens[None], model, tokenizer, **kwargs),
         range(max_tokens),
     ):
         token = token.item()
@@ -346,7 +406,7 @@ def generate(
     tic = time.perf_counter()
 
     for (tokens, logprobs), n in zip(
-        generate_step(prompt_tokens, model, **kwargs),
+        generate_step(prompt_tokens, model, tokenizer, **kwargs),
         range(max_tokens),
     ):
         if n == 0:

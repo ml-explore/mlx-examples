@@ -9,7 +9,6 @@ import mlx.nn as nn
 
 
 class KVCache:
-
     def __init__(self, head_dim, n_kv_heads):
         self.n_kv_heads = n_kv_heads
         if isinstance(head_dim, int):
@@ -23,6 +22,13 @@ class KVCache:
         self.offset = 0
         self.step = 256
 
+    def drop(self, n):
+        if n >= self.offset:
+            self.keys = self.values = None
+            self.offset = 0
+        elif n > 0:
+            self.offset -= n
+
     def update_and_fetch(self, keys, values):
         prev = self.offset
         if self.keys is None or (prev + keys.shape[2]) > self.keys.shape[2]:
@@ -33,11 +39,10 @@ class KVCache:
             new_k = mx.zeros(k_shape, keys.dtype)
             new_v = mx.zeros(v_shape, values.dtype)
             if self.keys is not None:
-                if prev % self.step != 0:
-                    self.keys = self.keys[..., :prev, :]
-                    self.values = self.values[..., :prev, :]
-                self.keys = mx.concatenate([self.keys, new_k], axis=2)
-                self.values = mx.concatenate([self.values, new_v], axis=2)
+                self.keys = mx.concatenate([self.keys[..., :prev, :], new_k], axis=2)
+                self.values = mx.concatenate(
+                    [self.values[..., :prev, :], new_v], axis=2
+                )
             else:
                 self.keys, self.values = new_k, new_v
 
@@ -51,7 +56,6 @@ class KVCache:
 
 
 class RotatingKVCache:
-
     def __init__(self, head_dim, n_kv_heads, max_size, keep=0, step=256):
         self.n_kv_heads = n_kv_heads
         if isinstance(head_dim, int):
