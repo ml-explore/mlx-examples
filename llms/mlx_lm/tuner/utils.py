@@ -99,6 +99,7 @@ def linear_to_lora_layers(
         "stablelm",
         "qwen2",
         "qwen2_moe",
+        "phimoe",
         "gemma",
         "gemma2",
         "starcoder2",
@@ -107,7 +108,7 @@ def linear_to_lora_layers(
         "deepseek",
     ]:
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
-        if model.model_type == "mixtral":
+        if model.model_type in ["mixtral", "phimoe"]:
             keys.add("block_sparse_moe.gate")
         if model.model_type == "qwen2_moe":
             keys.add("mlp.gate")
