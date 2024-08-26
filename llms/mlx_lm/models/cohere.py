@@ -1,10 +1,12 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -84,11 +86,9 @@ class Attention(nn.Module):
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -98,7 +98,7 @@ class Attention(nn.Module):
         )
 
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.o_proj(output), (keys, values)
+        return self.o_proj(output)
 
 
 class MLP(nn.Module):
@@ -132,9 +132,9 @@ class TransformerBlock(nn.Module):
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
         h = self.input_layernorm(x)
-        attn_h, cache = self.self_attn(h, mask, cache)
+        attn_h = self.self_attn(h, mask, cache)
         ff_h = self.mlp(h)
-        return attn_h + ff_h + x, cache
+        return attn_h + ff_h + x
 
 
 class CohereModel(nn.Module):
@@ -159,18 +159,15 @@ class CohereModel(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for e, layer in enumerate(self.layers):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, c)
 
-        return self.norm(h), cache
+        return self.norm(h)
 
 
 class Model(nn.Module):
@@ -178,17 +175,26 @@ class Model(nn.Module):
         super().__init__()
         self.model_type = args.model_type
         self.model = CohereModel(args)
+        self.args = args
 
     def __call__(
         self,
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
-        out = out @ self.model.embed_tokens.weight.T
+        out = self.model(inputs, cache)
+        out = self.model.embed_tokens.as_linear(out)
         out = out * self.model.args.logit_scale
-        return out, cache
+        return out
 
     @property
     def layers(self):
         return self.model.layers
+
+    @property
+    def head_dim(self):
+        return self.args.hidden_size // self.args.num_attention_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

@@ -1,11 +1,14 @@
+# Copyright © 2023-2024 Apple Inc.
+
+import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
+from .switch_layers import SwitchGLU
 
 
 @dataclass
@@ -77,11 +80,9 @@ class MixtralAttention(nn.Module):
         )
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -90,25 +91,7 @@ class MixtralAttention(nn.Module):
             queries, keys, values, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.o_proj(output), (keys, values)
-
-
-class MixtralBLockSparseTop2MLP(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        self.ffn_dim = args.intermediate_size
-        self.hidden_dim = args.hidden_size
-
-        self.w1 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
-        self.w2 = nn.Linear(self.ffn_dim, self.hidden_dim, bias=False)
-        self.w3 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
-
-        self.act_fn = nn.silu
-
-    def __call__(self, x: mx.array) -> mx.array:
-        current_hidden_states = self.act_fn(self.w1(x)) * self.w3(x)
-        current_hidden_states = self.w2(current_hidden_states)
-        return current_hidden_states
+        return self.o_proj(output)
 
 
 class MixtralSparseMoeBlock(nn.Module):
@@ -122,45 +105,20 @@ class MixtralSparseMoeBlock(nn.Module):
         # gating
         self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
 
-        self.experts = [
-            MixtralBLockSparseTop2MLP(args=args) for _ in range(self.num_experts)
-        ]
+        self.switch_mlp = SwitchGLU(self.hidden_dim, self.ffn_dim, self.num_experts)
 
     def __call__(self, x: mx.array) -> mx.array:
-        ne = self.num_experts_per_tok
-        orig_shape = x.shape
-        x = x.reshape(-1, x.shape[-1])
-
         gates = self.gate(x)
 
-        inds = mx.stop_gradient(
-            mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
-        )  # TODO remove it once we figure out how to fine tune TopK in MOE
+        k = self.num_experts_per_tok
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=k - 1, axis=-1)[..., :k])
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        scores = mx.softmax(scores, axis=-1, precise=True)
 
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
+        y = self.switch_mlp(x, inds)
+        y = (y * scores[..., None]).sum(axis=-2)
 
-        if self.training:
-            inds = np.array(inds)
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
-            for e, expert in enumerate(self.experts):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
-
-            y = (y * scores[:, :, None]).sum(axis=1)
-        else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.stack([self.experts[e](xt) for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
-            y = mx.concatenate(y)
-
-        return y.reshape(orig_shape)
+        return y
 
 
 class MixtralDecoderLayer(nn.Module):
@@ -182,11 +140,11 @@ class MixtralDecoderLayer(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Tuple[mx.array, mx.array]] = None,
     ) -> mx.array:
-        r, cache = self.self_attn(self.input_layernorm(x), mask, cache)
+        r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
         r = self.block_sparse_moe(self.post_attention_layernorm(h))
         out = h + r
-        return out, cache
+        return out
 
 
 class MixtralModel(nn.Module):
@@ -208,19 +166,15 @@ class MixtralModel(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        mask = None
-        T = h.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for e, layer in enumerate(self.layers):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.layers, cache):
+            h = layer(h, mask, c)
 
-        return self.norm(h), cache
+        return self.norm(h)
 
 
 class Model(nn.Module):
@@ -229,15 +183,43 @@ class Model(nn.Module):
         self.model_type = args.model_type
         self.model = MixtralModel(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.args = args
 
     def __call__(
         self,
         inputs: mx.array,
         cache=None,
     ):
-        out, cache = self.model(inputs, cache)
-        return self.lm_head(out), cache
+        out = self.model(inputs, cache)
+        return self.lm_head(out)
+
+    def sanitize(self, weights):
+        if "model.layers.0.block_sparse_moe.experts.0.w1.weight" not in weights:
+            return weights
+        for l in range(self.args.num_hidden_layers):
+            prefix = f"model.layers.{l}"
+            for n, m in [("w1", "gate_proj"), ("w2", "down_proj"), ("w3", "up_proj")]:
+                for k in ["weight", "scales", "biases"]:
+                    if f"{prefix}.block_sparse_moe.experts.0.{n}.{k}" in weights:
+                        to_join = [
+                            weights.pop(
+                                f"{prefix}.block_sparse_moe.experts.{e}.{n}.{k}"
+                            )
+                            for e in range(self.args.num_local_experts)
+                        ]
+                        weights[f"{prefix}.block_sparse_moe.switch_mlp.{m}.{k}"] = (
+                            mx.stack(to_join)
+                        )
+        return weights
 
     @property
     def layers(self):
         return self.model.layers
+
+    @property
+    def head_dim(self):
+        return self.args.hidden_size // self.args.num_attention_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_key_value_heads

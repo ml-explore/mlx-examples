@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_map, tree_unflatten
+from mlx.utils import tree_unflatten
 from sentencepiece import SentencePieceProcessor
 
 
@@ -103,7 +103,7 @@ class MOEFeedForward(nn.Module):
         x = x.reshape(-1, x.shape[-1])
 
         gates = self.gate(x)
-        inds = mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne]
+        inds = mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne]
         scores = mx.softmax(
             mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
             axis=-1,
@@ -217,11 +217,7 @@ def load_model(folder: str):
     weights = tree_unflatten(list(weights.items()))
     model = Mixtral(model_args)
     if quantization is not None:
-        # TODO: Quantize gate matrices when < 32 tiles supported
-        quantization["linear_class_predicate"] = (
-            lambda m: isinstance(m, nn.Linear) and m.weight.shape[0] != 8
-        )
-        nn.QuantizedLinear.quantize_module(model, **quantization)
+        nn.quantize(model, **quantization)
 
     model.update(weights)
     return model, tokenizer

@@ -134,7 +134,7 @@ def quantize(weights, config, args):
     model.update(tree_unflatten(list(weights.items())))
 
     # Quantize the model:
-    nn.QuantizedLinear.quantize_module(model, args.q_group_size, args.q_bits)
+    nn.quantize(model, args.q_group_size, args.q_bits)
 
     # Update the config:
     quantized_config["quantization"] = {

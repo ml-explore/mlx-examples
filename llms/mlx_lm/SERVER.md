@@ -11,13 +11,13 @@ API](https://platform.openai.com/docs/api-reference).
 Start the server with: 
 
 ```shell
-python -m mlx_lm.server --model <path_to_model_or_hf_repo>
+mlx_lm.server --model <path_to_model_or_hf_repo>
 ```
 
 For example:
 
 ```shell
-python -m mlx_lm.server --model mistralai/Mistral-7B-Instruct-v0.1
+mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit
 ```
 
 This will start a text generation server on port `8080` of the `localhost`
@@ -27,7 +27,7 @@ Hugging Face repo if it is not already in the local cache.
 To see a full list of options run:
 
 ```shell
-python -m mlx_lm.server --help
+mlx_lm.server --help
 ```
 
 You can make a request to the model by running:
@@ -71,3 +71,17 @@ curl localhost:8080/v1/chat/completions \
 
 - `repetition_context_size`: (Optional) The size of the context window for
   applying repetition penalty. Defaults to `20`.
+
+- `logit_bias`: (Optional) A dictionary mapping token IDs to their bias
+  values. Defaults to `None`.
+
+- `logprobs`: (Optional) An integer specifying the number of top tokens and
+  corresponding log probabilities to return for each output in the generated
+  sequence. If set, this can be any value between 1 and 10, inclusive.
+
+- `model`: (Optional) A string path to a local model or Hugging Face repo id.
+  If the path is local is must be relative to the directory the server was
+  started in.
+
+- `adapters`: (Optional) A string path to low-rank adapters. The path must be
+  rlative to the directory the server was started in.

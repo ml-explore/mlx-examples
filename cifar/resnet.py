@@ -3,8 +3,6 @@ Implementation of ResNets for CIFAR-10 as per the original paper [https://arxiv.
 Configurations include ResNet-20, ResNet-32, ResNet-44, ResNet-56, ResNet-110, ResNet-1202.
 """
 
-from typing import Any
-
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten

@@ -3,8 +3,8 @@ from typing import List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from mlx.utils import tree_map, tree_unflatten
-from transformers import AutoTokenizer, T5Config
+from mlx.utils import tree_map
+from transformers import T5Config
 
 
 def _relative_position_bucket(
@@ -105,7 +105,7 @@ class MultiHeadAttention(nn.Module):
         values: mx.array,
         mask: Optional[mx.array],
         cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> [mx.array, Tuple[mx.array, mx.array]]:
+    ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
         queries = self.query_proj(queries)
         keys = self.key_proj(keys)
         values = self.value_proj(values)

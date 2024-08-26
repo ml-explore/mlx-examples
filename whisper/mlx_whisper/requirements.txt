@@ -1,9 +1,9 @@
-mlx>=0.8
+mlx>=0.11
 numba
 numpy
 torch
 tqdm
 more-itertools
-tiktoken==0.3.3
+tiktoken
 huggingface_hub
 scipy

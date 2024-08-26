@@ -47,6 +47,10 @@ Models that have been tested and work include:
 - [TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF),
   for quantized models use:
   - `tinyllama-1.1b-chat-v1.0.Q8_0.gguf`
-  - `tinyllama-1.1b-chat-v1.0.Q4_0.gguf` 
+  - `tinyllama-1.1b-chat-v1.0.Q4_0.gguf`
+
+- [Jaward/phi-3-mini-4k-instruct.Q4_0.gguf](https://huggingface.co/Jaward/phi-3-mini-4k-instruct.Q4_0.gguf),
+  for 4 bits quantized phi-3-mini-4k-instruct use:
+  - `phi-3-mini-4k-instruct.Q4_0.gguf` 
 
 [^1]: For more information on GGUF see [the documentation](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md).

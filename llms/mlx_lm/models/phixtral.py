@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import inspect
 import math
 from dataclasses import dataclass
@@ -5,13 +7,14 @@ from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
+
+from .base import create_attention_mask
+from .switch_layers import SwitchMLP
 
 
 @dataclass
 class ModelArgs:
     model_type: str
-    max_sequence_length: int = 2048
     num_vocab: int = 51200
     model_dim: int = 2560
     num_heads: int = 32
@@ -56,11 +59,9 @@ class RoPEAttention(nn.Module):
 
         # Add RoPE to the queries and keys and combine them with the cache
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
@@ -69,25 +70,13 @@ class RoPEAttention(nn.Module):
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
-        scores = (queries * scale) @ keys.transpose(0, 1, 3, 2)
-        if mask is not None:
-            scores = scores + mask
 
-        scores = mx.softmax(scores, axis=-1).astype(values.dtype)
-        values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
+        output = mx.fast.scaled_dot_product_attention(
+            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+        ).astype(values.dtype)
+        output = output.moveaxis(2, 1).reshape(B, L, -1)
 
-        return self.out_proj(values_hat), (keys, values)
-
-
-class MLP(nn.Module):
-    def __init__(self, dim, hidden_dim):
-        super().__init__()
-        self.fc1 = nn.Linear(dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, dim)
-        self.act = nn.GELU(approx="precise")
-
-    def __call__(self, x) -> mx.array:
-        return self.fc2(self.act(self.fc1(x)))
+        return self.out_proj(output)
 
 
 class MOE(nn.Module):
@@ -97,40 +86,23 @@ class MOE(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_experts = args.num_local_experts
         self.num_experts_per_tok = args.num_experts_per_tok
-        self.mlp = [MLP(self.dim, self.hidden_dim) for _ in range(self.num_experts)]
+        self.switch_mlp = SwitchMLP(
+            self.dim, self.hidden_dim, self.num_experts, bias=True
+        )
         self.gate = nn.Linear(args.model_dim, self.num_experts, bias=False)
 
     def __call__(self, x: mx.array) -> mx.array:
-        ne = self.num_experts_per_tok
-        orig_shape = x.shape
-        x = x.reshape(-1, x.shape[-1])
-
         gates = self.gate(x)
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1))[:, :ne]
-        scores = mx.softmax(
-            mx.take_along_axis(gates, inds, axis=-1).astype(mx.float32),
-            axis=-1,
-        ).astype(gates.dtype)
 
-        if self.training:
-            ys = []
-            y = mx.zeros((x.shape[0], ne, x.shape[-1]), x.dtype)
-            for e, expert in enumerate(self.mlp):
-                idx1, idx2 = map(mx.array, np.where(inds == e))
-                if idx1.size == 0:
-                    continue
-                y[idx1, idx2] = expert(x[idx1])
+        k = self.num_experts_per_tok
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=k - 1, axis=-1))[..., :k]
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        scores = mx.softmax(scores, axis=-1, precise=True)
 
-            y = (y * scores[..., None]).sum(axis=1)
-        else:
-            y = []
-            for xt, st, it in zip(x, scores, inds.tolist()):
-                yt = mx.stack([self.mlp[e](xt) for e in it], axis=-1)
-                yt = (yt * st).sum(axis=-1)
-                y.append(yt[None, :])
-            y = mx.concatenate(y)
+        y = self.switch_mlp(x, inds)
+        y = (y * scores[..., None]).sum(axis=-2)
 
-        return y.reshape(orig_shape)
+        return y
 
 
 class ParallelBlock(nn.Module):
@@ -144,9 +116,9 @@ class ParallelBlock(nn.Module):
 
     def __call__(self, x, mask, cache):
         h = self.ln(x)
-        attn_h, cache = self.mixer(h, mask, cache)
+        attn_h = self.mixer(h, mask, cache)
         ff_h = self.moe(h)
-        return attn_h + ff_h + x, cache
+        return attn_h + ff_h + x
 
 
 class TransformerDecoder(nn.Module):
@@ -160,9 +132,9 @@ class TransformerDecoder(nn.Module):
         if cache is None:
             cache = [None] * len(self.h)
 
-        for e, layer in enumerate(self.h):
-            x, cache[e] = layer(x, mask, cache[e])
-        return x, cache
+        for layer, c in zip(self.h, cache):
+            x = layer(x, mask, c)
+        return x
 
 
 class Embd(nn.Module):
@@ -190,6 +162,7 @@ class Model(nn.Module):
         self.model_type = config.model_type
         self.transformer = TransformerDecoder(config)
         self.lm_head = OutputHead(config)
+        self.args = config
 
     def __call__(
         self,
@@ -197,14 +170,34 @@ class Model(nn.Module):
         mask: mx.array = None,
         cache: mx.array = None,
     ) -> Tuple[mx.array, mx.array]:
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
+        mask = create_attention_mask(x, cache)
 
-        y, cache = self.transformer(x, mask, cache)
-        return self.lm_head(y), cache
+        y = self.transformer(x, mask, cache)
+        return self.lm_head(y)
+
+    def sanitize(self, weights):
+        if "transformer.h.0.moe.mlp.0.fc1.weight" not in weights:
+            return weights
+        for l in range(self.args.num_layers):
+            prefix = f"transformer.h.{l}"
+            for n in ["fc1", "fc2"]:
+                for k in ["weight", "scales", "biases", "bias"]:
+                    if f"{prefix}.moe.mlp.0.{n}.{k}" in weights:
+                        to_join = [
+                            weights.pop(f"{prefix}.moe.mlp.{e}.{n}.{k}")
+                            for e in range(self.args.num_local_experts)
+                        ]
+                        weights[f"{prefix}.moe.switch_mlp.{n}.{k}"] = mx.stack(to_join)
+        return weights
 
     @property
     def layers(self):
         return self.transformer.h
+
+    @property
+    def head_dim(self):
+        return self.args.model_dim // self.args.num_heads
+
+    @property
+    def n_kv_heads(self):
+        return self.args.num_heads

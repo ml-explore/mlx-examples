@@ -11,7 +11,7 @@ import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 import utils as lora_utils
-from mlx.utils import tree_flatten, tree_unflatten
+from mlx.utils import tree_flatten
 from models import LoRALinear
 
 
@@ -46,6 +46,12 @@ def build_parser():
         "--train",
         action="store_true",
         help="Do training",
+    )
+    parser.add_argument(
+        "--add-eos-token",
+        type=int,
+        default=1,
+        help="Enable add_eos_token for tokenizer",
     )
     parser.add_argument(
         "--data",
@@ -214,8 +220,12 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
 def evaluate(model, dataset, loss, tokenizer, batch_size, num_batches):
     all_losses = []
     ntokens = 0
+
+    # num_batches can be -1 to indicate the entire set
+    index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
+
     for it, batch in zip(
-        range(num_batches),
+        index_iterator,
         iterate_batches(dataset, tokenizer, batch_size),
     ):
         losses, toks = loss(model, *batch)
@@ -317,9 +327,13 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    print("Loading pretrained model")
-    model, tokenizer, _ = lora_utils.load(args.model)
+    # Building tokenizer_config
+    tokenizer_config = {}
+    if args.train:
+        tokenizer_config["add_eos_token"] = bool(args.add_eos_token)
 
+    print("Loading pretrained model")
+    model, tokenizer, _ = lora_utils.load(args.model, tokenizer_config)
     # Freeze all layers other than LORA linears
     model.freeze()
     for l in model.model.layers[len(model.model.layers) - args.lora_layers :]:

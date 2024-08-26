@@ -5,8 +5,7 @@ from functools import partial
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
-from datasets import download_cora, load_data, train_val_test_mask
-from mlx.nn.losses import cross_entropy
+from datasets import load_data, train_val_test_mask
 from mlx.utils import tree_flatten
 
 from gcn import GCN
