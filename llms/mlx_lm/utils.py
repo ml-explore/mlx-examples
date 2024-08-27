@@ -646,7 +646,7 @@ def quantize_model(
     """
     quantized_config = copy.deepcopy(config)
     nn.quantize(model, q_group_size, q_bits)
-    quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+    quantized_config["quantization_config"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config
