@@ -541,6 +541,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
+    card.data.base_model = hf_path
     card.text = dedent(
         f"""
         # {upload_repo}
