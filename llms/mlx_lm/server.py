@@ -104,6 +104,8 @@ class ModelProvider:
         # Preload the default model if it is provided
         if self.cli_args.model is not None:
             self.load("default_model")
+        if self.cli_args.draft_model is not None:
+            self.draft_model, _ = load(self.cli_args.model)
 
     def _validate_model_path(self, model_path: str):
         model_path = Path(model_path)
@@ -161,6 +163,7 @@ class APIHandler(BaseHTTPRequestHandler):
         """
         self.created = int(time.time())
         self.model_provider = model_provider
+        self.draft_model = model_provider.draft_model
         super().__init__(*args, **kwargs)
 
     def _set_cors_headers(self):
@@ -410,8 +413,10 @@ class APIHandler(BaseHTTPRequestHandler):
         top_tokens = []
         for (token, logprobs), _ in zip(
             generate_step(
-                prompt=prompt,
+                prompts=prompt[None],
                 model=self.model,
+                draft_model=self.draft_model,
+                tokenizer=self.tokenizer,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
@@ -420,6 +425,8 @@ class APIHandler(BaseHTTPRequestHandler):
             ),
             range(self.max_tokens),
         ):
+            token = token.item()
+            logprobs = logprobs.squeeze(0)
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
@@ -497,8 +504,10 @@ class APIHandler(BaseHTTPRequestHandler):
 
         for (token, _), _ in zip(
             generate_step(
-                prompt=prompt,
+                prompts=prompt[None],
                 model=self.model,
+                draft_model=self.draft_model,
+                tokenizer=self.tokenizer,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
@@ -506,6 +515,7 @@ class APIHandler(BaseHTTPRequestHandler):
             ),
             range(self.max_tokens),
         ):
+            token = token.item()
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
@@ -645,6 +655,11 @@ def main():
         "--model",
         type=str,
         help="The path to the MLX model weights, tokenizer, and config",
+    )
+    parser.add_argument(
+        "--draft-model",
+        type=str,
+        help="The path to the MLX model weights and config for speculative decoding",
     )
     parser.add_argument(
         "--adapter-path",

@@ -24,6 +24,12 @@ def setup_arg_parser():
         help="The path to the local model directory or Hugging Face repo.",
     )
     parser.add_argument(
+        "--draft-model",
+        type=str,
+        required=False,
+        help="The path to the local model directory or Hugging Face repo for speculative decoding.",
+    )
+    parser.add_argument(
         "--adapter-path",
         type=str,
         help="Optional path for the trained adapter weights and config.",
@@ -81,7 +87,7 @@ def setup_arg_parser():
         "--max-kv-size",
         type=int,
         default=1024,
-        help="Set the maximum key-value cache size",
+        help="Set the maximum key-value cache size (0 for unlimited)",
     )
     return parser
 
@@ -132,6 +138,7 @@ def main():
         adapter_path=args.adapter_path,
         tokenizer_config=tokenizer_config,
     )
+    draft_model = load(args.draft_model)[0] if args.draft_model is not None else None
 
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
@@ -159,7 +166,8 @@ def main():
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,
-        max_kv_size=args.max_kv_size,
+        max_kv_size=args.max_kv_size if args.max_kv_size > 0 else None,
+        draft_model=draft_model,
     )
 
 
