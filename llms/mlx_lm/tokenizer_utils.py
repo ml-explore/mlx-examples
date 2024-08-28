@@ -252,8 +252,18 @@ class TokenizerWrapper:
     def __getattr__(self, attr):
         if attr == "detokenizer":
             return self._detokenizer
+        elif attr.startswith("_"):
+            return self.__getattribute__(attr)
         else:
             return getattr(self._tokenizer, attr)
+
+    def __setattr__(self, attr, value):
+        if attr == "detokenizer":
+            raise AttributeError("Cannot set the detokenizer.")
+        elif attr.startswith("_"):
+            super().__setattr__(attr, value)
+        else:
+            setattr(self._tokenizer, attr, value)
 
 
 def _match(a, b):
