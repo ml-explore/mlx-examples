@@ -1,6 +1,7 @@
 # Copyright © 2024 Apple Inc.
 
 import argparse
+import json
 import sys
 import time
 
@@ -140,4 +141,9 @@ def main():
     for i, c in enumerate(cache):
         cache_dict[f"{i}_keys"] = c.state[0]
         cache_dict[f"{i}_values"] = c.state[1]
-    mx.save_safetensors(args.kv_cache_file, cache_dict)
+    metadata = {}
+    metadata["model"] = args.model
+    metadata["chat_template"] = tokenizer.chat_template
+    metadata["tokenizer_config"] = json.dumps(tokenizer_config)
+    metadata["max_kv_size"] = str(args.max_kv_size)
+    mx.save_safetensors(args.kv_cache_file, cache_dict, metadata)
