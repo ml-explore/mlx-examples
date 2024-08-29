@@ -12,7 +12,6 @@ DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.6
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
-DEFAULT_MAX_KV_SIZE = 1024
 
 
 def setup_arg_parser():
@@ -81,6 +80,7 @@ def setup_arg_parser():
         "--max-kv-size",
         type=int,
         help="Set the maximum key-value cache size",
+        default=None,
     )
     parser.add_argument(
         "--kv-cache-file",
@@ -199,12 +199,9 @@ def main():
 
     # Determine the max kv size from the kv cache or passed arguments
     max_kv_size = args.max_kv_size
-    if max_kv_size is None:
-        max_kv_size = (
-            int(metadata["max_kv_size"])
-            if cache_history is not None
-            else DEFAULT_MAX_KV_SIZE
-        )
+    if cache_history is not None:
+        max_kv_size = metadata["max_kv_size"]
+        max_kv_size = int(max_kv_size) if max_kv_size.isdigit() else None
 
     generate(
         model,
