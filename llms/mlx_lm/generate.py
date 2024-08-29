@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 
 import mlx.core as mx
 
@@ -40,7 +41,9 @@ def setup_arg_parser():
         help="End of sequence token for tokenizer",
     )
     parser.add_argument(
-        "--prompt", default=DEFAULT_PROMPT, help="Message to be processed by the model"
+        "--prompt",
+        default=DEFAULT_PROMPT,
+        help="Message to be processed by the model ('-' reads from stdin)",
     )
     parser.add_argument(
         "--max-tokens",
@@ -65,6 +68,13 @@ def setup_arg_parser():
         "--use-default-chat-template",
         action="store_true",
         help="Use the default chat template",
+    )
+    parser.add_argument(
+        "--prompt-only",
+        action="store_true",
+        help="Set generation verbosity to False and only print the prompt "
+        "(turned off by default and useful if chaining)",
+        default=False,
     )
     parser.add_argument(
         "--colorize",
@@ -178,7 +188,12 @@ def main():
         hasattr(tokenizer, "apply_chat_template")
         and tokenizer.chat_template is not None
     ):
-        messages = [{"role": "user", "content": args.prompt}]
+        messages = [
+            {
+                "role": "user",
+                "content": sys.stdin.read() if args.prompt == "-" else args.prompt,
+            }
+        ]
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -195,6 +210,8 @@ def main():
     else:
         prompt = args.prompt
 
+    if args.colorize and args.prompt_only:
+        raise ValueError("Cannot use --colorize with --prompt-only")
     formatter = colorprint_by_t0 if args.colorize else None
 
     # Determine the max kv size from the kv cache or passed arguments
@@ -206,18 +223,20 @@ def main():
             else DEFAULT_MAX_KV_SIZE
         )
 
-    generate(
+    response = generate(
         model,
         tokenizer,
         prompt,
         args.max_tokens,
-        verbose=True,
+        verbose=not args.prompt_only,
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,
         max_kv_size=max_kv_size,
         cache_history=cache_history,
     )
+    if args.prompt_only:
+        print(response)
 
 
 if __name__ == "__main__":
