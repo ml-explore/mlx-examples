@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -126,6 +126,26 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
     return logits
 
 
+def make_kv_caches(
+    model: nn.Module, max_kv_size: Optional[int] = None
+) -> List[Union[KVCache, RotatingKVCache]]:
+    if hasattr(model, "make_cache"):
+        return model.make_cache()
+
+    kv_heads = (
+        [model.n_kv_heads] * len(model.layers)
+        if isinstance(model.n_kv_heads, int)
+        else model.n_kv_heads
+    )
+    if max_kv_size is not None:
+        return [
+            RotatingKVCache(model.head_dim, n, max_size=max_kv_size, keep=4)
+            for n in kv_heads
+        ]
+    else:
+        return [KVCache(model.head_dim, n) for n in kv_heads]
+
+
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
@@ -138,6 +158,7 @@ def generate_step(
     logit_bias: Optional[Dict[int, float]] = None,
     prefill_step_size: int = 512,
     max_kv_size: Optional[int] = None,
+    cache_history: Optional[List[Tuple[mx.array, mx.array]]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -194,21 +215,19 @@ def generate_step(
         )
 
     y = prompt
-    if hasattr(model, "make_cache"):
-        cache = model.make_cache()
-    else:
-        kv_heads = (
-            [model.n_kv_heads] * len(model.layers)
-            if isinstance(model.n_kv_heads, int)
-            else model.n_kv_heads
-        )
-        if max_kv_size is not None:
-            cache = [
-                RotatingKVCache(model.head_dim, n, max_size=max_kv_size, keep=4)
-                for n in kv_heads
-            ]
-        else:
-            cache = [KVCache(model.head_dim, n) for n in kv_heads]
+
+    # Create the KV cache for generation
+    cache = make_kv_caches(model, max_kv_size)
+
+    if cache_history is not None:
+        if len(cache_history) != len(cache):
+            raise ValueError("Wrong number of layers in the cache history")
+
+        # Set the history in the cache objects and evaluate them to prepare for
+        # generation.
+        for c, h in zip(cache, cache_history):
+            c.update_and_fetch(h[0], h[1])
+        mx.eval([c.state for c in cache])
 
     repetition_context = prompt.tolist()
 

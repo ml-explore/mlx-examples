@@ -59,19 +59,17 @@ class Attention(nn.Module):
         self.qkv_proj = nn.Linear(dim, op_size, bias=False)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
 
-        rope_scale = 1.0
         if args.rope_scaling and args.rope_scaling["type"] in ["longrope", "su"]:
             self.rope = SuScaledRotaryEmbedding(
                 head_dim,
-                traditional=False,
                 base=args.rope_theta,
-                scale=rope_scale,
                 max_position_embeddings=args.max_position_embeddings,
                 original_max_position_embeddings=args.original_max_position_embeddings,
                 short_factor=args.rope_scaling["short_factor"],
                 long_factor=args.rope_scaling["long_factor"],
             )
         else:
+            rope_scale = 1.0
             if args.rope_scaling and args.rope_scaling["type"] == "linear":
                 assert isinstance(args.rope_scaling["factor"], float)
                 rope_scale = 1 / args.rope_scaling["factor"]

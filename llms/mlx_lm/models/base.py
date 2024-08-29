@@ -46,6 +46,7 @@ class KVCache:
         self.values[..., prev : self.offset, :] = values
         return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 
+    @property
     def state(self):
         return self.keys, self.values
 
@@ -137,6 +138,7 @@ class RotatingKVCache:
             return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
         return self.keys, self.values
 
+    @property
     def state(self):
         return self.keys, self.values
 
