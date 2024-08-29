@@ -124,7 +124,7 @@ mlx_lm.convert \
     --upload-repo mlx-community/my-4bit-mistral
 ```
 
-### Long Context and Prompt Caching
+### Long Prompts and Generations 
 
 MLX LM has some tools to scale efficiently to long prompts and generations:
 
@@ -155,8 +155,8 @@ mlx_lm.generate \
 ```
 
 The cached prompt is treated as a prefix to the supplied prompt. Also notice
-when using a cached prompt, the model is read from the cache and need not be
-supplied explicitly.
+when using a cached prompt, the model to use is read from the cache and need
+not be supplied explicitly.
 
 ### Supported Models
 
