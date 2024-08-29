@@ -249,8 +249,10 @@ def main():
         draft_model=draft_model,
         num_draft_tokens=args.num_draft_tokens,
     )
-    if not args.verbose:
+
+    if not args.verbose and mx.distributed.init().rank() == 0:
         print(response)
+    mx.synchronize()
 
 
 if __name__ == "__main__":
