@@ -647,6 +647,8 @@ def quantize_model(
     """
     quantized_config = copy.deepcopy(config)
     nn.quantize(model, q_group_size, q_bits)
+    quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+    # support hf model tree #957
     quantized_config["quantization_config"] = {"group_size": q_group_size, "bits": q_bits}
     quantized_weights = dict(tree_flatten(model.parameters()))
 
@@ -728,6 +730,7 @@ def convert(
     tokenizer.save_pretrained(mlx_path)
 
     save_config(config, config_path=mlx_path / "config.json")
+    print(f"config: {config}")
 
     if upload_repo is not None:
         upload_to_hub(mlx_path, upload_repo, hf_path)
