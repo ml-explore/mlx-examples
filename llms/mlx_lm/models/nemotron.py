@@ -1,6 +1,7 @@
 # Copyright © 2024 Apple Inc.
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, Optional, Union
 
 import mlx.core as mx
@@ -19,9 +20,9 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     norm_eps: float
     vocab_size: int
+    num_key_value_heads: int
     head_dim: Optional[int] = None
     max_position_embeddings: Optional[int] = None
-    num_key_value_heads: Optional[int] = None
     attention_bias: bool = False
     mlp_bias: bool = False
     partial_rotary_factor: float = 0.5
@@ -31,9 +32,6 @@ class ModelArgs(BaseModelArgs):
     tie_word_embeddings: bool = False
 
     def __post_init__(self):
-        if self.num_key_value_heads is None:
-            self.num_key_value_heads = self.num_attention_heads
-
         if self.rope_scaling:
             if not "factor" in self.rope_scaling:
                 raise ValueError(f"rope_scaling must contain 'factor'")
@@ -45,18 +43,12 @@ class ModelArgs(BaseModelArgs):
                     f"rope_scaling must contain either 'type' or 'rope_type'"
                 )
             if rope_type not in ["linear"]:
-                raise ValueError(
-                    "rope_scaling 'type' currently only supports 'linear'"
-                )
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
 
 
-class ReLUSquared(nn.Module):
-    """
-    Applies the relu^2 activation introduced in https://arxiv.org/abs/2109.08668v2
-    """
-
-    def __call__(self, input):
-        return nn.relu(input).square()
+@partial(mx.compile, shapeless=True)
+def relu_squared(x):
+    return nn.relu(x).square()
 
 
 class NemotronLayerNorm1P(nn.LayerNorm):
@@ -134,17 +126,13 @@ class MLP(nn.Module):
 
         dim = args.hidden_size
         hidden_dim = args.intermediate_size
-        if hasattr(args, "mlp_bias"):
-            mlp_bias = args.mlp_bias
-        else:
-            mlp_bias = False
+        mlp_bias = args.mlp_bias
 
         self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
         self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
-        self.act_fn = ReLUSquared()
 
     def __call__(self, x) -> mx.array:
-        return self.down_proj(self.act_fn(self.up_proj(x)))
+        return self.down_proj(relu_squared(self.up_proj(x)))
 
 
 class TransformerBlock(nn.Module):
@@ -158,7 +146,6 @@ class TransformerBlock(nn.Module):
         self.post_attention_layernorm = NemotronLayerNorm1P(
             args.hidden_size, eps=args.norm_eps
         )
-        self.args = args
 
     def __call__(
         self,
@@ -224,12 +211,6 @@ class Model(nn.Module):
         else:
             out = self.lm_head(out)
         return out
-
-    def sanitize(self, weights):
-        # Remove unused precomputed rotary freqs
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
 
     @property
     def layers(self):
