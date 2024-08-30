@@ -13,7 +13,6 @@ DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.6
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
-DEFAULT_MAX_KV_SIZE = 1024
 
 
 def str2bool(string):
@@ -94,6 +93,7 @@ def setup_arg_parser():
         "--max-kv-size",
         type=int,
         help="Set the maximum key-value cache size",
+        default=None,
     )
     parser.add_argument(
         "--kv-cache-file",
@@ -184,7 +184,7 @@ def main():
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
-    elif tokenizer.chat_template is None:
+    elif cache_history is not None:
         tokenizer.chat_template = metadata["chat_template"]
 
     if not args.ignore_chat_template and (
@@ -219,12 +219,9 @@ def main():
 
     # Determine the max kv size from the kv cache or passed arguments
     max_kv_size = args.max_kv_size
-    if max_kv_size is None:
-        max_kv_size = (
-            int(metadata["max_kv_size"])
-            if cache_history is not None
-            else DEFAULT_MAX_KV_SIZE
-        )
+    if cache_history is not None:
+        max_kv_size = metadata["max_kv_size"]
+        max_kv_size = int(max_kv_size) if max_kv_size.isdigit() else None
 
     response = generate(
         model,
