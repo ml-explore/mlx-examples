@@ -171,7 +171,7 @@ def main():
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
-    elif tokenizer.chat_template is None:
+    elif cache_history is not None:
         tokenizer.chat_template = metadata["chat_template"]
 
     if not args.ignore_chat_template and (
