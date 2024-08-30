@@ -16,6 +16,10 @@ DEFAULT_SEED = 0
 DEFAULT_MAX_KV_SIZE = 1024
 
 
+def str2bool(string):
+    return string.lower() not in ["False", "F"]
+
+
 def setup_arg_parser():
     """Set up and return the argument parser."""
     parser = argparse.ArgumentParser(description="LLM inference script")
@@ -70,11 +74,10 @@ def setup_arg_parser():
         help="Use the default chat template",
     )
     parser.add_argument(
-        "--prompt-only",
-        action="store_true",
-        help="Set generation verbosity to False and only print the prompt "
-        "(turned off by default and useful if chaining)",
-        default=False,
+        "--verbose",
+        type=str2bool,
+        default=True,
+        help="Log verbose output when 'True' or 'T' or only print the response when 'False' or 'F'",
     )
     parser.add_argument(
         "--colorize",
@@ -228,7 +231,7 @@ def main():
         tokenizer,
         prompt,
         args.max_tokens,
-        verbose=not args.prompt_only,
+        verbose=args.verbose,
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,
