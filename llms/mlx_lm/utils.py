@@ -730,7 +730,6 @@ def convert(
     tokenizer.save_pretrained(mlx_path)
 
     save_config(config, config_path=mlx_path / "config.json")
-    print(f"config: {config}")
 
     if upload_repo is not None:
         upload_to_hub(mlx_path, upload_repo, hf_path)
