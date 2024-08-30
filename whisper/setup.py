@@ -12,7 +12,7 @@ with open(package_dir / "requirements.txt") as fid:
 
 sys.path.append(str(package_dir))
 
-from mlx_whisper.version import __version__
+from _version import __version__
 
 setup(
     name="mlx-whisper",
