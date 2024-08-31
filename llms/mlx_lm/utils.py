@@ -260,12 +260,9 @@ def generate_step(
 
     y, logprobs = _step(y)
 
-    mx.async_eval(y)
     while True:
-        next_y, next_logprobs = _step(y)
-        mx.async_eval(next_y)
         yield y.item(), logprobs
-        y, logprobs = next_y, next_logprobs
+        y, logprobs = _step(y)
 
 
 def stream_generate(
@@ -463,6 +460,11 @@ def load_model(
         )
 
     model.load_weights(list(weights.items()))
+
+    if mx.distributed.init().size() > 1:
+        if not hasattr(model, "shard"):
+            raise RuntimeError("Model doesn't support distributed inference.")
+        model.shard()
 
     if not lazy:
         mx.eval(model.parameters())
