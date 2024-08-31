@@ -38,7 +38,9 @@ To see a description of all the arguments you can do:
 >>> help(generate)
 ```
 
-Check out the [generation example](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm/examples/generate_response.py) to see how to use the API in more detail.
+Check out the [generation
+example](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm/examples/generate_response.py)
+to see how to use the API in more detail.
 
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
@@ -122,10 +124,44 @@ mlx_lm.convert \
     --upload-repo mlx-community/my-4bit-mistral
 ```
 
+### Long Prompts and Generations 
+
+MLX LM has some tools to scale efficiently to long prompts and generations:
+
+- A rotating fixed-size key-value cache.
+- Prompt caching
+
+To use the rotating key-value cache pass the argument `--max-kv-size n` where
+`n` can be any integer. Smaller values like `512` will use very little RAM but
+result in worse quality. Larger values like `4096` or higher will use more RAM
+but have better quality.
+
+Caching prompts can substantially speedup reusing the same long context with
+different queries. To cache a prompt use `mlx_lm.cache_prompt`. For example:
+
+```bash
+cat prompt.txt | mlx_lm.cache_prompt \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --prompt - \
+  --kv-cache-file mistral_prompt.safetensors
+``` 
+
+Then use the cached prompt with `mlx_lm.generate`:
+
+```
+mlx_lm.generate \
+    --kv-cache-file mistral_prompt.safetensors \
+    --prompt "\nSummarize the above text."
+```
+
+The cached prompt is treated as a prefix to the supplied prompt. Also notice
+when using a cached prompt, the model to use is read from the cache and need
+not be supplied explicitly.
+
 ### Supported Models
 
-The example supports Hugging Face format Mistral, Llama, and Phi-2 style
-models.  If the model you want to run is not supported, file an
+MLX LM supports thousands of Hugging Face format LLMs. If the model you want to
+run is not supported, file an
 [issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
 submit a pull request.
 

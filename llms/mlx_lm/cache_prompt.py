@@ -56,7 +56,7 @@ def setup_arg_parser():
     parser.add_argument(
         "--max-kv-size",
         type=int,
-        default=1024,
+        default=None,
         help="Set the maximum key-value cache size",
     )
     parser.add_argument(
@@ -147,3 +147,7 @@ def main():
     metadata["tokenizer_config"] = json.dumps(tokenizer_config)
     metadata["max_kv_size"] = str(args.max_kv_size)
     mx.save_safetensors(args.kv_cache_file, cache_dict, metadata)
+
+
+if __name__ == "__main__":
+    main()
