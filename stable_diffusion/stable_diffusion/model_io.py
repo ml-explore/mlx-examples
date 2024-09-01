@@ -140,6 +140,17 @@ def map_vae_weights(key, value):
     if "to_v" in key:
         key = key.replace("to_v", "value_proj")
 
+
+    # Map attention layers in SD-2-1-base:VAE
+    if "key" in key:
+        key = key.replace("key", "to_k")
+    if "proj_attn" in key:
+        key = key.replace("proj_attn", "out_proj")
+    if "query" in key:
+        key = key.replace("query", "query_proj")
+    if "value" in key:
+        key = key.replace("value", "value_proj")
+
     # Map the mid block
     if "mid_block.resnets.0" in key:
         key = key.replace("mid_block.resnets.0", "mid_blocks.0")
