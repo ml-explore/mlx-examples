@@ -17,7 +17,7 @@ DEFAULT_MAX_KV_SIZE = 1024
 
 
 def str2bool(string):
-    return string.lower() not in ["False", "F"]
+    return string.lower() not in ["false", "f"]
 
 
 def setup_arg_parser():
