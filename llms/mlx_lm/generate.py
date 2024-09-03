@@ -213,8 +213,8 @@ def main():
     else:
         prompt = args.prompt
 
-    if args.colorize and args.prompt_only:
-        raise ValueError("Cannot use --colorize with --prompt-only")
+    if args.colorize and not args.verbose:
+        raise ValueError("Cannot use --colorize when --verbose set to False")
     formatter = colorprint_by_t0 if args.colorize else None
 
     # Determine the max kv size from the kv cache or passed arguments
@@ -235,7 +235,7 @@ def main():
         max_kv_size=max_kv_size,
         cache_history=cache_history,
     )
-    if args.prompt_only:
+    if not args.verbose:
         print(response)
 
 
