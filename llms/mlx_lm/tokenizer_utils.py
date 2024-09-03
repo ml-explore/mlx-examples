@@ -265,6 +265,9 @@ class TokenizerWrapper:
         else:
             setattr(self._tokenizer, attr, value)
 
+    def __call__(self, *args, **kwargs):
+        return self._tokenizer(*args, **kwargs)
+
 
 def _match(a, b):
     if type(a) != type(b):
