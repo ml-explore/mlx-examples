@@ -214,7 +214,7 @@ def main():
         prompt = args.prompt
 
     if args.colorize and not args.verbose:
-        raise ValueError("Cannot use --colorize when --verbose set to False")
+        raise ValueError("Cannot use --colorize with --verbose=False")
     formatter = colorprint_by_t0 if args.colorize else None
 
     # Determine the max kv size from the kv cache or passed arguments
