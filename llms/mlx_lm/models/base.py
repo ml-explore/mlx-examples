@@ -23,6 +23,7 @@ class MambaCache:
     def state(self):
         return self.conv_states, self.ssm_states
     
+    
 class KVCache:
 
     def __init__(self, head_dim, n_kv_heads):

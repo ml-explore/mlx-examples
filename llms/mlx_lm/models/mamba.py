@@ -5,7 +5,7 @@ import math
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, MambaCache
 
 
 @dataclass
@@ -58,54 +58,35 @@ class ModelArgs(BaseModelArgs):
             self.dt_rank = math.ceil(self.hidden_size / 16)
 
 class DepthWiseConv1d(nn.Module):
-    def __init__(
-        self,
-        channels: int,
-        kernel_size: int,
-        bias: bool = True,
-        padding: int = 0
-    ):
+    def __init__(self, channels, kernel_size, bias=True, padding=0):
         super().__init__()
         self.channels = channels
         self.kernel_size = kernel_size
         self.padding = padding
         self.weight = mx.random.normal((channels, 1, kernel_size))
-        if bias:
-            self.bias = mx.zeros((channels,))
-        else:
-            self.bias = None
+        self.bias = mx.zeros((channels,)) if bias else None
 
-    def __call__(self, x, cache=None):
+    def __call__(self, x, conv_state=None):
         B, L, C = x.shape
-        assert C == self.channels, f"Input channels ({C}) must match the initialized channels ({self.channels})."
-        
-        w = self.weight  # Shape: (C, 1, K)
         K = self.kernel_size
-        total_padding = self.padding + K - 1
-
-        if cache is not None:
-            l = []
-            if cache.shape[1] < total_padding:
-                l.append(mx.zeros((B, total_padding - cache.shape[1], C), dtype=x.dtype))
-            l.extend([cache, x])
-            x = mx.concatenate(l, axis=1)
-        else:
-            x = mx.pad(x, [(0, 0), (total_padding, 0), (0, 0)])
-
-        # Manual depthwise convolution
+        
+        if conv_state is None:
+            conv_state = mx.zeros((B, K - 1, C))
+        
+        x = mx.concatenate([conv_state, x], axis=1)
+        
         output = []
         for i in range(K):
             slice = x[:, i:i+L, :]
-            output.append(slice * w[:, 0, i])
+            output.append(slice * self.weight[:, 0, i])
         y = mx.sum(mx.stack(output), axis=0)
-
-        # The cache is always total_padding
-        cache = x[:, max(x.shape[1] - total_padding, 0):, :]
         
         if self.bias is not None:
             y = y + self.bias.reshape(1, 1, -1)
-
-        return y, cache
+        
+        new_conv_state = x[:, -K+1:, :]
+        
+        return y, new_conv_state
 
 
 def clamp(x, min=None, max=None):
@@ -164,36 +145,33 @@ class MambaBlock(nn.Module):
 
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
-    def ssm_step(self, x, h):
-        # x : (B, ED)
-        # h : (B, ED, N)
+    def ssm_step(self, x, ssm_state):
+        # x : (B, ED)
+        # ssm_state : (B, ED, N)
 
-        # y : (B, ED)
-        # h : (B, ED, N)
+        A = -mx.exp(self.A_log)  # (ED, N)
+        D = self.D  # (ED,)
 
-        A = -mx.exp(self.A_log) # (ED, N) # todo : move out of step (timestep independent)
-        D = self.D
+        deltaBC = self.x_proj(x)  # (B, dt_rank+2*N)
+        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1)
+        delta = nn.softplus(self.dt_proj(delta))  # (B, ED)
 
-        deltaBC = self.x_proj(x) # (B, dt_rank+2*N)
+        deltaA = mx.exp(mx.expand_dims(delta, -1) * A)  # (B, ED, N)
+        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 1)  # (B, ED, N)
 
-        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, dt_rank), (B, N), (B, N)
-        delta = nn.softplus(self.dt_proj(delta)) # (B, ED)
+        BX = deltaB * mx.expand_dims(x, -1)  # (B, ED, N)
 
-        deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, ED, N)
-        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 1) # (B, ED, N)
+        if ssm_state is None:
+            ssm_state = mx.zeros((x.shape[0], self.intermediate_size, self.ssm_state_size))  # (B, ED, N)
 
-        BX = deltaB * mx.expand_dims(x, -1) # (B, ED, N)
+        new_ssm_state = deltaA * ssm_state + BX  # (B, ED, N)
 
-        if h is None:
-            h = mx.zeros([x.shape[0], self.intermediate_size, self.ssm_state_size]) # (B, ED, N)
+        y = (new_ssm_state @ mx.expand_dims(C, -1)).squeeze(2)  # (B, ED)
 
-        h = deltaA * h + BX # (B, ED, N)
+        y = y + D * x  # (B, ED)
 
-        y = (h @ mx.expand_dims(C, -1)).squeeze(2) # (B, ED, N) @ (B, N, 1) -> (B, ED, 1)
-
-        y = y + D * x
-
-        return y, h
+        return y, new_ssm_state
+    
     
     def __call__(self, x, cache):
         # x : (B, T, D) where T is the number of tokens (5 in this case)
