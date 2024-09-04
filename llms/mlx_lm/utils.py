@@ -236,10 +236,7 @@ def generate_step(
 
     def _step(y):
         nonlocal repetition_context
-        if model.model_type == "mamba":
-            logits, _ = model(y[None], cache=cache)
-        else:
-            logits = model(y[None], cache=cache)
+        logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if repetition_penalty:

@@ -5,7 +5,7 @@ import math
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, MambaCache
 
 
 @dataclass
@@ -173,14 +173,10 @@ class MambaBlock(nn.Module):
         return y, new_ssm_state
     
     
-    def __call__(self, x, cache):
-        # x : (B, T, D) where T is the number of tokens (5 in this case)
-        # cache : (h, inputs)
-                # h : (B, ED, N)
-                # inputs : (B, d_conv-1, ED)
-
-        h, inputs = cache
+    def __call__(self, x, cache: MambaCache, layer_idx: int):
         B, T, D = x.shape
+
+        conv_state, ssm_state = cache.state[0][layer_idx], cache.state[1][layer_idx]
 
         outputs = []
         for t in range(T):
@@ -188,42 +184,36 @@ class MambaBlock(nn.Module):
             xz = self.in_proj(xt)  # (B, 2*ED)
             x_t, z_t = xz.split(indices_or_sections=2, axis=1)  # (B, ED), (B, ED)
 
-            # x branch
-            x_cache = mx.expand_dims(x_t, 1)  # (B, 1, ED)
-            conv_input = mx.concatenate([inputs, x_cache], axis=1)  # (B, d_conv, ED)
-            conv_out, new_inputs = self.conv1d(conv_input)  # (B, d_conv, ED), (B, d_conv-1, ED)
-            x_t = conv_out[:, -1, :]  # (B, ED)
+            conv_out, new_conv_state = self.conv1d(mx.expand_dims(x_t, 1), conv_state)
+            x_t = conv_out.squeeze(1)  # (B, ED)
 
             x_t = nn.silu(x_t)
-            y_t, h = self.ssm_step(x_t, h)
+            y_t, new_ssm_state = self.ssm_step(x_t, ssm_state)
 
-            # z branch
             z_t = nn.silu(z_t)
 
             output_t = y_t * z_t
             output_t = self.out_proj(output_t)  # (B, D)
             outputs.append(output_t)
 
-            # Update inputs for next token
-            inputs = new_inputs
+            conv_state = new_conv_state
+            ssm_state = new_ssm_state
 
         output = mx.stack(outputs, axis=1)  # (B, T, D)
-        cache = (h, inputs)
+        cache.update(layer_idx, conv_state, ssm_state)
 
-        return output, cache
+        return output
     
-
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.mixer = MambaBlock(args)
         self.norm = nn.RMSNorm(args.hidden_size)
 
-    def __call__(self, x: mx.array, cache):
-        output, cache = self.mixer(self.norm(x), cache)
+    def __call__(self, x: mx.array, cache: MambaCache, layer_idx: int):
+        output = self.mixer(self.norm(x), cache, layer_idx)
         output = output + x
-        return output, cache
-
+        return output
 
 class Mamba(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -232,12 +222,11 @@ class Mamba(nn.Module):
         self.layers = [ResidualBlock(args) for _ in range(args.num_hidden_layers)]
         self.norm_f = nn.RMSNorm(args.hidden_size)
 
-    def __call__(self, x: mx.array, caches):
+    def __call__(self, x: mx.array, cache: MambaCache):
         x = self.embeddings(x)
         for i, layer in enumerate(self.layers):
-            x, caches[i] = layer(x, caches[i])
-        return x, caches
-
+            x = layer(x, cache, i)
+        return self.norm_f(x)
 
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -249,32 +238,31 @@ class Model(nn.Module):
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
-    def __call__(self, inputs: mx.array, cache=None):
-        # inputs : (B, T) where T is the number of tokens
-        # caches : [cache(layer) for all layers], cache : (h, inputs)
-        
+    def __call__(self, inputs: mx.array, cache: MambaCache = None):
         if inputs.ndim == 1:
-            inputs = mx.expand_dims(inputs, 0)  # Add batch dimension if not present
+            inputs = mx.expand_dims(inputs, 0)
         
         B, T = inputs.shape
-        x = self.backbone.embeddings(inputs)  # (B, T, D)
         
-        for i, layer in enumerate(self.backbone.layers):
-            x, cache[i] = layer(x, cache[i])
+        if cache is None:
+            cache = self.make_cache(batch_size=B)
         
-        x = self.backbone.norm_f(x)
+        x = self.backbone(inputs, cache)
         
         if self.args.tie_word_embeddings:
             logits = self.backbone.embeddings.as_linear(x)
         else:
             logits = self.lm_head(x)
 
-        return logits, cache
+        return logits
 
-    def make_cache(self):
-        B = 1  # Assuming batch size of 1 for simplicity
-        return [(None, mx.zeros((B, self.args.conv_kernel-1, self.args.intermediate_size))) 
-                for _ in range(self.args.num_hidden_layers)]
+    def make_cache(self, batch_size: int = 1):
+        return MambaCache(
+            num_layers=self.args.num_hidden_layers,
+            batch_size=batch_size,
+            conv_state_size=(self.args.conv_kernel - 1, self.args.intermediate_size),
+            ssm_state_size=(self.args.intermediate_size, self.args.state_size)
+        )
 
     @property
     def layers(self):
@@ -287,6 +275,3 @@ class Model(nn.Module):
     @property
     def n_kv_heads(self):
         return self.args.num_hidden_layers
-    
-    # def make_cache(self):
-    #     return [(None, mx.zeros([1, self.args.conv_kernel-1, self.args.intermediate_size])) for _ in range(self.args.num_hidden_layers)]
