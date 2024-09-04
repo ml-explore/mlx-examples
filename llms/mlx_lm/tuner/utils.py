@@ -10,8 +10,8 @@ import mlx.optimizers as opt
 from mlx.utils import tree_flatten, tree_unflatten
 
 from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
-from .dora import DoRALinear
-from .lora import LoRALinear, LoRASwitchLinear
+from .dora import DoRAEmbedding, DoRALinear
+from .lora import LoRAEmbedding, LoRALinear, LoRASwitchLinear
 
 
 def build_schedule(schedule_config: Dict):
@@ -71,12 +71,14 @@ def linear_to_lora_layers(
             if use_dora:
                 raise ValueError(f"{type(layer).__name__} doesn't support DoRA yet.")
             LoRALayer = LoRASwitchLinear
+        elif isinstance(layer, (nn.Embedding, nn.QuantizedEmbedding)):
+            LoRALayer = DoRAEmbedding if use_dora else LoRAEmbedding
         else:
             raise ValueError(
                 f"Can't convert layer of type {type(layer).__name__} to LoRA"
             )
 
-        return LoRALayer.from_linear(
+        return LoRALayer.from_base(
             layer,
             r=config["rank"],
             scale=config["scale"],
@@ -91,18 +93,21 @@ def linear_to_lora_layers(
         "llama",
         "phi",
         "mixtral",
+        "nemotron",
         "stablelm",
         "qwen2",
         "qwen2_moe",
+        "phimoe",
         "gemma",
         "gemma2",
         "starcoder2",
         "cohere",
         "minicpm",
+        "deepseek",
         "mamba"
     ]:
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
-        if model.model_type == "mixtral":
+        if model.model_type in ["mixtral", "phimoe"]:
             keys.add("block_sparse_moe.gate")
         if model.model_type == "qwen2_moe":
             keys.add("mlp.gate")
@@ -126,12 +131,27 @@ def linear_to_lora_layers(
         keys = set(["norm_attn_norm.attn.Wqkv", "ffn.router.layer"])
     elif model.model_type == "internlm2":
         keys = set(["attention.wqkv", "attention.wo"])
+    elif model.model_type == "deepseek_v2":
+        keys = set(
+            [
+                "self_attn.q_proj",
+                "self_attn.q_a_proj",
+                "self_attn.q_b_proj",
+                "self_attn.kv_a_proj_with_mqa",
+                "self_attn.kv_b_proj",
+            ]
+        )
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 
     for l in model.layers[num_layers - num_lora_layers :]:
         lora_layers = [(k, to_lora(m)) for k, m in l.named_modules() if k in keys]
-        l.update_modules(tree_unflatten(lora_layers))
+        if lora_layers:
+            l.update_modules(tree_unflatten(lora_layers))
+
+    lora_modules = [(k, to_lora(m)) for k, m in model.named_modules() if k in keys]
+    if lora_modules:
+        model.update_modules(tree_unflatten(lora_modules))
 
 
 def apply_lora_layers(model: nn.Module, adapter_path: str) -> nn.Module:

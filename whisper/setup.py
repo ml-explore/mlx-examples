@@ -12,7 +12,7 @@ with open(package_dir / "requirements.txt") as fid:
 
 sys.path.append(str(package_dir))
 
-from version import __version__
+from _version import __version__
 
 setup(
     name="mlx-whisper",
@@ -29,4 +29,9 @@ setup(
     packages=find_namespace_packages(),
     include_package_data=True,
     python_requires=">=3.8",
+    entry_points={
+        "console_scripts": [
+            "mlx_whisper = mlx_whisper.cli:main",
+        ]
+    },
 )

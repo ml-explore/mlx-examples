@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -19,8 +19,8 @@ from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
 # Local imports
-from .models.base import KVCache, MambaCache
-from .sample_utils import top_p_sampling
+from .models.base import KVCache, RotatingKVCache, MambaCache
+from .sample_utils import categorical_sampling, min_p_sampling, top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
@@ -126,6 +126,26 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
     return logits
 
 
+def make_kv_caches(
+    model: nn.Module, max_kv_size: Optional[int] = None
+) -> List[Union[KVCache, RotatingKVCache]]:
+    if hasattr(model, "make_cache"):
+        return model.make_cache()
+
+    kv_heads = (
+        [model.n_kv_heads] * len(model.layers)
+        if isinstance(model.n_kv_heads, int)
+        else model.n_kv_heads
+    )
+    if max_kv_size is not None:
+        return [
+            RotatingKVCache(model.head_dim, n, max_size=max_kv_size, keep=4)
+            for n in kv_heads
+        ]
+    else:
+        return [KVCache(model.head_dim, n) for n in kv_heads]
+
+
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
@@ -136,6 +156,9 @@ def generate_step(
     min_p: float = 0.0,
     min_tokens_to_keep: int = 1,
     logit_bias: Optional[Dict[int, float]] = None,
+    prefill_step_size: int = 512,
+    max_kv_size: Optional[int] = None,
+    cache_history: Optional[List[Tuple[mx.array, mx.array]]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -156,6 +179,9 @@ def generate_step(
         min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
           be filtered by min_p sampling.
         logit_bias (dictionary, optional): Additive logit bias.
+        prefill_step_size (int): Step size for processing the prompt.
+        max_kv_size (int, optional): Maximum size of the key-value cache. Old
+          entries (except the first 4 tokens) will be overwritten.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
@@ -189,15 +215,19 @@ def generate_step(
         )
 
     y = prompt
-    if hasattr(model, "make_cache"):
-        cache = model.make_cache()
-    else:
-        kv_heads = (
-            [model.n_kv_heads] * len(model.layers)
-            if isinstance(model.n_kv_heads, int)
-            else model.n_kv_heads
-        )
-        cache = [KVCache(model.head_dim, n) for n in kv_heads]
+
+    # Create the KV cache for generation
+    cache = make_kv_caches(model, max_kv_size)
+
+    if cache_history is not None:
+        if len(cache_history) != len(cache):
+            raise ValueError("Wrong number of layers in the cache history")
+
+        # Set the history in the cache objects and evaluate them to prepare for
+        # generation.
+        for c, h in zip(cache, cache_history):
+            c.update_and_fetch(h[0], h[1])
+        mx.eval([c.state for c in cache])
 
     repetition_context = prompt.tolist()
 
@@ -351,8 +381,10 @@ def generate(
             return
         prompt_tps = prompt_tokens.size / prompt_time
         gen_tps = (token_count - 1) / gen_time
-        print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
-        print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        print(f"Prompt: {prompt_tokens.size} tokens, {prompt_tps:.3f} tokens-per-sec")
+        print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
+        peak_mem = mx.metal.get_peak_memory() / 2**30
+        print(f"Peak memory: {peak_mem:.3f} GB")
 
     return detokenizer.text
 
@@ -531,6 +563,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
+    card.data.base_model = hf_path
     card.text = dedent(
         f"""
         # {upload_repo}
@@ -637,6 +670,8 @@ def quantize_model(
     quantized_config = copy.deepcopy(config)
     nn.quantize(model, q_group_size, q_bits)
     quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+    # support hf model tree #957
+    quantized_config["quantization_config"] = quantized_config["quantization"]
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config
