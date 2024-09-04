@@ -5,7 +5,7 @@ import math
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, MambaCache
+from .base import BaseModelArgs
 
 
 @dataclass
