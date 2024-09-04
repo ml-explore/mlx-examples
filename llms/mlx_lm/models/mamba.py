@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 import math
 
@@ -257,7 +256,6 @@ class Mamba(nn.Module):
 
     def __call__(self, x: mx.array, caches):
         x = self.embeddings(x)
-        print(x.shape)
         for i, layer in enumerate(self.layers):
             x, caches[i] = layer(x, caches[i])
         return x, caches
@@ -292,10 +290,6 @@ class Model(nn.Module):
             logits = self.backbone.embeddings.as_linear(x)
         else:
             logits = self.lm_head(x)
-        
-        print(f"Logits shape: {logits.shape}")
-        # logits : (B, T, vocab_size)
-        print(logits)
 
         return logits, cache
 

@@ -19,7 +19,7 @@ from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
 # Local imports
-from .models.base import KVCache, RotatingKVCache, MambaCache
+from .models.base import KVCache, RotatingKVCache
 from .sample_utils import categorical_sampling, min_p_sampling, top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import apply_lora_layers
@@ -165,7 +165,7 @@ def generate_step(
 
     Args:
         prompt (mx.array): The input prompt.
-        model: The model to use for generation.
+        model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
           Default: ``0``.
         repetition_penalty (float, optional): The penalty factor for repeating
@@ -236,35 +236,36 @@ def generate_step(
 
     def _step(y):
         nonlocal repetition_context
-        logits = model(y[None], cache=cache)
+        if model.model_type == "mamba":
+            logits, _ = model(y[None], cache=cache)
+        else:
+            logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if repetition_penalty:
             logits = apply_repetition_penalty(
                 logits, repetition_context, repetition_penalty
             )
-            next_token, logprobs = sample(logits)
-            repetition_context.append(next_token.item())
+            y, logprobs = sample(logits)
+            repetition_context.append(y.item())
         else:
-            next_token, logprobs = sample(logits)
+            y, logprobs = sample(logits)
 
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
                 repetition_context = repetition_context[-repetition_context_size:]
-    
-        return next_token, logprobs.squeeze(0)
+        return y, logprobs.squeeze(0)
 
-    if hasattr(model, 'generate_step'):
-        y, logprobs = model.generate_step(prompt)
-    else:
-        y, logprobs = _step(y)
+    while y.size > prefill_step_size:
+        model(y[:prefill_step_size][None], cache=cache)
+        mx.eval([c.state for c in cache])
+        y = y[prefill_step_size:]
+
+    y, logprobs = _step(y)
 
     mx.async_eval(y)
     while True:
-        if hasattr(model, 'generate_step'):
-            next_y, next_logprobs = model.generate_step(y)
-        else:
-            next_y, next_logprobs = _step(y)
+        next_y, next_logprobs = _step(y)
         mx.async_eval(next_y)
         yield y.item(), logprobs
         y, logprobs = next_y, next_logprobs

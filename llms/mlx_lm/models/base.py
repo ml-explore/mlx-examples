@@ -9,17 +9,19 @@ import mlx.nn as nn
 
 
 class MambaCache:
-    def __init__(self, batch_size, intermediate_size, ssm_state_size, conv_kernel_size):
-        self.h = mx.zeros((batch_size, intermediate_size, ssm_state_size))
-        self.conv_states = mx.zeros((batch_size, conv_kernel_size - 1, intermediate_size))
+    def __init__(self, num_layers, conv_state_size, ssm_state_size):
+        self.conv_states = [None for _ in range(num_layers)]
+        self.ssm_states = [None for _ in range(num_layers)]
+        self.offset = 0
 
-    def update(self, new_h, new_conv_state):
-        self.h = new_h
-        self.conv_states = mx.concatenate([self.conv_states[:, 1:, :], new_conv_state], axis=1)
+    def update(self, layer_idx, conv_state, ssm_state):
+        self.conv_states[layer_idx] = conv_state
+        self.ssm_states[layer_idx] = ssm_state
+        self.offset += 1
 
-    @classmethod
-    def init_cache(cls, batch_size, intermediate_size, ssm_state_size, conv_kernel_size):
-        return cls(batch_size, intermediate_size, ssm_state_size, conv_kernel_size)
+    @property
+    def state(self):
+        return self.conv_states, self.ssm_states
     
 class KVCache:
 
