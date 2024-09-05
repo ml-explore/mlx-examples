@@ -170,22 +170,20 @@ def train_model(
     if args.fine_tune_type == "full":
         print("Training full model weights.")
         model.unfreeze()
-    elif args.fine_tune_type == "lora":
-        print("Training model with LoRA.")
+    elif args.fine_tune_type in ["lora", "dora"]:
+        print(f"Training model with {args.fine_tune_type.upper()}.")
         model.freeze()
         # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters)
+        # Determine if we are using DoRA
+        use_dora = args.fine_tune_type == "dora"
+
+        # Convert linear layers to lora/dora layers and unfreeze in the process
+        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, use_dora=use_dora)
+
+        # Load pretrained adapters if provided
         if args.resume_adapter_file is not None:
             print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-            model.load_weights(args.resume_adapter_file, strict=False)
-    elif args.fine_tune_type == "dora":
-        print("Training model with DoRA.")
-        model.freeze()
-        # Convert linear layers to lora layers and unfreeze in the process
-        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, use_dora=True)
-        if args.resume_adapter_file is not None:
-            print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-            model.load_weights(args.resume_adapter_file, strict=False, use_dora=True)
+            model.load_weights(args.resume_adapter_file, strict=False, use_dora=use_dora)
 
     print_trainable_parameters(model)
 
@@ -253,13 +251,6 @@ def run(args, training_callback: TrainingCallback = None):
 
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
-
-    # # Load the full model state if available
-    # if args.fine_tune_type != "full" and args.adapter_path:
-    #     model_file = Path(args.adapter_path) / "model.safetensors"
-    #     if model_file.exists():
-    #         print(f"Loading full model state from {model_file}")
-    #         model.load_weights(str(args.adapter_path) / "model.safetensors", strict=True)
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
