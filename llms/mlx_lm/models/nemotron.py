@@ -1,7 +1,8 @@
-# Copyright © 2023-2024 Apple Inc.
+# Copyright © 2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from functools import partial
+from typing import Dict, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -13,33 +14,81 @@ from .base import BaseModelArgs, KVCache, create_attention_mask
 class ModelArgs(BaseModelArgs):
     model_type: str
     hidden_size: int
+    hidden_act: str
     num_hidden_layers: int
     intermediate_size: int
     num_attention_heads: int
+    norm_eps: float
+    vocab_size: int
     num_key_value_heads: int
-    norm_epsilon: float = 1e-5
-    vocab_size: int = 49152
-    rope_theta: float = 100000
-    tie_word_embeddings: bool = True
+    head_dim: Optional[int] = None
+    max_position_embeddings: Optional[int] = None
+    attention_bias: bool = False
+    mlp_bias: bool = False
+    partial_rotary_factor: float = 0.5
+    rope_theta: float = 10000.0
+    rope_traditional: bool = False
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+    tie_word_embeddings: bool = False
+
+    def __post_init__(self):
+        if self.rope_scaling:
+            if not "factor" in self.rope_scaling:
+                raise ValueError(f"rope_scaling must contain 'factor'")
+            rope_type = self.rope_scaling.get("type") or self.rope_scaling.get(
+                "rope_type"
+            )
+            if rope_type is None:
+                raise ValueError(
+                    f"rope_scaling must contain either 'type' or 'rope_type'"
+                )
+            if rope_type not in ["linear"]:
+                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
+
+
+@partial(mx.compile, shapeless=True)
+def relu_squared(x):
+    return nn.relu(x).square()
+
+
+class NemotronLayerNorm1P(nn.LayerNorm):
+    def __call__(self, x):
+        weight = self.weight + 1 if "weight" in self else None
+        bias = self.bias if "bias" in self else None
+        return mx.fast.layer_norm(x, weight, bias, self.eps)
 
 
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.args = args
 
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        head_dim = args.hidden_size // args.num_attention_heads
-        self.scale = head_dim**-0.5
+        self.head_dim = head_dim = args.head_dim or args.hidden_size // n_heads
+        self.partial_rotary_factor = args.partial_rotary_factor
 
-        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=True)
-        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=True)
-        self.rope = nn.RoPE(head_dim, traditional=False, base=args.rope_theta)
+        self.scale = head_dim**-0.5
+        if hasattr(args, "attention_bias"):
+            attention_bias = args.attention_bias
+        else:
+            attention_bias = False
+
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=attention_bias)
+        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
+        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
+
+        rope_scale = 1.0
+        if args.rope_scaling and args.rope_scaling["type"] == "linear":
+            assert isinstance(args.rope_scaling["factor"], float)
+            rope_scale = 1 / args.rope_scaling["factor"]
+        self.rope = nn.RoPE(
+            int(self.partial_rotary_factor * self.head_dim),
+            base=args.rope_theta,
+            scale=rope_scale,
+        )
 
     def __call__(
         self,
@@ -47,7 +96,7 @@ class Attention(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[KVCache] = None,
     ) -> mx.array:
-        B, L, D = x.shape
+        B, L, _ = x.shape
 
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
 
@@ -67,34 +116,36 @@ class Attention(nn.Module):
         output = mx.fast.scaled_dot_product_attention(
             queries, keys, values, scale=self.scale, mask=mask
         )
-
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
 
 
 class MLP(nn.Module):
-    def __init__(self, dim, hidden_dim):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        self.c_fc = nn.Linear(dim, hidden_dim, bias=True)
-        self.c_proj = nn.Linear(hidden_dim, dim, bias=True)
 
-    def __call__(self, x):
-        return self.c_proj(nn.gelu(self.c_fc(x)))
+        dim = args.hidden_size
+        hidden_dim = args.intermediate_size
+        mlp_bias = args.mlp_bias
+
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
+        self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
+
+    def __call__(self, x) -> mx.array:
+        return self.down_proj(relu_squared(self.up_proj(x)))
 
 
 class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
-        self.n_heads = args.num_attention_heads
-
         self.self_attn = Attention(args)
-        self.mlp = MLP(args.hidden_size, args.intermediate_size)
-        self.input_layernorm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
-        self.post_attention_layernorm = nn.LayerNorm(
-            args.hidden_size, eps=args.norm_epsilon
+        self.mlp = MLP(args)
+        self.input_layernorm = NemotronLayerNorm1P(args.hidden_size, eps=args.norm_eps)
+        self.post_attention_layernorm = NemotronLayerNorm1P(
+            args.hidden_size, eps=args.norm_eps
         )
-        self.args = args
 
     def __call__(
         self,
@@ -109,7 +160,7 @@ class TransformerBlock(nn.Module):
         return out
 
 
-class Starcoder2Model(nn.Module):
+class NemotronModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -120,7 +171,7 @@ class Starcoder2Model(nn.Module):
         self.layers = [
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
-        self.norm = nn.LayerNorm(args.hidden_size, eps=args.norm_epsilon)
+        self.norm = NemotronLayerNorm1P(args.hidden_size, eps=args.norm_eps)
 
     def __call__(
         self,
@@ -135,7 +186,7 @@ class Starcoder2Model(nn.Module):
             cache = [None] * len(self.layers)
 
         for layer, c in zip(self.layers, cache):
-            h = layer(h, mask, c)
+            h = layer(h, mask, cache=c)
 
         return self.norm(h)
 
@@ -145,7 +196,7 @@ class Model(nn.Module):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
-        self.model = Starcoder2Model(args)
+        self.model = NemotronModel(args)
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
@@ -167,7 +218,9 @@ class Model(nn.Module):
 
     @property
     def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
+        return (
+            self.args.head_dim or self.args.hidden_size // self.args.num_attention_heads
+        )
 
     @property
     def n_kv_heads(self):
