@@ -14,8 +14,6 @@ from .dora import DoRAEmbedding, DoRALinear
 from .lora import LoRAEmbedding, LoRALinear, LoRASwitchLinear
 
 
-MAX_FILE_SIZE_GB = 5
-
 def build_schedule(schedule_config: Dict):
     """
     Build a learning rate schedule from the given config.
