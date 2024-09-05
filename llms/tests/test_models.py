@@ -397,6 +397,40 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_mamba(self):
+        from mlx_lm.models import mamba
+
+        args = mamba.ModelArgs(
+            conv_kernel=4,
+            d_inner=1536,
+            d_model=768,
+            expand=2,
+            hidden_size=768,
+            initializer_range=0.1,
+            intermediate_size=1536,
+            layer_norm_epsilon=1e-05,
+            model_type="mamba",
+            n_layer=24,
+            num_hidden_layers=24,
+            state_size=16,
+            rms_norm=True,
+            rescale_prenorm_residual=False,
+            time_step_floor= 0.0001,
+            time_step_init_scheme="random",
+            time_step_max=0.1,
+            time_step_min=0.001,
+            time_step_rank=48,
+            time_step_scale=1.0,
+            vocab_size=10000,
+            use_bias=False,
+            use_conv_bias=True,
+            use_cache=True,
+        )
+        model = mamba.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
     def test_gpt2(self):
         from mlx_lm.models import gpt2
 

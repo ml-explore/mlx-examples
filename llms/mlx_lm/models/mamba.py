@@ -31,7 +31,6 @@ class ModelArgs(BaseModelArgs):
     rescale_prenorm_residual: bool
     use_cache: bool
     use_mambapy: bool = False
-    dt_rank: str = "auto"
     tie_word_embeddings: bool = True
 
 
@@ -152,7 +151,7 @@ class MambaBlock(nn.Module):
         A = -mx.exp(self.A_log)  # (ED, N)
         D = self.D  # (ED,)
 
-        deltaBC = self.x_proj(x)  # (B, dt_rank+2*N)
+        deltaBC = self.x_proj(x)  # (B, time_step_rank+2*N)
         delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1)
         delta = nn.softplus(self.dt_proj(delta))  # (B, ED)
 
