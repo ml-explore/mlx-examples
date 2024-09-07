@@ -166,7 +166,7 @@ Currently, `*.jsonl` files support three data formats: `chat`,
 `chat`:
 
 ```jsonl
-{"messages": [ { "role": "system", "content": "You are a helpful assistant." }, { "role": "user", "content": "Hello." }, { "role": "assistant", "content": "How can I assistant you today." } ] }
+{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Hello."}, {"role": "assistant", "content": "How can I assistant you today."}]}
 ```
 
 `completions`:
