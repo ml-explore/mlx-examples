@@ -581,7 +581,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         prompt="hello"
 
         if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template is not None:
-            messages = [{"role": "user", "content": prompt}]
+            messages = [{{"role": "user", "content": prompt}}]
             prompt = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
