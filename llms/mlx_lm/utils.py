@@ -158,6 +158,7 @@ def generate_step(
     prefill_step_size: int = 512,
     max_kv_size: Optional[int] = None,
     cache_history: Optional[List[Tuple[mx.array, mx.array]]] = None,
+    logits_processor: Optional[Callable[[mx.array, mx.array], mx.array]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -181,6 +182,9 @@ def generate_step(
         prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
+        logits_processor (Callable[[mx.array, mx.array], mx.array], optional):
+            A function that takes tokens_ids and logits and returns the processed
+            logits. Default: ``None``.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
@@ -214,6 +218,7 @@ def generate_step(
         )
 
     y = prompt
+    tokens_ids = prompt
 
     # Create the KV cache for generation
     cache = make_kv_caches(model, max_kv_size)
@@ -234,9 +239,12 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     def _step(y):
-        nonlocal repetition_context
+        nonlocal repetition_context, tokens_ids
         logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
+
+        if logits_processor:
+            logits = logits_processor(tokens_ids, logits)
 
         if repetition_penalty:
             logits = apply_repetition_penalty(
@@ -246,6 +254,8 @@ def generate_step(
             repetition_context.append(y.item())
         else:
             y, logprobs = sample(logits)
+
+        tokens_ids = mx.concat(tokens_ids, y, dim=0)
 
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
