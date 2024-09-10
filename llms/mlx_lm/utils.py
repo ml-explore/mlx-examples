@@ -183,7 +183,7 @@ def generate_step(
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
         logits_processor (Callable[[mx.array, mx.array], mx.array], optional):
-            A function that takes tokens_ids and logits and returns the processed
+            A function that takes tokens and logits and returns the processed
             logits. Default: ``None``.
 
     Yields:
@@ -218,7 +218,7 @@ def generate_step(
         )
 
     y = prompt
-    tokens_ids = prompt
+    tokens = prompt
 
     # Create the KV cache for generation
     cache = make_kv_caches(model, max_kv_size)
@@ -239,12 +239,12 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     def _step(y):
-        nonlocal repetition_context, tokens_ids
+        nonlocal repetition_context, tokens
         logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if logits_processor:
-            logits = logits_processor(tokens_ids, logits)
+            logits = logits_processor(tokens, logits)
 
         if repetition_penalty:
             logits = apply_repetition_penalty(
