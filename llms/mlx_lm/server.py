@@ -618,6 +618,38 @@ class APIHandler(BaseHTTPRequestHandler):
         prompt = self.tokenizer.encode(prompt_text)
         return mx.array(prompt)
 
+    def do_GET(self):
+        """
+        Respond to a GET request from a client.
+        """
+        if self.path == "/v1/models":
+            self.handle_models_request()
+        else:
+            self._set_completion_headers(404)
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+
+    def handle_models_request(self):
+        """
+        Handle a GET request for the /v1/models endpoint.
+        """
+        self._set_completion_headers(200)
+        self.end_headers()
+        # Create a list of available models
+        models = [
+            {
+                "id": self.model_provider.cli_args.model,
+                "object": "model",
+                "created": self.created,
+            }
+        ]
+
+        response = {"object": "list", "data": models}
+
+        response_json = json.dumps(response).encode()
+        self.wfile.write(response_json)
+        self.wfile.flush()
+
 
 def run(
     host: str,
