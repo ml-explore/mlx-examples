@@ -254,7 +254,8 @@ def train(
                 print(
                     f"Iter {it}: "
                     f"Val loss {val_loss:.3f}, "
-                    f"Val took {val_time:.3f}s"
+                    f"Val took {val_time:.3f}s",
+                    flush=True,
                 )
 
             if training_callback is not None:
@@ -292,7 +293,8 @@ def train(
                     f"It/sec {it_sec:.3f}, "
                     f"Tokens/sec {tokens_sec:.3f}, "
                     f"Trained Tokens {trained_tokens}, "
-                    f"Peak mem {peak_mem:.3f} GB"
+                    f"Peak mem {peak_mem:.3f} GB",
+                    flush=True,
                 )
 
             if training_callback is not None:
