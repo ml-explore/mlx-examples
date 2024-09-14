@@ -406,7 +406,7 @@ class EncodecModel(nn.Module):
         self.bits_per_codebook = int(math.log2(self.config.codebook_size))
 
     def _encode_frame(
-        self, input_values: mx.array, bandwidth: float, padding_mask: int
+        self, input_values: mx.array, bandwidth: float, padding_mask: mx.array
     ) -> Tuple[mx.array, Optional[mx.array]]:
         """
         Encodes the given input using the underlying VQVAE.
@@ -428,10 +428,9 @@ class EncodecModel(nn.Module):
         scale = None
         if self.config.normalize:
             # if the padding is non zero
-            input_values = input_values * padding_mask
-            # TODO looks like an RMSNorm
-            mono = mx.sum(input_values, axis=1, keepdims=True) / input_values.shape[1]
-            scale = mono.square().mean(axis=-1, keepdims=True).sqrt() + 1e-8
+            input_values = input_values * padding_mask[..., None]
+            mono = mx.sum(input_values, axis=2, keepdims=True) / input_values.shape[2]
+            scale = mono.square().mean(axis=1, keepdims=True).sqrt() + 1e-8
             input_values = input_values / scale
 
         embeddings = self.encoder(input_values)
@@ -450,7 +449,7 @@ class EncodecModel(nn.Module):
         Args:
             input_values (mx.array): The input audio waveform with shape
                 ``(batch_size, channels, sequence_length)``.
-            padding_mask (mx.array): Padding mask used to pad the `input_values`.
+            padding_mask (mx.array): Padding mask used to pad the ``input_values``.
             bandwidth (float, optional): The target bandwidth. Must be one of
                 ``config.target_bandwidths``. If ``None``, uses the smallest
                 possible bandwidth. bandwidth is represented as a thousandth of
@@ -487,16 +486,15 @@ class EncodecModel(nn.Module):
             stride = self.chunk_stride
 
         if padding_mask is None:
-            padding_mask = mx.ones(input_values.shape(), dtype=mx.bool_)
-
+            padding_mask = mx.ones(input_values.shape[:2], dtype=mx.bool_)
         encoded_frames = []
         scales = []
 
         step = chunk_length - stride
-        if (input_length % stride) - step != 0:
+        if (input_length % stride) != step:
             raise ValueError(
                 "The input length is not properly padded for batched chunked "
-                "decoding. Make sure to pad the input correctly."
+                "encoding. Make sure to pad the input correctly."
             )
 
         for offset in range(0, input_length - step, stride):
@@ -506,58 +504,32 @@ class EncodecModel(nn.Module):
             encoded_frames.append(encoded_frame)
             scales.append(scale)
 
-        encoded_frames = mx.stack(encoded_frames, axis=1)
+        encoded_frames = mx.stack(encoded_frames)
 
         return (encoded_frames, scales)
 
     @staticmethod
     def _linear_overlap_add(frames: List[mx.array], stride: int):
-        # Generic overlap add, with linear fade-in/fade-out, supporting complex scenario
-        # e.g., more than 2 frames per position.
-        # The core idea is to use a weight function that is a triangle,
-        # with a maximum value at the middle of the chunk.
-        # We use this weighting when summing the frames, and divide by the sum of weights
-        # for each positions at the end. Thus:
-        #   - if a frame is the only one to cover a position, the weighting is a no-op.
-        #   - if 2 frames cover a position:
-        #          ...  ...
-        #         /   \/   \
-        #        /    /\    \
-        #            S  T       , i.e. S offset of second frame starts, T end of first frame.
-        # Then the weight function for each one is: (t - S), (T - t), with `t` a given offset.
-        # After the final normalization, the weight of the second frame at position `t` is
-        # (t - S) / (t - S + (T - t)) = (t - S) / (T - S), which is exactly what we want.
-        #
-        #   - if more than 2 frames overlap at a given point, we hope that by induction
-        #      something sensible happens.
         if len(frames) == 0:
             raise ValueError("`frames` cannot be an empty list.")
 
-        device = frames[0].device
         dtype = frames[0].dtype
-        shape = frames[0].shape[:-1]
-        total_size = stride * (len(frames) - 1) + frames[-1].shape[-1]
+        N, frame_length, C = frames[0].shape
+        total_size = stride * (len(frames) - 1) + frames[-1].shape[1]
 
-        frame_length = frames[0].shape[-1]
-        time_vec = torch.linspace(0, 1, frame_length + 2, device=device, dtype=dtype)[
-            1:-1
-        ]
+        time_vec = mx.linspace(0, 1, frame_length + 2, dtype=dtype)[1:-1]
         weight = 0.5 - (time_vec - 0.5).abs()
 
-        sum_weight = torch.zeros(total_size, device=device, dtype=dtype)
-        out = torch.zeros(*shape, total_size, device=device, dtype=dtype)
-        offset: int = 0
+        weight = weight[:, None]
+        sum_weight = mx.zeros((total_size, 1), dtype=dtype)
+        out = mx.zeros((N, total_size, C), dtype=dtype)
+        offset = 0
 
         for frame in frames:
-            frame_length = frame.shape[-1]
-            out[..., offset : offset + frame_length] += weight[:frame_length] * frame
+            frame_length = frame.shape[1]
+            out[:, offset : offset + frame_length] += weight[:frame_length] * frame
             sum_weight[offset : offset + frame_length] += weight[:frame_length]
             offset += stride
-
-        if sum_weight.min() == 0:
-            raise ValueError(
-                f"`sum_weight` minimum element must be bigger than zero: {sum_weight}`"
-            )
 
         return out / sum_weight
 
@@ -567,15 +539,23 @@ class EncodecModel(nn.Module):
         embeddings = self.quantizer.decode(codes)
         outputs = self.decoder(embeddings)
         if scale is not None:
-            outputs = outputs * scale.view(-1, 1, 1)
+            outputs = outputs * scale
         return outputs
+
+    @property
+    def channels(self):
+        return self.config.audio_channels
+
+    @property
+    def sampling_rate(self):
+        return self.config.sampling_rate
 
     @property
     def chunk_length(self):
         if self.config.chunk_length_s is None:
             return None
         else:
-            return int(self.config.chunk_length_s * self.sampling_rate)
+            return int(self.config.chunk_length_s * self.config.sampling_rate)
 
     @property
     def chunk_stride(self):
@@ -587,7 +567,7 @@ class EncodecModel(nn.Module):
     def decode(
         self,
         audio_codes: mx.array,
-        audio_scales: mx.array,
+        audio_scales: Union[mx.array, List[mx.array]],
         padding_mask: Optional[mx.array] = None,
     ) -> Tuple[mx.array, mx.array]:
         """
