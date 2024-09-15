@@ -30,7 +30,7 @@ class EncodecConv1d(nn.Module):
             in_channels, out_channels, kernel_size, stride, dilation=dilation
         )
         if self.norm_type == "time_group_norm":
-            self.norm = nn.GroupNorm(1, out_channels)
+            self.norm = nn.GroupNorm(1, out_channels, pytorch_compatible=True)
 
         self.stride = stride
 
