@@ -1,12 +1,12 @@
 # Copyright © 2024 Apple Inc.
 
+import argparse
 import json
 from pathlib import Path
 from textwrap import dedent
 from types import SimpleNamespace
 from typing import Any, Dict, Union
 
-import fire
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
@@ -52,8 +52,8 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         converted to MLX format from
         [{hf_path}](https://huggingface.co/{hf_path}).
 
-        This model is intended to be used with the [Encodec MLX
-        Example](TODO).
+        This model is intended to be used with the [EnCodec MLX
+        example](https://github.com/ml-explore/mlx-examples/tree/main/encodec).
         """
     )
 
@@ -120,20 +120,12 @@ def save_config(
 
 
 def convert(
-    upload: bool = False,
-    model: str = "24khz",
+    upload: bool,
+    model: str,
     dtype: str = None,
 ):
-    """
-    Convert CogVideoX models to MLX
-
-    Args:
-        model (str): One of "24khz", "32khz", or "48khz".
-        upload (bool): Upload to Hugging Face.
-        dtype (str): One of "float32", "float16", or "bfloat16".
-    """
     hf_repo = f"facebook/encodec_{model}"
-    mlx_repo = f"mlx-community/encodec-{model}-mlx"
+    mlx_repo = f"mlx-community/encodec-{model}-{dtype}"
     path = fetch_from_hub(hf_repo)
     save_path = Path("mlx_models")
 
@@ -194,8 +186,29 @@ def convert(
     save_config(vars(config), config_path=save_path / "config.json")
 
     if upload:
-        upload_to_hub(save_path, mlx_repo, hf_path)
+        upload_to_hub(save_path, mlx_repo, hf_repo)
 
 
 if __name__ == "__main__":
-    fire.Fire(convert)
+    parser = argparse.ArgumentParser(description="Convert EnCodec weights to MLX.")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="",
+        help="",
+        choices=["24khz", "32khz", "48khz"],
+    )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Upload the weights to Hugging Face.",
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        help="Data type to convert the model to.",
+        default="float32",
+        choices=["float32", "bfloat16", "float16"],
+    )
+    args = parser.parse_args()
+    convert(upload=args.upload, model=args.model, dtype=args.dtype)

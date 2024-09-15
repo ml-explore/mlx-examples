@@ -1,7 +1,9 @@
+# Copyright © 2024 Apple Inc.
+
 import mlx.core as mx
 from utils import load, load_audio, save_audio
 
-model, processor = load("mlx_models")  # mlx-community/encodec_48khz_fp32")
+model, processor = load("mlx-community/encodec-48khz-float32")
 
 audio = load_audio("fmi_0_gt.wav", model.sampling_rate, model.channels)
 

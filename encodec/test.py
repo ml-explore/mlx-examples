@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import mlx.core as mx
 import numpy as np
 import torch
@@ -29,7 +31,7 @@ def compare_processors():
 
 def compare_models():
     pt_model = EncodecModel.from_pretrained("facebook/encodec_48khz")
-    mx_model = load("mlx_models")
+    mx_model, _ = load("mlx-community/encodec-48khz-float32")
 
     np.random.seed(0)
     audio_length = 190560
@@ -38,7 +40,7 @@ def compare_models():
     pt_encoded = pt_model.encode(
         torch.tensor(audio).moveaxis(2, 1), torch.tensor(mask)[None]
     )
-    mx_encoded = mx_model.encode(mx.array(audio), mx.array(mask)[..., None])
+    mx_encoded = mx_model.encode(mx.array(audio), mx.array(mask))
     pt_codes = pt_encoded.audio_codes.numpy()
     mx_codes = mx_encoded[0]
     assert np.array_equal(pt_codes, mx_codes), "Encoding codes mismatch"
@@ -52,7 +54,7 @@ def compare_models():
         pt_encoded.audio_codes, pt_encoded.audio_scales, torch.tensor(mask)[None]
     )
     pt_audio = pt_audio[0].squeeze().T.detach().numpy()
-    mx_audio = mx_model.decode(*mx_encoded, mx.array(mask)[..., None])
+    mx_audio = mx_model.decode(*mx_encoded, mx.array(mask))
     mx_audio = mx_audio.squeeze()
     assert np.allclose(
         pt_audio, mx_audio, atol=1e-4, rtol=1e-4
@@ -61,4 +63,4 @@ def compare_models():
 
 if __name__ == "__main__":
     compare_processors()
-    # compare_models()
+    compare_models()
