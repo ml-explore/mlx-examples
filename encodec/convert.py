@@ -149,7 +149,6 @@ def convert(
             w_or_b, ih_or_hh, ln = pname.split("_")
             if w_or_b == "weight":
                 new_pname = "Wx" if ih_or_hh == "ih" else "Wh"
-                v = v.T
             elif w_or_b == "bias" and ih_or_hh == "ih":
                 continue
             else:
@@ -194,7 +193,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        default="",
+        default="48khz",
         help="",
         choices=["24khz", "32khz", "48khz"],
     )
