@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union, NamedTuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -145,6 +145,22 @@ def make_kv_caches(
     else:
         return [KVCache(model.head_dim, n) for n in kv_heads]
 
+def max_common_prefix(ls1: List[int], ls2: List[int]) -> str:
+    """Find the maximum number of shared tokens from the start of the lists.
+
+    Args:
+        ls1 (List[int]): Token ID list 1.
+        ls2 (List[int]): Token ID list 2.
+
+    Returns:
+        str: The number of shared tokens in the prefix.
+    """
+    import itertools
+    return sum(1 for _ in itertools.takewhile(lambda x: x[0] == x[1], zip(ls1, ls2)))
+
+class CacheHistory(NamedTuple):
+    cache_history: List[Tuple[mx.array, mx.array]]
+    history_tokens: List[int]
 
 def generate_step(
     prompt: mx.array,
@@ -157,8 +173,9 @@ def generate_step(
     min_tokens_to_keep: int = 1,
     logit_bias: Optional[Dict[int, float]] = None,
     prefill_step_size: int = 512,
+    return_cache: bool = False,
     max_kv_size: Optional[int] = None,
-    cache_history: Optional[List[Tuple[mx.array, mx.array]]] = None,
+    cache_history: Optional[CacheHistory] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -180,8 +197,10 @@ def generate_step(
           be filtered by min_p sampling.
         logit_bias (dictionary, optional): Additive logit bias.
         prefill_step_size (int): Step size for processing the prompt.
+        return_cache (bool, optional): Whether to yield the cache as well for prompt caching. Defaults to False.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
+        cache_history (Optional[CacheHistory]): KV cache history to reuse.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
@@ -220,12 +239,16 @@ def generate_step(
     cache = make_kv_caches(model, max_kv_size)
 
     if cache_history is not None:
-        if len(cache_history) != len(cache):
+        if len(cache_history.cache_history) != len(cache):
             raise ValueError("Wrong number of layers in the cache history")
 
+        max_prefix = max_common_prefix(prompt, cache_history.history_tokens)
+        max_prefix = max_prefix - 1 if max_prefix == len(y) else max_prefix
+        y = y[max_prefix:]
+        ch = list(map(lambda x: list(map(lambda y: y[:, :, :max_prefix, :],  x)), cache_history.cache_history))
         # Set the history in the cache objects and evaluate them to prepare for
         # generation.
-        for c, h in zip(cache, cache_history):
+        for c, h in zip(cache, ch):
             c.update_and_fetch(h[0], h[1])
         mx.eval([c.state for c in cache])
 
@@ -264,7 +287,10 @@ def generate_step(
     while True:
         next_y, next_logprobs = _step(y)
         mx.async_eval(next_y)
-        yield y.item(), logprobs
+        if return_cache:
+            yield y.item(), logprobs, cache
+        else:
+            yield y.item(), logprobs
         y, logprobs = next_y, next_logprobs
 
 
@@ -273,6 +299,7 @@ def stream_generate(
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
     prompt: str,
     max_tokens: int = 100,
+    return_cache: bool = False,
     **kwargs,
 ) -> Union[str, Generator[str, None, None]]:
     """
@@ -281,7 +308,7 @@ def stream_generate(
     Args:
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
-        max_tokens (int): The ma
+        max_tokens (int): The maximum number of tokens.
         kwargs: The remaining options get passed to :func:`generate_step`.
           See :func:`generate_step` for more details.
 
@@ -291,23 +318,37 @@ def stream_generate(
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
 
-    prompt_tokens = mx.array(tokenizer.encode(prompt))
+    prompt_tokens = tokenizer.encode(prompt)
+    prompt_tokens = mx.array(prompt_tokens)
     detokenizer = tokenizer.detokenizer
 
+    # Place holder for cache
+    cache = None
+
     detokenizer.reset()
-    for (token, _), n in zip(
-        generate_step(prompt_tokens, model, **kwargs),
+    for step_output, n in zip(
+        generate_step(prompt_tokens, model, return_cache=return_cache, **kwargs),
         range(max_tokens),
-    ):
+    ):  
+        if return_cache:
+            token, _, cache = step_output
+        else:
+            token, _ = step_output
         if token == tokenizer.eos_token_id:
             break
         detokenizer.add_token(token)
 
         # Yield the last segment if streaming
-        yield detokenizer.last_segment
+        if return_cache:
+            yield detokenizer.last_segment, cache
+        else:
+            yield detokenizer.last_segment
 
     detokenizer.finalize()
-    yield detokenizer.last_segment
+    if return_cache:
+        yield detokenizer.last_segment, cache
+    else:
+        yield detokenizer.last_segment
 
 
 def generate(
@@ -317,6 +358,7 @@ def generate(
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Optional[Callable] = None,
+    return_cache: bool = False,
     **kwargs,
 ) -> Union[str, Generator[str, None, None]]:
     """
@@ -346,11 +388,16 @@ def generate(
 
     tic = time.perf_counter()
     detokenizer.reset()
+    cache = None
 
-    for (token, logprobs), n in zip(
+    for step_output, n in zip(
         generate_step(prompt_tokens, model, **kwargs),
         range(max_tokens),
     ):
+        if return_cache:
+            token, logprobs, cache = step_output
+        else:
+            token, logprobs = step_output
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
@@ -383,7 +430,33 @@ def generate(
         peak_mem = mx.metal.get_peak_memory() / 2**30
         print(f"Peak memory: {peak_mem:.3f} GB")
 
-    return detokenizer.text
+    if return_cache:
+        return detokenizer.text, cache
+    else:
+        return detokenizer.text
+    
+def format_cache(tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper], text: str, cache: KVCache) -> CacheHistory:
+    # Code copied from reformatting cache to safetensors file.
+    cache_dict = {}
+    for i, c in enumerate(cache):
+        cache_dict[f"{i}_keys"] = c.state[0][..., : c.offset, :]
+        cache_dict[f"{i}_values"] = c.state[1][..., : c.offset, :]
+
+    # Converting the cach_dict to something the original generate_step function accept.
+    cache_per_layer = {}
+    for k, x in cache_dict.items():
+        layer, kv_type = k.split("_")
+        if layer not in cache_per_layer:
+            cache_per_layer[layer] = {}
+        cache_per_layer[layer][kv_type] = x
+
+    cache_history = [None] * len(cache_per_layer)
+    for layer, c in cache_per_layer.items():
+        cache_history[int(layer)] = (c["keys"], c["values"])
+
+    # Converting the original prompt + newly generated text to tokens.
+    tokens = tokenizer.encode(text=text)
+    return CacheHistory(cache_history=cache_history, history_tokens=tokens)
 
 
 def load_config(model_path: Path) -> dict:
