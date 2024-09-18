@@ -52,8 +52,10 @@ def linear_to_lora_layers(
         use_dora (bool): If True, uses DoRA instead of LoRA.
           Default: ``False``
     """
-
-    num_layers = len(model.layers)
+    if hasattr(model, "backbone"):
+        num_layers = len(model.backbone.layers)
+    else:
+        num_layers = len(model.layers)
 
     if num_lora_layers < 0:
         num_lora_layers = num_layers
@@ -103,7 +105,8 @@ def linear_to_lora_layers(
         "starcoder2",
         "cohere",
         "minicpm",
-        "deepseek"
+        "deepseek",
+        "mamba"
     ]:
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
         if model.model_type in ["mixtral", "phimoe"]:

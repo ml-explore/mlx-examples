@@ -30,8 +30,7 @@ class ModelArgs(BaseModelArgs):
     time_step_floor: float
     rescale_prenorm_residual: bool
     use_cache: bool
-    pscan: bool = False  # use parallel scan mode or sequential mode when training
-    use_mambapy: bool = False 
+    use_mambapy: bool = False
     tie_word_embeddings: bool = True
 
 
@@ -101,84 +100,6 @@ def clamp(x, min=None, max=None):
     return mx.where(mask_upper, max, x)
 
 
-def pscan_f(A, X):
-    # A : (B, D, L, N)
-    # X : (B, D, L, N)
-
-    # modifies X in place by doing a parallel scan.
-    # more formally, X will be populated by these values :
-    # H[t] = A[t] * H[t-1] + X[t] with H[0] = 0
-    # which are computed in parallel (2*log2(T) sequential steps (ideally), instead of T sequential steps)
-    
-    Aa = A
-    Xa = X
-
-    B, D, L, _ = A.shape
-
-    num_steps = int(math.log2(L))
-
-    # up sweep
-    for k in range(num_steps):
-        T = 2 * (Xa.shape[2] // 2)
-
-        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
-        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
-
-        Xa[:, :, :, 1] += Aa[:, :, :, 1] * Xa[:, :, :, 0]
-        Aa[:, :, :, 1] *= Aa[:, :, :, 0]
-
-        A[:, :, 2**(k+1)-1::2**(k+1)] = Aa[:, :, :, 1]
-        X[:, :, 2**(k+1)-1::2**(k+1)] = Xa[:, :, :, 1]
-
-        Aa = Aa[:, :, :, 1]
-        Xa = Xa[:, :, :, 1]
-
-    # down sweep
-    for k in range(num_steps-1, -1, -1):
-        Aa = A[:, :, 2**k-1::2**k]
-        Xa = X[:, :, 2**k-1::2**k]
-
-        step_len = Xa.shape[2]
-        T = 2 * (step_len // 2)
-
-        if T < step_len:
-            last_val_aa = Aa[:, :, -1] * Aa[:, :, -2]
-            last_val_xa = Xa[:, :, -1] + Aa[:, :, -1] * Xa[:, :, -2]
-
-        Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
-        Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
-
-        Xa[:, :, 1:, 0] += Aa[:, :, 1:, 0] * Xa[:, :, :-1, 1]
-        Aa[:, :, 1:, 0] *= Aa[:, :, :-1, 1]
-
-        if T == step_len:
-            A[:, :, 2**k-1::2**(k+1)] = Aa[:, :, :, 0]
-            X[:, :, 2**k-1::2**(k+1)] = Xa[:, :, :, 0]
-        else:
-            A[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Aa[:, :, :, 0], mx.array([last_val_aa]).reshape(B, D, 1, -1)], axis=2)
-            X[:, :, 2**k-1::2**(k+1)] = mx.concatenate([Xa[:, :, :, 0], mx.array([last_val_xa]).reshape(B, D, 1, -1)], axis=2)
-
-# main function, used in the Mamba model (mamba_mlx.py)
-def pscan(A_in, X_in):
-    """
-    Applies the parallel scan operation, as defined above. Returns a new tensor.
-
-    Args:
-        A_in : (B, L, ED, N)
-        X_in : (B, L, ED, N)
-
-    Returns:
-        H : (B, L, ED, N)
-    """
-
-    A = A_in[:].transpose(0, 2, 1, 3)
-    X = X_in[:].transpose(0, 2, 1, 3)
-
-    pscan_f(A, X)
-
-    return X.transpose(0, 2, 1, 3)
-
-
 class MambaBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -223,8 +144,10 @@ class MambaBlock(nn.Module):
 
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
-    def ssm_step(self, x, ssm_state=None):
-        # Modify this method to work without state during training
+    def ssm_step(self, x, ssm_state):
+        # x : (B, ED)
+        # ssm_state : (B, ED, N)
+
         A = -mx.exp(self.A_log)  # (ED, N)
         D = self.D  # (ED,)
 
@@ -237,102 +160,22 @@ class MambaBlock(nn.Module):
 
         BX = deltaB * mx.expand_dims(x, -1)  # (B, ED, N)
 
-        if self.training:
-            # During training, we don't use or update the state
-            new_ssm_state = BX
-        else:
-            if ssm_state is None:
-                ssm_state = mx.zeros((x.shape[0], self.intermediate_size, self.ssm_state_size))  # (B, ED, N)
-            new_ssm_state = deltaA * ssm_state + BX  # (B, ED, N)
+        if ssm_state is None:
+            ssm_state = mx.zeros((x.shape[0], self.intermediate_size, self.ssm_state_size))  # (B, ED, N)
+
+        new_ssm_state = deltaA * ssm_state + BX  # (B, ED, N)
 
         y = (new_ssm_state @ mx.expand_dims(C, -1)).squeeze(2)  # (B, ED)
+
         y = y + D * x  # (B, ED)
 
-        if self.training:
-            return y
-        else:
-            return y, new_ssm_state
-    
-
-    def ssm(self, x):
-        # x : (B, L, ED)
-
-        # y : (B, L, ED)
-
-        A = -mx.exp(self.A_log) # (ED, N)
-        D = self.D
-
-        deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
-
-        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
-        delta = nn.softplus(self.dt_proj(delta)) # (B, L, ED)
-
-        if self.args.pscan:
-            y = self.selective_scan(x, delta, A, B, C, D)
-        else:
-            y = self.selective_scan_seq(x, delta, A, B, C, D)
-
-        return y
-    
-
-    def selective_scan(self, x, delta, A, B, C, D):
-        # x : (B, L, ED)
-        # Δ : (B, L, ED)
-        # A : (ED, N)
-        # B : (B, L, N)
-        # C : (B, L, N)
-        # D : (ED)
-
-        # y : (B, L, ED)
-
-        deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
-        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
-
-        BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
-        
-        hs = pscan(deltaA, BX)
-
-        y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-        
-        y = y + D * x
-
-        return y
-
-    def selective_scan_seq(self, x, delta, A, B, C, D):
-        # x : (B, L, ED)
-        # Δ : (B, L, ED)
-        # A : (ED, N)
-        # B : (B, L, N)
-        # C : (B, L, N)
-        # D : (ED)
-
-        # y : (B, L, ED)
-
-        _, L, _ = x.shape
-
-        deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
-        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
-
-        BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
-
-        h = mx.zeros([x.shape[0], self.config.d_inner, self.config.d_state]) # (B, ED, N)
-        hs = []
-
-        for t in range(0, L):
-            h = deltaA[:, t] * h + BX[:, t]
-            hs.append(h)
-
-        hs = mx.stack(hs, axis=1)
-
-        y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-        
-        y = y + D * x
-
-        return y
+        return y, new_ssm_state
     
     
     def __call__(self, x, cache: MambaCache, layer_idx: int):
         B, T, D = x.shape
+
+        conv_state, ssm_state = cache.state[0][layer_idx], cache.state[1][layer_idx]
 
         outputs = []
         for t in range(T):
@@ -340,22 +183,11 @@ class MambaBlock(nn.Module):
             xz = self.in_proj(xt)  # (B, 2*ED)
             x_t, z_t = xz.split(indices_or_sections=2, axis=1)  # (B, ED), (B, ED)
 
-            if self.training:
-                conv_out, _ = self.conv1d(mx.expand_dims(x_t, 1))
-            else:
-                conv_state = cache.state[0][layer_idx]
-                conv_out, new_conv_state = self.conv1d(mx.expand_dims(x_t, 1), conv_state)
-                cache.state[0][layer_idx] = new_conv_state
-
+            conv_out, new_conv_state = self.conv1d(mx.expand_dims(x_t, 1), conv_state)
             x_t = conv_out.squeeze(1)  # (B, ED)
-            x_t = nn.silu(x_t)
 
-            if self.training:
-                y_t = self.ssm_step(x_t)
-            else:
-                ssm_state = cache.state[1][layer_idx]
-                y_t, new_ssm_state = self.ssm_step(x_t, ssm_state)
-                cache.state[1][layer_idx] = new_ssm_state
+            x_t = nn.silu(x_t)
+            y_t, new_ssm_state = self.ssm_step(x_t, ssm_state)
 
             z_t = nn.silu(z_t)
 
@@ -363,7 +195,12 @@ class MambaBlock(nn.Module):
             output_t = self.out_proj(output_t)  # (B, D)
             outputs.append(output_t)
 
+            conv_state = new_conv_state
+            ssm_state = new_ssm_state
+
         output = mx.stack(outputs, axis=1)  # (B, T, D)
+        cache.update(layer_idx, conv_state, ssm_state)
+
         return output
     
 class ResidualBlock(nn.Module):
@@ -373,10 +210,6 @@ class ResidualBlock(nn.Module):
         self.norm = nn.RMSNorm(args.hidden_size)
 
     def __call__(self, x: mx.array, cache: MambaCache, layer_idx: int):
-        # Ensure x is 3D before passing to mixer
-        if x.ndim == 2:
-            x = mx.expand_dims(x, 1)  # Make it (B, 1, D)
-
         output = self.mixer(self.norm(x), cache, layer_idx)
         output = output + x
         return output
@@ -410,7 +243,7 @@ class Model(nn.Module):
         
         B, T = inputs.shape
         
-        if not self.training and cache is None:
+        if cache is None:
             cache = self.make_cache(batch_size=B)
         
         x = self.backbone(inputs, cache)
