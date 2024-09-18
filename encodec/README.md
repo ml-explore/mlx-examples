@@ -39,20 +39,28 @@ from utils import load, load_audio, save_audio
 model, processor = load("mlx-community/encodec-48khz-float32")
 
 # Load an audio file
-audio = load_audio("path/to/audio", model.sampling_rate, model.channels)
+audio = load_audio("path/to/aduio", model.sampling_rate, model.channels)
 
 # Preprocess the audio (this can also be a list of arrays for batched
-processing).
+# processing).
 feats, mask = processor(audio)
 
-# Encode at the given bandwidth. A lower bandwidth results in more 
+# Encode at the given bandwidth. A lower bandwidth results in more
 # compression but lower reconstruction quality.
-codes, scales = model.encode(feats, mask, bandwidth=3)
+@mx.compile
+def encode(feats, mask):
+    return model.encode(feats, mask, bandwidth=3)
 
-# Reconstruct the audio
-reconstructed = model.decode(codes, scales, mask)
+# Decode to reconstruct the audio
+@mx.compile
+def decode(codes, scales, mask):
+    return model.decode(codes, scales, mask)
 
-# Trim any padding
+
+codes, scales = encode(feats, mask)
+reconstructed = decode(codes, scales, mask)
+
+# Trim any padding:
 reconstructed = reconstructed[0, : len(audio)]
 
 # Save the audio as a wave file
@@ -60,7 +68,8 @@ save_audio("reconstructed.wav", reconstructed, model.sampling_rate)
 ```
 
 The 24 KHz, 32 KHz, and 48 KHz MLX formatted models are available in the
-Hugging Face MLX Community in several data types.
+[Hugging Face MLX Community](https://huggingface.co/collections/mlx-community/encodec-66e62334038300b07a43b164)
+in several data types.
 
 ### Optional
 

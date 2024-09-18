@@ -8,48 +8,50 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
+_lstm_kernel = mx.fast.metal_kernel(
+    name="lstm",
+    input_names=["x", "h_in", "cell", "hidden_size", "time_step", "num_time_steps"],
+    output_names=["hidden_state", "cell_state"],
+    header="""
+    template <typename T>
+    T sigmoid(T x) {
+        auto y = 1 / (1 + metal::exp(-metal::abs(x)));
+        return (x < 0) ? 1 - y : y;
+    }
+    """,
+    source="""
+        uint b = thread_position_in_grid.x;
+        uint d = hidden_size * 4;
+
+        uint elem = b * d + thread_position_in_grid.y;
+        uint index = elem;
+        uint x_index = b * num_time_steps * d + time_step * d + index;
+
+        auto i = sigmoid(h_in[index] + x[x_index]);
+        index += hidden_size;
+        x_index += hidden_size;
+        auto f = sigmoid(h_in[index] + x[x_index]);
+        index += hidden_size;
+        x_index += hidden_size;
+        auto g = metal::precise::tanh(h_in[index] + x[x_index]);
+        index += hidden_size;
+        x_index += hidden_size;
+        auto o = sigmoid(h_in[index] + x[x_index]);
+
+        cell_state[elem] = f * cell[elem] + i * g;
+        hidden_state[elem] = o * metal::precise::tanh(cell_state[elem]);
+    """,
+)
+
 
 def lstm_custom(x, h_in, cell, time_step):
-    assert (
-        x.ndim == 3 and x.shape[0] == 1
-    ), "LSTM custom kernel only supports batch size of 1."
-    kernel = mx.fast.metal_kernel(
-        name="lstm",
-        input_names=["x", "h_in", "cell", "hidden_size", "time_step"],
-        output_names=["hidden_state", "cell_state"],
-        header="""
-        template <typename T>
-        T sigmoid(T x) {
-            auto y = 1 / (1 + metal::exp(-metal::abs(x)));
-            return (x < 0) ? 1 - y : y;
-        }
-        """,
-        source="""
-            uint elem = thread_position_in_grid.x;
-            uint index = elem;
-            uint x_index = time_step * hidden_size * 4 + index;
-
-            auto i = sigmoid(h_in[index] + x[x_index]);
-            index += hidden_size;
-            x_index += hidden_size;
-            auto f = sigmoid(h_in[index] + x[x_index]);
-            index += hidden_size;
-            x_index += hidden_size;
-            auto g = metal::precise::tanh(h_in[index] + x[x_index]);
-            index += hidden_size;
-            x_index += hidden_size;
-            auto o = sigmoid(h_in[index] + x[x_index]);
-
-            cell_state[elem] = f * cell[elem] + i * g;
-            hidden_state[elem] = o * metal::precise::tanh(cell_state[elem]);
-        """,
-    )
+    assert x.ndim == 3, "Input to LSTM must have 3 dimensions."
     out_shape = cell.shape
-    return kernel(
-        inputs=[x, h_in, cell, out_shape[-1], time_step],
+    return _lstm_kernel(
+        inputs=[x, h_in, cell, out_shape[-1], time_step, x.shape[-2]],
         output_shapes=[out_shape, out_shape],
         output_dtypes=[h_in.dtype, h_in.dtype],
-        grid=(h_in.size // 4, 1, 1),
+        grid=(x.shape[0], h_in.size // 4, 1),
         threadgroup=(256, 1, 1),
     )
 
