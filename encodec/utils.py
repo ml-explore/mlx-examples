@@ -69,13 +69,13 @@ def preprocess_audio(
     chunk_stride: Optional[int] = None,
 ):
     r"""
-    Prepare inputs for the EnCode model.
+    Prepare inputs for the EnCodec model.
 
     Args:
         raw_audio (mx.array or List[mx.array]): The sequence or batch of
             sequences to be processed.
-        sampling_rate (int): The sampling rate at
-            which the audio waveform should be digitalized expressed in hertz (Hz).
+        sampling_rate (int): The sampling rate at which the audio waveform
+            should be digitalized.
         chunk_length (int, optional): The model's chunk length.
         chunk_stride (int, optional): The model's chunk stride.
     """
@@ -103,6 +103,9 @@ def preprocess_audio(
 
 
 def load(path_or_repo):
+    """
+    Load the model and audo preprocessor.
+    """
     path = Path(path_or_repo)
     if not path.exists():
         path = Path(
@@ -123,4 +126,5 @@ def load(path_or_repo):
         chunk_length=model.chunk_length,
         chunk_stride=model.chunk_stride,
     )
+    mx.eval(model)
     return model, processor

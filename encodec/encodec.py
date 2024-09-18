@@ -9,6 +9,86 @@ import mlx.nn as nn
 import numpy as np
 
 
+def lstm_custom(x, h_in, cell, time_step):
+    assert (
+        x.ndim == 3 and x.shape[0] == 1
+    ), "LSTM custom kernel only supports batch size of 1."
+    kernel = mx.fast.metal_kernel(
+        name="lstm",
+        input_names=["x", "h_in", "cell", "hidden_size", "time_step"],
+        output_names=["hidden_state", "cell_state"],
+        header="""
+        template <typename T>
+        T sigmoid(T x) {
+            auto y = 1 / (1 + metal::exp(-metal::abs(x)));
+            return (x < 0) ? 1 - y : y;
+        }
+        """,
+        source="""
+            uint elem = thread_position_in_grid.x;
+            uint index = elem;
+            uint x_index = time_step * hidden_size * 4 + index;
+
+            auto i = sigmoid(h_in[index] + x[x_index]);
+            index += hidden_size;
+            x_index += hidden_size;
+            auto f = sigmoid(h_in[index] + x[x_index]);
+            index += hidden_size;
+            x_index += hidden_size;
+            auto g = metal::precise::tanh(h_in[index] + x[x_index]);
+            index += hidden_size;
+            x_index += hidden_size;
+            auto o = sigmoid(h_in[index] + x[x_index]);
+
+            cell_state[elem] = f * cell[elem] + i * g;
+            hidden_state[elem] = o * metal::precise::tanh(cell_state[elem]);
+        """,
+    )
+    out_shape = cell.shape
+    return kernel(
+        inputs=[x, h_in, cell, out_shape[-1], time_step],
+        output_shapes=[out_shape, out_shape],
+        output_dtypes=[h_in.dtype, h_in.dtype],
+        grid=(h_in.size // 4, 1, 1),
+        threadgroup=(256, 1, 1),
+    )
+
+
+class LSTM(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        bias: bool = True,
+    ):
+        super().__init__()
+
+        self.hidden_size = hidden_size
+        self.Wx = mx.zeros((4 * hidden_size, input_size))
+        self.Wh = mx.zeros((4 * hidden_size, hidden_size))
+        self.bias = mx.zeros((4 * hidden_size,)) if bias else None
+
+    def __call__(self, x, hidden=None, cell=None):
+        if self.bias is not None:
+            x = mx.addmm(self.bias, x, self.Wx.T)
+        else:
+            x = x @ self.Wx.T
+
+        all_hidden = []
+
+        B = x.shape[0]
+        cell = cell or mx.zeros((B, self.hidden_size), x.dtype)
+        for t in range(x.shape[-2]):
+            if hidden is None:
+                hidden = mx.zeros((B, self.hidden_size * 4), x.dtype)
+            else:
+                hidden = hidden @ self.Wh.T
+            hidden, cell = lstm_custom(x, hidden, cell, t)
+            all_hidden.append(hidden)
+
+        return mx.stack(all_hidden, axis=-2)
+
+
 class EncodecConv1d(nn.Module):
     """Conv1d with asymmetric or causal padding and normalization."""
 
@@ -118,21 +198,13 @@ class EncodecConvTranspose1d(nn.Module):
         if self.norm_type == "time_group_norm":
             hidden_states = self.norm(hidden_states)
 
-        # We will only trim fixed padding. Extra padding from `pad_for_conv1d` would be
-        # removed at the very end, when keeping only the right length for the output,
-        # as removing it here would require also passing the length at the matching layer
-        # in the encoder.
         if self.causal:
-            # Trim the padding on the right according to the specified ratio
-            # if trim_right_ratio = 1.0, trim everything from right
             padding_right = math.ceil(self.padding_total * self.trim_right_ratio)
         else:
-            # Asymmetric padding required for odd strides
             padding_right = self.padding_total // 2
 
         padding_left = self.padding_total - padding_right
 
-        # unpad
         end = hidden_states.shape[1] - padding_right
         hidden_states = hidden_states[:, padding_left:end, :]
         return hidden_states
@@ -141,14 +213,12 @@ class EncodecConvTranspose1d(nn.Module):
 class EncodecLSTM(nn.Module):
     def __init__(self, config, dimension):
         super().__init__()
-        self.lstm = [
-            nn.LSTM(dimension, dimension) for _ in range(config.num_lstm_layers)
-        ]
+        self.lstm = [LSTM(dimension, dimension) for _ in range(config.num_lstm_layers)]
 
     def __call__(self, hidden_states):
         h = hidden_states
         for lstm in self.lstm:
-            h = lstm(h)[0]
+            h = lstm(h)
         return h + hidden_states
 
 
@@ -312,11 +382,8 @@ class EncodecEuclideanCodebook(nn.Module):
 
     def encode(self, hidden_states):
         shape = hidden_states.shape
-        # pre-process
         hidden_states = hidden_states.reshape((-1, shape[-1]))
-        # quantize
         embed_ind = self.quantize(hidden_states)
-        # post-process
         embed_ind = embed_ind.reshape(*shape[:-1])
         return embed_ind
 
@@ -370,7 +437,7 @@ class EncodecResidualVectorQuantizer(nn.Module):
         self, embeddings: mx.array, bandwidth: Optional[float] = None
     ) -> mx.array:
         """
-        Encode a given input tensor with the specified frame rate at the given
+        Encode a given input array with the specified frame rate at the given
         bandwidth. The RVQ encode method sets the appropriate number of
         quantizers to use and returns indices for each quantizer.
         """
@@ -412,9 +479,6 @@ class EncodecModel(nn.Module):
     ) -> Tuple[mx.array, Optional[mx.array]]:
         """
         Encodes the given input using the underlying VQVAE.
-
-        If `config.normalize` is set to `True` the input is first normalized. The
-        padding mask is required to compute the correct scale.
         """
         length = input_values.shape[1]
         duration = length / self.config.sampling_rate
@@ -460,7 +524,7 @@ class EncodecModel(nn.Module):
         Returns:
             A list of frames containing the discrete encoded codes for the
             input audio waveform, along with rescaling factors for each chunk
-            when ``normalize==True``. Each frame is a tuple ``(codebook,
+            when ``config.normalize==True``. Each frame is a tuple ``(codebook,
             scale)``, with ``codebook`` of shape ``[batch_size, num_codebooks,
             frames]``.
         """
@@ -575,15 +639,15 @@ class EncodecModel(nn.Module):
         """
         Decodes the given frames into an output audio waveform.
 
-        Note that the output might be a bit bigger than the input. In that case, any extra steps at the end can be
-        trimmed.
+        Note that the output might be a bit bigger than the input. In that
+        case, any extra steps at the end should be trimmed.
 
         Args:
-            audio_codes (mx.array): Discret code embeddings of shape ``(batch_size, nb_chunks, chunk_length)``.
-            audio_scales (mx.array): Scaling factor for each ``audio_codes`` input.
-            padding_mask (mx.array): Padding mask used to pad the ``audio_codes``.
+            audio_codes (mx.array): Discret code embeddings of shape
+                ``(batch_size, nb_chunks, chunk_length)``.
+            audio_scales (mx.array): Scaling factor for each input.
+            padding_mask (mx.array): Padding mask.
         """
-
         chunk_length = self.chunk_length
         if chunk_length is None:
             if audio_codes.shape[1] != 1:
