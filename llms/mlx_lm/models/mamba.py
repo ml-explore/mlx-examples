@@ -33,7 +33,6 @@ class ModelArgs(BaseModelArgs):
     pscan: bool = False
     tie_word_embeddings: bool = True
 
-
     def __post_init__(self):
         if not hasattr(self, 'hidden_size') and hasattr(self, 'd_model'):
             self.hidden_size = self.d_model
@@ -56,6 +55,7 @@ class ModelArgs(BaseModelArgs):
         if self.time_step_rank == "auto":
             self.time_step_rank = math.ceil(self.hidden_size / 16)
 
+
 class DepthWiseConv1d(nn.Module):
     def __init__(self, channels, kernel_size, bias=True, padding=0):
         super().__init__()
@@ -68,23 +68,17 @@ class DepthWiseConv1d(nn.Module):
     def __call__(self, x, conv_state=None):
         B, L, C = x.shape
         K = self.kernel_size
-        
         if conv_state is None:
             conv_state = mx.zeros((B, K - 1, C))
-        
         x = mx.concatenate([conv_state, x], axis=1)
-        
         output = []
         for i in range(K):
             slice = x[:, i:i+L, :]
             output.append(slice * self.weight[:, 0, i])
         y = mx.sum(mx.stack(output), axis=0)
-        
         if self.bias is not None:
             y = y + self.bias.reshape(1, 1, -1)
-        
         new_conv_state = x[:, -K+1:, :]
-        
         return y, new_conv_state
 
 
@@ -103,45 +97,32 @@ def clamp(x, min=None, max=None):
 def pscan_f(A, X):
     Aa = A
     Xa = X
-
     B, D, L, _ = A.shape
-
     num_steps = int(math.log2(L))
-
     # up sweep
     for k in range(num_steps):
         T = 2 * (Xa.shape[2] // 2)
-
         Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
         Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
-
         Xa[:, :, :, 1] += Aa[:, :, :, 1] * Xa[:, :, :, 0]
         Aa[:, :, :, 1] *= Aa[:, :, :, 0]
-
         A[:, :, 2**(k+1)-1::2**(k+1)] = Aa[:, :, :, 1]
         X[:, :, 2**(k+1)-1::2**(k+1)] = Xa[:, :, :, 1]
-
         Aa = Aa[:, :, :, 1]
         Xa = Xa[:, :, :, 1]
-
     # down sweep
     for k in range(num_steps-1, -1, -1):
         Aa = A[:, :, 2**k-1::2**k]
         Xa = X[:, :, 2**k-1::2**k]
-
         step_len = Xa.shape[2]
         T = 2 * (step_len // 2)
-
         if T < step_len:
             last_val_aa = Aa[:, :, -1] * Aa[:, :, -2]
             last_val_xa = Xa[:, :, -1] + Aa[:, :, -1] * Xa[:, :, -2]
-
         Aa = Aa[:, :, :T].reshape(B, D, T//2, 2, -1)
         Xa = Xa[:, :, :T].reshape(B, D, T//2, 2, -1)
-
         Xa[:, :, 1:, 0] += Aa[:, :, 1:, 0] * Xa[:, :, :-1, 1]
         Aa[:, :, 1:, 0] *= Aa[:, :, :-1, 1]
-
         if T == step_len:
             A[:, :, 2**k-1::2**(k+1)] = Aa[:, :, :, 0]
             X[:, :, 2**k-1::2**(k+1)] = Xa[:, :, :, 0]
@@ -151,16 +132,6 @@ def pscan_f(A, X):
 
 
 def pscan(A_in, X_in):
-    """
-    Applies the parallel scan operation, as defined above. Returns a new array.
-
-    Args:
-        A_in: mx.array =-> Shape(B, L, ED, N)
-        X_in: mx.array -> Shape (B, L, ED, N)
-
-    Returns:
-        H: mx.array -> Shape (B, L, ED, N)
-    """
     A = A_in[:].transpose(0, 2, 1, 3)
     X = X_in[:].transpose(0, 2, 1, 3)
     pscan_f(A, X)
@@ -212,137 +183,92 @@ class MambaBlock(nn.Module):
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
     def ssm_step(self, x, ssm_state=None):
-        A = -mx.exp(self.A_log)  # (ED, N)
-        D = self.D  # (ED,)
-
-        deltaBC = self.x_proj(x)  # (B, time_step_rank+2*N)
+        A = -mx.exp(self.A_log)
+        D = self.D
+        deltaBC = self.x_proj(x)
         delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1)
-        delta = nn.softplus(self.dt_proj(delta))  # (B, ED)
-
-        deltaA = mx.exp(mx.expand_dims(delta, -1) * A)  # (B, ED, N)
-        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 1)  # (B, ED, N)
-
-        BX = deltaB * mx.expand_dims(x, -1)  # (B, ED, N)
-
+        delta = nn.softplus(self.dt_proj(delta))
+        deltaA = mx.exp(mx.expand_dims(delta, -1) * A)
+        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 1)
+        BX = deltaB * mx.expand_dims(x, -1)
         if self.training:
             new_ssm_state = BX
         else:
             if ssm_state is None:
-                ssm_state = mx.zeros((x.shape[0], self.intermediate_size, self.ssm_state_size))  # (B, ED, N)
-            new_ssm_state = deltaA * ssm_state + BX  # (B, ED, N)
-
-        y = (new_ssm_state @ mx.expand_dims(C, -1)).squeeze(2)  # (B, ED)
-        y = y + D * x  # (B, ED)
-
+                ssm_state = mx.zeros((x.shape[0], self.intermediate_size, self.ssm_state_size))
+            new_ssm_state = deltaA * ssm_state + BX
+        y = (new_ssm_state @ mx.expand_dims(C, -1)).squeeze(2)
+        y = y + D * x
         if self.training:
             return y
         else:
             return y, new_ssm_state
     
-
     def ssm(self, x):
-        # x : (B, L, ED)
-        # y : (B, L, ED)
-
-        A = -mx.exp(self.A_log) # (ED, N)
+        A = -mx.exp(self.A_log)
         D = self.D
-
-        deltaBC = self.x_proj(x) # (B, L, dt_rank+2*N)
-
-        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1) # (B, L, dt_rank), (B, L, N), (B, L, N)
-        delta = nn.softplus(self.dt_proj(delta)) # (B, L, ED)
-
+        deltaBC = self.x_proj(x)
+        delta, B, C = mx.split(deltaBC, indices_or_sections=[self.time_step_rank, self.time_step_rank+self.ssm_state_size], axis=-1)
+        delta = nn.softplus(self.dt_proj(delta))
         if self.args.pscan:
             y = self.selective_scan(x, delta, A, B, C, D)
         else:
             y = self.selective_scan_seq(x, delta, A, B, C, D)
-
         return y
     
-
     def selective_scan(self, x, delta, A, B, C, D):
-        # x : (B, L, ED)
-        # A : (ED, N)
-        # B : (B, L, N)
-        # C : (B, L, N)
-        # D : (ED)
-        deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
-        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
-
-        BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
-        
+        deltaA = mx.exp(mx.expand_dims(delta, -1) * A)
+        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2)
+        BX = deltaB * mx.expand_dims(x, -1)
         hs = pscan(deltaA, BX)
-
-        y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-        
+        y = (hs @ mx.expand_dims(C, -1)).squeeze(3)
         y = y + D * x
-
-        return y # (B, L, ED)
+        return y
 
     def selective_scan_seq(self, x, delta, A, B, C, D):
-        # x : (B, L, ED)
-        # A : (ED, N)
-        # B : (B, L, N)
-        # C : (B, L, N)
-        # D : (ED)
         _, L, _ = x.shape
-
-        deltaA = mx.exp(mx.expand_dims(delta, -1) * A) # (B, L, ED, N)
-        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2) # (B, L, ED, N)
-
-        BX = deltaB * mx.expand_dims(x, -1) # (B, L, ED, N)
-
-        h = mx.zeros([x.shape[0], self.config.d_inner, self.config.d_state]) # (B, ED, N)
+        deltaA = mx.exp(mx.expand_dims(delta, -1) * A)
+        deltaB = mx.expand_dims(delta, -1) * mx.expand_dims(B, 2)
+        BX = deltaB * mx.expand_dims(x, -1)
+        h = mx.zeros([x.shape[0], self.config.d_inner, self.config.d_state])
         hs = []
-
         for t in range(0, L):
             h = deltaA[:, t] * h + BX[:, t]
             hs.append(h)
-
         hs = mx.stack(hs, axis=1)
-
-        y = (hs @ mx.expand_dims(C, -1)).squeeze(3) # (B, L, ED, N) @ (B, L, N, 1) -> (B, L, ED, 1)
-        
+        y = (hs @ mx.expand_dims(C, -1)).squeeze(3)
         y = y + D * x
-
-        return y # (B, L, ED)
-    
+        return y
     
     def __call__(self, x, cache: MambaCache, layer_idx: int):
         B, T, D = x.shape
-
         outputs = []
         for t in range(T):
-            xt = x[:, t, :]  # (B, D)
-            xz = self.in_proj(xt)  # (B, 2*ED)
-            x_t, z_t = xz.split(indices_or_sections=2, axis=1)  # (B, ED), (B, ED)
-
+            xt = x[:, t, :]
+            xz = self.in_proj(xt)
+            x_t, z_t = xz.split(indices_or_sections=2, axis=1)
             if self.training:
                 conv_out, _ = self.conv1d(mx.expand_dims(x_t, 1))
             else:
                 conv_state = cache.state[0][layer_idx]
                 conv_out, new_conv_state = self.conv1d(mx.expand_dims(x_t, 1), conv_state)
                 cache.state[0][layer_idx] = new_conv_state
-
-            x_t = conv_out.squeeze(1)  # (B, ED)
+            x_t = conv_out.squeeze(1)
             x_t = nn.silu(x_t)
-
             if self.training:
                 y_t = self.ssm_step(x_t)
             else:
                 ssm_state = cache.state[1][layer_idx]
                 y_t, new_ssm_state = self.ssm_step(x_t, ssm_state)
                 cache.state[1][layer_idx] = new_ssm_state
-
             z_t = nn.silu(z_t)
-
             output_t = y_t * z_t
-            output_t = self.out_proj(output_t)  # (B, D)
+            output_t = self.out_proj(output_t)
             outputs.append(output_t)
-
-        output = mx.stack(outputs, axis=1)  # (B, T, D)
+        output = mx.stack(outputs, axis=1)
         return output
-    
+
+
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -351,11 +277,11 @@ class ResidualBlock(nn.Module):
 
     def __call__(self, x: mx.array, cache: MambaCache, layer_idx: int):
         if x.ndim == 2:
-            x = mx.expand_dims(x, 1)  # Make it (B, 1, D)
-
+            x = mx.expand_dims(x, 1)
         output = self.mixer(self.norm(x), cache, layer_idx)
         output = output + x
         return output
+
 
 class Mamba(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -370,13 +296,13 @@ class Mamba(nn.Module):
             x = layer(x, cache, i)
         return self.norm_f(x)
 
+
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
         self.backbone = Mamba(args)
-
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
