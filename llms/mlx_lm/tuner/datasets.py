@@ -55,10 +55,7 @@ class ToolsDataset(Dataset):
         messages = self._data[idx]["messages"]
         tools = self._data[idx]["tools"]
         text = self._tokenizer.apply_chat_template(
-            messages,
-            tools=tools,
-            tokenize=False,
-            add_generation_prompt=True
+            messages, tools=tools, tokenize=False, add_generation_prompt=True
         )
         return text
 
@@ -144,9 +141,7 @@ def create_hf_dataset(args, tokenizer: PreTrainedTokenizer):
             **hf_args.get("config", {}),
         )
         if prompt_feature and completion_feature:
-            return CompletionsDataset(
-                ds, tokenizer, prompt_feature, completion_feature
-            )
+            return CompletionsDataset(ds, tokenizer, prompt_feature, completion_feature)
         elif text_feature:
             return Dataset(train_ds, text_key=text_feature)
         else:
