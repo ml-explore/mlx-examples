@@ -168,6 +168,25 @@ class StableDiffusion:
         x = mx.clip(x / 2 + 0.5, 0, 1)
         return x
 
+    def training_loss(self, text: mx.array, x_0: mx.array, pred_noise: bool = True):
+        # Get the text conditioning
+        conditioning = self.text_encoder(text).last_hidden_state
+
+        # Get the samples to be denoised
+        t = mx.random.uniform(shape=(len(x_0),)) * self.sampler.max_time
+        eps = mx.random.normal(x_0.shape)
+        x_t = self.sampler.add_noise(x_0, t, noise=eps)
+        x_t = mx.stop_gradient(x_t)
+
+        # Do the denoising
+        eps_pred = self.unet(x_t, t, encoder_x=conditioning, text_time=None)
+
+        if pred_noise:
+            return (eps_pred - eps).square().mean((1, 2, 3))
+        else:
+            x_0_pred = self.sampler.step(eps_pred, x_t, t, mx.zeros_like(t))
+            return (x_0_pred - x_0).square().mean((1, 2, 3))
+
 
 class StableDiffusionXL(StableDiffusion):
     def __init__(self, model: str = _DEFAULT_MODEL, float16: bool = False):

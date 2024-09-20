@@ -59,13 +59,17 @@ class SimpleEulerSampler:
             noise * self._sigmas[-1] * (self._sigmas[-1].square() + 1).rsqrt()
         ).astype(dtype)
 
-    def add_noise(self, x, t, key=None):
-        noise = mx.random.normal(x.shape, key=key)
+    def add_noise(self, x, t, noise=None, key=None):
+        noise = noise if noise is not None else mx.random.normal(x.shape, key=key)
         s = self.sigmas(t)
         return (x + noise * s) * (s.square() + 1).rsqrt()
 
     def sigmas(self, t):
-        return _interp(self._sigmas, t)
+        s = _interp(self._sigmas, t)
+        if t.ndim == 0:
+            return s
+        else:
+            return s[:, None, None, None]
 
     def timesteps(self, num_steps: int, start_time=None, dtype=mx.float32):
         start_time = start_time or (len(self._sigmas) - 1)

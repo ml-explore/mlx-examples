@@ -15,7 +15,7 @@ if __name__ == "__main__":
         description="Generate images from a textual prompt using stable diffusion"
     )
     parser.add_argument("prompt")
-    parser.add_argument("--model", choices=["sd", "sdxl"], default="sdxl")
+    parser.add_argument("--model", choices=["sd", "sd-compvis", "sdxl"], default="sdxl")
     parser.add_argument("--n_images", type=int, default=4)
     parser.add_argument("--steps", type=int)
     parser.add_argument("--cfg", type=float)
@@ -28,6 +28,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="out.png")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--unet-path")
+    parser.add_argument("--text-encoder-path")
     args = parser.parse_args()
 
     # Load the models
@@ -44,14 +46,23 @@ if __name__ == "__main__":
         args.cfg = args.cfg or 0.0
         args.steps = args.steps or 2
     else:
-        sd = StableDiffusion(
-            "stabilityai/stable-diffusion-2-1-base", float16=args.float16
-        )
+        model_path = "stabilityai/stable-diffusion-2-1-base"
+        if args.model == "sd-compvis":
+            model_path = "CompVis/stable-diffusion-v1-4"
+        sd = StableDiffusion(model_path, float16=args.float16)
+
+        # Load the custom unet and text encoder if requested
+        if args.unet_path:
+            sd.unet.load_weights(args.unet_path)
+        if args.text_encoder_path:
+            sd.text_encoder.load_weights(args.text_encoder_path)
+
         if args.quantize:
             nn.quantize(
                 sd.text_encoder, class_predicate=lambda _, m: isinstance(m, nn.Linear)
             )
             nn.quantize(sd.unet, group_size=32, bits=8)
+
         args.cfg = args.cfg or 7.5
         args.steps = args.steps or 50
 
