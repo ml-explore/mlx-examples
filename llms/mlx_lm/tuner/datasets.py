@@ -92,6 +92,34 @@ def create_dataset(path: Path, tokenizer: PreTrainedTokenizer = None):
         )
 
 
+def load_hf_dataset(data_id: str, tokenizer: PreTrainedTokenizer):
+    import datasets
+
+    datasets = datasets.load_dataset(data_id)
+
+    def create(data):
+        sample = data[0]
+
+        if "messages" in sample:
+            return ChatDataset(data, tokenizer)
+        elif "prompt" in sample and "completion" in sample:
+            return CompletionsDataset(data, tokenizer)
+        elif "text" in sample:
+            return Dataset(data)
+        else:
+            raise ValueError(
+                "Unsupported data format, check the supported formats here:\n"
+                "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+            )
+
+    names = ("train", "valid", "test")
+
+    train, valid, test = [
+        create(datasets[n], tokenizer) for n in names
+    ]
+    return train, valid, test
+
+
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
     if getattr(args, "hf_dataset", None) is not None:
         import datasets
@@ -134,12 +162,15 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
             test = []
 
     else:
-        names = ("train", "valid", "test")
         data_path = Path(args.data)
+        if data_path.exists():
+            names = ("train", "valid", "test")
+            train, valid, test = [
+                create_dataset(data_path / f"{n}.jsonl", tokenizer) for n in names
+            ]
+        else:
+            train, valid, test = load_hf_dataset(args.data, tokenizer)
 
-        train, valid, test = [
-            create_dataset(data_path / f"{n}.jsonl", tokenizer) for n in names
-        ]
     if args.train and len(train) == 0:
         raise ValueError(
             "Training set not found or empty. Must provide training set for fine-tuning."
