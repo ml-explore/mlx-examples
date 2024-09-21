@@ -166,43 +166,27 @@ Currently, `*.jsonl` files support three data formats: `chat`,
 `chat`:
 
 ```jsonl
-{
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a helpful assistant."
-    },
-    {
-      "role": "user",
-      "content": "Hello."
-    },
-    {
-      "role": "assistant",
-      "content": "How can I assistant you today."
-    }
-  ]
-}
+{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Hello."}, {"role": "assistant", "content": "How can I assistant you today."}]}
 ```
 
 `completions`:
 
 ```jsonl
-{
-  "prompt": "What is the capital of France?",
-  "completion": "Paris."
-}
+{"prompt": "What is the capital of France?", "completion": "Paris."}
 ```
 
 `text`:
 
 ```jsonl
-{
-  "text": "This is an example for the model."
-}
+{"text": "This is an example for the model."}
 ```
 
 Note, the format is automatically determined by the dataset. Note also, keys in
 each line not expected by the loader will be ignored.
+
+> [!NOTE]
+> Each example in the datasets must be on a single line. Do not put more than
+> one example per line and do not split an example accross multiple lines.
 
 ### Hugging Face Datasets
 

@@ -14,7 +14,6 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, 
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from huggingface_hub.utils._errors import RepositoryNotFoundError
 from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
@@ -91,7 +90,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                     ],
                 )
             )
-        except RepositoryNotFoundError:
+        except:
             raise ModelNotFoundError(
                 f"Model not found for path or HF repo: {path_or_hf_repo}.\n"
                 "Please make sure you specified the local path or Hugging Face"
@@ -578,7 +577,16 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         from mlx_lm import load, generate
 
         model, tokenizer = load("{upload_repo}")
-        response = generate(model, tokenizer, prompt="hello", verbose=True)
+
+        prompt="hello"
+
+        if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template is not None:
+            messages = [{{"role": "user", "content": prompt}}]
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+
+        response = generate(model, tokenizer, prompt=prompt, verbose=True)
         ```
         """
     )

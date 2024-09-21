@@ -67,7 +67,7 @@ class HfVocab:
     def get_token_type(
         self, token_id: int, token_text: bytes, special_ids: Set[int]
     ) -> TokenType:
-        if re.fullmatch(rb"<0x[0-9A-Fa-f]{2}>", token_text.encode("utf-8")):
+        if re.fullmatch(r"<0x[0-9A-Fa-f]{2}>", token_text):
             return TokenType.BYTE
         return TokenType.CONTROL if token_id in special_ids else TokenType.NORMAL
 
@@ -77,9 +77,7 @@ class HfVocab:
     def added_tokens(self) -> Iterable[Tuple[bytes, float, TokenType]]:
         for text in self.added_tokens_list:
             if text in self.specials:
-                toktype = self.get_token_type(
-                    self.specials[text], b"", self.special_ids
-                )
+                toktype = self.get_token_type(self.specials[text], "", self.special_ids)
                 score = self.get_token_score(self.specials[text])
             else:
                 toktype = TokenType.USER_DEFINED
@@ -243,15 +241,18 @@ def prepare_metadata(config, vocab):
     metadata["tokenizer.ggml.tokens"] = tokens
     metadata["tokenizer.ggml.scores"] = mx.array(scores, dtype=mx.float32)
     metadata["tokenizer.ggml.token_type"] = mx.array(toktypes, dtype=mx.uint32)
-    metadata["tokenizer.ggml.bos_token_id"] = mx.array(
-        vocab.tokenizer.bos_token_id, dtype=mx.uint32
-    )
-    metadata["tokenizer.ggml.eos_token_id"] = mx.array(
-        vocab.tokenizer.eos_token_id, dtype=mx.uint32
-    )
-    metadata["tokenizer.ggml.unknown_token_id"] = mx.array(
-        vocab.tokenizer.unk_token_id, dtype=mx.uint32
-    )
+    if vocab.tokenizer.bos_token_id is not None:
+        metadata["tokenizer.ggml.bos_token_id"] = mx.array(
+            vocab.tokenizer.bos_token_id, dtype=mx.uint32
+        )
+    if vocab.tokenizer.eos_token_id is not None:
+        metadata["tokenizer.ggml.eos_token_id"] = mx.array(
+            vocab.tokenizer.eos_token_id, dtype=mx.uint32
+        )
+    if vocab.tokenizer.unk_token_id is not None:
+        metadata["tokenizer.ggml.unknown_token_id"] = mx.array(
+            vocab.tokenizer.unk_token_id, dtype=mx.uint32
+        )
 
     metadata = {k: v for k, v in metadata.items() if v is not None}
     return metadata
