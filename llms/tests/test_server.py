@@ -6,6 +6,7 @@ import threading
 import unittest
 
 import requests
+from huggingface_hub import scan_cache_dir
 from mlx_lm.server import APIHandler
 from mlx_lm.utils import load
 
@@ -14,7 +15,6 @@ class DummyModelProvider:
     def __init__(self):
         HF_MODEL_PATH = "mlx-community/Qwen1.5-0.5B-Chat-4bit"
         self.model, self.tokenizer = load(HF_MODEL_PATH)
-        self.cli_args = type("DummyArgs", (), {"model": HF_MODEL_PATH})()
 
     def load(self, model, adapter=None):
         assert model in ["default_model", "chat_model"]
@@ -81,6 +81,8 @@ class TestServer(unittest.TestCase):
         self.assertIn("choices", response_body)
 
     def test_handle_models(self):
+        hf_cache_info = scan_cache_dir()
+        mlx_models = [repo for repo in hf_cache_info.repos if "mlx" in repo.repo_id]
         url = f"http://localhost:{self.port}/v1/models"
         response = requests.get(url)
         self.assertEqual(response.status_code, 200)
@@ -89,7 +91,7 @@ class TestServer(unittest.TestCase):
         self.assertIsInstance(response_body["data"], list)
         self.assertGreater(len(response_body["data"]), 0)
         model = response_body["data"][0]
-        self.assertEqual(model["id"], self.model_provider.cli_args.model)
+        self.assertEqual(model["id"], mlx_models[0].repo_id)
         self.assertEqual(model["object"], "model")
         self.assertIn("created", model)
 
