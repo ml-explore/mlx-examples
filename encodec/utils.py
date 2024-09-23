@@ -2,7 +2,6 @@
 
 import functools
 import json
-import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional, Union

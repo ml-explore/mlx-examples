@@ -474,7 +474,6 @@ class EncodecModel(nn.Module):
         self.encoder = EncodecEncoder(config)
         self.decoder = EncodecDecoder(config)
         self.quantizer = EncodecResidualVectorQuantizer(config)
-        self.bits_per_codebook = int(math.log2(self.config.codebook_size))
 
     def _encode_frame(
         self, input_values: mx.array, bandwidth: float, padding_mask: mx.array
@@ -527,8 +526,8 @@ class EncodecModel(nn.Module):
             A list of frames containing the discrete encoded codes for the
             input audio waveform, along with rescaling factors for each chunk
             when ``config.normalize==True``. Each frame is a tuple ``(codebook,
-            scale)``, with ``codebook`` of shape ``[batch_size, num_codebooks,
-            frames]``.
+            scale)``, with ``codebook`` of shape ``(batch_size, num_codebooks,
+            frames)``.
         """
 
         if bandwidth is None:
