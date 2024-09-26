@@ -5,7 +5,6 @@ Then had to change generate.py to take --save-kv-cache as an argument which was 
 
 Messy, but seems to work!
 
-///
 
 # MLX Examples
 
