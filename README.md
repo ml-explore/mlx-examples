@@ -1,3 +1,12 @@
+# This repo features changes to MLX_LM.
+Specfically main changes are from line 318 in utils.py; I kind of shoe-horned in the same kv-cache saving system as cache_prompt.py.
+
+Then had to change generate.py to take --save-kv-cache as an argument which was just a matter of changing the response handling on line 232 of generate.py.
+
+Messy, but seems to work!
+
+///
+
 # MLX Examples
 
 This repo contains a variety of standalone examples using the [MLX
