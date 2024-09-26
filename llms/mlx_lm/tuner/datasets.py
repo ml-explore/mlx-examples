@@ -164,7 +164,7 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
     else:
         data_path = Path(args.data)
         if data_path.exists():
-            train, valid, test = load_local_dataset(args.data, tokenizer)
+            train, valid, test = load_local_dataset(data_path, tokenizer)
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
             train, valid, test = load_hf_dataset(args.data, tokenizer)
