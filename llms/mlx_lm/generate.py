@@ -101,6 +101,12 @@ def setup_arg_parser():
         default=None,
         help="A file containing saved KV caches to avoid recomputing them",
     )
+    parser.add_argument(
+        "--save-kv-cache",
+        type=str,
+        default=None,
+        help="Path to save the final KV cache after generation",
+    )
     return parser
 
 
@@ -234,6 +240,7 @@ def main():
         top_p=args.top_p,
         max_kv_size=max_kv_size,
         cache_history=cache_history,
+        save_cache_path=args.save_kv_cache,  # Add this line
     )
     if not args.verbose:
         print(response)
