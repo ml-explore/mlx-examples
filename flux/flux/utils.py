@@ -10,6 +10,7 @@ from .autoencoder import AutoEncoder, AutoEncoderParams
 from .clip import CLIPTextModel, CLIPTextModelConfig
 from .model import Flux, FluxParams
 from .t5 import T5Config, T5Encoder
+from .tokenizers import CLIPTokenizer, T5Tokenizer
 
 
 @dataclass
@@ -141,6 +142,24 @@ def load_ae(name: str, hf_download: bool = True):
     return ae
 
 
+def load_clip(name: str):
+    # Load the config
+    config_path = hf_hub_download(configs[name].repo_id, "text_encoder/config.json")
+    with open(config_path) as f:
+        config = CLIPTextModelConfig.from_dict(json.load(f))
+
+    # Make the clip text encoder
+    clip = CLIPTextModel(config)
+
+    # Load the weights
+    ckpt_path = hf_hub_download(configs[name].repo_id, "text_encoder/model.safetensors")
+    weights = mx.load(ckpt_path)
+    weights = clip.sanitize(weights)
+    clip.load_weights(list(weights.items()))
+
+    return clip
+
+
 def load_t5(name: str):
     # Load the config
     config_path = hf_hub_download(configs[name].repo_id, "text_encoder_2/config.json")
@@ -169,19 +188,20 @@ def load_t5(name: str):
     return t5
 
 
-def load_clip(name: str):
-    # Load the config
-    config_path = hf_hub_download(configs[name].repo_id, "text_encoder/config.json")
-    with open(config_path) as f:
-        config = CLIPTextModelConfig.from_dict(json.load(f))
+def load_clip_tokenizer(name: str):
+    vocab_file = hf_hub_download(configs[name].repo_id, "tokenizer/vocab.json")
+    with open(vocab_file, encoding="utf-8") as f:
+        vocab = json.load(f)
 
-    # Make the clip text encoder
-    clip = CLIPTextModel(config)
+    merges_file = hf_hub_download(configs[name].repo_id, "tokenizer/merges.txt")
+    with open(merges_file, encoding="utf-8") as f:
+        bpe_merges = f.read().strip().split("\n")[1 : 49152 - 256 - 2 + 1]
+    bpe_merges = [tuple(m.split()) for m in bpe_merges]
+    bpe_ranks = dict(map(reversed, enumerate(bpe_merges)))
 
-    # Load the weights
-    ckpt_path = hf_hub_download(configs[name].repo_id, "text_encoder/model.safetensors")
-    weights = mx.load(ckpt_path)
-    weights = clip.sanitize(weights)
-    clip.load_weights(list(weights.items()))
+    return CLIPTokenizer(bpe_ranks, vocab)
 
-    return clip
+
+def load_t5_tokenizer(name: str):
+    model_file = hf_hub_download(configs[name].repo_id, "tokenizer_2/spiece.model")
+    return T5Tokenizer(model_file)
