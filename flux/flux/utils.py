@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -6,7 +7,9 @@ import mlx.core as mx
 from huggingface_hub import hf_hub_download
 
 from .autoencoder import AutoEncoder, AutoEncoderParams
+from .clip import CLIPTextModel, CLIPTextModelConfig
 from .model import Flux, FluxParams
+from .t5 import T5Config, T5Encoder
 
 
 @dataclass
@@ -136,3 +139,49 @@ def load_ae(name: str, hf_download: bool = True):
         ae.load_weights(list(weights.items()))
 
     return ae
+
+
+def load_t5(name: str):
+    # Load the config
+    config_path = hf_hub_download(configs[name].repo_id, "text_encoder_2/config.json")
+    with open(config_path) as f:
+        config = T5Config.from_dict(json.load(f))
+
+    # Make the T5 model
+    t5 = T5Encoder(config)
+
+    # Load the weights
+    model_index = hf_hub_download(
+        configs[name].repo_id, "text_encoder_2/model.safetensors.index.json"
+    )
+    weight_files = set()
+    with open(model_index) as f:
+        for _, w in json.load(f)["weight_map"].items():
+            weight_files.add(w)
+    weights = {}
+    for w in weight_files:
+        w = f"text_encoder_2/{w}"
+        w = hf_hub_download(configs[name].repo_id, w)
+        weights.update(mx.load(w))
+    weights = t5.sanitize(weights)
+    t5.load_weights(list(weights.items()))
+
+    return t5
+
+
+def load_clip(name: str):
+    # Load the config
+    config_path = hf_hub_download(configs[name].repo_id, "text_encoder/config.json")
+    with open(config_path) as f:
+        config = CLIPTextModelConfig.from_dict(json.load(f))
+
+    # Make the clip text encoder
+    clip = CLIPTextModel(config)
+
+    # Load the weights
+    ckpt_path = hf_hub_download(configs[name].repo_id, "text_encoder/model.safetensors")
+    weights = mx.load(ckpt_path)
+    weights = clip.sanitize(weights)
+    clip.load_weights(list(weights.items()))
+
+    return clip

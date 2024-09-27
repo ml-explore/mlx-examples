@@ -1,8 +1,76 @@
+import math
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from functools import partial
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+
+
+def _rope(pos: mx.array, dim: int, theta: float):
+    scale = mx.arange(0, dim, 2, dtype=mx.float32) / dim
+    omega = 1.0 / (theta**scale)
+    x = pos[..., None] * omega
+    cosx = mx.cos(x)
+    sinx = mx.sin(x)
+    pe = mx.stack([cosx, -sinx, sinx, cosx], axis=-1)
+    pe = pe.reshape(*pe.shape[:-1], 2, 2)
+
+    return pe
+
+
+@partial(mx.compile, shapeless=True)
+def _ab_plus_cd(a, b, c, d):
+    return a * b + c * d
+
+
+def _apply_rope(x, pe):
+    s = x.shape
+    x = x.reshape(*s[:-1], -1, 1, 2)
+    x = _ab_plus_cd(x[..., 0], pe[..., 0], x[..., 1], pe[..., 1])
+    return x.reshape(s)
+
+
+def _attention(q: mx.array, k: mx.array, v: mx.array, pe: mx.array):
+    B, H, L, D = q.shape
+
+    q = _apply_rope(q, pe)
+    k = _apply_rope(k, pe)
+    x = mx.fast.scaled_dot_product_attention(q, k, v, scale=D ** (-0.5))
+
+    return x.transpose(0, 2, 1, 3).reshape(B, L, -1)
+
+
+def timestep_embedding(
+    t: mx.array, dim: int, max_period: int = 10000, time_factor: float = 1000.0
+):
+    half = dim // 2
+    freqs = mx.arange(0, half, dtype=mx.float32) / half
+    freqs = freqs * (-math.log(max_period))
+    freqs = mx.exp(freqs)
+
+    x = (time_factor * t)[:, None] * freqs[None]
+    x = mx.concatenate([mx.cos(x), mx.sin(x)], axis=-1)
+
+    return x.astype(t.dtype)
+
+
+class EmbedND(nn.Module):
+    def __init__(self, dim: int, theta: int, axes_dim: List[int]):
+        super().__init__()
+
+        self.dim = dim
+        self.theta = theta
+        self.axes_dim = axes_dim
+
+    def __call__(self, ids: mx.array):
+        n_axes = ids.shape[-1]
+        pe = mx.concatenate(
+            [_rope(ids[..., i], self.axes_dim[i], self.theta) for i in range(n_axes)],
+            axis=-3,
+        )
+
+        return pe[:, None]
 
 
 class MLPEmbedder(nn.Module):
@@ -34,7 +102,6 @@ class SelfAttention(nn.Module):
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.norm = QKNorm(head_dim)
         self.proj = nn.Linear(dim, dim)
-        self.rope = nn.RoPE(head_dim, True, base=10000)
 
     def __call__(self, x: mx.array, pe: mx.array) -> mx.array:
         H = self.num_heads
@@ -45,10 +112,7 @@ class SelfAttention(nn.Module):
         k = k.reshape(B, L, H, -1).transpose(0, 2, 1, 3)
         v = v.reshape(B, L, H, -1).transpose(0, 2, 1, 3)
         q, k = self.norm(q, k)
-        q = self.rope(q)
-        k = self.rope(k)
-        x = mx.fast.scaled_dot_product_attention(q, k, v, scale=q.shape[-1] ** (-0.5))
-        x = x.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        x = _attention(q, k, v, pe)
         x = self.proj(x)
         return x
 
@@ -95,20 +159,20 @@ class DoubleStreamBlock(nn.Module):
         self.img_norm2 = nn.LayerNorm(hidden_size, affine=False, eps=1e-6)
         self.img_mlp = nn.Sequential(
             nn.Linear(hidden_size, mlp_hidden_dim, bias=True),
-            nn.GELU(approximate="tanh"),
+            nn.GELU(approx="tanh"),
             nn.Linear(mlp_hidden_dim, hidden_size, bias=True),
         )
 
         self.txt_mod = Modulation(hidden_size, double=True)
-        self.txt_norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.txt_norm1 = nn.LayerNorm(hidden_size, affine=False, eps=1e-6)
         self.txt_attn = SelfAttention(
             dim=hidden_size, num_heads=num_heads, qkv_bias=qkv_bias
         )
 
-        self.txt_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.txt_norm2 = nn.LayerNorm(hidden_size, affine=False, eps=1e-6)
         self.txt_mlp = nn.Sequential(
             nn.Linear(hidden_size, mlp_hidden_dim, bias=True),
-            nn.GELU(approximate="tanh"),
+            nn.GELU(approx="tanh"),
             nn.Linear(mlp_hidden_dim, hidden_size, bias=True),
         )
 
@@ -130,7 +194,7 @@ class DoubleStreamBlock(nn.Module):
         img_q = img_q.reshape(B, L, H, -1).transpose(0, 2, 1, 3)
         img_k = img_k.reshape(B, L, H, -1).transpose(0, 2, 1, 3)
         img_v = img_v.reshape(B, L, H, -1).transpose(0, 2, 1, 3)
-        img_q, img_k = self.norm(img_q, img_k)
+        img_q, img_k = self.img_attn.norm(img_q, img_k)
 
         # prepare txt for attention
         txt_modulated = self.txt_norm1(txt)
@@ -140,19 +204,14 @@ class DoubleStreamBlock(nn.Module):
         txt_q = txt_q.reshape(B, S, H, -1).transpose(0, 2, 1, 3)
         txt_k = txt_k.reshape(B, S, H, -1).transpose(0, 2, 1, 3)
         txt_v = txt_v.reshape(B, S, H, -1).transpose(0, 2, 1, 3)
-        txt_q, txt_k = self.norm(txt_q, txt_k)
+        txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k)
 
         # run actual attention
         q = mx.concatenate([txt_q, img_q], axis=2)
         k = mx.concatenate([txt_k, img_k], axis=2)
         v = mx.concatenate([txt_v, img_v], axis=2)
 
-        q = self.img_attn.rope(q)
-        k = self.img_attn.rope(k)
-        attn = mx.fast.scaled_dot_product_attention(
-            q, k, v, scale=q.shape[-1] ** (-0.5)
-        )
-        attn = attn.transpose(0, 2, 1, 3).reshape(B, L + S, -1)
+        attn = _attention(q, k, v, pe)
         txt_attn, img_attn = mx.split(attn, [S], axis=1)
 
         # calculate the img bloks
@@ -195,10 +254,8 @@ class SingleStreamBlock(nn.Module):
         self.hidden_size = hidden_size
         self.pre_norm = nn.LayerNorm(hidden_size, affine=False, eps=1e-6)
 
-        self.mlp_act = nn.GELU(approximate="tanh")
+        self.mlp_act = nn.GELU(approx="tanh")
         self.modulation = Modulation(hidden_size, double=False)
-
-        self.rope = nn.RoPE(head_dim, True, base=10000)
 
     def __call__(self, x: mx.array, vec: mx.array, pe: mx.array):
         B, L, _ = x.shape
@@ -218,10 +275,7 @@ class SingleStreamBlock(nn.Module):
         q, k = self.norm(q, k)
 
         # compute attention
-        q = self.rope(q)
-        k = self.rope(k)
-        y = mx.fast.scaled_dot_product_attention(q, k, v, scale=q.shape[-1] ** (-0.5))
-        y = y.transpose(0, 2, 1, 3).reshape(B, L, -1)
+        y = _attention(q, k, v, pe)
 
         # compute activation in mlp stream, cat again and run second linear layer
         y = self.linear2(mx.concatenate([y, self.mlp_act(mlp)], axis=2))
