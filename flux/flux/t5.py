@@ -85,7 +85,7 @@ class RelativePositionBias(nn.Module):
         buckets_large = (mx.log(abspos / max_exact) * scale).astype(mx.int16)
         buckets_large = mx.minimum(max_exact + buckets_large, num_buckets - 1)
 
-        buckets = mx.where(is_small, rpos, buckets_large)
+        buckets = mx.where(is_small, abspos, buckets_large)
         if bidirectional:
             buckets = buckets + (rpos > 0) * num_buckets
         else:
@@ -140,7 +140,7 @@ class MultiHeadAttention(nn.Module):
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         queries = queries.reshape(B, L, num_heads, -1).transpose(0, 2, 1, 3)
-        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 3, 1)
+        keys = keys.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, S, num_heads, -1).transpose(0, 2, 1, 3)
 
         if cache is not None:
@@ -149,7 +149,7 @@ class MultiHeadAttention(nn.Module):
             values = mx.concatenate([value_cache, values], axis=2)
 
         values_hat = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=1.0
+            queries, keys, values, scale=1.0, mask=mask.astype(queries.dtype)
         )
         values_hat = values_hat.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
@@ -216,79 +216,10 @@ class TransformerEncoder(nn.Module):
 
     def __call__(self, x: mx.array):
         pos_bias = self.relative_attention_bias(x.shape[1], x.shape[1])
+        pos_bias = pos_bias.astype(x.dtype)
         for layer in self.layers:
             x = layer(x, mask=pos_bias)
         return self.ln(x)
-
-
-class TransformerDecoderLayer(nn.Module):
-    def __init__(self, config: T5Config):
-        super().__init__()
-        self.self_attention = MultiHeadAttention(config)
-        self.cross_attention = MultiHeadAttention(config)
-        self.ln1 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln2 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.ln3 = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.dense = DenseActivation(config)
-
-    def __call__(
-        self,
-        x: mx.array,
-        memory: mx.array,
-        mask: mx.array,
-        memory_mask: mx.array,
-        cache: Optional[List[Tuple[mx.array, mx.array]]] = None,
-    ):
-        y = self.ln1(x)
-        y, cache = self.self_attention(y, y, y, mask, cache)
-        x = x + y
-
-        y = self.ln2(x)
-        y, _ = self.cross_attention(y, memory, memory, memory_mask)
-        x = x + y
-
-        y = self.ln3(x)
-        y = self.dense(y)
-        x = x + y
-
-        return x, cache
-
-
-class TransformerDecoder(nn.Module):
-    def __init__(self, config: T5Config):
-        super().__init__()
-        n_layers = getattr(config, "num_decoder_layers", config.num_layers)
-        self.layers = [TransformerDecoderLayer(config) for i in range(n_layers)]
-        self.ln = nn.RMSNorm(config.d_model, eps=config.layer_norm_epsilon)
-        self.relative_attention_bias = RelativePositionBias(config, bidirectional=False)
-
-    def __call__(self, x, memory, mask, memory_mask, cache=None):
-        if cache is not None:
-            offset = cache[0][0].shape[3]
-        else:
-            offset = 0
-            cache = [None] * len(self.layers)
-
-        T = offset + x.shape[1]
-        pos_bias = self.relative_attention_bias(T, T, offset=offset)
-        if mask is not None:
-            mask += pos_bias
-        else:
-            mask = pos_bias
-
-        for e, layer in enumerate(self.layers):
-            x, cache[e] = layer(x, memory, mask, memory_mask, cache=cache[e])
-        x = self.ln(x)
-
-        return x, cache
-
-
-class OutputHead(nn.Module):
-    def __init__(self, config: T5Config):
-        self.linear = nn.Linear(config.d_model, config.vocab_size, bias=False)
-
-    def __call__(self, inputs):
-        return self.linear(inputs)
 
 
 class T5Encoder(nn.Module):

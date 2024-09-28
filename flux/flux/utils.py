@@ -199,7 +199,7 @@ def load_clip_tokenizer(name: str):
     bpe_merges = [tuple(m.split()) for m in bpe_merges]
     bpe_ranks = dict(map(reversed, enumerate(bpe_merges)))
 
-    return CLIPTokenizer(bpe_ranks, vocab)
+    return CLIPTokenizer(bpe_ranks, vocab, max_length=77)
 
 
 def load_t5_tokenizer(name: str):

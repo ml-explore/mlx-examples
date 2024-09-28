@@ -5,7 +5,8 @@ from sentencepiece import SentencePieceProcessor
 class CLIPTokenizer:
     """A simple port of CLIPTokenizer from https://github.com/huggingface/transformers/ ."""
 
-    def __init__(self, bpe_ranks, vocab):
+    def __init__(self, bpe_ranks, vocab, max_length=77):
+        self.max_length = max_length
         self.bpe_ranks = bpe_ranks
         self.vocab = vocab
         self.pat = regex.compile(
@@ -95,6 +96,11 @@ class CLIPTokenizer:
             tokens = [self.bos_token] + tokens
         if append_eos:
             tokens.append(self.eos_token)
+
+        if len(tokens) > self.max_length:
+            tokens = tokens[: self.max_length]
+            if append_eos:
+                tokens[-1] = self.eos_token
 
         return tokens
 
