@@ -176,10 +176,7 @@ data formats. Here are examples of these formats:
 ```
 
 <details>
-<summary>View the expanded single data format of tools</summary>
-
-The dataset will be tokenized using
-[Hugging Face tool use chat template](https://huggingface.co/docs/transformers/main/en/chat_templating#advanced-tool-use--function-calling).
+<summary>View the expanded single data tool format</summary>
 
 ```jsonl
 {
