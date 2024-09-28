@@ -160,8 +160,8 @@ For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
 loader expects a `test.jsonl` in the data directory. 
 
-Currently, `*.jsonl` files support `chat`, `tools`,
-`completions`, and `text` data formats. Here are three examples of these formats:
+Currently, `*.jsonl` files support `chat`, `tools`, `completions`, and `text`
+data formats. Here are examples of these formats:
 
 `chat`:
 
@@ -171,14 +171,15 @@ Currently, `*.jsonl` files support `chat`, `tools`,
 
 `tools`:
 
-```json lines
+```jsonl
 {"messages":[{"role":"user","content":"What is the weather in San Francisco?"},{"role":"assistant","tool_calls":[{"id":"call_id","type":"function","function":{"name":"get_current_weather","arguments":"{\"location\": \"San Francisco, USA\", \"format\": \"celsius\"}"}}]}],"tools":[{"type":"function","function":{"name":"get_current_weather","description":"Get the current weather","parameters":{"type":"object","properties":{"location":{"type":"string","description":"The city and country, eg. San Francisco, USA"},"format":{"type":"string","enum":["celsius","fahrenheit"]}},"required":["location","format"]}}}]}
 ```
 
 <details>
-<summary>Click to view the single data format of tools</summary>
+<summary>View the expanded single data format of tools</summary>
 
-Tokenize the dataset using [chat_templating](https://huggingface.co/docs/transformers/main/en/chat_templating#advanced-tool-use--function-calling) format.
+The dataset will be tokenized using
+[Hugging Face tool use chat template](https://huggingface.co/docs/transformers/main/en/chat_templating#advanced-tool-use--function-calling).
 
 ```jsonl
 {
