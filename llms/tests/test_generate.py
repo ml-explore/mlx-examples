@@ -18,6 +18,18 @@ class TestGenerate(unittest.TestCase):
             self.model, self.tokenizer, "hello", max_tokens=5, verbose=False
         )
 
+    def test_generate_with_logit_bias(self):
+        logit_bias = {0: 2000.0, 1: -20.0}
+        text = generate(
+            self.model,
+            self.tokenizer,
+            "hello",
+            max_tokens=5,
+            verbose=False,
+            logit_bias=logit_bias,
+        )
+        self.assertEqual(text, "!!!!!")
+
     def test_generate_with_processor(self):
         init_toks = self.tokenizer.encode("hello")
 
