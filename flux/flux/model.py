@@ -117,7 +117,7 @@ class Flux(nn.Module):
         txt = self.txt_in(txt)
 
         ids = mx.concatenate([txt_ids, img_ids], axis=1)
-        pe = self.pe_embedder(ids)
+        pe = self.pe_embedder(ids).astype(img.dtype)
 
         for block in self.double_blocks:
             img, txt = block(img=img, txt=txt, vec=vec, pe=pe)

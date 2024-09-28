@@ -133,7 +133,7 @@ class Modulation(nn.Module):
 
     def __call__(self, x: mx.array) -> Tuple[ModulationOut, Optional[ModulationOut]]:
         x = self.lin(nn.silu(x))
-        xs = mx.split(x, self.multiplier, axis=-1)
+        xs = mx.split(x[:, None, :], self.multiplier, axis=-1)
 
         mod1 = ModulationOut(*xs[:3])
         mod2 = ModulationOut(*xs[3:]) if self.is_double else None
