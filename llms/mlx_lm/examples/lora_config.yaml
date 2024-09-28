@@ -4,7 +4,7 @@ model: "mlx_model"
 # Whether or not to train (boolean)
 train: true
 
-# Set the training method, possible types are "lora", "dora", or "full" for full training. Default is lora.
+# The fine-tuning method: "lora", "dora", or "full".
 fine_tune_type: lora
 
 # Directory with {train, valid, test}.jsonl files

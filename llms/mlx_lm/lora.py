@@ -86,7 +86,7 @@ def build_parser():
         type=str,
         choices=["lora", "dora", "full"],
         default="lora",
-        help="Type of fine-tuning to perform: lora, dora, or full. Default is lora.",
+        help="Type of fine-tuning to perform: lora, dora, or full.",
     )
     parser.add_argument(
         "--lora-layers",
@@ -114,12 +114,12 @@ def build_parser():
     parser.add_argument(
         "--resume-adapter-file",
         type=str,
-        help="Load path to resume training with the given adapters or full model weights when in full training mode.",
+        help="Load path to resume training from the given fine-tuned weights.",
     )
     parser.add_argument(
         "--adapter-path",
         type=str,
-        help="Save/load path for the adapters or full model or full model weights when in full training mode.",
+        help="Save/load path for the fine-tuned weights.",
     )
     parser.add_argument(
         "--save-every",
@@ -178,12 +178,16 @@ def train_model(
         use_dora = args.fine_tune_type == "dora"
 
         # Convert linear layers to lora/dora layers and unfreeze in the process
-        linear_to_lora_layers(model, args.lora_layers, args.lora_parameters, use_dora=use_dora)
+        linear_to_lora_layers(
+            model, args.lora_layers, args.lora_parameters, use_dora=use_dora
+        )
 
         # Load pretrained adapters if provided
         if args.resume_adapter_file is not None:
             print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-            model.load_weights(args.resume_adapter_file, strict=False, use_dora=use_dora)
+            model.load_weights(
+                args.resume_adapter_file, strict=False, use_dora=use_dora
+            )
 
     print_trainable_parameters(model)
 
@@ -207,7 +211,7 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
-        fine_tune_type=args.fine_tune_type
+        fine_tune_type=args.fine_tune_type,
     )
 
     model.train()
@@ -262,7 +266,9 @@ def run(args, training_callback: TrainingCallback = None):
 
     elif args.train:
         print("Training")
-        train_model(args, model, args.model, tokenizer, train_set, valid_set, training_callback)
+        train_model(
+            args, model, args.model, tokenizer, train_set, valid_set, training_callback
+        )
     else:
         raise ValueError("Must provide at least one of --train or --test")
 

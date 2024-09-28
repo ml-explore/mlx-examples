@@ -1,16 +1,15 @@
 # Copyright © 2024 Apple Inc.
 
+import glob
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
-import glob
-import shutil
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-
 from mlx.utils import tree_flatten
 
 
@@ -58,8 +57,8 @@ class TrainingArgs:
         metadata={"help": "Save/load path for the trained adapter weights."},
     )
     fine_tune_type: str = field(
-            default="lora",
-            metadata={"help": "Type of fine-tuning to perform: lora, dora, or full."},
+        default="lora",
+        metadata={"help": "Type of fine-tuning to perform: lora, dora, or full."},
     )
     grad_checkpoint: bool = field(
         default=False,
@@ -328,20 +327,14 @@ def train(
 
 
 def save_adapter_model(
-    model: nn.Module,
-    adapter_file: Union[str, Path],
-    base_model_path: str = None
+    model: nn.Module, adapter_file: Union[str, Path], base_model_path: str = None
 ):
     if base_model_path is None:
         adapter_weights = tree_flatten(model.trainable_parameters())
         mx.save_safetensors(str(adapter_file), dict(adapter_weights))
     else:
-        from ..utils import (
-            fetch_from_hub,
-            get_model_path,
-            save_config,
-            save_weights,
-        )
+        from ..utils import fetch_from_hub, get_model_path, save_config, save_weights
+
         weights = dict(tree_flatten(model.parameters()))
 
         model_path = get_model_path(base_model_path)
