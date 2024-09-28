@@ -212,7 +212,7 @@ def generate_step(
         )
 
     y = prompt
-    tokens = prompt
+    tokens = None
 
     # Create the KV cache for generation
     cache = make_kv_caches(model, max_kv_size)
@@ -233,11 +233,13 @@ def generate_step(
         repetition_context = repetition_context[-repetition_context_size:]
 
     def _step(y):
-        nonlocal repetition_context, tokens
+        nonlocal repetition_context
         logits = model(y[None], cache=cache)
         logits = logits[:, -1, :]
 
         if logits_processor:
+            nonlocal tokens
+            tokens = mx.concat([tokens, y]) if tokens is not None else y
             logits = logits_processor(tokens, logits)
 
         if repetition_penalty:
@@ -248,8 +250,6 @@ def generate_step(
             repetition_context.append(y.item())
         else:
             y, logprobs = sample(logits)
-
-        tokens = mx.concat([tokens, y], axis=0)
 
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
