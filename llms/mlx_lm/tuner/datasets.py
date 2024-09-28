@@ -35,14 +35,9 @@ class ChatDataset(Dataset):
 
     def __getitem__(self, idx: int):
         messages = self._data[idx]["messages"]
-
-        tools = None
-        if "tools" in self._data[idx]:
-            tools = self._data[idx]["tools"]
-
         text = self._tokenizer.apply_chat_template(
             messages,
-            tools=tools,
+            tools=self._data[idx].get("tools", None),
             tokenize=False,
             add_generation_prompt=True,
         )

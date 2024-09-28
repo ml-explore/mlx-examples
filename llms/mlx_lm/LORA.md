@@ -270,11 +270,13 @@ hf_dataset:
 - Arguments specified in `config` will be passed as keyword arguments to
   [`datasets.load_dataset`](https://huggingface.co/docs/datasets/v2.20.0/en/package_reference/loading_methods#datasets.load_dataset).
 
-In general, for the `chat`, `tools` and `completions` formats, Hugging Face [chat
-templates](https://huggingface.co/docs/transformers/main/en/chat_templating) are used. This applies
-the model's chat template by default. If the model does not have a chat
-template, then Hugging Face will use a default. For example, the final text in
-the `chat` example above with Hugging Face's default template becomes:
+In general, for the `chat`, `tools` and `completions` formats, Hugging Face
+[chat
+templates](https://huggingface.co/docs/transformers/main/en/chat_templating)
+are used. This applies the model's chat template by default. If the model does
+not have a chat template, then Hugging Face will use a default. For example,
+the final text in the `chat` example above with Hugging Face's default template
+becomes:
 
 ```text
 <|im_start|>system
