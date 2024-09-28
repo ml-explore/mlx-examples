@@ -5,6 +5,7 @@ import unittest
 import mlx.core as mx
 from mlx.utils import tree_map
 from mlx_lm.models.base import KVCache, RotatingKVCache
+from mlx_lm.utils import make_kv_caches
 
 
 class TestModels(unittest.TestCase):
@@ -100,13 +101,7 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
-            kv_heads = (
-                [model.n_kv_heads] * len(model.layers)
-                if isinstance(model.n_kv_heads, int)
-                else model.n_kv_heads
-            )
-            cache = [KVCache(model.head_dim, n) for n in kv_heads]
-
+            cache = make_kv_caches(model)
             outputs = model(inputs, cache)
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
@@ -401,30 +396,16 @@ class TestModels(unittest.TestCase):
         from mlx_lm.models import mamba
 
         args = mamba.ModelArgs(
-            conv_kernel=4,
-            d_inner=1536,
-            d_model=768,
-            expand=2,
-            hidden_size=768,
-            initializer_range=0.1,
-            intermediate_size=1536,
-            layer_norm_epsilon=1e-05,
             model_type="mamba",
-            n_layer=24,
-            num_hidden_layers=24,
-            state_size=16,
-            rms_norm=True,
-            rescale_prenorm_residual=False,
-            time_step_floor= 0.0001,
-            time_step_init_scheme="random",
-            time_step_max=0.1,
-            time_step_min=0.001,
-            time_step_rank=48,
-            time_step_scale=1.0,
             vocab_size=10000,
             use_bias=False,
             use_conv_bias=True,
-            use_cache=True,
+            conv_kernel=4,
+            hidden_size=768,
+            num_hidden_layers=24,
+            state_size=16,
+            intermediate_size=1536,
+            time_step_rank=48,
         )
         model = mamba.Model(args)
         self.model_test_runner(
