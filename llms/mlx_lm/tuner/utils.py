@@ -52,7 +52,6 @@ def linear_to_lora_layers(
         use_dora (bool): If True, uses DoRA instead of LoRA.
           Default: ``False``
     """
-
     num_layers = len(model.layers)
 
     if num_lora_layers < 0:
@@ -138,6 +137,15 @@ def linear_to_lora_layers(
                 "self_attn.q_b_proj",
                 "self_attn.kv_a_proj_with_mqa",
                 "self_attn.kv_b_proj",
+            ]
+        )
+    elif model.model_type == "mamba":
+        keys = set(
+            [
+                "mixer.in_proj",
+                "mixer.x_proj",
+                "mixer.dt_proj",
+                "mixer.out_proj",
             ]
         )
     else:
