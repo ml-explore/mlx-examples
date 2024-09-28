@@ -85,3 +85,17 @@ curl localhost:8080/v1/chat/completions \
 
 - `adapters`: (Optional) A string path to low-rank adapters. The path must be
   rlative to the directory the server was started in.
+
+### List Models
+
+Use the `v1/models` endpoint to list available models:
+
+```shell
+curl localhost:8080/v1/models -H "Content-Type: application/json"
+```
+
+This will return a list of locally available models where each model in the
+list contains the following fields:
+
+- `"id"`: The Hugging Face repo id.
+- `"created"`: A timestamp representing the model creation time.
