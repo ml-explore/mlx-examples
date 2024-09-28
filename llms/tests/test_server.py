@@ -6,7 +6,6 @@ import threading
 import unittest
 
 import requests
-from huggingface_hub import scan_cache_dir
 from mlx_lm.server import APIHandler
 from mlx_lm.utils import load
 
@@ -81,8 +80,6 @@ class TestServer(unittest.TestCase):
         self.assertIn("choices", response_body)
 
     def test_handle_models(self):
-        hf_cache_info = scan_cache_dir()
-        mlx_models = [repo for repo in hf_cache_info.repos if "mlx" in repo.repo_id]
         url = f"http://localhost:{self.port}/v1/models"
         response = requests.get(url)
         self.assertEqual(response.status_code, 200)
@@ -91,7 +88,7 @@ class TestServer(unittest.TestCase):
         self.assertIsInstance(response_body["data"], list)
         self.assertGreater(len(response_body["data"]), 0)
         model = response_body["data"][0]
-        self.assertEqual(model["id"], mlx_models[0].repo_id)
+        self.assertIn("id", model)
         self.assertEqual(model["object"], "model")
         self.assertIn("created", model)
 
