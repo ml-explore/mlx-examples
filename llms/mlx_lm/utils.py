@@ -249,7 +249,7 @@ def generate_step(
         else:
             y, logprobs = sample(logits)
 
-        tokens_ids = mx.concat([tokens_ids, y], axis=0)
+        tokens = mx.concat([tokens, y], axis=0)
 
         if repetition_context_size:
             if len(repetition_context) > repetition_context_size:
