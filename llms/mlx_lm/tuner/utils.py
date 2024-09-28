@@ -52,14 +52,7 @@ def linear_to_lora_layers(
         use_dora (bool): If True, uses DoRA instead of LoRA.
           Default: ``False``
     """
-    if hasattr(model, "backbone"):
-        layers = model.backbone.layers
-    elif hasattr(model, "layers"):
-        layers = model.layers
-    else:
-        raise ValueError("Unsupported model structure")
-
-    num_layers = len(layers)
+    num_layers = len(model.layers)
 
     if num_lora_layers < 0:
         num_lora_layers = num_layers
