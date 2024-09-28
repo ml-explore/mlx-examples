@@ -27,7 +27,7 @@ from .tuner.utils import dequantize as dequantize_model
 # Constants
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
-    "phi-msft": "phixtral"
+    "phi-msft": "phixtral",
 }
 
 MAX_FILE_SIZE_GB = 5
@@ -341,7 +341,6 @@ def generate(
         print("Prompt:", prompt)
 
     prompt_tokens = mx.array(tokenizer.encode(prompt))
-        
     detokenizer = tokenizer.detokenizer
 
     tic = time.perf_counter()

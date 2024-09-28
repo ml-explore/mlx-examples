@@ -58,7 +58,7 @@ def linear_to_lora_layers(
         layers = model.layers
     else:
         raise ValueError("Unsupported model structure")
-    
+
     num_layers = len(layers)
 
     if num_lora_layers < 0:
@@ -110,7 +110,6 @@ def linear_to_lora_layers(
         "cohere",
         "minicpm",
         "deepseek",
-        "mamba"
     ]:
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
         if model.model_type in ["mixtral", "phimoe"]:
@@ -147,18 +146,18 @@ def linear_to_lora_layers(
                 "self_attn.kv_b_proj",
             ]
         )
-    if model.model_type == "mamba":
-        keys = set([
-            "mixer.in_proj",
-            "mixer.x_proj",
-            "mixer.dt_proj",
-            "mixer.out_proj",
-        ])
+    elif model.model_type == "mamba":
+        keys = set(
+            [
+                "mixer.in_proj",
+                "mixer.x_proj",
+                "mixer.dt_proj",
+                "mixer.out_proj",
+            ]
+        )
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 
-    # Modified the layer selection to handle both regular and backbone structures:
-    layers = model.backbone.layers if hasattr(model, "backbone") else model.layers
     for l in model.layers[num_layers - num_lora_layers :]:
         lora_layers = [(k, to_lora(m)) for k, m in l.named_modules() if k in keys]
         if lora_layers:
