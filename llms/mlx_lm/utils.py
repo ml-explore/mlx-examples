@@ -154,7 +154,6 @@ def generate_step(
     top_p: float = 1.0,
     min_p: float = 0.0,
     min_tokens_to_keep: int = 1,
-    logit_bias: Optional[Dict[int, float]] = None,
     prefill_step_size: int = 512,
     max_kv_size: Optional[int] = None,
     cache_history: Optional[List[Tuple[mx.array, mx.array]]] = None,
@@ -178,7 +177,6 @@ def generate_step(
           probability) that a token probability must have to be considered.
         min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
           be filtered by min_p sampling.
-        logit_bias (dictionary, optional): Additive logit bias.
         prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
@@ -192,10 +190,6 @@ def generate_step(
     """
 
     def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        if logit_bias:
-            indices = mx.array(list(logit_bias.keys()))
-            values = mx.array(list(logit_bias.values()))
-            logits[:, indices] += values
         logprobs = logits - mx.logsumexp(logits)
 
         if temp == 0:
