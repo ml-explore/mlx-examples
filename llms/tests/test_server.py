@@ -1,5 +1,7 @@
 # Copyright © 2024 Apple Inc.
+
 import http
+import json
 import threading
 import unittest
 
@@ -76,6 +78,19 @@ class TestServer(unittest.TestCase):
         response_body = response.text
         self.assertIn("id", response_body)
         self.assertIn("choices", response_body)
+
+    def test_handle_models(self):
+        url = f"http://localhost:{self.port}/v1/models"
+        response = requests.get(url)
+        self.assertEqual(response.status_code, 200)
+        response_body = json.loads(response.text)
+        self.assertEqual(response_body["object"], "list")
+        self.assertIsInstance(response_body["data"], list)
+        self.assertGreater(len(response_body["data"]), 0)
+        model = response_body["data"][0]
+        self.assertIn("id", model)
+        self.assertEqual(model["object"], "model")
+        self.assertIn("created", model)
 
     def test_sequence_overlap(self):
         from mlx_lm.server import sequence_overlap
