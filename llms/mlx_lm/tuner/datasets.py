@@ -107,7 +107,7 @@ def load_local_dataset(data_path: Path, tokenizer: PreTrainedTokenizer):
 
 
 def load_hf_dataset(data_id: str, tokenizer: PreTrainedTokenizer):
-    from datasets import load_dataset, exceptions
+    from datasets import exceptions, load_dataset
 
     try:
         dataset = load_dataset(data_id)
@@ -120,9 +120,7 @@ def load_hf_dataset(data_id: str, tokenizer: PreTrainedTokenizer):
         ]
 
     except exceptions.DatasetNotFoundError:
-        raise ValueError(
-            f"Not found Hugging Face dataset: {data_id} ."
-        )
+        raise ValueError(f"Not found Hugging Face dataset: {data_id} .")
 
     return train, valid, test
 
