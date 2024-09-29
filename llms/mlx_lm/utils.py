@@ -21,8 +21,8 @@ from transformers import PreTrainedTokenizer
 from .models.base import KVCache, RotatingKVCache
 from .sample_utils import categorical_sampling, min_p_sampling, top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
-from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
+from .tuner.utils import load_adapters
 
 # Constants
 MODEL_REMAPPING = {
@@ -515,7 +515,7 @@ def load(
 
     model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
-        model = apply_lora_layers(model, adapter_path)
+        model = load_adapters(model, adapter_path)
         model.eval()
     tokenizer = load_tokenizer(model_path, tokenizer_config)
 

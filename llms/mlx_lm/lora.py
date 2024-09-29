@@ -15,9 +15,9 @@ from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import (
-    apply_lora_layers,
     build_schedule,
     linear_to_lora_layers,
+    load_adapters,
     print_trainable_parameters,
 )
 from .utils import load, save_config
@@ -44,7 +44,7 @@ CONFIG_DEFAULTS = {
     "fine_tune_type": "lora",
     "data": "data/",
     "seed": 0,
-    "lora_layers": 16,
+    "num_layers": 16,
     "batch_size": 4,
     "iters": 1000,
     "val_batches": 25,
@@ -89,7 +89,7 @@ def build_parser():
         help="Type of fine-tuning to perform: lora, dora, or full.",
     )
     parser.add_argument(
-        "--lora-layers",
+        "--num-layers",
         type=int,
         help="Number of layers to fine-tune. Default is 16, use -1 for all.",
     )
@@ -161,44 +161,38 @@ def build_parser():
 def train_model(
     args,
     model: nn.Module,
-    base_model_path: str,
     tokenizer: TokenizerWrapper,
     train_set,
     valid_set,
     training_callback: TrainingCallback = None,
 ):
+    model.freeze()
     if args.fine_tune_type == "full":
-        print("Training full model weights.")
-        model.unfreeze()
+        for l in model.layers[-min(args.num_layers, 0) :]:
+            l.unfreeze()
     elif args.fine_tune_type in ["lora", "dora"]:
-        print(f"Training model with {args.fine_tune_type.upper()}.")
-        model.freeze()
-        # Convert linear layers to lora layers and unfreeze in the process
-        # Determine if we are using DoRA
-        use_dora = args.fine_tune_type == "dora"
-
         # Convert linear layers to lora/dora layers and unfreeze in the process
         linear_to_lora_layers(
-            model, args.lora_layers, args.lora_parameters, use_dora=use_dora
+            model,
+            args.num_layers,
+            args.lora_parameters,
+            use_dora=(args.fine_tune_type == "dora"),
         )
+    else:
+        raise ValueError(f"Received unknown fine-tune-type {args.fine_tune_type}")
 
-        # Load pretrained adapters if provided
-        if args.resume_adapter_file is not None:
-            print(f"Loading pretrained adapters from {args.resume_adapter_file}")
-            model.load_weights(
-                args.resume_adapter_file, strict=False, use_dora=use_dora
-            )
+    # Resume from weights if provided
+    if args.resume_adapter_file is not None:
+        print(f"Loading fine-tuned weights from {args.resume_adapter_file}")
+        model.load_weights(args.resume_adapter_file, strict=False)
 
     print_trainable_parameters(model)
 
     adapter_path = Path(args.adapter_path)
     adapter_path.mkdir(parents=True, exist_ok=True)
 
-    if args.fine_tune_type == "full":
-        adapter_file = adapter_path
-    else:
-        adapter_file = adapter_path / "adapter.safetensors"
-        save_config(vars(args), adapter_path / "adapter_config.json")
+    adapter_file = adapter_path / "adapters.safetensors"
+    save_config(vars(args), adapter_path / "adapter_config.json")
 
     # init training args
     training_args = TrainingArgs(
@@ -211,7 +205,6 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
-        fine_tune_type=args.fine_tune_type,
     )
 
     model.train()
@@ -223,7 +216,6 @@ def train_model(
     # Train model
     train(
         model=model,
-        base_model_path=base_model_path,
         tokenizer=tokenizer,
         args=training_args,
         optimizer=opt,
@@ -262,13 +254,11 @@ def run(args, training_callback: TrainingCallback = None):
     if args.test and not args.train:
         # Allow testing without LoRA layers by providing empty path
         if args.adapter_path != "":
-            apply_lora_layers(model, args.adapter_path)
+            load_adapters(model, args.adapter_path)
 
     elif args.train:
         print("Training")
-        train_model(
-            args, model, args.model, tokenizer, train_set, valid_set, training_callback
-        )
+        train_model(args, model, tokenizer, train_set, valid_set, training_callback)
     else:
         raise ValueError("Must provide at least one of --train or --test")
 

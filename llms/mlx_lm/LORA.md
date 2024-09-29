@@ -121,7 +121,7 @@ mlx_lm.fuse --model <path_to_model>
 ```
 
 This will by default load the adapters from `adapters/`, and save the fused
-model in the path `lora_fused_model/`. All of these are configurable.
+model in the path `fused_model/`. All of these are configurable.
 
 To upload a fused model, supply the `--upload-repo` and `--hf-path` arguments
 to `mlx_lm.fuse`. The latter is the repo name of the original model, which is
@@ -144,7 +144,7 @@ mlx_lm.fuse \
     --export-gguf
 ```
 
-This will save the GGUF model in `lora_fused_model/ggml-model-f16.gguf`. You
+This will save the GGUF model in `fused_model/ggml-model-f16.gguf`. You
 can specify the file name with `--gguf-path`.
 
 ## Data
@@ -304,7 +304,7 @@ of memory. Here are some tips to reduce memory use should you need to do so:
    setting this to `2` or `1` will reduce memory consumption. This may slow
    things down a little, but will also reduce the memory use.
 
-3. Reduce the number of layers to fine-tune with `--lora-layers`. The default
+3. Reduce the number of layers to fine-tune with `--num-layers`. The default
    is `16`, so you can try `8` or `4`. This reduces the amount of memory
    needed for back propagation. It may also reduce the quality of the
    fine-tuned model if you are fine-tuning with a lot of data.
@@ -326,7 +326,7 @@ mlx_lm.lora \
     --model mistralai/Mistral-7B-v0.1 \
     --train \
     --batch-size 1 \
-    --lora-layers 4 \
+    --num-layers 4 \
     --data wikisql
 ```
 
