@@ -79,7 +79,7 @@ def build_parser():
     parser.add_argument(
         "--data",
         type=str,
-        help="Directory with {train, valid, test}.jsonl files",
+        help="Directory with {train, valid, test}.jsonl files or the name of a Huggingface dataset (e.g., 'mlx-community/wikisql')",
     )
     parser.add_argument(
         "--lora-layers",
