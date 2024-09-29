@@ -107,13 +107,23 @@ def load_local_dataset(data_path: Path, tokenizer: PreTrainedTokenizer):
 
 
 def load_hf_dataset(data_id: str, tokenizer: PreTrainedTokenizer):
-    import datasets
+    from datasets import load_dataset, exceptions
 
-    datasets = datasets.load_dataset(data_id)
+    try:
+        dataset = load_dataset(data_id)
 
-    names = ("train", "valid", "test")
+        names = ("train", "valid", "test")
 
-    train, valid, test = [create_dataset(datasets[n], tokenizer) for n in names]
+        train, valid, test = [
+            create_dataset(dataset[n], tokenizer) if n in dataset.keys() else []
+            for n in names
+        ]
+
+    except exceptions.DatasetNotFoundError:
+        raise ValueError(
+            f"Not found Hugging Face dataset: {data_id} ."
+        )
+
     return train, valid, test
 
 
