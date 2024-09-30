@@ -1,5 +1,7 @@
 # Copyright © 2024 Apple Inc.
 
+import glob
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -285,24 +287,18 @@ def train(
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
-            save_adapter(model, args.adapter_file)
+            adapter_weights = dict(tree_flatten(model.trainable_parameters()))
+            mx.save_safetensors(str(args.adapter_file), adapter_weights)
             checkpoint = (
                 Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
             )
-            save_adapter(model, checkpoint)
+            mx.save_safetensors(str(checkpoint), adapter_weights)
             print(
                 f"Iter {it}: Saved adapter weights to "
                 f"{args.adapter_file} and {checkpoint}."
             )
 
-    # save final adapter weights
-    save_adapter(model, args.adapter_file)
-    print(f"Saved final adapter weights to {args.adapter_file}.")
-
-
-def save_adapter(
-    model: nn.Module,
-    adapter_file: Union[str, Path],
-):
-    flattened_tree = tree_flatten(model.trainable_parameters())
-    mx.save_safetensors(str(adapter_file), dict(flattened_tree))
+    # Save final weights
+    adapter_weights = dict(tree_flatten(model.trainable_parameters()))
+    mx.save_safetensors(str(args.adapter_file), adapter_weights)
+    print(f"Saved final weights to {args.adapter_file}.")

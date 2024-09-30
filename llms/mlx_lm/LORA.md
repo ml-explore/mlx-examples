@@ -57,6 +57,9 @@ mlx_lm.lora \
     --iters 600
 ```
 
+To fine-tune the full model weights, add the `--fine-tune-type full` flag.
+Currently supported fine-tuning types are `lora` (default), `dora`, and `full`.
+
 The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
 when using `--train` and a path to a `test.jsonl` when using `--test`. For more
 details on the data format see the section on [Data](#Data).
@@ -67,8 +70,8 @@ mistralai/Mistral-7B-v0.1`.
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
-By default, the adapter config and weights are saved in `adapters/`. You can
-specify the output location with `--adapter-path`.
+By default, the adapter config and learned weights are saved in `adapters/`.
+You can specify the output location with `--adapter-path`.
 
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
@@ -118,7 +121,7 @@ mlx_lm.fuse --model <path_to_model>
 ```
 
 This will by default load the adapters from `adapters/`, and save the fused
-model in the path `lora_fused_model/`. All of these are configurable.
+model in the path `fused_model/`. All of these are configurable.
 
 To upload a fused model, supply the `--upload-repo` and `--hf-path` arguments
 to `mlx_lm.fuse`. The latter is the repo name of the original model, which is
@@ -141,7 +144,7 @@ mlx_lm.fuse \
     --export-gguf
 ```
 
-This will save the GGUF model in `lora_fused_model/ggml-model-f16.gguf`. You
+This will save the GGUF model in `fused_model/ggml-model-f16.gguf`. You
 can specify the file name with `--gguf-path`.
 
 ## Data
@@ -301,7 +304,7 @@ of memory. Here are some tips to reduce memory use should you need to do so:
    setting this to `2` or `1` will reduce memory consumption. This may slow
    things down a little, but will also reduce the memory use.
 
-3. Reduce the number of layers to fine-tune with `--lora-layers`. The default
+3. Reduce the number of layers to fine-tune with `--num-layers`. The default
    is `16`, so you can try `8` or `4`. This reduces the amount of memory
    needed for back propagation. It may also reduce the quality of the
    fine-tuned model if you are fine-tuning with a lot of data.
@@ -323,7 +326,7 @@ mlx_lm.lora \
     --model mistralai/Mistral-7B-v0.1 \
     --train \
     --batch-size 1 \
-    --lora-layers 4 \
+    --num-layers 4 \
     --data wikisql
 ```
 
@@ -333,4 +336,5 @@ tokens-per-second, using the MLX Example
 data set.
 
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
+
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
