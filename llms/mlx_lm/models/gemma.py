@@ -1,10 +1,12 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -141,10 +143,7 @@ class GemmaModel(nn.Module):
         h = self.embed_tokens(inputs)
         h = h * (self.args.hidden_size**0.5)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

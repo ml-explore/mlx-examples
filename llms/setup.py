@@ -10,7 +10,7 @@ with open(package_dir / "requirements.txt") as fid:
     requirements = [l.strip() for l in fid.readlines()]
 
 sys.path.append(str(package_dir))
-from version import __version__
+from _version import __version__
 
 setup(
     name="mlx-lm",
@@ -31,6 +31,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
+            "mlx_lm.cache_prompt = mlx_lm.cache_prompt:main",
             "mlx_lm.convert = mlx_lm.convert:main",
             "mlx_lm.fuse = mlx_lm.fuse:main",
             "mlx_lm.generate = mlx_lm.generate:main",

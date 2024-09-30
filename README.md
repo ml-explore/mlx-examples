@@ -27,11 +27,13 @@ Some more useful examples are listed below.
 ### Audio Models
 
 - Speech recognition with [OpenAI's Whisper](whisper).
+- Audio compression and generation with [Meta's EnCodec](encodec).
 
 ### Multimodal models
 
 - Joint text and image embeddings with [CLIP](clip).
 - Text generation from image and text inputs with [LLaVA](llava).
+- Image segmentation with [Segment Anything (SAM)](segment_anything).
 
 ### Other Models 
 

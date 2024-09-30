@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, Union
 
@@ -5,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -171,10 +173,7 @@ class PlamoModel(nn.Module):
     ) -> Tuple[mx.array, Optional[List[Union[Tuple[mx.array, mx.array], None]]]]:
         h = self.embed_tokens(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(self.embed_tokens.weight.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None for _ in range(len(self.layers.layers))]

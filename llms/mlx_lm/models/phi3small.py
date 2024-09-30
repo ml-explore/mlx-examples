@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 from dataclasses import dataclass
 from functools import partial
@@ -6,7 +8,7 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache
+from .base import BaseModelArgs, KVCache, create_attention_mask
 
 
 @dataclass
@@ -263,10 +265,7 @@ class Phi3Model(nn.Module):
         if self.mup_embedding_multiplier:
             h = self.mup_embedding_multiplier * h
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

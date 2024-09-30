@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
@@ -5,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs, create_additive_causal_mask
+from .base import BaseModelArgs, create_attention_mask
 
 # Based on the transformers implementation at:
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt_neox/modeling_gpt_neox.py
@@ -150,12 +152,7 @@ class GPTNeoXModel(nn.Module):
 
         hidden_states = self.embed_in(inputs)
 
-        mask = None
-        if hidden_states.shape[1] > 1:
-            mask = create_additive_causal_mask(
-                hidden_states.shape[1], cache[0].offset if cache is not None else 0
-            )
-            mask = mask.astype(hidden_states.dtype)
+        mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)

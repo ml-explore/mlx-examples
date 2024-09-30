@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
@@ -5,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs, create_additive_causal_mask
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -147,10 +149,7 @@ class GPTBigCodeModel(nn.Module):
             position_ids = mx.array(np.arange(L))
             hidden_states += self.wpe(position_ids)
 
-            mask = create_additive_causal_mask(
-                hidden_states.shape[1], cache[0].offset if cache is not None else 0
-            )
-            mask = mask.astype(hidden_states.dtype)
+            mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)

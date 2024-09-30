@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 from dataclasses import dataclass
 from typing import Tuple
@@ -5,7 +7,7 @@ from typing import Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -138,13 +140,11 @@ class PhiModel(nn.Module):
 
     def __call__(self, x, cache):
         x = self.embed_tokens(x)
+
+        mask = create_attention_mask(x, cache)
+
         if cache is None:
             cache = [None] * len(self.layers)
-
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
 
         for layer, c in zip(self.layers, cache):
             x = layer(x, mask, c)

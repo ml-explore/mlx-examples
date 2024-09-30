@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
@@ -5,7 +7,7 @@ from typing import Dict, Optional, Tuple, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 from .switch_layers import SwitchGLU
 
 
@@ -164,11 +166,7 @@ class MixtralModel(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        mask = None
-        T = h.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
