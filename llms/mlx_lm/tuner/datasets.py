@@ -89,20 +89,16 @@ def create_dataset(data, tokenizer: PreTrainedTokenizer = None):
         )
 
 
-def load_local_data(path: Path, tokenizer: PreTrainedTokenizer):
-    if not path.exists():
-        return []
-    with open(path, "r") as fid:
-        data = [json.loads(l) for l in fid]
-
-    return create_dataset(data, tokenizer)
-
-
 def load_local_dataset(data_path: Path, tokenizer: PreTrainedTokenizer):
+    def load_subset(path):
+        if not path.exists():
+            return []
+        with open(path, "r") as fid:
+            data = [json.loads(l) for l in fid]
+        return create_dataset(data, tokenizer)
+
     names = ("train", "valid", "test")
-    train, valid, test = [
-        load_local_data(data_path / f"{n}.jsonl", tokenizer) for n in names
-    ]
+    train, valid, test = [load_subset(data_path / f"{n}.jsonl") for n in names]
     return train, valid, test
 
 
