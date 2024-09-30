@@ -38,7 +38,7 @@ class DoRALinear(nn.Module):
         dtype = weight.dtype
 
         output_dims, input_dims = weight.shape
-        fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
+        fused_linear = nn.Linear(input_dims, output_dims, bias=False)
 
         lora_b = (self.scale * self.lora_b.T).astype(dtype)
         lora_a = self.lora_a.T.astype(dtype)
@@ -86,10 +86,10 @@ class DoRALinear(nn.Module):
 
     def set_linear(self, linear):
         """
-        Set the self.linear layer and recompute self.m with respect to quantization
+        Set the self.linear layer and recompute self.m.
         """
         self.linear = linear
-        self.m = mx.linalg.norm(self._dequantized_weight(), axis=1).astype(mx.float32)
+        self.m = mx.linalg.norm(self._dequantized_weight().astype(mx.float32), axis=1)
 
     def _dequantized_weight(self):
         """
@@ -111,31 +111,18 @@ class DoRALinear(nn.Module):
 
     def __call__(self, x):
         # Regular LoRA (without a bias)
-        if self._is_quantized():
-            # Use quantized_matmul instead of dequantizing for efficiency
-            y = mx.quantized_matmul(
-                x,
-                self.linear.weight,
-                scales=self.linear.scales,
-                biases=self.linear.biases,
-                transpose=True,
-                group_size=self.linear.group_size,
-                bits=self.linear.bits,
-            )
-        else:
-            y = x @ self.linear.weight.T
+        w = self._dequantized_weight()
+        y = x @ w.T
 
         z = (self.dropout(x) @ self.lora_a) @ self.lora_b
         out = y + (self.scale * z).astype(x.dtype)
 
         # Compute the norm of the adapted weights
-        adapted = (
-            self._dequantized_weight() + (self.scale * self.lora_b.T) @ self.lora_a.T
-        )
+        adapted = w + (self.scale * self.lora_b.T) @ self.lora_a.T
         denom = mx.stop_gradient(mx.linalg.norm(adapted, axis=1))
 
         # Remove the norm and scale by the learned magnitude
-        out = (self.m / denom) * out
+        out = (self.m / denom).astype(x.dtype) * out
 
         if "bias" in self.linear:
             out = out + self.linear.bias
