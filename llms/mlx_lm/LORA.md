@@ -251,7 +251,13 @@ To use Hugging Face datasets, first install the `datasets` package:
 pip install datasets
 ```
 
-Specify the Hugging Face dataset arguments in a YAML config. For example:
+If the Hugging Face dataset is already in a supported format, you can specify
+it on the command line. For example, pass `--data mlx-community/wikisql` to
+train on the pre-formatted WikiwSQL data.
+
+Otherwise, provide a mapping of keys in the dataset to the features MLX LM
+expects. Use a YAML config to specify the Hugging Face dataset arguments. For
+example:
 
 ```
 hf_dataset:

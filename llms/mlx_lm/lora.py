@@ -79,7 +79,10 @@ def build_parser():
     parser.add_argument(
         "--data",
         type=str,
-        help="Directory with {train, valid, test}.jsonl files",
+        help=(
+            "Directory with {train, valid, test}.jsonl files or the name "
+            "of a Hugging Face dataset (e.g., 'mlx-community/wikisql')"
+        ),
     )
     parser.add_argument(
         "--fine-tune-type",
