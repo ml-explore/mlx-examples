@@ -6,8 +6,10 @@ cd_mlx_lm:
 
 
 run:
-	#mlx_lm.server --model mlx-community/Mistral-Nemo-Instruct-2407-8bit --trust-remote-code --port 8722
-	mlx_lm.server --model mlx-community/gemma-2-9b-it-8bit --trust-remote-code --port 8722
+	mlx_lm.server --model mlx-community/Qwen2.5-14B-Instruct-8bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/Qwen2.5-7B-Instruct-8bit --trust-remote-code --port 8722
+    #mlx_lm.server --model mlx-community/Mistral-Nemo-Instruct-2407-8bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/gemma-2-9b-it-8bit --trust-remote-code --port 8722
 
 k:
 	./kill.sh
