@@ -1,3 +1,4 @@
+import mlx.core as mx
 import regex
 from sentencepiece import SentencePieceProcessor
 
@@ -104,6 +105,17 @@ class CLIPTokenizer:
 
         return tokens
 
+    def encode(self, text):
+        if not isinstance(text, list):
+            return self.encode([text])
+
+        tokens = self.tokenize(text)
+        length = max(len(t) for t in tokens)
+        for t in tokens:
+            t.extend([self.eos_token] * (length - len(t)))
+
+        return mx.array(tokens)
+
 
 class T5Tokenizer:
     def __init__(self, model_file):
@@ -132,11 +144,26 @@ class T5Tokenizer:
         return self._tokenizer.eos_id()
 
     def tokenize(self, text, prepend_bos=True, append_eos=True):
+        if isinstance(text, list):
+            return [self.tokenize(t, prepend_bos, append_eos) for t in text]
+
         tokens = self._tokenizer.encode(text)
 
-        if prepend_bos and self.bos_token > 0:
+        if prepend_bos and self.bos_token >= 0:
             tokens = [self.bos_token] + tokens
-        if append_eos and self.eos_token > 0:
+        if append_eos and self.eos_token >= 0:
             tokens.append(self.eos_token)
 
         return tokens
+
+    def encode(self, text):
+        if not isinstance(text, list):
+            return self.encode([text])
+
+        eos_token = self.eos_token if self.eos_token >= 0 else 0
+        tokens = self.tokenize(text)
+        length = max(len(t) for t in tokens)
+        for t in tokens:
+            t.extend([eos_token] * (length - len(t)))
+
+        return mx.array(tokens)
