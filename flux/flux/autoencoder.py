@@ -296,14 +296,9 @@ class Decoder(nn.Module):
 
 
 class DiagonalGaussian(nn.Module):
-    def __init__(self, sample: bool = True, chunk_dim: int = 1):
-        super().__init__()
-        self.sample = sample
-        self.chunk_dim = chunk_dim
-
     def __call__(self, z: mx.array):
-        mean, logvar = mx.split(z, 2, axis=self.chunk_dim)
-        if self.sample:
+        mean, logvar = mx.split(z, 2, axis=-1)
+        if self.training:
             std = mx.exp(0.5 * logvar)
             eps = mx.random.normal(shape=z.shape, dtype=z.dtype)
             return mean + std * eps

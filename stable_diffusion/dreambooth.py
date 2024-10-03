@@ -151,7 +151,7 @@ if __name__ == "__main__":
         help="Save the model every CHECKPOINT_EVERY steps",
     )
     parser.add_argument(
-        "--learning_rate", type=float, default="1e-6", help="Learning rate for training"
+        "--learning-rate", type=float, default="1e-6", help="Learning rate for training"
     )
     parser.add_argument(
         "--predict-x0",
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     sd = StableDiffusion(args.model)
     sd.ensure_models_are_loaded()
 
-    optimizer = optim.Adam(learning_rate=1e-6)
+    optimizer = optim.Adam(learning_rate=args.learning_rate)
 
     def loss_fn(params, text, x, weights):
         sd.unet.update(params["unet"])
