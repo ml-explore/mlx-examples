@@ -39,7 +39,7 @@ from utils import load, load_audio, save_audio
 model, processor = load("mlx-community/encodec-48khz-float32")
 
 # Load an audio file
-audio = load_audio("path/to/aduio", model.sampling_rate, model.channels)
+audio = load_audio("path/to/audio", model.sampling_rate, model.channels)
 
 # Preprocess the audio (this can also be a list of arrays for batched
 # processing).
