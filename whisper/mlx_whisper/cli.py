@@ -2,15 +2,17 @@
 
 import argparse
 import os
+import sys
 import traceback
 import warnings
 
+from . import audio
 from .tokenizer import LANGUAGES, TO_LANGUAGE_CODE
 from .transcribe import transcribe
 from .writers import get_writer
 
 
-def build_parser():
+def build_parser(is_audio_from_stdin=False):
     def optional_int(string):
         return None if string == "None" else int(string)
 
@@ -27,14 +29,21 @@ def build_parser():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument(
-        "audio", nargs="+", type=str, help="Audio file(s) to transcribe"
-    )
+
+    if not is_audio_from_stdin:
+        parser.add_argument("audio", nargs="+", help="Audio file(s) to transcribe")
+
     parser.add_argument(
         "--model",
         default="mlx-community/whisper-tiny",
         type=str,
         help="The model directory or hugging face repo",
+    )
+    parser.add_argument(
+        "--input-name",
+        type=str,
+        default="content",
+        help="logical name of audio content received via stdin",
     )
     parser.add_argument(
         "--output-dir",
@@ -192,7 +201,8 @@ def build_parser():
 
 
 def main():
-    parser = build_parser()
+    is_audio_from_stdin = not os.isatty(sys.stdin.fileno())
+    parser = build_parser(is_audio_from_stdin=is_audio_from_stdin)
     args = vars(parser.parse_args())
     if args["verbose"] is True:
         print(f"Args: {args}")
@@ -219,17 +229,27 @@ def main():
         warnings.warn("--max-line-count has no effect without --max-line-width")
     if writer_args["max_words_per_line"] and writer_args["max_line_width"]:
         warnings.warn("--max-words-per-line has no effect with --max-line-width")
-    for audio_path in args.pop("audio"):
+
+    if is_audio_from_stdin:
+        audio_list = [audio.load_audio(from_stdin=True)]
+        input_name = args.pop("input_name")
+    else:
+        audio_list = args.pop("audio")
+        args.pop("input_name")
+
+    for audio_obj in audio_list:
         try:
             result = transcribe(
-                audio_path,
+                audio_obj,
                 path_or_hf_repo=path_or_hf_repo,
                 **args,
             )
-            writer(result, audio_path, **writer_args)
+            if not is_audio_from_stdin:
+                input_name = audio_obj
+            writer(result, input_name, **writer_args)
         except Exception as e:
             traceback.print_exc()
-            print(f"Skipping {audio_path} due to {type(e).__name__}: {str(e)}")
+            print(f"Skipping {audio_obj} due to {type(e).__name__}: {str(e)}")
 
 
 if __name__ == "__main__":
