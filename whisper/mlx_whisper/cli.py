@@ -232,7 +232,6 @@ def main():
         if audio_obj == "-":
             # receive the contents from stdin rather than read a file
             audio_obj = audio.load_audio(from_stdin=True)
-            output_name_template = "content"
 
         try:
             result = transcribe(
