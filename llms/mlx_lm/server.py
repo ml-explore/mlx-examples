@@ -594,6 +594,7 @@ class APIHandler(BaseHTTPRequestHandler):
         ):
             prompt = self.tokenizer.apply_chat_template(
                 body["messages"],
+                body.get("tools", None),
                 tokenize=True,
                 add_generation_prompt=True,
             )
