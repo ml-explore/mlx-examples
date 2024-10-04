@@ -88,6 +88,46 @@ class TestModels(unittest.TestCase):
             if idx >= 8:
                 idx = 2
 
+    def test_rotating_kv_cache_chat_mode(self):
+        # Test that the rotating kv cache can handle
+        # alternating prompt/prefill with generation
+        d = 4
+        h = 2
+        cache = RotatingKVCache(d, h, max_size=18, step=4)
+
+        x = mx.random.uniform(shape=(1, h, 8, d))
+        k, v = cache.update_and_fetch(x, x)
+        self.assertEqual(k.shape[2], 8)
+        self.assertEqual(cache.offset, 8)
+
+        x = mx.random.uniform(shape=(1, h, 1, d))
+        k, v = cache.update_and_fetch(x, x)
+        self.assertEqual(k.shape[2], 9)
+        self.assertEqual(cache.offset, 9)
+        self.assertTrue(mx.allclose(x, k[..., 8:9, :]))
+
+        x = mx.random.uniform(shape=(1, h, 2, d))
+        k, v = cache.update_and_fetch(x, x)
+        self.assertEqual(k.shape[2], 11)
+        self.assertEqual(cache.offset, 11)
+        self.assertTrue(mx.allclose(x, k[..., 9:11, :]))
+
+        x = mx.random.uniform(shape=(1, h, 3, d))
+        k, v = cache.update_and_fetch(x, x)
+        self.assertEqual(k.shape[2], 14)
+        self.assertEqual(cache.offset, 14)
+        self.assertTrue(mx.allclose(x, k[..., 11:14, :]))
+
+        x = mx.random.uniform(shape=(1, h, 6, d))
+        k, v = cache.update_and_fetch(x, x)
+        self.assertEqual(cache.offset, 20)
+        self.assertTrue(mx.allclose(x, k[..., -6:, :]))
+
+        x = mx.random.uniform(shape=(1, h, 2, d))
+        k, v = cache.update_and_fetch(x, x)
+        self.assertEqual(cache.offset, 22)
+        self.assertTrue(mx.allclose(x, k[..., -2:, :]))
+
     def model_test_runner(self, model, model_type, vocab_size, num_layers):
 
         self.assertEqual(len(model.layers), num_layers)
