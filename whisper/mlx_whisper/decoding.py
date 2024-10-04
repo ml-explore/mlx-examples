@@ -432,9 +432,6 @@ class DecodingTask:
         # decoder: implements how to select the next tokens, given the autoregressive distribution
         if options.beam_size is not None:
             raise NotImplementedError("Beam search decoder is not yet implemented")
-            # self.decoder = BeamSearchDecoder(
-            #    options.beam_size, tokenizer.eot, self.inference, options.patience
-            # )
         else:
             self.decoder = GreedyDecoder(options.temperature, tokenizer.eot)
 
