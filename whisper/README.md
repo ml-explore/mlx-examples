@@ -44,8 +44,8 @@ useful when `mlx_whisper` acts as a composable command line utility.
 some-process | mlx_whisper
 
 # hypothetical demo of media content via stdin
-# use --input-name to name your output artifacts
-some-downloader https://some.url/media?id=lecture42 | mlx_whisper --input-name mlx-demo
+# use --output-name to name your output artifacts
+some-downloader https://some.url/media?id=lecture42 | mlx_whisper --output-name mlx-demo
 ```
 
 
