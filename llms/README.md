@@ -155,14 +155,14 @@ different queries. To cache a prompt use `mlx_lm.cache_prompt`. For example:
 cat prompt.txt | mlx_lm.cache_prompt \
   --model mistralai/Mistral-7B-Instruct-v0.3 \
   --prompt - \
-  --kv-cache-file mistral_prompt.safetensors
+  --prompt-cache-file mistral_prompt.safetensors
 ``` 
 
 Then use the cached prompt with `mlx_lm.generate`:
 
 ```
 mlx_lm.generate \
-    --kv-cache-file mistral_prompt.safetensors \
+    --prompt-cache-file mistral_prompt.safetensors \
     --prompt "\nSummarize the above text."
 ```
 
