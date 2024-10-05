@@ -3,8 +3,7 @@ import unittest
 
 import mlx.core as mx
 from mlx.utils import tree_map
-from mlx_lm.models.base import KVCache, RotatingKVCache
-from mlx_lm.utils import make_kv_caches
+from mlx_lm.models.cache import KVCache, RotatingKVCache, make_prompt_cache
 
 
 class TestModels(unittest.TestCase):
@@ -140,7 +139,7 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
-            cache = make_kv_caches(model)
+            cache = make_prompt_cache(model)
             outputs = model(inputs, cache)
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)

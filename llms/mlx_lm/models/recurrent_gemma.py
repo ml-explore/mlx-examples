@@ -398,7 +398,11 @@ class Griffin(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        mask = create_attention_mask(x, cache)
+        for i, block in enumerate(self.layers):
+            if block.temporal_block_type != "recurrent":
+                mask_cache = [cache[i]]
+
+        mask = create_attention_mask(x, mask_cache)
 
         for i, block in enumerate(self.layers):
             x = block(x, mask=mask, cache=cache[i])
