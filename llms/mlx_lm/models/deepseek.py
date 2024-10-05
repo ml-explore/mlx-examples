@@ -108,8 +108,8 @@ class DeepseekMLP(nn.Module):
     def __init__(
         self,
         config: ModelArgs,
-        hidden_size: int | None = None,
-        intermediate_size: int | None = None,
+        hidden_size: Optional[int] = None,
+        intermediate_size: Optional[int] = None,
     ):
         super().__init__()
         self.config = config
