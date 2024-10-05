@@ -25,11 +25,9 @@ response = generate(
     tokenizer,
     prompt=prompt,
     verbose=True,
-    max_tokens=1024,
     temp=0.0,
     prompt_cache=prompt_cache,
 )
-messages.append({"role": "assistant", "content": response})
 
 # User turn
 prompt = "What's my name?"
@@ -44,7 +42,6 @@ response = generate(
     tokenizer,
     prompt=prompt,
     verbose=True,
-    max_tokens=1024,
     temp=0.0,
     prompt_cache=prompt_cache,
 )
