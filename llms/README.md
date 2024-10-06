@@ -170,6 +170,12 @@ The cached prompt is treated as a prefix to the supplied prompt. Also notice
 when using a cached prompt, the model to use is read from the cache and need
 not be supplied explicitly.
 
+Prompt caching can also be used in the Python API in order to to avoid
+recomputing the prompt. This is useful in multi-turn dialogues or across
+requests that use the same context. See the
+[example](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/examples/chat.py)
+for more usage details.
+
 ### Supported Models
 
 MLX LM supports thousands of Hugging Face format LLMs. If the model you want to
