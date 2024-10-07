@@ -12,6 +12,7 @@ from mlx_lm.models.cache import (
     load_prompt_cache,
     make_prompt_cache,
     save_prompt_cache,
+    trim_prompt_cache,
 )
 from mlx_lm.utils import generate_step, load
 
@@ -137,6 +138,82 @@ class TestPromptCache(unittest.TestCase):
             i += 1
             self.assertEqual(tok, toks[i])
             self.assertTrue(mx.allclose(logits, all_logits[i]))
+
+    def test_trim_cache(self):
+        cache = [KVCache() for _ in range(2)]
+        for c in cache:
+            x = mx.random.uniform(shape=(1, 8, 10, 4))
+            c.update_and_fetch(x, x)
+
+        # Trim
+        num_trimmed = trim_prompt_cache(cache, 7)
+        self.assertEqual(num_trimmed, 7)
+
+        # Trim more tokens than remain
+        num_trimmed = trim_prompt_cache(cache, 4)
+        self.assertEqual(num_trimmed, 3)
+
+        # Can't trim mamba cache
+        cache = [MambaCache() for _ in range(2)]
+        for c in cache:
+            c.state = mx.zeros((5, 5))
+        num_trimmed = trim_prompt_cache(cache, 7)
+        self.assertEqual(num_trimmed, 0)
+
+        # All cache's have to be trimmable
+        cache = [MambaCache(), KVCache()]
+        cache[0].state = mx.zeros((5, 5))
+        x = mx.random.uniform(shape=(1, 8, 10, 4))
+        cache[1].update_and_fetch(x, x)
+        num_trimmed = trim_prompt_cache(cache, 1)
+        self.assertEqual(num_trimmed, 0)
+
+        cache = [RotatingKVCache(max_size=6) for _ in range(2)]
+        for c in cache:
+            x = mx.random.uniform(shape=(1, 8, 5, 4))
+            c.update_and_fetch(x, x)
+
+        num_trimmed = trim_prompt_cache(cache, 4)
+        self.assertEqual(num_trimmed, 4)
+
+        # Can't trim fixed-size KV cache after processing
+        # more than max_kv_size tokens
+        for c in cache:
+            x = mx.random.uniform(shape=(1, 8, 10, 4))
+            c.update_and_fetch(x, x)
+
+        num_trimmed = trim_prompt_cache(cache, 4)
+        self.assertEqual(num_trimmed, 0)
+
+    def test_trim_cache_with_generate(self):
+        model, tokenizer = load(HF_MODEL_PATH)
+        prompt = tokenizer.encode("this is a prompt", return_tensors="mlx")[0]
+
+        prompt_cache = make_prompt_cache(model)
+
+        # Generate one token so we process the full prompt
+        last_tok, _ = next(generate_step(prompt, model, prompt_cache=prompt_cache))
+        last_tok = mx.array([last_tok])
+
+        # Generate two more tokens
+        results = zip(
+            range(2), generate_step(last_tok, model, prompt_cache=prompt_cache)
+        )
+        toks, all_logits = zip(*(r[1] for r in results))
+
+        # To get back to the cache just after processing the prompt,
+        # trim by 3 tokens
+        trim_prompt_cache(prompt_cache, 3)
+
+        # Generate the same thing again
+        results = zip(
+            range(2), generate_step(last_tok, model, prompt_cache=prompt_cache)
+        )
+        second_toks, second_all_logits = zip(*(r[1] for r in results))
+        self.assertEqual(toks, second_toks)
+        self.assertTrue(
+            all(mx.allclose(l, l2) for l, l2 in zip(all_logits, second_all_logits))
+        )
 
 
 if __name__ == "__main__":

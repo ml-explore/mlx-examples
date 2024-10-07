@@ -46,7 +46,7 @@ def save_prompt_cache(file_name: str, cache: List[Any], metadata: Dict[str, str]
     cache_info = [c.meta_state for c in cache]
     cache_data = dict(tree_flatten(cache_data))
     cache_classes = [type(c).__name__ for c in cache]
-    cache_metadata = [cache_classes, cache_info, metadata]
+    cache_metadata = [cache_info, metadata, cache_classes]
     cache_metadata = dict(tree_flatten(cache_metadata))
     mx.save_safetensors(file_name, cache_data, cache_metadata)
 
@@ -67,7 +67,7 @@ def load_prompt_cache(file_name, return_metadata=False):
     arrays, cache_metadata = mx.load(file_name, return_metadata=True)
     arrays = tree_unflatten(list(arrays.items()))
     cache_metadata = tree_unflatten(list(cache_metadata.items()))
-    classes, info, metadata = cache_metadata
+    info, metadata, classes = cache_metadata
     cache = [globals()[c]() for c in classes]
     for c, state, meta_state in zip(cache, arrays, info):
         c.state = state
@@ -75,6 +75,25 @@ def load_prompt_cache(file_name, return_metadata=False):
     if return_metadata:
         return cache, metadata
     return cache
+
+
+def trim_prompt_cache(cache: List[Any], num_tokens: int) -> List[Any]:
+    """
+    Trim the model's cache by the given number of tokens.
+
+    This function will trim the cache if possible (in-place) and return the
+    number of tokens that were trimmed.
+
+    Args:
+        cache (List[Any]): The model's cache.
+        num_tokens (int): The number of tokens to trim.
+
+    Returns:
+        (int): The number of tokens that were trimmed.
+    """
+    if not all(c.is_trimmable() for c in cache) or len(cache) == 0:
+        return 0
+    return [c.trim(num_tokens) for c in cache][0]
 
 
 class _BaseCache:
@@ -89,16 +108,18 @@ class _BaseCache:
 
     @property
     def meta_state(self):
-        return {}
+        return ""
 
-    @state.setter
+    @meta_state.setter
     def meta_state(self, v):
         if v is not None and v:
             raise ValueError("This cache has no meta_state but a meta_state was set.")
 
+    def is_trimmable(self):
+        return False
+
 
 class KVCache(_BaseCache):
-
     def __init__(self):
         self.keys = None
         self.values = None
@@ -143,6 +164,14 @@ class KVCache(_BaseCache):
     def state(self, v):
         self.keys, self.values = v
         self.offset = self.keys.shape[2]
+
+    def is_trimmable(self):
+        return True
+
+    def trim(self, n):
+        n = min(self.offset, n)
+        self.offset -= n
+        return n
 
 
 class RotatingKVCache(_BaseCache):
@@ -274,6 +303,15 @@ class RotatingKVCache(_BaseCache):
             int,
             v,
         )
+
+    def is_trimmable(self):
+        return self.offset < self.max_size
+
+    def trim(self, n):
+        n = min(self.offset, n)
+        self.offset -= n
+        self._idx -= n
+        return n
 
 
 class MambaCache(_BaseCache):
