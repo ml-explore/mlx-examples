@@ -14,6 +14,7 @@ DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.6
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
+DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 
 
 def str2bool(string):
@@ -27,6 +28,7 @@ def setup_arg_parser():
         "--model",
         type=str,
         help="The path to the local model directory or Hugging Face repo.",
+        default=DEFAULT_MODEL,
     )
     parser.add_argument(
         "--adapter-path",

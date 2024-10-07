@@ -40,8 +40,8 @@ class TestPromptCache(unittest.TestCase):
         self.assertTrue(len(cache), len(loaded_cache))
         for c, lc in zip(cache, loaded_cache):
             self.assertEqual(c.offset, lc.offset)
-            self.assertTrue(mx.array_equal(c.state[0][0], lc.state[0][0]))
-            self.assertTrue(mx.array_equal(c.state[0][1], lc.state[0][1]))
+            self.assertTrue(mx.array_equal(c.state[0], lc.state[0]))
+            self.assertTrue(mx.array_equal(c.state[1], lc.state[1]))
 
         # Test with metadata
         cache_file = os.path.join(self.test_dir, "prompt_cache.safetensors")
@@ -67,8 +67,8 @@ class TestPromptCache(unittest.TestCase):
             self.assertEqual(c.keep, lc.keep)
             self.assertEqual(c.max_size, lc.max_size)
             self.assertEqual(c.step, lc.step)
-            self.assertTrue(mx.array_equal(c.state[0][0], lc.state[0][0]))
-            self.assertTrue(mx.array_equal(c.state[0][1], lc.state[0][1]))
+            self.assertTrue(mx.array_equal(c.state[0], lc.state[0]))
+            self.assertTrue(mx.array_equal(c.state[1], lc.state[1]))
 
         # Do a couple single token updates to get a rotation
         for _ in range(2):

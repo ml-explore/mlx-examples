@@ -240,7 +240,7 @@ def generate_step(
 
     while y.size > prefill_step_size:
         model(y[:prefill_step_size][None], cache=cache)
-        mx.eval([c.state[0] for c in cache])
+        mx.eval([c.state for c in cache])
         y = y[prefill_step_size:]
 
     y, logprobs = _step(y)

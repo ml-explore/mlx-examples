@@ -44,12 +44,11 @@ def save_prompt_cache(
         metadata (Optional[Dict[str, str]]): Optional metadata to save along
             with model state..
     """
-    cache_data, cache_info = zip(*(c.state for c in cache))
+    cache_data = [c.state for c in cache]
+    cache_info = [c.meta_state if hasattr(c, "meta_state") else "" for c in cache]
     cache_data = dict(tree_flatten(cache_data))
     cache_classes = [type(c).__name__ for c in cache]
-    cache_metadata = [cache_classes, cache_info]
-    if metadata:
-        cache_metadata.append(metadata)
+    cache_metadata = [cache_classes, cache_info, metadata or ""]
     cache_metadata = dict(tree_flatten(cache_metadata))
     mx.save_safetensors(file_name, cache_data, cache_metadata)
 
@@ -70,12 +69,14 @@ def load_prompt_cache(file_name, return_metadata=False):
     arrays, cache_metadata = mx.load(file_name, return_metadata=True)
     arrays = tree_unflatten(list(arrays.items()))
     cache_metadata = tree_unflatten(list(cache_metadata.items()))
-    classes, info = cache_metadata[:2]
+    classes, info, metadata = cache_metadata
     cache = [globals()[c]() for c in classes]
-    for c, *state in zip(cache, arrays, info):
+    for c, state, meta_state in zip(cache, arrays, info):
         c.state = state
+        if hasattr(c, "meta_state"):
+            c.meta_state = meta_state
     if return_metadata:
-        return cache, cache_metadata[2]
+        return cache, metadata
     return cache
 
 
@@ -114,16 +115,16 @@ class KVCache:
     @property
     def state(self):
         if self.offset == self.keys.shape[2]:
-            return (self.keys, self.values), ""
+            return self.keys, self.values
         else:
             return (
                 self.keys[..., : self.offset, :],
                 self.values[..., : self.offset, :],
-            ), ""
+            )
 
     @state.setter
     def state(self, v):
-        self.keys, self.values = v[0]
+        self.keys, self.values = v
         self.offset = self.keys.shape[2]
 
 
@@ -236,20 +237,25 @@ class RotatingKVCache:
     @property
     def state(self):
         if self.offset < self.keys.shape[2]:
-            kv_state = (self.keys[..., : self.offset], self.values[..., : self.offset])
+            return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
         else:
-            kv_state = (self.keys, self.values)
-        extra_state = tuple(
-            map(str, (self.keep, self.max_size, self.step, self.offset, self._idx))
-        )
-        return kv_state, extra_state
+            return self.keys, self.values
 
     @state.setter
     def state(self, v):
-        self.keys, self.values = v[0]
+        self.keys, self.values = v
+
+    @property
+    def meta_state(self):
+        return tuple(
+            map(str, (self.keep, self.max_size, self.step, self.offset, self._idx))
+        )
+
+    @meta_state.setter
+    def meta_state(self, v):
         self.keep, self.max_size, self.step, self.offset, self._idx = map(
             int,
-            v[1],
+            v,
         )
 
 
@@ -267,10 +273,6 @@ class MambaCache:
     def state(self):
         return self.cache
 
-    @property
-    def state(self):
-        return self.cache, ""
-
     @state.setter
     def state(self, v):
-        self.cache = v[0]
+        self.cache = v
