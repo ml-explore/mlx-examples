@@ -20,6 +20,31 @@ The `mlx-lm` package also has:
 - [Merging models](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/MERGE.md)
 - [HTTP model serving](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/SERVER.md)
 
+### Quick Start
+
+To generate text with an LLM use:
+
+```bash
+mlx_lm.generate --prompt "Hi!"
+```
+
+To chat with an LLM use:
+
+```bash
+mlx_lm.chat
+```
+
+This will give you a chat REPL that you can use to interact with the LLM. The
+chat context is preserved during the lifetime of the REPL.
+
+Commands in `mlx-lm` typically take command line options which let you specify
+the model, sampling parameters, and more. Use `-h` to see a list of available
+options for a command, e.g.:
+
+```bash
+mlx_lm.generate -h
+```
+
 ### Python API
 
 You can use `mlx-lm` as a module:
@@ -138,7 +163,7 @@ mlx_lm.convert \
 
 ### Long Prompts and Generations 
 
-MLX LM has some tools to scale efficiently to long prompts and generations:
+`mlx-lm` has some tools to scale efficiently to long prompts and generations:
 
 - A rotating fixed-size key-value cache.
 - Prompt caching
@@ -155,14 +180,14 @@ different queries. To cache a prompt use `mlx_lm.cache_prompt`. For example:
 cat prompt.txt | mlx_lm.cache_prompt \
   --model mistralai/Mistral-7B-Instruct-v0.3 \
   --prompt - \
-  --kv-cache-file mistral_prompt.safetensors
+  --prompt-cache-file mistral_prompt.safetensors
 ``` 
 
 Then use the cached prompt with `mlx_lm.generate`:
 
 ```
 mlx_lm.generate \
-    --kv-cache-file mistral_prompt.safetensors \
+    --prompt-cache-file mistral_prompt.safetensors \
     --prompt "\nSummarize the above text."
 ```
 
@@ -170,9 +195,15 @@ The cached prompt is treated as a prefix to the supplied prompt. Also notice
 when using a cached prompt, the model to use is read from the cache and need
 not be supplied explicitly.
 
+Prompt caching can also be used in the Python API in order to to avoid
+recomputing the prompt. This is useful in multi-turn dialogues or across
+requests that use the same context. See the
+[example](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/examples/chat.py)
+for more usage details.
+
 ### Supported Models
 
-MLX LM supports thousands of Hugging Face format LLMs. If the model you want to
+`mlx-lm` supports thousands of Hugging Face format LLMs. If the model you want to
 run is not supported, file an
 [issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
 submit a pull request.

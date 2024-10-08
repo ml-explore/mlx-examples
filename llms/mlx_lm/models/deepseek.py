@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask
 from .switch_layers import SwitchGLU
 
 
@@ -77,7 +77,7 @@ class DeepseekAttention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, _ = x.shape
 
@@ -108,8 +108,8 @@ class DeepseekMLP(nn.Module):
     def __init__(
         self,
         config: ModelArgs,
-        hidden_size: int | None = None,
-        intermediate_size: int | None = None,
+        hidden_size: Optional[int] = None,
+        intermediate_size: Optional[int] = None,
     ):
         super().__init__()
         self.config = config
@@ -188,7 +188,7 @@ class DeepseekDecoderLayer(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
@@ -210,7 +210,7 @@ class DeepseekModel(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
         mask = create_attention_mask(h, cache)
@@ -235,7 +235,7 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ):
         out = self.model(inputs, cache)
         return self.lm_head(out)
@@ -256,11 +256,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads
