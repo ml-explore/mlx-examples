@@ -33,7 +33,8 @@ An example using the model:
 
 ```python
 import mlx.core as mx
-from utils import load, load_audio, save_audio
+from encodec import load
+from utils import load_audio, save_audio
 
 # Load the 48 KHz model and preprocessor.
 model, processor = load("mlx-community/encodec-48khz-float32")

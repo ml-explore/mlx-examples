@@ -3,9 +3,9 @@
 import mlx.core as mx
 import numpy as np
 import torch
-from datasets import Audio, load_dataset
 from transformers import AutoProcessor, EncodecModel
-from utils import load, load_audio, preprocess_audio
+
+from encodec import load, preprocess_audio
 
 
 def compare_processors():
