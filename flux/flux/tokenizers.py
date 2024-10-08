@@ -174,10 +174,10 @@ class T5Tokenizer:
         if not isinstance(text, list):
             return self.encode([text])
 
-        eos_token = self.eos_token if self.eos_token >= 0 else 0
+        pad_token = self.pad_token if self.pad_token >= 0 else 0
         tokens = self.tokenize(text)
         length = max(len(t) for t in tokens)
         for t in tokens:
-            t.extend([eos_token] * (length - len(t)))
+            t.extend([pad_token] * (length - len(t)))
 
         return mx.array(tokens)

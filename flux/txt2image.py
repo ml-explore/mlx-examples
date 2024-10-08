@@ -44,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("--quantize", "-q", action="store_true")
     parser.add_argument("--preload-models", action="store_true")
     parser.add_argument("--output", default="out.png")
+    parser.add_argument("--save-raw", action="store_true")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
@@ -97,17 +98,26 @@ if __name__ == "__main__":
         mx.eval(decoded[-1])
     peak_mem_overall = mx.metal.get_peak_memory() / 1024**3
 
-    # Arrange them on a grid
-    x = mx.concatenate(decoded, axis=0)
-    x = mx.pad(x, [(0, 0), (4, 4), (4, 4), (0, 0)])
-    B, H, W, C = x.shape
-    x = x.reshape(args.n_rows, B // args.n_rows, H, W, C).transpose(0, 2, 1, 3, 4)
-    x = x.reshape(args.n_rows * H, B // args.n_rows * W, C)
-    x = (x * 255).astype(mx.uint8)
+    if args.save_raw:
+        *name, suffix = args.output.split(".")
+        name = ".".join(name)
+        x = mx.concatenate(decoded, axis=0)
+        x = (x * 255).astype(mx.uint8)
+        for i in range(len(x)):
+            im = Image.fromarray(np.array(x[i]))
+            im.save(".".join([name, str(i), suffix]))
+    else:
+        # Arrange them on a grid
+        x = mx.concatenate(decoded, axis=0)
+        x = mx.pad(x, [(0, 0), (4, 4), (4, 4), (0, 0)])
+        B, H, W, C = x.shape
+        x = x.reshape(args.n_rows, B // args.n_rows, H, W, C).transpose(0, 2, 1, 3, 4)
+        x = x.reshape(args.n_rows * H, B // args.n_rows * W, C)
+        x = (x * 255).astype(mx.uint8)
 
-    # Save them to disc
-    im = Image.fromarray(np.array(x))
-    im.save(args.output)
+        # Save them to disc
+        im = Image.fromarray(np.array(x))
+        im.save(args.output)
 
     # Report the peak memory used during generation
     if args.verbose:
