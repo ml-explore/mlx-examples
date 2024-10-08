@@ -11,7 +11,7 @@ from .utils import generate, load
 
 DEFAULT_PROMPT = "hello"
 DEFAULT_MAX_TOKENS = 100
-DEFAULT_TEMP = 0.6
+DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
@@ -27,8 +27,11 @@ def setup_arg_parser():
     parser.add_argument(
         "--model",
         type=str,
-        help="The path to the local model directory or Hugging Face repo.",
-        default=DEFAULT_MODEL,
+        help=(
+            "The path to the local model directory or Hugging Face repo. "
+            f"If no model is specified, then {DEFAULT_MODEL} is used."
+        ),
+        default=None,
     )
     parser.add_argument(
         "--adapter-path",
@@ -169,6 +172,7 @@ def main():
                 f"used to create the prompt cache ({metadata['model']}) "
                 "is an error."
             )
+    model_path = model_path or DEFAULT_MODEL
 
     model, tokenizer = load(
         model_path,
