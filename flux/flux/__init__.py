@@ -126,8 +126,8 @@ class FluxPipeline:
         seed=None,
     ):
         # Set the PRNG state
-        seed = int(time.time()) if seed is None else seed
-        mx.random.seed(seed)
+        if seed is not None:
+            mx.random.seed(seed)
 
         # Create the latent variables
         x_T = self.sampler.sample_prior((n_images, *latent_size, 16), dtype=self.dtype)
@@ -154,15 +154,15 @@ class FluxPipeline:
 
     def training_loss(
         self,
-        t5_tokens: mx.array,
-        clip_tokens: mx.array,
         x_0: mx.array,
+        t5_features: mx.array,
+        clip_features: mx.array,
         guidance: mx.array,
     ):
         # Get the text conditioning
-        txt = self.t5(t5_tokens)
-        txt_ids = mx.zeros(t5_tokens.shape + (3,), dtype=mx.int32)
-        vec = self.clip(clip_tokens).pooled_output
+        txt = t5_features
+        txt_ids = mx.zeros(txt.shape[:-1] + (3,), dtype=mx.int32)
+        vec = clip_features
 
         # Prepare the latent input
         x_0, x_ids = self._prepare_latent_images(x_0)

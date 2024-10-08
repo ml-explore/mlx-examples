@@ -118,8 +118,20 @@ class CLIPTokenizer:
 
 
 class T5Tokenizer:
-    def __init__(self, model_file):
+    def __init__(self, model_file, max_length=512):
         self._tokenizer = SentencePieceProcessor(model_file)
+        self.max_length = max_length
+
+    @property
+    def pad(self):
+        try:
+            return self._tokenizer.id_to_piece(self.pad_token)
+        except IndexError:
+            return None
+
+    @property
+    def pad_token(self):
+        return self._tokenizer.pad_id()
 
     @property
     def bos(self):
@@ -143,9 +155,9 @@ class T5Tokenizer:
     def eos_token(self):
         return self._tokenizer.eos_id()
 
-    def tokenize(self, text, prepend_bos=True, append_eos=True):
+    def tokenize(self, text, prepend_bos=True, append_eos=True, pad=True):
         if isinstance(text, list):
-            return [self.tokenize(t, prepend_bos, append_eos) for t in text]
+            return [self.tokenize(t, prepend_bos, append_eos, pad) for t in text]
 
         tokens = self._tokenizer.encode(text)
 
@@ -153,6 +165,8 @@ class T5Tokenizer:
             tokens = [self.bos_token] + tokens
         if append_eos and self.eos_token >= 0:
             tokens.append(self.eos_token)
+        if len(tokens) < self.max_length and self.pad_token >= 0:
+            tokens += [self.pad_token] * (self.max_length - len(tokens))
 
         return tokens
 
