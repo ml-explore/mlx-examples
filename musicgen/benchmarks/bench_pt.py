@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import time
 
 import torch

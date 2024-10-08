@@ -10,36 +10,36 @@ import mlx.nn as nn
 import numpy as np
 from transformers import AutoTokenizer
 
-SHARED_REPLACEMENT_PATTERNS = [
-    (".block.", ".layers."),
-    (".k.", ".key_proj."),
-    (".o.", ".out_proj."),
-    (".q.", ".query_proj."),
-    (".v.", ".value_proj."),
-    ("shared.", "wte."),
-    ("lm_head.", "lm_head.linear."),
-    (".layer.0.layer_norm.", ".ln1."),
-    (".layer.1.layer_norm.", ".ln2."),
-    (".layer.2.layer_norm.", ".ln3."),
-    (".final_layer_norm.", ".ln."),
-    (
-        "layers.0.layer.0.SelfAttention.relative_attention_bias.",
-        "relative_attention_bias.embeddings.",
-    ),
-]
 
-ENCODER_REPLACEMENT_PATTERNS = [
-    (".layer.0.SelfAttention.", ".attention."),
-    (".layer.1.DenseReluDense.", ".dense."),
-]
+class Tokenizer:
+    def __init__(self, config, model_name):
+        self._decoder_start_id = config.decoder_start_token_id
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            legacy=False,
+            model_max_length=getattr(config, "n_positions", 512),
+        )
 
-DECODER_REPLACEMENT_PATTERNS = [
-    (".layer.0.SelfAttention.", ".self_attention."),
-    (".layer.1.EncDecAttention.", ".cross_attention."),
-    (".layer.2.DenseReluDense.", ".dense."),
-]
+    @property
+    def eos_id(self) -> int:
+        return self._tokenizer.eos_token_id
 
-IGNORED_KEYS = ["decoder.layers.0.cross_attention.relative_attention_bias.weight"]
+    @property
+    def decoder_start_id(self) -> int:
+        return self._decoder_start_id
+
+    def encode(self, s: str) -> mx.array:
+        return mx.array(
+            self._tokenizer(
+                s,
+                return_tensors="np",
+                return_attention_mask=False,
+            )["input_ids"]
+        )
+
+    def decode(self, t: List[int], with_sep: bool = True) -> str:
+        tokens = self._tokenizer.convert_ids_to_tokens(t)
+        return "".join(t.replace("▁", " " if with_sep else "") for t in tokens)
 
 
 def _relative_position_bucket(
@@ -350,36 +350,83 @@ class T5(nn.Module):
     ):
         return self.decode(decoder_inputs, self.encode(inputs))[0]
 
+    @classmethod
+    def sanitize(cls, weights):
+        shared_replacement_patterns = [
+            (".block.", ".layers."),
+            (".k.", ".key_proj."),
+            (".o.", ".out_proj."),
+            (".q.", ".query_proj."),
+            (".v.", ".value_proj."),
+            ("shared.", "wte."),
+            ("lm_head.", "lm_head.linear."),
+            (".layer.0.layer_norm.", ".ln1."),
+            (".layer.1.layer_norm.", ".ln2."),
+            (".layer.2.layer_norm.", ".ln3."),
+            (".final_layer_norm.", ".ln."),
+            (
+                "layers.0.layer.0.SelfAttention.relative_attention_bias.",
+                "relative_attention_bias.embeddings.",
+            ),
+        ]
 
-class Tokenizer:
-    def __init__(self, config, model_name):
-        self._decoder_start_id = config.decoder_start_token_id
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            legacy=False,
-            model_max_length=getattr(config, "n_positions", 512),
-        )
+        encoder_replacement_patterns = [
+            (".layer.0.SelfAttention.", ".attention."),
+            (".layer.1.DenseReluDense.", ".dense."),
+        ]
 
-    @property
-    def eos_id(self) -> int:
-        return self._tokenizer.eos_token_id
+        decoder_replacement_patterns = [
+            (".layer.0.SelfAttention.", ".self_attention."),
+            (".layer.1.EncDecAttention.", ".cross_attention."),
+            (".layer.2.DenseReluDense.", ".dense."),
+        ]
 
-    @property
-    def decoder_start_id(self) -> int:
-        return self._decoder_start_id
+        ignored_keys = [
+            "decoder.layers.0.cross_attention.relative_attention_bias.weight"
+        ]
 
-    def encode(self, s: str) -> mx.array:
-        return mx.array(
-            self._tokenizer(
-                s,
-                return_tensors="np",
-                return_attention_mask=False,
-            )["input_ids"]
-        )
+        def replace_key(key: str) -> str:
+            for old, new in shared_replacement_patterns:
+                key = key.replace(old, new)
+            if key.startswith("encoder."):
+                for old, new in encoder_replacement_patterns:
+                    key = key.replace(old, new)
+            elif key.startswith("decoder."):
+                for old, new in decoder_replacement_patterns:
+                    key = key.replace(old, new)
+            return key
 
-    def decode(self, t: List[int], with_sep: bool = True) -> str:
-        tokens = self._tokenizer.convert_ids_to_tokens(t)
-        return "".join(t.replace("▁", " " if with_sep else "") for t in tokens)
+        weights = {replace_key(k): v for k, v in weights.items()}
+        for key in ignored_keys:
+            if key in weights:
+                del weights[key]
+        return weights
+
+    @classmethod
+    def from_pretrained(
+        cls, path_or_repo: str, dtype: mx.Dtype = mx.bfloat16
+    ) -> tuple["T5", Tokenizer]:
+        from huggingface_hub import snapshot_download
+
+        path = Path(path_or_repo)
+        if not path.exists():
+            path = Path(
+                snapshot_download(
+                    repo_id=path_or_repo,
+                    allow_patterns=["*.json", "*.safetensors", "*.model"],
+                )
+            )
+            print(path)
+
+        with open(path / "config.json", "r") as f:
+            config = SimpleNamespace(**json.load(f))
+
+        model = T5(config)
+        weights = mx.load(str(path / "model.safetensors"))
+        weights = cls.sanitize(weights)
+        weights = {k: v.astype(dtype) for k, v in weights.items()}
+        model.load_weights(list(weights.items()))
+        return model, Tokenizer(config, "t5-base")
 
 
 def generate(prompt: str, model: T5, tokenizer: Tokenizer, temp: Optional[float] = 0.0):
@@ -398,47 +445,6 @@ def generate(prompt: str, model: T5, tokenizer: Tokenizer, temp: Optional[float]
         logits, cache = model.decode(y[None], memory, cache=cache)
         y = sample(logits[:, -1, :])
         yield y.squeeze()
-
-
-def replace_key(key: str) -> str:
-    for old, new in SHARED_REPLACEMENT_PATTERNS:
-        key = key.replace(old, new)
-    if key.startswith("encoder."):
-        for old, new in ENCODER_REPLACEMENT_PATTERNS:
-            key = key.replace(old, new)
-    elif key.startswith("decoder."):
-        for old, new in DECODER_REPLACEMENT_PATTERNS:
-            key = key.replace(old, new)
-    return key
-
-
-def load_model(path_or_repo: str, dtype: str = "bfloat16"):
-    from huggingface_hub import snapshot_download
-
-    path = Path(path_or_repo)
-    if not path.exists():
-        path = Path(
-            snapshot_download(
-                repo_id=path_or_repo,
-                allow_patterns=["*.json", "*.safetensors", "*.model"],
-            )
-        )
-        print(path)
-
-    with open(path / "config.json", "r") as f:
-        config = SimpleNamespace(**json.load(f))
-
-    dtype = getattr(mx, dtype)
-
-    model = T5(config)
-    weights = mx.load(str(path / "model.safetensors"))
-    weights = {replace_key(k): v.astype(dtype) for k, v in weights.items()}
-    for key in IGNORED_KEYS:
-        del weights[key]
-    model.load_weights(list(weights.items()))
-
-    mx.eval(model.parameters())
-    return model, Tokenizer(config, "t5-base")
 
 
 if __name__ == "__main__":
@@ -486,7 +492,8 @@ if __name__ == "__main__":
 
     mx.random.seed(args.seed)
 
-    model, tokenizer = load_model(args.model, args.dtype)
+    dtype = getattr(mx, args.dtype)
+    model, tokenizer = T5.from_pretrained(args.model, dtype)
 
     if args.encode_only:
         print("[INFO] Encoding with T5...", flush=True)

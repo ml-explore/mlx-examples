@@ -673,6 +673,33 @@ class EncodecModel(nn.Module):
             audio_values = audio_values[:, : padding_mask.shape[1]]
         return audio_values
 
+    @classmethod
+    def from_pretrained(cls, path_or_repo: str):
+        from huggingface_hub import snapshot_download
+
+        path = Path(path_or_repo)
+        if not path.exists():
+            path = Path(
+                snapshot_download(
+                    repo_id=path_or_repo,
+                    allow_patterns=["*.json", "*.safetensors", "*.model"],
+                )
+            )
+
+        with open(path / "config.json", "r") as f:
+            config = SimpleNamespace(**json.load(f))
+
+        model = EncodecModel(config)
+        model.load_weights(str(path / "model.safetensors"))
+        processor = functools.partial(
+            preprocess_audio,
+            sampling_rate=config.sampling_rate,
+            chunk_length=model.chunk_length,
+            chunk_stride=model.chunk_stride,
+        )
+        mx.eval(model)
+        return model, processor
+
 
 def preprocess_audio(
     raw_audio: Union[mx.array, List[mx.array]],
@@ -712,33 +739,3 @@ def preprocess_audio(
         inputs.append(x)
         masks.append(mask)
     return mx.stack(inputs), mx.stack(masks)
-
-
-def load(path_or_repo):
-    """
-    Load the model and audo preprocessor.
-    """
-    from huggingface_hub import snapshot_download
-
-    path = Path(path_or_repo)
-    if not path.exists():
-        path = Path(
-            snapshot_download(
-                repo_id=path_or_repo,
-                allow_patterns=["*.json", "*.safetensors", "*.model"],
-            )
-        )
-
-    with open(path / "config.json", "r") as f:
-        config = SimpleNamespace(**json.load(f))
-
-    model = EncodecModel(config)
-    model.load_weights(str(path / "model.safetensors"))
-    processor = functools.partial(
-        preprocess_audio,
-        sampling_rate=config.sampling_rate,
-        chunk_length=model.chunk_length,
-        chunk_stride=model.chunk_stride,
-    )
-    mx.eval(model)
-    return model, processor

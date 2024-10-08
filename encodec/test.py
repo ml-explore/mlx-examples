@@ -3,9 +3,10 @@
 import mlx.core as mx
 import numpy as np
 import torch
-from transformers import AutoProcessor, EncodecModel
+from transformers import AutoProcessor
+from transformers import EncodecModel as PTEncodecModel
 
-from encodec import load, preprocess_audio
+from encodec import EncodecModel, preprocess_audio
 
 
 def compare_processors():
@@ -30,8 +31,8 @@ def compare_processors():
 
 
 def compare_models():
-    pt_model = EncodecModel.from_pretrained("facebook/encodec_48khz")
-    mx_model, _ = load("mlx-community/encodec-48khz-float32")
+    pt_model = PTEncodecModel.from_pretrained("facebook/encodec_48khz")
+    mx_model, _ = EncodecModel.from_pretrained("mlx-community/encodec-48khz-float32")
 
     np.random.seed(0)
     audio_length = 190560

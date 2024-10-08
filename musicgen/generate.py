@@ -2,11 +2,13 @@
 
 import argparse
 
-from utils import load, save_audio
+from utils import save_audio
+
+from musicgen import MusicGen
 
 
 def main(text: str, output_path: str, model_name: str, max_steps: int):
-    model = load(model_name)
+    model = MusicGen.from_pretrained(model_name)
     audio = model.generate(text, max_steps=max_steps)
     save_audio(output_path, audio, model.sampling_rate)
 

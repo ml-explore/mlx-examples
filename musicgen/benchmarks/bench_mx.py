@@ -1,12 +1,18 @@
+# Copyright © 2024 Apple Inc.
+
 import sys
 import time
 from pathlib import Path
 
 import mlx.core as mx
-from utils import load
+
+cur_path = Path(__file__).parents[1].resolve()
+sys.path.append(str(cur_path))
+
+from musicgen import MusicGen
 
 text = "folk ballad"
-model = load("facebook/musicgen-medium")
+model = MusicGen.from_pretrained("facebook/musicgen-medium")
 
 max_steps = 100
 

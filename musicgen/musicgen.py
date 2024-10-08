@@ -1,8 +1,10 @@
 # Copyright © 2024 Apple Inc.
 
+import json
 import sys
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
 
 import mlx.core as mx
@@ -13,14 +15,14 @@ cur_path = Path(__file__).parents[1].resolve()
 sys.path.append(str(cur_path / "encodec"))
 sys.path.append(str(cur_path / "t5"))
 
-from encodec import load as load_encodec
-from t5 import load_model as load_t5
+from encodec import EncodecModel
+from t5 import T5
 
 
 class TextConditioner(nn.Module):
     def __init__(self, t5_name, input_dim, output_dim):
         super().__init__()
-        self._t5, self.tokenizer = load_t5(t5_name)
+        self._t5, self.tokenizer = T5.from_pretrained(t5_name)
         self.output_proj = nn.Linear(input_dim, output_dim)
 
     def __call__(self, text):
@@ -222,7 +224,9 @@ class MusicGen(nn.Module):
         ]
         encodec_name = config.audio_encoder._name_or_path.split("/")[-1]
         encodec_name = encodec_name.replace("_", "-")
-        self._audio_decoder, _ = load_encodec(f"mlx-community/{encodec_name}-float32")
+        self._audio_decoder, _ = EncodecModel.from_pretrained(
+            f"mlx-community/{encodec_name}-float32"
+        )
 
     def __call__(
         self,
@@ -304,3 +308,57 @@ class MusicGen(nn.Module):
         audio_seq = mx.swapaxes(audio_seq, -1, -2)[:, mx.newaxis]
         audio = self._audio_decoder.decode(audio_seq, audio_scales=[None])
         return audio[0]
+
+    @classmethod
+    def sanitize(cls, weights):
+        out_weights = {}
+        for k, arr in weights.items():
+            if k.startswith("transformer."):
+                k = k[len("transformer.") :]
+
+            if "cross_attention" in k:
+                k = k.replace("cross_attention", "cross_attn")
+
+            if "condition_provider" in k:
+                k = k.replace(
+                    "condition_provider.conditioners.description", "text_conditioner"
+                )
+
+            if "in_proj_weight" in k:
+                dim = arr.shape[0] // 3
+                name = "in_proj_weight"
+                out_weights[k.replace(name, "q_proj.weight")] = arr[:dim]
+                out_weights[k.replace(name, "k_proj.weight")] = arr[dim : dim * 2]
+                out_weights[k.replace(name, "v_proj.weight")] = arr[dim * 2 :]
+                continue
+
+            out_weights[k] = arr
+        return out_weights
+
+    @classmethod
+    def from_pretrained(cls, path_or_repo: str):
+        import torch
+        from huggingface_hub import snapshot_download
+
+        path = Path(path_or_repo)
+        if not path.exists():
+            path = Path(
+                snapshot_download(
+                    repo_id=path_or_repo,
+                    allow_patterns=["*.json", "state_dict.bin"],
+                )
+            )
+
+        with open(path / "config.json", "r") as f:
+            config = SimpleNamespace(**json.load(f))
+            config.text_encoder = SimpleNamespace(**config.text_encoder)
+            config.audio_encoder = SimpleNamespace(**config.audio_encoder)
+            config.decoder = SimpleNamespace(**config.decoder)
+
+        weights = torch.load(path / "state_dict.bin", weights_only=True)["best_state"]
+        weights = {k: mx.array(v.numpy()) for k, v in weights.items()}
+        weights = cls.sanitize(weights)
+
+        model = MusicGen(config)
+        model.load_weights(list(weights.items()))
+        return model
