@@ -86,6 +86,30 @@ curl localhost:8080/v1/chat/completions \
 - `adapters`: (Optional) A string path to low-rank adapters. The path must be
   rlative to the directory the server was started in.
 
+### Response Fields
+
+- `id`: A unique identifier for the chat.
+- `system_fingerprint`: A unique identifier for the system.
+- `object`: Any of "chat.completions", "chat.completions.chunk" (for
+  streaming), or "text.completion".
+- `model`: The model repo or path (e.g. `"mlx-community/Llama-3.2-3B-Instruct-4bit"`).
+- `created`: A timestamp for when the request was processed.
+- `choices`: A list of outputs. Each output is a dictionary containing the fields:
+    - `index`: The index in the list.
+    - `logprobs`: A dictionary containing the fields:
+        - `token_logprobs`: A list of the log probabilities for the generated
+          tokens.
+        - `tokens`: A list of the generated token ids.
+        - `top_logprobs`: A list of lists. Each list contains the `logprobs`
+          top tokens (if requested) with their corresponding probabilities.
+    - `finish_reason`: The reason the completion ended. This can be either of
+      `"stop"` or `"length"`.
+    - `message`: The text response from the model.
+- `usage`: A dictionary containing the fields:
+    - `prompt_tokens`: The number of prompt tokens processed.
+    - `completion_tokens`: The number of tokens generated.
+    - `total_tokens`: The total number of tokens, i.e. the sum of the above two fields.
+
 ### List Models
 
 Use the `v1/models` endpoint to list available models:
