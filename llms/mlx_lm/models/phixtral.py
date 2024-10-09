@@ -168,8 +168,8 @@ class Model(nn.Module):
         self,
         x: mx.array,
         mask: mx.array = None,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache=None,
+    ) -> mx.array:
         mask = create_attention_mask(x, cache)
 
         y = self.transformer(x, mask, cache)
@@ -193,11 +193,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.transformer.h
-
-    @property
-    def head_dim(self):
-        return self.args.model_dim // self.args.num_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_heads

@@ -7,6 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs
+from .cache import MambaCache
 
 
 @dataclass
@@ -43,21 +44,6 @@ class ModelArgs(BaseModelArgs):
 
         if self.time_step_rank == "auto":
             self.time_step_rank = math.ceil(self.hidden_size / 16)
-
-
-class MambaCache:
-    def __init__(self):
-        self.cache = [None, None]
-
-    def __setitem__(self, idx, value):
-        self.cache[idx] = value
-
-    def __getitem__(self, idx):
-        return self.cache[idx]
-
-    @property
-    def state(self):
-        return self.cache
 
 
 class DepthWiseConv1d(nn.Module):
@@ -223,7 +209,7 @@ class Model(nn.Module):
                 weights[k] = v.moveaxis(2, 1)
         return weights
 
-    def make_cache(self, batch_size: int = 1):
+    def make_cache(self):
         return [MambaCache() for _ in range(len(self.layers))]
 
     @property
