@@ -1,7 +1,11 @@
 # The path to the local model directory or Hugging Face repo.
 model: "mlx_model"
+
 # Whether or not to train (boolean)
 train: true
+
+# The fine-tuning method: "lora", "dora", or "full".
+fine_tune_type: lora
 
 # Directory with {train, valid, test}.jsonl files
 data: "/path/to/training/data"
@@ -50,9 +54,6 @@ max_seq_length: 2048
 
 # Use gradient checkpointing to reduce memory use.
 grad_checkpoint: false
-
-# Use DoRA instead of LoRA.
-use_dora: false
 
 # LoRA parameters can only be specified in a config file
 lora_parameters:

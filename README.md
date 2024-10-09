@@ -27,6 +27,7 @@ Some more useful examples are listed below.
 ### Audio Models
 
 - Speech recognition with [OpenAI's Whisper](whisper).
+- Audio compression and generation with [Meta's EnCodec](encodec).
 
 ### Multimodal models
 

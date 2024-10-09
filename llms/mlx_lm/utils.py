@@ -14,7 +14,6 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, 
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from huggingface_hub.utils._errors import RepositoryNotFoundError
 from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
@@ -22,8 +21,8 @@ from transformers import PreTrainedTokenizer
 from .models.base import KVCache, RotatingKVCache
 from .sample_utils import categorical_sampling, min_p_sampling, top_p_sampling
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
-from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
+from .tuner.utils import load_adapters
 
 # Constants
 MODEL_REMAPPING = {
@@ -91,7 +90,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
                     ],
                 )
             )
-        except RepositoryNotFoundError:
+        except:
             raise ModelNotFoundError(
                 f"Model not found for path or HF repo: {path_or_hf_repo}.\n"
                 "Please make sure you specified the local path or Hugging Face"
@@ -102,7 +101,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
     return model_path
 
 
-def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
+def apply_repetition_penalty(logits: mx.array, tokens: mx.array, penalty: float):
     """
     Apply repetition penalty to specific logits based on the given context.
 
@@ -110,19 +109,18 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
 
     Args:
         logits (mx.array): The logits produced by the language model.
-        generated_tokens (any): A list of N previous tokens.
+        tokens (mx.array): A list of N previous tokens.
         penalty (float): The repetition penalty factor to be applied.
 
     Returns:
         logits (mx.array): Logits with repetition penalty applied to generated tokens.
     """
-    if len(generated_tokens) > 0:
-        indices = generated_tokens
-        selected_logits = mx.take_along_axis(logits, indices, axis=-1)
+    if len(tokens) > 0:
+        selected_logits = mx.take_along_axis(logits, tokens, axis=-1)
         selected_logits = mx.where(
             selected_logits < 0, selected_logits * penalty, selected_logits / penalty
         )
-        logits[mx.arange(indices.shape[0])[:, None], indices] = selected_logits
+        logits[mx.arange(tokens.shape[0])[:, None], tokens] = selected_logits
     return logits
 
 
@@ -155,16 +153,17 @@ def generate_step(
     top_p: float = 1.0,
     min_p: float = 0.0,
     min_tokens_to_keep: int = 1,
-    logit_bias: Optional[Dict[int, float]] = None,
     prefill_step_size: int = 512,
     max_kv_size: Optional[int] = None,
     cache_history: Optional[List[Tuple[mx.array, mx.array]]] = None,
+    logit_bias: Optional[Dict[int, float]] = None,
+    logits_processor: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
 
     Args:
-        prompts (mx.array): The input prompt(s). Shape: ``(bs, seq_len)``.
+        prompts (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
           Default: ``0``.
@@ -178,10 +177,13 @@ def generate_step(
           probability) that a token probability must have to be considered.
         min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
           be filtered by min_p sampling.
-        logit_bias (dictionary, optional): Additive logit bias.
         prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
+        logit_bias (dictionary, optional): Additive logit bias.
+        logits_processor (List[Callable[[mx.array, mx.array], mx.array]], optional):
+            A list of functions that take tokens and logits and return the processed
+            logits. Default: ``None``.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
@@ -195,10 +197,6 @@ def generate_step(
         )
 
     def sample(logits: mx.array) -> Tuple[mx.array, mx.array]:
-        if logit_bias:
-            indices = mx.array(list(logit_bias.keys()))
-            values = mx.array(list(logit_bias.values()))
-            logits[:, indices] += values
         logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
 
         if temp == 0:
@@ -220,7 +218,29 @@ def generate_step(
             f"repetition_penalty must be a non-negative float, got {repetition_penalty}"
         )
 
+    logits_processor = logits_processor or []
+
+    if repetition_penalty:
+
+        def repetition_penalty_processor(tokens, logits):
+            return apply_repetition_penalty(
+                logits, tokens[-repetition_context_size:], repetition_penalty
+            )
+
+        logits_processor.append(repetition_penalty_processor)
+
+    if logit_bias:
+        indices = mx.array(list(logit_bias.keys()))
+        values = mx.array(list(logit_bias.values()))
+
+        def logit_bias_processor(_, logits):
+            logits[:, indices] += values
+            return logits
+
+        logits_processor.append(logit_bias_processor)
+
     y = prompts
+    tokens = None
 
     # Create the KV cache for generation
     cache = make_kv_caches(model, max_kv_size)
@@ -235,28 +255,18 @@ def generate_step(
             c.update_and_fetch(h[0], h[1])
         mx.eval([c.state for c in cache])
 
-    repetition_context = prompts
-
-    if repetition_context_size:
-        repetition_context = repetition_context[:, -repetition_context_size:]
-
     def _step(y):
-        nonlocal repetition_context
         logits = model(y, cache=cache)
         logits = logits[:, -1, :]
 
-        if repetition_penalty:
-            logits = apply_repetition_penalty(
-                logits, repetition_context, repetition_penalty
-            )
-            y, logprobs = sample(logits)
-            repetition_context = mx.concatenate([repetition_context, y], axis=-1)
-        else:
-            y, logprobs = sample(logits)
+        if logits_processor:
+            nonlocal tokens
+            tokens = mx.concat([tokens, y], axis=-1) if tokens is not None else y
 
-        if repetition_context_size:
-            if repetition_context.shape[1] > repetition_context_size:
-                repetition_context = repetition_context[:, -repetition_context_size:]
+            for processor in logits_processor:
+                logits = processor(tokens, logits)
+
+        y, logprobs = sample(logits)
         return y, logprobs
 
     while y.shape[1] > prefill_step_size:
@@ -265,6 +275,7 @@ def generate_step(
         y = y[:, prefill_step_size:]
 
     y, logprobs = _step(y)
+
     mx.async_eval(y)
     while True:
         next_y, next_logprobs = _step(y)
@@ -280,7 +291,7 @@ def stream_generate(
     prompt: str,
     max_tokens: int = 100,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> Generator[str, None, None]:
     """
     A generator producing text based on the given prompt from the model.
 
@@ -320,19 +331,19 @@ def stream_generate(
 def generate(
     model: nn.Module,
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
-    prompt: Union[str, List[str]],
+    prompt: str,
     max_tokens: int = 100,
     verbose: bool = False,
     formatter: Optional[Callable] = None,
     **kwargs,
-) -> Union[str, List[str]]:
+) -> str:
     """
     Generate a complete response from the model.
 
     Args:
        model (nn.Module): The language model.
        tokenizer (PreTrainedTokenizer): The tokenizer.
-       prompts (str): The string prompt(s).
+       prompt (str): The string prompt.
        max_tokens (int): The maximum number of tokens. Default: ``100``.
        verbose (bool): If ``True``, print tokens and timing information.
            Default: ``False``.
@@ -341,30 +352,98 @@ def generate(
        kwargs: The remaining options get passed to :func:`generate_step`.
           See :func:`generate_step` for more details.
     """
-    is_batch = isinstance(prompt, list)
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
 
-    if is_batch:
-        tokenizer._tokenizer.padding_side = "left"
-        if tokenizer.pad_token is None:
-            tokenizer._tokenizer.pad_token = tokenizer.eos_token
-            tokenizer._tokenizer.pad_token_id = tokenizer.eos_token_id
-        prompt_tokens = mx.array(
-            tokenizer._tokenizer(prompt, padding=True)["input_ids"]
-        )
-        output_toks = []
-    else:
-        prompt_tokens = mx.array(tokenizer.encode(prompt))[None]
-        detokenizer = tokenizer.detokenizer
-        detokenizer.reset()
+    if verbose:
+        print("=" * 10)
+        print("Prompt:", prompt)
+
+    prompt_tokens = mx.array(tokenizer.encode(prompt))
+    detokenizer = tokenizer.detokenizer
+
+    tic = time.perf_counter()
+    detokenizer.reset()
+
+    for (token, logprobs), n in zip(
+        generate_step(prompt_tokens[None], model, **kwargs),
+        range(max_tokens),
+    ):
+        token = token.item()
+        if n == 0:
+            prompt_time = time.perf_counter() - tic
+            tic = time.perf_counter()
+        if token == tokenizer.eos_token_id:
+            break
+        detokenizer.add_token(token)
+
         if verbose:
-            print("=" * 10)
-            print("Prompt:", prompt)
+            if formatter:
+                # We have to finalize so that the prob corresponds to the last segment
+                detokenizer.finalize()
+                formatter(detokenizer.last_segment, mx.exp(logprobs[token]).item())
+            else:
+                print(detokenizer.last_segment, end="", flush=True)
+
+    token_count = n + 1
+    detokenizer.finalize()
+
+    if verbose:
+        gen_time = time.perf_counter() - tic
+        print(detokenizer.last_segment, flush=True)
+        print("=" * 10)
+        if token_count == 0:
+            print("No tokens generated for this prompt")
+            return
+        prompt_tps = prompt_tokens.size / prompt_time
+        gen_tps = (token_count - 1) / gen_time
+        print(f"Prompt: {prompt_tokens.size} tokens, {prompt_tps:.3f} tokens-per-sec")
+        print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
+        peak_mem = mx.metal.get_peak_memory() / 2**30
+        print(f"Peak memory: {peak_mem:.3f} GB")
+
+    return detokenizer.text
+
+
+def batch_generate(
+    model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
+    prompts: List[str],
+    max_tokens: int = 100,
+    verbose: bool = False,
+    **kwargs,
+) -> str:
+    """
+    Generate a complete response from the model.
+
+    Args:
+       model (nn.Module): The language model.
+       tokenizer (PreTrainedTokenizer): The tokenizer.
+       prompts (List[str]): The string prompts.
+       max_tokens (int): The maximum number of tokens. Default: ``100``.
+       verbose (bool): If ``True``, print tokens and timing information.
+           Default: ``False``.
+       kwargs: The remaining options get passed to :func:`generate_step`.
+          See :func:`generate_step` for more details.
+    """
+    if kwargs.get("max_kv_size", None) is not None:
+        raise ValueError("max_kv_size is not supported for batch generation")
+
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
+
+    tokenizer._tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer._tokenizer.pad_token = tokenizer.eos_token
+        tokenizer._tokenizer.pad_token_id = tokenizer.eos_token_id
+    prompt_tokens = mx.array(
+        tokenizer._tokenizer(prompts, padding=True)["input_ids"]
+    )
+    output_toks = []
 
     tic = time.perf_counter()
 
-    for (tokens, logprobs), n in zip(
+    for (tokens, _), n in zip(
         generate_step(prompt_tokens, model, **kwargs),
         range(max_tokens),
     ):
@@ -373,51 +452,34 @@ def generate(
             tic = time.perf_counter()
         if (tokens == tokenizer.eos_token_id).all():
             break
-        if is_batch:
-            output_toks.append(tokens)
-            if verbose:
-                print(".", end="", flush=True)
-        else:
-            token = tokens.item()
-            logprobs = logprobs.squeeze(0)
-            detokenizer.add_token(token)
-            if verbose:
-                if formatter:
-                    # We have to finalize so that the prob corresponds to the last segment
-                    detokenizer.finalize()
-                    formatter(detokenizer.last_segment, mx.exp(logprobs[token]).item())
-                else:
-                    print(detokenizer.last_segment, end="", flush=True)
+        output_toks.append(tokens)
+        if verbose:
+            print(".", end="", flush=True)
 
-    if is_batch:
-        output_toks = mx.concatenate(output_toks, axis=1)
-        token_count = output_toks.size
-        response = [
-            response.split(tokenizer.eos_token)[0].split(tokenizer.pad_token)[0]
-            for response in tokenizer.batch_decode(output_toks.tolist())
-        ]
-    else:
-        token_count = n
-        detokenizer.finalize()
-        response = detokenizer.text
+    output_toks = mx.concatenate(output_toks, axis=1)
+    token_count = output_toks.size
+    response = [
+        response.split(tokenizer.eos_token)[0].split(tokenizer.pad_token)[0]
+        for response in tokenizer.batch_decode(output_toks.tolist())
+    ]
 
     if verbose:
         gen_time = time.perf_counter() - tic
         if token_count <= 0:
             print("No tokens generated for this prompt")
-        if is_batch:
+        else:
             print()
-            for p, resp in zip(prompt, response):
+            for p, resp in zip(prompts, response):
                 print("=" * 10)
                 print("Prompt:", p)
                 print(resp)
-        else:
-            print(detokenizer.last_segment, flush=True)
         prompt_tps = prompt_tokens.size / prompt_time
         gen_tps = token_count / gen_time
         print("=" * 10)
-        print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
-        print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        print(f"Prompt: {prompt_tokens.size} tokens, {prompt_tps:.3f} tokens-per-sec")
+        print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
+        peak_mem = mx.metal.get_peak_memory() / 2**30
+        print(f"Peak memory: {peak_mem:.3f} GB")
 
     return response
 
@@ -539,7 +601,7 @@ def load(
 
     model = load_model(model_path, lazy, model_config)
     if adapter_path is not None:
-        model = apply_lora_layers(model, adapter_path)
+        model = load_adapters(model, adapter_path)
         model.eval()
     tokenizer = load_tokenizer(model_path, tokenizer_config)
 
@@ -596,6 +658,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
+    card.data.base_model = hf_path
     card.text = dedent(
         f"""
         # {upload_repo}
@@ -612,7 +675,16 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         from mlx_lm import load, generate
 
         model, tokenizer = load("{upload_repo}")
-        response = generate(model, tokenizer, prompt="hello", verbose=True)
+
+        prompt="hello"
+
+        if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template is not None:
+            messages = [{{"role": "user", "content": prompt}}]
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+
+        response = generate(model, tokenizer, prompt=prompt, verbose=True)
         ```
         """
     )
@@ -702,6 +774,8 @@ def quantize_model(
     quantized_config = copy.deepcopy(config)
     nn.quantize(model, q_group_size, q_bits)
     quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+    # support hf model tree #957
+    quantized_config["quantization_config"] = quantized_config["quantization"]
     quantized_weights = dict(tree_flatten(model.parameters()))
 
     return quantized_weights, quantized_config

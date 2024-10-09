@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 
 import mlx.core as mx
 
@@ -12,7 +13,10 @@ DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.6
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
-DEFAULT_MAX_KV_SIZE = 1024
+
+
+def str2bool(string):
+    return string.lower() not in ["false", "f"]
 
 
 def setup_arg_parser():
@@ -40,7 +44,9 @@ def setup_arg_parser():
         help="End of sequence token for tokenizer",
     )
     parser.add_argument(
-        "--prompt", default=DEFAULT_PROMPT, help="Message to be processed by the model"
+        "--prompt",
+        default=DEFAULT_PROMPT,
+        help="Message to be processed by the model ('-' reads from stdin)",
     )
     parser.add_argument(
         "--max-tokens",
@@ -67,6 +73,12 @@ def setup_arg_parser():
         help="Use the default chat template",
     )
     parser.add_argument(
+        "--verbose",
+        type=str2bool,
+        default=True,
+        help="Log verbose output when 'True' or 'T' or only print the response when 'False' or 'F'",
+    )
+    parser.add_argument(
         "--colorize",
         action="store_true",
         help="Colorize output based on T[0] probability",
@@ -81,6 +93,7 @@ def setup_arg_parser():
         "--max-kv-size",
         type=int,
         help="Set the maximum key-value cache size",
+        default=None,
     )
     parser.add_argument(
         "--kv-cache-file",
@@ -171,14 +184,19 @@ def main():
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
-    elif tokenizer.chat_template is None:
+    elif cache_history is not None:
         tokenizer.chat_template = metadata["chat_template"]
 
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
         and tokenizer.chat_template is not None
     ):
-        messages = [{"role": "user", "content": args.prompt}]
+        messages = [
+            {
+                "role": "user",
+                "content": sys.stdin.read() if args.prompt == "-" else args.prompt,
+            }
+        ]
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -195,29 +213,30 @@ def main():
     else:
         prompt = args.prompt
 
+    if args.colorize and not args.verbose:
+        raise ValueError("Cannot use --colorize with --verbose=False")
     formatter = colorprint_by_t0 if args.colorize else None
 
     # Determine the max kv size from the kv cache or passed arguments
     max_kv_size = args.max_kv_size
-    if max_kv_size is None:
-        max_kv_size = (
-            int(metadata["max_kv_size"])
-            if cache_history is not None
-            else DEFAULT_MAX_KV_SIZE
-        )
+    if cache_history is not None:
+        max_kv_size = metadata["max_kv_size"]
+        max_kv_size = int(max_kv_size) if max_kv_size.isdigit() else None
 
-    generate(
+    response = generate(
         model,
         tokenizer,
         prompt,
         args.max_tokens,
-        verbose=True,
+        verbose=args.verbose,
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,
         max_kv_size=max_kv_size,
         cache_history=cache_history,
     )
+    if not args.verbose:
+        print(response)
 
 
 if __name__ == "__main__":

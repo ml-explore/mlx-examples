@@ -56,7 +56,7 @@ def setup_arg_parser():
     parser.add_argument(
         "--max-kv-size",
         type=int,
-        default=1024,
+        default=None,
         help="Set the maximum key-value cache size",
     )
     parser.add_argument(
@@ -139,11 +139,15 @@ def main():
     print("Saving...")
     cache_dict = {}
     for i, c in enumerate(cache):
-        cache_dict[f"{i}_keys"] = c.state[0]
-        cache_dict[f"{i}_values"] = c.state[1]
+        cache_dict[f"{i}_keys"] = c.state[0][..., : c.offset, :]
+        cache_dict[f"{i}_values"] = c.state[1][..., : c.offset, :]
     metadata = {}
     metadata["model"] = args.model
     metadata["chat_template"] = tokenizer.chat_template
     metadata["tokenizer_config"] = json.dumps(tokenizer_config)
     metadata["max_kv_size"] = str(args.max_kv_size)
     mx.save_safetensors(args.kv_cache_file, cache_dict, metadata)
+
+
+if __name__ == "__main__":
+    main()

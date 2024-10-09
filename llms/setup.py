@@ -10,7 +10,7 @@ with open(package_dir / "requirements.txt") as fid:
     requirements = [l.strip() for l in fid.readlines()]
 
 sys.path.append(str(package_dir))
-from version import __version__
+from _version import __version__
 
 setup(
     name="mlx-lm",
