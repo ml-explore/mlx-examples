@@ -1,7 +1,6 @@
 # Copyright © 2024 Apple Inc.
 
 import json
-import sys
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,10 +9,6 @@ from typing import Optional
 import mlx.core as mx
 import mlx.nn as nn
 from tqdm import tqdm
-
-cur_path = Path(__file__).parents[1].resolve()
-sys.path.append(str(cur_path / "encodec"))
-sys.path.append(str(cur_path / "t5"))
 
 from encodec import EncodecModel
 from t5 import T5
