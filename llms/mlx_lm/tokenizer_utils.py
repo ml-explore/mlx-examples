@@ -97,6 +97,11 @@ class NaiveStreamingDetokenizer(StreamingDetokenizer):
     def text(self):
         if self._current_tokens:
             self._current_text = self._tokenizer.decode(self._current_tokens)
+            if (
+                self._tokenizer.clean_up_tokenization_spaces
+                and self._current_text[-1] == " "
+            ):
+                self._current_text = self._current_text[:-1]
         if self._current_text and self._current_text[-1] == "\n":
             self._tokens.extend(self._current_tokens)
             self._text += self._current_text
@@ -164,9 +169,11 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
     """
 
     _byte_decoder = None
+    _space_matches = (".", "?", "!", ",", "'", "n't", "'m", "'s", "'ve", "'re")
 
-    def __init__(self, tokenizer, trim_space=False):
-        self.trim_space = trim_space
+    def __init__(self, tokenizer):
+
+        self.clean_spaces = tokenizer.clean_up_tokenization_spaces
 
         # Extract the tokens in a list from id to text
         self.tokenmap = [None] * len(tokenizer.vocab)
@@ -185,17 +192,22 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         self.text = ""
         self.tokens = []
 
+    def _maybe_trim_space(self, current_text):
+        if current_text[0] != " ":
+            return current_text
+        elif not self.text:
+            return current_text[1:]
+        elif self.clean_spaces and current_text[1:].startswith(self._space_matches):
+            return current_text[1:]
+        return current_text
+
     def add_token(self, token):
         v = self.tokenmap[token]
-        # if the token starts with space
         if self._byte_decoder[v[0]] == 32:
             current_text = bytearray(
                 self._byte_decoder[c] for c in self._unflushed
             ).decode("utf-8")
-            if self.text or not self.trim_space:
-                self.text += current_text
-            else:
-                self.text += _remove_space(current_text)
+            self.text += self._maybe_trim_space(current_text)
             self._unflushed = v
         else:
             self._unflushed += v
@@ -204,10 +216,7 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         current_text = bytearray(self._byte_decoder[c] for c in self._unflushed).decode(
             "utf-8"
         )
-        if self.text or not self.trim_space:
-            self.text += current_text
-        else:
-            self.text += _remove_space(current_text)
+        self.text += self._maybe_trim_space(current_text)
         self._unflushed = ""
 
     @classmethod
@@ -303,14 +312,7 @@ def _is_spm_decoder_no_space(decoder):
 
 
 def _is_bpe_decoder(decoder):
-    _target_description = {
-        "type": "ByteLevel",
-        "add_prefix_space": False,
-        "trim_offsets": False,
-        "use_regex": False,
-    }
-
-    return _match(_target_description, decoder)
+    return isinstance(decoder, dict) and decoder.get("type", None) == "ByteLevel"
 
 
 def load_tokenizer(model_path, tokenizer_config_extra={}):
