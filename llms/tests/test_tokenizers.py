@@ -8,7 +8,6 @@ from mlx_lm.tokenizer_utils import (
     BPEStreamingDetokenizer,
     NaiveStreamingDetokenizer,
     SPMStreamingDetokenizer,
-    TokenizerWrapper,
     load_tokenizer,
 )
 
