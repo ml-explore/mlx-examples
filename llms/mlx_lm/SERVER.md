@@ -50,7 +50,7 @@ curl localhost:8080/v1/chat/completions \
 - `role_mapping`: (Optional) A dictionary to customize the role prefixes in
   the generated prompt. If not provided, the default mappings are used.
 
-- `stop`: (Optional) An array of strings or a single string. Thesse are
+- `stop`: (Optional) An array of strings or a single string. These are
   sequences of tokens on which the generation should stop.
 
 - `max_tokens`: (Optional) An integer specifying the maximum number of tokens
@@ -84,16 +84,21 @@ curl localhost:8080/v1/chat/completions \
   started in.
 
 - `adapters`: (Optional) A string path to low-rank adapters. The path must be
-  rlative to the directory the server was started in.
+  relative to the directory the server was started in.
 
 ### Response Fields
 
 - `id`: A unique identifier for the chat.
+
 - `system_fingerprint`: A unique identifier for the system.
+
 - `object`: Any of "chat.completions", "chat.completions.chunk" (for
   streaming), or "text.completion".
+
 - `model`: The model repo or path (e.g. `"mlx-community/Llama-3.2-3B-Instruct-4bit"`).
-- `created`: A timestamp for when the request was processed.
+
+- `created`: A time-stamp for when the request was processed.
+
 - `choices`: A list of outputs. Each output is a dictionary containing the fields:
     - `index`: The index in the list.
     - `logprobs`: A dictionary containing the fields:
@@ -105,6 +110,7 @@ curl localhost:8080/v1/chat/completions \
     - `finish_reason`: The reason the completion ended. This can be either of
       `"stop"` or `"length"`.
     - `message`: The text response from the model.
+
 - `usage`: A dictionary containing the fields:
     - `prompt_tokens`: The number of prompt tokens processed.
     - `completion_tokens`: The number of tokens generated.
@@ -121,5 +127,5 @@ curl localhost:8080/v1/models -H "Content-Type: application/json"
 This will return a list of locally available models where each model in the
 list contains the following fields:
 
-- `"id"`: The Hugging Face repo id.
-- `"created"`: A timestamp representing the model creation time.
+- `id`: The Hugging Face repo id.
+- `created`: A time-stamp representing the model creation time.
