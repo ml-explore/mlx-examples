@@ -411,7 +411,7 @@ class APIHandler(BaseHTTPRequestHandler):
         top_tokens = []
         for (token, logprobs), _ in zip(
             generate_step(
-                prompt=prompt,
+                prompts=prompt[None],
                 model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
@@ -421,6 +421,8 @@ class APIHandler(BaseHTTPRequestHandler):
             ),
             range(self.max_tokens),
         ):
+            token = token.item()
+            logprobs = logprobs.squeeze(0)
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
@@ -498,7 +500,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         for (token, _), _ in zip(
             generate_step(
-                prompt=prompt,
+                prompts=prompt[None],
                 model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
@@ -507,6 +509,7 @@ class APIHandler(BaseHTTPRequestHandler):
             ),
             range(self.max_tokens),
         ):
+            token = token.item()
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)

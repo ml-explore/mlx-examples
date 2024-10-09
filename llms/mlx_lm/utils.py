@@ -116,16 +116,16 @@ def apply_repetition_penalty(logits: mx.array, tokens: mx.array, penalty: float)
         logits (mx.array): Logits with repetition penalty applied to generated tokens.
     """
     if len(tokens) > 0:
-        selected_logits = logits[:, tokens]
+        selected_logits = mx.take_along_axis(logits, tokens, axis=-1)
         selected_logits = mx.where(
             selected_logits < 0, selected_logits * penalty, selected_logits / penalty
         )
-        logits[:, tokens] = selected_logits
+        logits[mx.arange(tokens.shape[0])[:, None], tokens] = selected_logits
     return logits
 
 
 def generate_step(
-    prompt: mx.array,
+    prompts: mx.array,
     model: nn.Module,
     temp: float = 0.0,
     repetition_penalty: Optional[float] = None,
@@ -143,7 +143,7 @@ def generate_step(
     A generator producing token ids based on the given prompt from the model.
 
     Args:
-        prompt (mx.array): The input prompt.
+        prompts (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
         temp (float): The temperature for sampling, if 0 the argmax is used.
           Default: ``0``.
@@ -169,23 +169,29 @@ def generate_step(
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
-          one token and a vector of log probabilities.
+          one token and a vector of log probabilities per prompt.
+          Shapes: ``(bs, 1), (bs, vocab_size)``.
     """
 
-    def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        logprobs = logits - mx.logsumexp(logits)
+    if prompts.ndim != 2:
+        raise ValueError(
+            f"Shape of prompts should be (bs, seq_len), got {prompts.shape}"
+        )
+
+    def sample(logits: mx.array) -> Tuple[mx.array, mx.array]:
+        logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
 
         if temp == 0:
-            token = mx.argmax(logits, axis=-1)
+            tokens = mx.argmax(logits, axis=-1)
         else:
             if top_p > 0 and top_p < 1.0:
-                token = top_p_sampling(logits, top_p, temp)
+                tokens = top_p_sampling(logits, top_p, temp)
             elif min_p != 0.0:
-                token = min_p_sampling(logits, min_p, min_tokens_to_keep, temp)
+                tokens = min_p_sampling(logits, min_p, min_tokens_to_keep, temp)
             else:
-                token = categorical_sampling(logits, temp)
+                tokens = categorical_sampling(logits, temp)
 
-        return token, logprobs
+        return mx.expand_dims(tokens, axis=-1), logprobs
 
     if repetition_penalty and (
         repetition_penalty < 0 or not isinstance(repetition_penalty, float)
@@ -215,7 +221,7 @@ def generate_step(
 
         logits_processor.append(logit_bias_processor)
 
-    y = prompt
+    y = prompts
     tokens = None
 
     # Create the KV cache for generation
@@ -225,23 +231,23 @@ def generate_step(
         raise ValueError("Wrong number of layers in the prompt cache.")
 
     def _step(y):
-        logits = model(y[None], cache=prompt_cache)
+        logits = model(y, cache=prompt_cache)
         logits = logits[:, -1, :]
 
         if logits_processor:
             nonlocal tokens
-            tokens = mx.concat([tokens, y]) if tokens is not None else y
+            tokens = mx.concat([tokens, y], axis=-1) if tokens is not None else y
 
             for processor in logits_processor:
                 logits = processor(tokens, logits)
 
         y, logprobs = sample(logits)
-        return y, logprobs.squeeze(0)
+        return y, logprobs
 
-    while y.size > prefill_step_size:
-        model(y[:prefill_step_size][None], cache=prompt_cache)
-        mx.eval([c.state for c in prompt_cache])
-        y = y[prefill_step_size:]
+    while y.shape[1] > prefill_step_size:
+        model(y[:, :prefill_step_size], cache=prompt_cache)
+        mx.eval([c.state for c in cache])
+        y = y[:, prefill_step_size:]
 
     y, logprobs = _step(y)
 
@@ -249,7 +255,8 @@ def generate_step(
     while True:
         next_y, next_logprobs = _step(y)
         mx.async_eval(next_y)
-        yield y.item(), logprobs
+        mx.eval(y)
+        yield y, logprobs
         y, logprobs = next_y, next_logprobs
 
 
@@ -259,7 +266,7 @@ def stream_generate(
     prompt: str,
     max_tokens: int = 100,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> Generator[str, None, None]:
     """
     A generator producing text based on the given prompt from the model.
 
@@ -280,10 +287,11 @@ def stream_generate(
     detokenizer = tokenizer.detokenizer
 
     detokenizer.reset()
-    for n, (token, _) in zip(
+    for _, (token, _) in zip(
         range(max_tokens),
         generate_step(prompt_tokens, model, **kwargs),
     ):
+        token = token.item()
         if token == tokenizer.eos_token_id:
             break
         detokenizer.add_token(token)
@@ -303,7 +311,7 @@ def generate(
     verbose: bool = False,
     formatter: Optional[Callable] = None,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> str:
     """
     Generate a complete response from the model.
 
@@ -334,8 +342,9 @@ def generate(
 
     for n, (token, logprobs) in zip(
         range(max_tokens),
-        generate_step(prompt_tokens, model, **kwargs),
+        generate_step(prompt_tokens[None], model, **kwargs),
     ):
+        token = token.item()
         if n == 0:
             prompt_time = time.perf_counter() - tic
             tic = time.perf_counter()
@@ -369,6 +378,85 @@ def generate(
         print(f"Peak memory: {peak_mem:.3f} GB")
 
     return detokenizer.text
+
+
+def batch_generate(
+    model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
+    prompts: List[str],
+    max_tokens: int = 100,
+    verbose: bool = False,
+    **kwargs,
+) -> str:
+    """
+    Generate a complete response from the model.
+
+    Args:
+       model (nn.Module): The language model.
+       tokenizer (PreTrainedTokenizer): The tokenizer.
+       prompts (List[str]): The string prompts.
+       max_tokens (int): The maximum number of tokens. Default: ``100``.
+       verbose (bool): If ``True``, print tokens and timing information.
+           Default: ``False``.
+       kwargs: The remaining options get passed to :func:`generate_step`.
+          See :func:`generate_step` for more details.
+    """
+    if kwargs.get("max_kv_size", None) is not None:
+        raise ValueError("max_kv_size is not supported for batch generation")
+
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
+
+    tokenizer._tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer._tokenizer.pad_token = tokenizer.eos_token
+        tokenizer._tokenizer.pad_token_id = tokenizer.eos_token_id
+    prompt_tokens = mx.array(
+        tokenizer._tokenizer(prompts, padding=True)["input_ids"]
+    )
+    output_toks = []
+
+    tic = time.perf_counter()
+
+    for (tokens, _), n in zip(
+        generate_step(prompt_tokens, model, **kwargs),
+        range(max_tokens),
+    ):
+        if n == 0:
+            prompt_time = time.perf_counter() - tic
+            tic = time.perf_counter()
+        if (tokens == tokenizer.eos_token_id).all():
+            break
+        output_toks.append(tokens)
+        if verbose:
+            print(".", end="", flush=True)
+
+    output_toks = mx.concatenate(output_toks, axis=1)
+    token_count = output_toks.size
+    response = [
+        response.split(tokenizer.eos_token)[0].split(tokenizer.pad_token)[0]
+        for response in tokenizer.batch_decode(output_toks.tolist())
+    ]
+
+    if verbose:
+        gen_time = time.perf_counter() - tic
+        if token_count <= 0:
+            print("No tokens generated for this prompt")
+        else:
+            print()
+            for p, resp in zip(prompts, response):
+                print("=" * 10)
+                print("Prompt:", p)
+                print(resp)
+        prompt_tps = prompt_tokens.size / prompt_time
+        gen_tps = token_count / gen_time
+        print("=" * 10)
+        print(f"Prompt: {prompt_tokens.size} tokens, {prompt_tps:.3f} tokens-per-sec")
+        print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
+        peak_mem = mx.metal.get_peak_memory() / 2**30
+        print(f"Peak memory: {peak_mem:.3f} GB")
+
+    return response
 
 
 def load_config(model_path: Path) -> dict:
