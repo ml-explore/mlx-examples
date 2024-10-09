@@ -1,3 +1,4 @@
+import math
 from functools import lru_cache
 
 import mlx.core as mx
@@ -11,6 +12,13 @@ class FluxSampler:
         self._max_shift = max_shift
         self._shift = shift
 
+    def _time_shift(self, x, t):
+        x1, x2 = 256, 4096
+        t1, t2 = self._base_shift, self._max_shift
+        exp_mu = math.exp((x - x1) * (t2 - t1) / (x2 - x1) + t1)
+        t = exp_mu / (exp_mu + (1 / t - 1))
+        return t
+
     @lru_cache
     def timesteps(
         self, num_steps, image_sequence_length, start: float = 1, stop: float = 0
@@ -18,13 +26,17 @@ class FluxSampler:
         t = mx.linspace(start, stop, num_steps + 1)
 
         if self._shift:
-            x = image_sequence_length
-            x1, x2 = 256, 4096
-            y1, y2 = self._base_shift, self._max_shift
-            mu = (x - x1) * (y2 - y1) / (x2 - x1) + y1
-            t = mx.exp(mu) / (mx.exp(mu) + (1 / t - 1))
+            t = self._time_shift(image_sequence_length, t)
 
         return t.tolist()
+
+    def random_timesteps(self, B, L, dtype=mx.float32, key=None):
+        t = mx.random.uniform(shape=(B,), dtype=dtype, key=key)
+
+        if self._shift:
+            t = self._time_shift(L, t)
+
+        return t
 
     def sample_prior(self, shape, dtype=mx.float32, key=None):
         return mx.random.normal(shape, dtype=dtype, key=key)

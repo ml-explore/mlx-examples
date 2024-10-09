@@ -168,7 +168,7 @@ class FluxPipeline:
         x_0, x_ids = self._prepare_latent_images(x_0)
 
         # Forward process (we use rf/lognorm(0, 1))
-        t = mx.sigmoid(mx.random.normal(shape=(len(x_0),), dtype=self.dtype))
+        t = self.sampler.random_timesteps(*x_0.shape[:2], dtype=self.dtype)
         eps = mx.random.normal(x_0.shape, dtype=self.dtype)
         x_t = self.sampler.add_noise(x_0, t, noise=eps)
         x_t = mx.stop_gradient(x_t)
