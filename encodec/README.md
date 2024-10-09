@@ -33,13 +33,14 @@ An example using the model:
 
 ```python
 import mlx.core as mx
-from utils import load, load_audio, save_audio
+from encodec import EncodecModel
+from utils import load_audio, save_audio
 
 # Load the 48 KHz model and preprocessor.
-model, processor = load("mlx-community/encodec-48khz-float32")
+model, processor = EncodecModel.from_pretrained("mlx-community/encodec-48khz-float32")
 
 # Load an audio file
-audio = load_audio("path/to/aduio", model.sampling_rate, model.channels)
+audio = load_audio("path/to/audio", model.sampling_rate, model.channels)
 
 # Preprocess the audio (this can also be a list of arrays for batched
 # processing).

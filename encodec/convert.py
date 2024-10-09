@@ -10,7 +10,6 @@ from typing import Any, Dict, Union
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten
 
 import encodec
 

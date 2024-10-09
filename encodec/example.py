@@ -1,10 +1,12 @@
 # Copyright © 2024 Apple Inc.
 
 import mlx.core as mx
-from utils import load, load_audio, save_audio
+from utils import load_audio, save_audio
+
+from encodec import EncodecModel
 
 # Load the 48 KHz model and preprocessor.
-model, processor = load("mlx-community/encodec-48khz-float32")
+model, processor = EncodecModel.from_pretrained("mlx-community/encodec-48khz-float32")
 
 # Load an audio file
 audio = load_audio("/path/to/audio", model.sampling_rate, model.channels)
