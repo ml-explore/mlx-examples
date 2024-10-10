@@ -31,10 +31,8 @@ from .utils import generate_step, load
 
 
 def get_system_fingerprint():
-    return (
-        f"{__version__}-{mx.__version__}-{platform.platform()}-"
-        f"{mx.metal.device_info().get('architecture', '')}"
-    )
+    gpu_arch = mx.metal.device_info()["architecture"] if mx.metal.is_available() else ""
+    return f"{__version__}-{mx.__version__}-{platform.platform()}-{gpu_arch}"
 
 
 class StopCondition(NamedTuple):
