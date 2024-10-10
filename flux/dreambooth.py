@@ -49,6 +49,16 @@ class FinetuningDataset:
         self.flux.ae.eval()
         for sample in tqdm(self.index["data"]):
             img = Image.open(self.dataset_base / sample["image"])
+            width, height = img.size
+            if width != height:
+                side = min(width, height)
+                img = img.crop(
+                    (width - side) / 2,
+                    (height - side) / 2,
+                    (width + side) / 2,
+                    (height + side) / 2,
+                )
+            img = img.resize(self.args.resolution, Image.LANCZOS)
             img = mx.array(np.array(img))
             img = (img[:, :, :3].astype(flux.dtype) / 255) * 2 - 1
             x_0 = self.flux.ae.encode(img[None])
@@ -119,14 +129,16 @@ class FinetuningDataset:
 
 
 def linear_to_lora_layers(flux, args):
-    lora_layers = []
     rank = args.lora_rank
-    for name, mod in flux.flow.named_modules():
-        if ("double_blocks" in name or "single_blocks" in name) and isinstance(
-            mod, nn.Linear
-        ):
-            lora_layers.append((name, LoRALinear.from_base(mod, r=rank)))
-    flux.flow.update_modules(tree_unflatten(lora_layers))
+    all_blocks = flux.flow.double_blocks + flux.flow.single_blocks
+    all_blocks.reverse()
+    num_blocks = args.lora_blocks if args.lora_blocks > 0 else len(all_blocks)
+    for i, block in zip(range(num_blocks), all_blocks):
+        loras = []
+        for name, module in block.named_modules():
+            if isinstance(module, nn.Linear):
+                loras.append((name, LoRALinear.from_base(module, r=rank)))
+        block.update_modules(tree_unflatten(loras))
 
 
 def decode_latents(flux, x):
@@ -207,6 +219,12 @@ if __name__ == "__main__":
         help="The batch size to use when training the stable diffusion model",
     )
     parser.add_argument(
+        "--resolution",
+        type=lambda x: tuple(map(int, x.split("x"))),
+        default=(512, 512),
+        help="The resolution of the training images",
+    )
+    parser.add_argument(
         "--progress-prompt",
         required=True,
         help="Use this prompt when generating images for evaluation",
@@ -228,6 +246,9 @@ if __name__ == "__main__":
         type=int,
         default=50,
         help="Save the model every CHECKPOINT_EVERY steps",
+    )
+    parser.add_argument(
+        "--lora-blocks", type=int, default=-1, help="Train the last LORA_BLOCKS blocks"
     )
     parser.add_argument(
         "--lora-rank", type=int, default=32, help="LoRA rank for finetuning"

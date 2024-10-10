@@ -10,7 +10,7 @@ class LoRALinear(nn.Module):
         linear: nn.Linear,
         r: int = 8,
         dropout: float = 0.0,
-        scale: float = 20.0,
+        scale: float = 1.0,
     ):
         output_dims, input_dims = linear.weight.shape
         lora_lin = LoRALinear(
@@ -46,7 +46,7 @@ class LoRALinear(nn.Module):
         output_dims: int,
         r: int = 8,
         dropout: float = 0.0,
-        scale: float = 20.0,
+        scale: float = 1.0,
         bias: bool = False,
     ):
         super().__init__()

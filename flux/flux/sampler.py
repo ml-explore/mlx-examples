@@ -5,12 +5,10 @@ import mlx.core as mx
 
 
 class FluxSampler:
-    def __init__(
-        self, base_shift: float = 0.5, max_shift: float = 1.5, shift: bool = True
-    ):
+    def __init__(self, name: str, base_shift: float = 0.5, max_shift: float = 1.5):
         self._base_shift = base_shift
         self._max_shift = max_shift
-        self._shift = shift
+        self._schnell = "schnell" in name
 
     def _time_shift(self, x, t):
         x1, x2 = 256, 4096
@@ -25,15 +23,18 @@ class FluxSampler:
     ):
         t = mx.linspace(start, stop, num_steps + 1)
 
-        if self._shift:
+        if self._schnell:
             t = self._time_shift(image_sequence_length, t)
 
         return t.tolist()
 
     def random_timesteps(self, B, L, dtype=mx.float32, key=None):
-        t = mx.random.uniform(shape=(B,), dtype=dtype, key=key)
-
-        if self._shift:
+        if self._schnell:
+            # TODO: Should we upweigh 1 and 0.75?
+            t = mx.random.randint(1, 5, shape=(B,), key=key)
+            t = t.astype(dtype) / 4
+        else:
+            t = mx.random.uniform(shape=(B,), dtype=dtype, key=key)
             t = self._time_shift(L, t)
 
         return t

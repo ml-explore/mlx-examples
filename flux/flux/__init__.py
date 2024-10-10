@@ -26,7 +26,7 @@ class FluxPipeline:
         self.clip_tokenizer = load_clip_tokenizer(name)
         self.t5 = load_t5(name)
         self.t5_tokenizer = load_t5_tokenizer(name)
-        self.sampler = FluxSampler(shift="schnell" not in name)
+        self.sampler = FluxSampler(name)
 
     def ensure_models_are_loaded(self):
         mx.eval(
@@ -184,4 +184,4 @@ class FluxPipeline:
             guidance=guidance,
         )
 
-        return (pred - (eps - x_0)).square().mean()
+        return (pred + x_0 - eps).square().mean()
