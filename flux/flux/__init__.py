@@ -36,6 +36,10 @@ class FluxPipeline:
             self.t5.parameters(),
         )
 
+    def reload_text_encoders(self):
+        self.t5 = load_t5(self.name)
+        self.clip = load_clip(name)
+
     def tokenize(self, text):
         t5_tokens = self.t5_tokenizer.encode(text)
         clip_tokens = self.clip_tokenizer.encode(text)
