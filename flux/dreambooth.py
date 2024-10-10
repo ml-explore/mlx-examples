@@ -150,7 +150,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations",
         type=int,
-        default=1000,
+        default=600,
         help="How many iterations to train for",
     )
     parser.add_argument(
@@ -195,18 +195,18 @@ if __name__ == "__main__":
         help="Train the last LORA_BLOCKS transformer blocks",
     )
     parser.add_argument(
-        "--lora-rank", type=int, default=32, help="LoRA rank for finetuning"
+        "--lora-rank", type=int, default=8, help="LoRA rank for finetuning"
     )
     parser.add_argument(
         "--warmup-steps", type=int, default=100, help="Learning rate warmup"
     )
     parser.add_argument(
-        "--learning-rate", type=float, default="1e-5", help="Learning rate for training"
+        "--learning-rate", type=float, default="1e-4", help="Learning rate for training"
     )
     parser.add_argument(
         "--grad-accumulate",
         type=int,
-        default=1,
+        default=4,
         help="Accumulate gradients for that many iterations before applying them",
     )
     parser.add_argument(
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         return loss
 
     @partial(mx.compile, inputs=state, outputs=state)
-    def compute_loss_and_grads(t5_feat, clip_feat, x, guidance):
+    def compute_loss_and_grads(x, t5_feat, clip_feat, guidance):
         return nn.value_and_grad(flux.flow, flux.training_loss)(
             x, t5_feat, clip_feat, guidance
         )
@@ -293,7 +293,7 @@ if __name__ == "__main__":
             if perform_step:
                 return (
                     grad_accumulate_and_step(
-                        x, t5_feat, clip_feat, x, guidance, prev_grads
+                        x, t5_feat, clip_feat, guidance, prev_grads
                     ),
                     None,
                 )
