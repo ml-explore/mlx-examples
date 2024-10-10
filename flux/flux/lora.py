@@ -23,7 +23,7 @@ class LoRALinear(nn.Module):
         lora_lin.linear = linear
         return lora_lin
 
-    def fuse(self, de_quantize: bool = False):
+    def fuse(self):
         linear = self.linear
         bias = "bias" in linear
         weight = linear.weight

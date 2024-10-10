@@ -3,8 +3,11 @@ import time
 from typing import Tuple
 
 import mlx.core as mx
+import mlx.nn as nn
+from mlx.utils import tree_unflatten
 from tqdm import tqdm
 
+from .lora import LoRALinear
 from .sampler import FluxSampler
 from .utils import (
     load_ae,
@@ -38,7 +41,7 @@ class FluxPipeline:
 
     def reload_text_encoders(self):
         self.t5 = load_t5(self.name)
-        self.clip = load_clip(name)
+        self.clip = load_clip(self.name)
 
     def tokenize(self, text):
         t5_tokens = self.t5_tokenizer.encode(text)
@@ -156,6 +159,37 @@ class FluxPipeline:
         x = self.ae.decode(x)
         return mx.clip(x + 1, 0, 2) * 0.5
 
+    def generate_images(
+        self,
+        text: str,
+        n_images: int = 1,
+        num_steps: int = 35,
+        guidance: float = 4.0,
+        latent_size: Tuple[int, int] = (64, 64),
+        seed=None,
+        reload_text_encoders: bool = True,
+        progress: bool = True,
+    ):
+        latents = self.generate_latents(
+            text, n_images, num_steps, guidance, latent_size, seed
+        )
+        mx.eval(next(latents))
+
+        if reload_text_encoders:
+            self.reload_text_encoders()
+
+        for x_t in tqdm(latents, total=num_steps, disable=not progress, leave=True):
+            mx.eval(x_t)
+
+        images = []
+        for i in tqdm(range(len(x_t)), disable=not progress):
+            images.append(self.decode(x_t[i : i + 1]))
+            mx.eval(images[-1])
+        images = mx.concatenate(images, axis=0)
+        mx.eval(images)
+
+        return images
+
     def training_loss(
         self,
         x_0: mx.array,
@@ -171,7 +205,7 @@ class FluxPipeline:
         # Prepare the latent input
         x_0, x_ids = self._prepare_latent_images(x_0)
 
-        # Forward process (we use rf/lognorm(0, 1))
+        # Forward process
         t = self.sampler.random_timesteps(*x_0.shape[:2], dtype=self.dtype)
         eps = mx.random.normal(x_0.shape, dtype=self.dtype)
         x_t = self.sampler.add_noise(x_0, t, noise=eps)
@@ -189,3 +223,15 @@ class FluxPipeline:
         )
 
         return (pred + x_0 - eps).square().mean()
+
+    def linear_to_lora_layers(self, rank: int = 8, num_blocks: int = -1):
+        """Swap the linear layers in the transformer blocks with LoRA layers."""
+        all_blocks = self.flow.double_blocks + self.flow.single_blocks
+        all_blocks.reverse()
+        num_blocks = num_blocks if num_blocks > 0 else len(all_blocks)
+        for i, block in zip(range(num_blocks), all_blocks):
+            loras = []
+            for name, module in block.named_modules():
+                if isinstance(module, nn.Linear):
+                    loras.append((name, LoRALinear.from_base(module, r=rank)))
+            block.update_modules(tree_unflatten(loras))
