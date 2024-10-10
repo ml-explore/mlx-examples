@@ -53,10 +53,12 @@ class FinetuningDataset:
             if width != height:
                 side = min(width, height)
                 img = img.crop(
-                    (width - side) / 2,
-                    (height - side) / 2,
-                    (width + side) / 2,
-                    (height + side) / 2,
+                    (
+                        (width - side) / 2,
+                        (height - side) / 2,
+                        (width + side) / 2,
+                        (height + side) / 2,
+                    )
                 )
             img = img.resize(self.args.resolution, Image.LANCZOS)
             img = mx.array(np.array(img))
