@@ -27,6 +27,16 @@ def quantization_predicate(name, m):
     return hasattr(m, "to_quantized") and m.weight.shape[1] % 512 == 0
 
 
+def load_adapter(flux, adapter_file, fuse=False):
+    weights, lora_config = mx.load(adapter_file, return_metadata=True)
+    rank = int(lora_config["lora_rank"])
+    num_blocks = int(lora_config["lora_blocks"])
+    flux.linear_to_lora_layers(rank, num_blocks)
+    flux.flow.load_weights(list(weights.items()), strict=False)
+    if fuse:
+        flux.fuse_lora_layers()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate images from a textual prompt using stable diffusion"
@@ -47,11 +57,17 @@ if __name__ == "__main__":
     parser.add_argument("--save-raw", action="store_true")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--adapter")
+    parser.add_argument("--fuse-adapter", action="store_true")
+    parser.add_argument("--no-t5-padding", dest="t5_padding", action="store_false")
     args = parser.parse_args()
 
     # Load the models
-    flux = FluxPipeline("flux-" + args.model)
+    flux = FluxPipeline("flux-" + args.model, t5_padding=args.t5_padding)
     args.steps = args.steps or (50 if args.model == "dev" else 2)
+
+    if args.adapter:
+        load_adapter(flux, args.adapter, fuse=args.fuse_adapter)
 
     if args.quantize:
         nn.quantize(flux.flow, class_predicate=quantization_predicate)

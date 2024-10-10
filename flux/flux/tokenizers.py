@@ -165,17 +165,17 @@ class T5Tokenizer:
             tokens = [self.bos_token] + tokens
         if append_eos and self.eos_token >= 0:
             tokens.append(self.eos_token)
-        if len(tokens) < self.max_length and self.pad_token >= 0:
+        if pad and len(tokens) < self.max_length and self.pad_token >= 0:
             tokens += [self.pad_token] * (self.max_length - len(tokens))
 
         return tokens
 
-    def encode(self, text):
+    def encode(self, text, pad=True):
         if not isinstance(text, list):
-            return self.encode([text])
+            return self.encode([text], pad=pad)
 
         pad_token = self.pad_token if self.pad_token >= 0 else 0
-        tokens = self.tokenize(text)
+        tokens = self.tokenize(text, pad=pad)
         length = max(len(t) for t in tokens)
         for t in tokens:
             t.extend([pad_token] * (length - len(t)))

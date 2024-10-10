@@ -202,6 +202,6 @@ def load_clip_tokenizer(name: str):
     return CLIPTokenizer(bpe_ranks, vocab, max_length=77)
 
 
-def load_t5_tokenizer(name: str):
+def load_t5_tokenizer(name: str, pad: bool = True):
     model_file = hf_hub_download(configs[name].repo_id, "tokenizer_2/spiece.model")
     return T5Tokenizer(model_file, 256 if "schnell" in name else 512)

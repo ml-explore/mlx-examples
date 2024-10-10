@@ -20,9 +20,11 @@ from .utils import (
 
 
 class FluxPipeline:
-    def __init__(self, name: str):
+    def __init__(self, name: str, t5_padding: bool = True):
         self.dtype = mx.bfloat16
         self.name = name
+        self.t5_padding = t5_padding
+
         self.ae = load_ae(name)
         self.flow = load_flow_model(name)
         self.clip = load_clip(name)
@@ -44,7 +46,7 @@ class FluxPipeline:
         self.clip = load_clip(self.name)
 
     def tokenize(self, text):
-        t5_tokens = self.t5_tokenizer.encode(text)
+        t5_tokens = self.t5_tokenizer.encode(text, pad=self.t5_padding)
         clip_tokens = self.clip_tokenizer.encode(text)
         return t5_tokens, clip_tokens
 
@@ -235,3 +237,10 @@ class FluxPipeline:
                 if isinstance(module, nn.Linear):
                     loras.append((name, LoRALinear.from_base(module, r=rank)))
             block.update_modules(tree_unflatten(loras))
+
+    def fuse_lora_layers(self):
+        fused_layers = []
+        for name, module in self.flow.named_modules():
+            if isinstance(module, LoRALinear):
+                fused_layers.append((name, module.fuse()))
+        self.flow.update_modules(tree_unflatten(fused_layers))

@@ -32,9 +32,9 @@ class LoRALinear(nn.Module):
         output_dims, input_dims = weight.shape
         fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
 
-        lora_b = (self.scale * self.lora_b.T).astype(dtype)
-        lora_a = self.lora_a.T.astype(dtype)
-        fused_linear.weight = weight + lora_b @ lora_a
+        lora_b = self.scale * self.lora_b.T
+        lora_a = self.lora_a.T
+        fused_linear.weight = weight + (lora_b @ lora_a).astype(dtype)
         if bias:
             fused_linear.bias = linear.bias
 
