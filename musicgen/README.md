@@ -36,12 +36,10 @@ import mlx.core as mx
 from music_gen import MusicGen
 from utils import save_audio
 
-# Load the 48 KHz model and preprocessor.
-model, processor = MusicGen.from_pretrained("facebook/musicgen-medium")
+model = MusicGen.from_pretrained("facebook/musicgen-medium")
 
 audio = model.generate("happy rock")
 
-# Save the audio as a wave file
 save_audio("out.wav", audio, model.sampling_rate)
 ```
 
