@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import math
 import time
 from typing import Tuple

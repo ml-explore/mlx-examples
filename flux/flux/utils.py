@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import json
 import os
 from dataclasses import dataclass

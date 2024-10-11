@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import math
 from functools import lru_cache
 

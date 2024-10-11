@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import mlx.core as mx
 import regex
 from sentencepiece import SentencePieceProcessor
