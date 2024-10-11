@@ -1,0 +1,6 @@
+mlx>=0.18
+numpy
+huggingface_hub
+torch
+transformers
+scipy
