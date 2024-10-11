@@ -11,22 +11,6 @@ Install the requirements:
 pip install -r requirements.txt
 ```
 
-Optionally install FFmpeg and SciPy for loading and saving audio files,
-respectively.
-
-Install [FFmpeg](https://ffmpeg.org/):
-
-```
-# on macOS using Homebrew (https://brew.sh/)
-brew install ffmpeg
-```
-
-Install SciPy:
-
-```
-pip install scipy
-```
-
 ### Example
 
 An example using the model:
