@@ -154,11 +154,11 @@ def top_k_sampling(
 
     Args:
         logits: The logits from the model's output.
-        top_k: The cumulative probability threshold for top-p filtering.
+        top_k: Sample from the top k logits.
         temperature: Temperature parameter for softmax distribution reshaping.
-        axis: Axis along which to sample
+        axis: Axis along which to sample.
     Returns:
-        token selected based on the top-p criterion.
+        token selected based on the top-k criterion.
     """
     # referenced implementation from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py#L449-L460
     probs = mx.softmax(logits * (1 / temperature), axis=axis)
@@ -177,7 +177,7 @@ def top_k_sampling(
 
     sorted_token = mx.random.categorical(mx.log(top_probs), axis=axis)
     token = mx.take_along_axis(
-        sorted_indices, sorted_token[:, :, mx.newaxis], axis=axis
+        sorted_indices, mx.expand_dims(sorted_token, axis), axis=axis
     )
 
     return token
@@ -236,9 +236,8 @@ class MusicGen(nn.Module):
         x = sum([self.emb[k](audio_tokens[..., k]) for k in range(self.num_codebooks)])
 
         offset = cache[0].offset if cache[0] is not None else 0
-        offset = mx.full((audio_tokens.shape[0], 1, 1), offset)
         pos_emb = create_sin_embedding(offset, self.hidden_size)
-        x += pos_emb
+        x += pos_emb.astype(x.dtype)
 
         for layer, c in zip(self.layers, cache):
             x = layer(x, conditioning, cache=c)
@@ -351,7 +350,7 @@ class MusicGen(nn.Module):
             config.decoder = SimpleNamespace(**config.decoder)
 
         weights = torch.load(path / "state_dict.bin", weights_only=True)["best_state"]
-        weights = {k: mx.array(v.numpy()) for k, v in weights.items()}
+        weights = {k: mx.array(v) for k, v in weights.items()}
         weights = cls.sanitize(weights)
 
         model = MusicGen(config)

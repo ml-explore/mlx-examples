@@ -416,7 +416,6 @@ class T5(nn.Module):
                     allow_patterns=["*.json", "*.safetensors", "*.model"],
                 )
             )
-            print(path)
 
         with open(path / "config.json", "r") as f:
             config = SimpleNamespace(**json.load(f))
