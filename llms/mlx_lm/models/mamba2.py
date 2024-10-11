@@ -120,7 +120,7 @@ class Mamba2Mixer(nn.Module):
         self.hidden_size = args.hidden_size
         self.state_size = args.state_size
         self.num_heads = args.num_heads
-        self.head_dim = args.head_dim
+        self.head_dim = args.hidden_size // args.num_heads
         self.n_groups = args.n_groups
 
         self.conv_dim = self.intermediate_size + 2 * self.n_groups * self.state_size
@@ -140,7 +140,6 @@ class Mamba2Mixer(nn.Module):
             bias=args.use_bias
         )
 
-        self.act = nn.SiLU()
         self.dt_bias = mx.ones((self.num_heads,))
         self.A_log = mx.log(mx.arange(1, self.num_heads + 1))
         self.D = mx.ones((self.num_heads,))
@@ -149,24 +148,23 @@ class Mamba2Mixer(nn.Module):
 
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
-    def ssm_step(self, x, state=None):
+    def ssm_step(self, x, state, dt_proj):
         A = -mx.exp(self.A_log)
         D = self.D
-        deltaBC = self.x_proj(x)
-        delta, B, C = mx.split(
-            deltaBC,
-            indices_or_sections=[
-                self.time_step_rank,
-                self.time_step_rank + self.ssm_state_size,
-            ],
-            axis=-1,
-        )
-        delta = nn.softplus(self.dt_proj(delta))
-        new_state = mx.expand_dims(delta * x, -1) * mx.expand_dims(B, 1)
-        if state is not None:
-            new_state += state * mx.exp(mx.expand_dims(delta, -1) * A)
-        y = (new_state @ mx.expand_dims(C, -1)).squeeze(2)
-        y = y + D * x
+        delta = nn.softplus(dt_proj + self.dt_bias)
+        
+        B, C = mx.split(x, indices_or_sections=[self.state_size * self.n_groups], axis=-1)
+        
+        B = B.reshape(-1, self.n_groups, self.state_size)
+        C = C.reshape(-1, self.n_groups, self.state_size)
+        
+        if state is None:
+            new_state = mx.expand_dims(delta, -1) * B
+        else:
+            new_state = mx.expand_dims(delta, -1) * (B + state * mx.exp(mx.expand_dims(delta, -1) * A))
+        
+        y = mx.sum(new_state * C, axis=-1)
+        y = y + D * x[:, :self.num_heads]
         return y, new_state
 
     def __call__(self, x, cache):
@@ -178,19 +176,46 @@ class Mamba2Mixer(nn.Module):
         for t in range(T):
             xt = x[:, t, :]
             xz = self.in_proj(xt)
-            x_t, z_t = xz.split(indices_or_sections=2, axis=-1)
+            
+            x_t, z_t, dt_proj = mx.split(
+                xz,
+                indices_or_sections=[self.conv_dim, self.conv_dim + self.intermediate_size],
+                axis=-1
+            )
 
-            if x_t.shape[-1] != self.conv_dim:
-                raise ValueError(f"Expected conv input dim {self.conv_dim}, got {x_t.shape[-1]}")
-        
             conv_out, cache[0] = self.conv1d(mx.expand_dims(x_t, 1), cache[0])
             x_t = conv_out.squeeze(1)
             x_t = nn.silu(x_t)
-            y_t, cache[1] = self.ssm_step(x_t, cache[1])
+            y_t, cache[1] = self.ssm_step(x_t, cache[1], dt_proj)
             z_t = nn.silu(z_t)
-            output_t = y_t * z_t
+            
+            # Print shapes for debugging
+            print(f"y_t shape: {y_t.shape}")
+            print(f"z_t shape: {z_t.shape}")
+            print(f"self.num_heads: {self.num_heads}")
+            print(f"self.intermediate_size: {self.intermediate_size}")
+            print(f"self.head_dim: {self.head_dim}")
+
+            # Flexible reshaping
+            y_t_reshaped = y_t.reshape(B, -1, 1)
+            z_t_reshaped = z_t.reshape(B, y_t_reshaped.shape[1], -1)
+            
+            # Print reshaped shapes
+            print(f"y_t_reshaped shape: {y_t_reshaped.shape}")
+            print(f"z_t_reshaped shape: {z_t_reshaped.shape}")
+
+            # Element-wise multiplication
+            output_t = y_t_reshaped * z_t_reshaped
+            
+            # Reshape to match the expected input of out_proj
+            output_t = output_t.reshape(B, self.intermediate_size)
+            
+            print(f"output_t shape before out_proj: {output_t.shape}")
+            print(f"out_proj weight shape: {self.out_proj.weight.shape}")
+            
             output_t = self.out_proj(output_t)
             outputs.append(output_t)
+        
         output = mx.stack(outputs, axis=1)
         return output
 
