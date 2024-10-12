@@ -13,8 +13,8 @@ class Dataset:
 
     def __getitem__(self, index: int):
         item = self._data[index]
-        image = item['image']
-        prompt = item['prompt']
+        image = item["image"]
+        prompt = item["prompt"]
 
         return image, prompt
 
@@ -43,13 +43,14 @@ class HuggingFaceDataset(Dataset):
 
     def __init__(self, flux, args):
         from datasets import load_dataset
+
         df = load_dataset(args.dataset)["train"]
         self._data = df.data
         super().__init__(flux, args, df)
 
     def __getitem__(self, index: int):
         item = self._data[index]
-        return item['image'], item['prompt']
+        return item["image"], item["prompt"]
 
 
 def load_dataset(flux, args):

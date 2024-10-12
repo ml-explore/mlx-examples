@@ -9,11 +9,11 @@ import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
-from PIL import Image
 from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten, tree_map, tree_reduce
+from PIL import Image
 
-from flux import FluxPipeline, load_dataset, Trainer
+from flux import FluxPipeline, Trainer, load_dataset
 
 
 def generate_progress_images(iteration, flux, args):
@@ -186,7 +186,6 @@ if __name__ == "__main__":
     optimizer = optim.Adam(learning_rate=lr_schedule)
     state = [flux.flow.state, optimizer.state, mx.random.state]
 
-
     @partial(mx.compile, inputs=state, outputs=state)
     def single_step(x, t5_feat, clip_feat, guidance):
         loss, grads = nn.value_and_grad(flux.flow, flux.training_loss)(
@@ -197,13 +196,11 @@ if __name__ == "__main__":
 
         return loss
 
-
     @partial(mx.compile, inputs=state, outputs=state)
     def compute_loss_and_grads(x, t5_feat, clip_feat, guidance):
         return nn.value_and_grad(flux.flow, flux.training_loss)(
             x, t5_feat, clip_feat, guidance
         )
-
 
     @partial(mx.compile, inputs=state, outputs=state)
     def compute_loss_and_accumulate_grads(x, t5_feat, clip_feat, guidance, prev_grads):
@@ -212,7 +209,6 @@ if __name__ == "__main__":
         )
         grads = tree_map(lambda a, b: a + b, prev_grads, grads)
         return loss, grads
-
 
     @partial(mx.compile, inputs=state, outputs=state)
     def grad_accumulate_and_step(x, t5_feat, clip_feat, guidance, prev_grads):
@@ -228,7 +224,6 @@ if __name__ == "__main__":
         optimizer.update(flux.flow, grads)
 
         return loss
-
 
     # We simply route to the appropriate step based on whether we have
     # gradients from a previous step and whether we should be performing an
@@ -252,7 +247,6 @@ if __name__ == "__main__":
                     x, t5_feat, clip_feat, guidance, prev_grads
                 )
 
-
     # print("Create the training dataset.", flush=True)
     dataset = load_dataset(flux, args)
     trainer = Trainer(flux, dataset, args)
@@ -273,7 +267,7 @@ if __name__ == "__main__":
 
         if (i + 1) % 10 == 0:
             toc = time.time()
-            peak_mem = mx.metal.get_peak_memory() / 1024 ** 3
+            peak_mem = mx.metal.get_peak_memory() / 1024**3
             print(
                 f"Iter: {i + 1} Loss: {sum(losses) / 10:.3f} "
                 f"It/s: {10 / (toc - tic):.3f} "

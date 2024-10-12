@@ -93,6 +93,6 @@ class Trainer:
             x_indices = mx.random.permutation(len(self.latents))
             c_indices = x_indices // n_aug
             for i in range(0, len(self.latents), batch_size):
-                x_i = x_indices[i: i + batch_size]
-                c_i = c_indices[i: i + batch_size]
+                x_i = x_indices[i : i + batch_size]
+                c_i = c_indices[i : i + batch_size]
                 yield xs[x_i], t5[c_i], clip[c_i]
