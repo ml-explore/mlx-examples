@@ -28,6 +28,26 @@ You can install all of the above with the `requirements.txt` as follows:
 
     pip install -r requirements.txt
 
+
+Usage
+---------
+
+You can use the following command to generate an image, using `--output` to specify the storage location of the image, defaulting to `out.png`.
+
+```shell
+python txt2image.py --model schnell \
+    --n-images 1 \
+    --image-size 256x512 \
+    --verbose \
+    'A photo of an astronaut riding a horse on Mars.'
+```
+
+For more parameters, please use the `--help` command to view.
+
+```shell
+python txt2image.py --help
+```
+
 Inference
 ---------
 
@@ -78,7 +98,11 @@ except for some additional logic to quantize and/or load trained adapters. One
 can use the script as follows:
 
 ```shell
-python txt2image.py --n-images 4 --n-rows 2 --image-size 256x512 'A photo of an astronaut riding a horse on Mars.'
+python txt2image.py \
+    --n-images 4 \
+    --n-rows 2 \
+    --image-size 256x512 \
+    'A photo of an astronaut riding a horse on Mars.'
 ```
 
 ### Experimental Options
@@ -160,8 +184,8 @@ The adapters are saved in `mlx_output` and can be used directly by the
 `txt2image.py` script. For instance,
 
 ```shell
-python txt2img.py --model dev --save-raw --image-size 512x512 --n-images 1 \
-    --adapter mlx_output/mlx_output/0001200_adapters.safetensors \
+python txt2image.py --model dev --save-raw --image-size 512x512 --n-images 1 \
+    --adapter mlx_output/0001200_adapters.safetensors \
     --fuse-adapter \
     --no-t5-padding \
     'A photo of an sks dog lying on the sand at a beach in Greece'
