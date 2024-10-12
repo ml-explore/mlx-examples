@@ -348,7 +348,7 @@ def generate(
             if formatter:
                 # We have to finalize so that the prob corresponds to the last segment
                 detokenizer.finalize()
-                with mx.stream(mx.default_stream(mx.cpu)):
+                with mx.stream(mx.cpu):
                     prob = mx.exp(logprobs[token]).item()
                 formatter(detokenizer.last_segment, prob)
             else:
