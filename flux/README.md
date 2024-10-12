@@ -94,17 +94,12 @@ Finetuning
 
 The `dreambooth.py` script supports LoRA finetuning of FLUX-dev (and schnell
 but ymmv) on a provided image dataset. The dataset folder must have an
-`index.json` file with the following format:
+`train.jsonl` file with the following format:
 
-```json
-{
-    "data": [
-        {"image": "path-to-image-relative-to-dataset", "text": "Prompt to use with this image"},
-        {"image": "path-to-image-relative-to-dataset", "text": "Prompt to use with this image"},
-        {"image": "path-to-image-relative-to-dataset", "text": "Prompt to use with this image"},
-        ...
-    ]
-}
+```jsonl
+{"image": "path-to-image-relative-to-dataset", "prompt": "Prompt to use with this image"}
+{"image": "path-to-image-relative-to-dataset", "prompt": "Prompt to use with this image"}
+...
 ```
 
 The training script by default trains for 600 iterations with a batch size of
@@ -126,19 +121,15 @@ The training images are the following 5 images [^2]:
 
 ![dog6](static/dog6.png)
 
-We start by making the following `index.json` file and placing it in the same
+We start by making the following `train.jsonl` file and placing it in the same
 folder as the images.
 
-```json
-{
-    "data": [
-        {"image": "00.jpg", "text": "A photo of sks dog"},
-        {"image": "01.jpg", "text": "A photo of sks dog"},
-        {"image": "02.jpg", "text": "A photo of sks dog"},
-        {"image": "03.jpg", "text": "A photo of sks dog"},
-        {"image": "04.jpg", "text": "A photo of sks dog"}
-    ]
-}
+```jsonl
+{"image": "00.jpg", "prompt": "A photo of sks dog"}
+{"image": "01.jpg", "prompt": "A photo of sks dog"}
+{"image": "02.jpg", "prompt": "A photo of sks dog"}
+{"image": "03.jpg", "prompt": "A photo of sks dog"}
+{"image": "04.jpg", "prompt": "A photo of sks dog"}
 ```
 
 Subsequently we finetune FLUX using the following command:
