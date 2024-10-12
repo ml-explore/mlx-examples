@@ -142,6 +142,17 @@ python dreambooth.py \
     path/to/dreambooth/dataset/dog6
 ```
 
+
+Or you can directly use the pre-processed Hugging Face dataset [mlx-community/dreambooth-dog6](https://huggingface.co/datasets/mlx-community/dreambooth-dog6) for fine-tuning.
+
+```shell
+python dreambooth.py \
+    --progress-prompt 'A photo of an sks dog lying on the sand at a beach in Greece' \
+    --progress-every 600 --iterations 1200 --learning-rate 0.0001 \
+    --lora-rank 4 --grad-accumulate 8 \
+    mlx-community/dreambooth-dog6
+```
+
 The training requires approximately 50GB of RAM and on an M2 Ultra it takes a
 bit more than 1 hour.
 
