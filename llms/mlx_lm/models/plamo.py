@@ -89,6 +89,9 @@ class Attention(nn.Module):
             queries = self.rotary_emb(queries)
             keys = self.rotary_emb(keys)
 
+        keys = mx.tile(keys, [1, self.config.n_shared_head, 1, 1])
+        values = mx.tile(values, [1, self.config.n_shared_head, 1, 1])
+
         output = mx.fast.scaled_dot_product_attention(
             queries,
             keys,
