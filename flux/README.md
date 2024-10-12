@@ -122,6 +122,10 @@ This is a step-by-step finetuning example. We will be using the data from
 In particular, we will use `dog6` which is a popular example for showcasing
 dreambooth [^1].
 
+The training images are the following 5 images [^2]:
+
+![dog6](static/dog6.png)
+
 We start by making the following `index.json` file and placing it in the same
 folder as the images.
 
@@ -178,3 +182,4 @@ model and the second fuses the adapter back into the model to get a bit more
 speed during generation.
 
 [^1]: Refer to the [arXiv paper](https://arxiv.org/abs/2208.12242) for more details.
+[^2]: The images are from unsplash by https://unsplash.com/@alvannee .
