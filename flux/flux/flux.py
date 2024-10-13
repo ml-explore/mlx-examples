@@ -184,7 +184,7 @@ class FluxPipeline:
             mx.eval(x_t)
 
         images = []
-        for i in tqdm(range(len(x_t)), disable=not progress):
+        for i in tqdm(range(len(x_t)), disable=not progress, desc="generate images"):
             images.append(self.decode(x_t[i : i + 1]))
             mx.eval(images[-1])
         images = mx.concatenate(images, axis=0)
