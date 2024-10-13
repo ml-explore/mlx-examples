@@ -67,7 +67,7 @@ def setup_arg_parser():
 
     parser.add_argument(
         "--model",
-        default="schnell",
+        default="dev",
         choices=[
             "dev",
             "schnell",
@@ -247,8 +247,7 @@ if __name__ == "__main__":
                     x, t5_feat, clip_feat, guidance, prev_grads
                 )
 
-    # print("Create the training dataset.", flush=True)
-    dataset = load_dataset(flux, args)
+    dataset = load_dataset(args.dataset)
     trainer = Trainer(flux, dataset, args)
     trainer.encode_dataset()
 
