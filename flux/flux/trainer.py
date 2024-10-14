@@ -26,15 +26,15 @@ class Trainer:
         # Random crop the input image between 0.8 to 1.0 of its original dimensions
         crop_size = (
             max((0.8 + 0.2 * a) * width, resolution[0]),
-            max((0.8 + 0.2 * a) * height, resolution[1]),
+            max((0.8 + 0.2 * b) * height, resolution[1]),
         )
         pan = (width - crop_size[0], height - crop_size[1])
         img = img.crop(
             (
-                pan[0] * b,
-                pan[1] * c,
-                crop_size[0] + pan[0] * b,
-                crop_size[1] + pan[1] * c,
+                pan[0] * c,
+                pan[1] * d,
+                crop_size[0] + pan[0] * c,
+                crop_size[1] + pan[1] * d,
             )
         )
 

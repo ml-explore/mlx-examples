@@ -21,8 +21,9 @@ The dependencies are minimal, namely:
 
 - `huggingface-hub` to download the checkpoints.
 - `regex` for the tokenization
-- `tqdm`, `PIL`, and `numpy` for the `txt2image.py` script
+- `tqdm`, `PIL`, and `numpy` for the scripts
 - `sentencepiece` for the T5 tokenizer
+- `datasets` for using an HF dataset directly
 
 You can install all of the above with the `requirements.txt` as follows:
 
