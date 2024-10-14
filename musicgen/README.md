@@ -17,7 +17,7 @@ An example using the model:
 
 ```python
 import mlx.core as mx
-from music_gen import MusicGen
+from musicgen import MusicGen
 from utils import save_audio
 
 model = MusicGen.from_pretrained("facebook/musicgen-medium")
