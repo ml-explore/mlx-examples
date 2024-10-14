@@ -2,7 +2,6 @@
 
 import math
 from dataclasses import dataclass
-from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -198,8 +197,8 @@ class Model(nn.Module):
         self,
         x: mx.array,
         mask: mx.array = None,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache=None,
+    ) -> mx.array:
         mask = create_attention_mask(x, cache)
         y = self.model(x, mask, cache)
         return self.lm_head(y)
@@ -207,11 +206,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

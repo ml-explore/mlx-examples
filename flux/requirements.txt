@@ -1,0 +1,7 @@
+mlx>=0.18.1
+huggingface-hub
+regex
+numpy
+tqdm
+Pillow
+sentencepiece

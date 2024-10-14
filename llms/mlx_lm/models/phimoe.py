@@ -173,6 +173,7 @@ class PhiMoEModel(nn.Module):
 class Model(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.model_type = args.model_type
         self.args = args
         self.model = PhiMoEModel(args)
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=True)
@@ -208,11 +209,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads
