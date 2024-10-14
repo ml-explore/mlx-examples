@@ -16,7 +16,6 @@ pip install -r requirements.txt
 An example using the model:
 
 ```python
-import mlx.core as mx
 from musicgen import MusicGen
 from utils import save_audio
 
