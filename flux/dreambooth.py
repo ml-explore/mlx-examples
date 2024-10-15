@@ -15,7 +15,7 @@ from mlx.utils import tree_flatten, tree_map, tree_reduce
 from PIL import Image
 from tqdm import tqdm
 
-from flux import FluxPipeline
+from flux import FluxPipeline, save_config
 
 
 class FinetuningDataset:
@@ -249,6 +249,10 @@ if __name__ == "__main__":
     parser.add_argument("dataset")
 
     args = parser.parse_args()
+
+    output_path = Path(args.output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    save_config(vars(args), output_path / "adapter_config.json")
 
     # Load the model and set it up for LoRA training. We use the same random
     # state when creating the LoRA layers so all workers will have the same
