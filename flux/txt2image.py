@@ -77,7 +77,7 @@ if __name__ == "__main__":
         nn.quantize(flux.clip, class_predicate=quantization_predicate)
 
     if args.preload_models:
-        sd.ensure_models_are_loaded()
+        flux.ensure_models_are_loaded()
 
     # Make the generator
     latent_size = to_latent_size(args.image_size)
