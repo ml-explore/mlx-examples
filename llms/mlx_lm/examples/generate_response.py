@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 from mlx_lm import generate, load
 
 # Specify the checkpoint

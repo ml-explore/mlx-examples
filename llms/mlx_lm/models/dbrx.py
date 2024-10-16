@@ -1,7 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -49,7 +49,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
 
         qkv = self.Wqkv(x)
@@ -92,7 +92,7 @@ class NormAttnNorm(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         h = self.attn(self.norm_1(x), mask=mask, cache=cache)
         x = h + x
@@ -179,7 +179,7 @@ class DecoderLayer(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r, h = self.norm_attn_norm(x, mask, cache)
         out = self.ffn(h) + r
@@ -249,11 +249,3 @@ class Model(nn.Module):
                     experts = [(s, sv.T) for s, sv in experts]
                 new_weights.update(experts)
         return new_weights
-
-    @property
-    def head_dim(self):
-        return self.args.d_model // self.args.n_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.attn_config["kv_n_heads"]

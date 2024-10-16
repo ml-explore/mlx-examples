@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -149,19 +148,11 @@ class Model(nn.Module):
         self,
         x: mx.array,
         mask: mx.array = None,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache=None,
+    ) -> mx.array:
         y = self.transformer(x, mask, cache)
         return self.lm_head(y)
 
     @property
     def layers(self):
         return self.transformer.h
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_attention_heads
