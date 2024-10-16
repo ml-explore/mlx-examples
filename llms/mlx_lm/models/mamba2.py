@@ -6,37 +6,37 @@ from typing import Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-
 from .base import BaseModelArgs
 
+# python -m mlx_lm.generate --model rokyang/mamba2-130m-hf  --prompt "hello how are you."
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    model_type: str = "mamba2"
-    num_heads: int = 128
-    head_dim: int = 64
-    vocab_size: int = 32768
-    hidden_size: int = 4096
-    state_size: int = 128
-    num_hidden_layers: int = 64
-    layer_norm_epsilon: float = 1e-5
-    expand: int = 2
-    conv_kernel: int = 4
-    n_groups: int = 8
-    use_bias: bool = False
-    use_conv_bias: bool = True
-    initializer_range: float = 0.1
-    residual_in_fp32: bool = True
-    time_step_rank: Union[int, str] = "auto"
-    time_step_min: float = 0.001
-    time_step_max: float = 0.1
-    time_step_floor: float = 1e-4
+    num_heads: int
+    head_dim: int
+    vocab_size: int
+    hidden_size: int
+    state_size: int
+    num_hidden_layers: int
+    layer_norm_epsilon: float
+    expand: int
+    conv_kernel: int
+    n_groups: int
+    use_bias: bool
+    use_conv_bias: bool
+    initializer_range: float 
+    residual_in_fp32: bool
+    time_step_min: float
+    time_step_max: float
+    time_step_floor: float
+    rescale_prenorm_residual: bool
+    use_cache: bool
+    rms_norm: bool
+    chunk_size: int
+    tie_word_embeddings: bool
     time_step_limit: Tuple[float, float] = field(default_factory=lambda: (0.0, float("inf")))
-    rescale_prenorm_residual: bool = False
-    use_cache: bool = True
-    rms_norm: bool = True
-    chunk_size: int = 256
-    tie_word_embeddings: bool = False
+    time_step_rank: Union[int, str] = "auto"
+    model_type: str = "mamba2"
 
     def __post_init__(self):
         if not hasattr(self, "intermediate_size"):
@@ -149,26 +149,35 @@ class Mamba2Mixer(nn.Module):
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
     def ssm_step(self, x, state, dt_proj):
+        print(f"ssm_step input shapes - x: {x.shape}, dt_proj: {dt_proj.shape}")
         A = -mx.exp(self.A_log)
         D = self.D
         delta = nn.softplus(dt_proj + self.dt_bias)
         
         B, C = mx.split(x, indices_or_sections=[self.state_size * self.n_groups], axis=-1)
+        print(f"ssm_step split shapes - B: {B.shape}, C: {C.shape}")
         
         B = B.reshape(-1, self.n_groups, self.state_size)
         C = C.reshape(-1, self.n_groups, self.state_size)
+        print(f"After reshape - B: {B.shape}, C: {C.shape}")
+        
+        delta = delta.reshape(-1, self.num_heads, 1)
+        A = A.reshape(1, self.num_heads, 1)
         
         if state is None:
-            new_state = mx.expand_dims(delta, -1) * B
+            new_state = delta * B
         else:
-            new_state = mx.expand_dims(delta, -1) * (B + state * mx.exp(mx.expand_dims(delta, -1) * A))
+            new_state = delta * (B + state * mx.exp(delta * A))
         
+        print(f"Before final computation - new_state: {new_state.shape}, C: {C.shape}")
         y = mx.sum(new_state * C, axis=-1)
         y = y + D * x[:, :self.num_heads]
+        print(f"ssm_step output shape - y: {y.shape}")
         return y, new_state
 
     def __call__(self, x, cache):
         B, T, D = x.shape
+        print(f"__call__ input shape - x: {x.shape}")
         if cache is None:
             cache = [None, None]
 
@@ -176,47 +185,37 @@ class Mamba2Mixer(nn.Module):
         for t in range(T):
             xt = x[:, t, :]
             xz = self.in_proj(xt)
+            print(f"After in_proj shape - xz: {xz.shape}")
             
             x_t, z_t, dt_proj = mx.split(
                 xz,
                 indices_or_sections=[self.conv_dim, self.conv_dim + self.intermediate_size],
                 axis=-1
             )
+            print(f"After split shapes - x_t: {x_t.shape}, z_t: {z_t.shape}, dt_proj: {dt_proj.shape}")
 
             conv_out, cache[0] = self.conv1d(mx.expand_dims(x_t, 1), cache[0])
             x_t = conv_out.squeeze(1)
             x_t = nn.silu(x_t)
+            print(f"Before ssm_step shape - x_t: {x_t.shape}")
             y_t, cache[1] = self.ssm_step(x_t, cache[1], dt_proj)
             z_t = nn.silu(z_t)
+            print(f"After ssm_step shapes - y_t: {y_t.shape}, z_t: {z_t.shape}")
             
-            # Print shapes for debugging
-            print(f"y_t shape: {y_t.shape}")
-            print(f"z_t shape: {z_t.shape}")
-            print(f"self.num_heads: {self.num_heads}")
-            print(f"self.intermediate_size: {self.intermediate_size}")
-            print(f"self.head_dim: {self.head_dim}")
-
-            # Flexible reshaping
-            y_t_reshaped = y_t.reshape(B, -1, 1)
-            z_t_reshaped = z_t.reshape(B, y_t_reshaped.shape[1], -1)
-            
-            # Print reshaped shapes
-            print(f"y_t_reshaped shape: {y_t_reshaped.shape}")
-            print(f"z_t_reshaped shape: {z_t_reshaped.shape}")
-
             # Element-wise multiplication
-            output_t = y_t_reshaped * z_t_reshaped
+            output_t = y_t[:, :, None] * z_t[:, None, :]
+            print(f"After multiplication shape - output_t: {output_t.shape}")
             
-            # Reshape to match the expected input of out_proj
-            output_t = output_t.reshape(B, self.intermediate_size)
-            
-            print(f"output_t shape before out_proj: {output_t.shape}")
-            print(f"out_proj weight shape: {self.out_proj.weight.shape}")
+            # Sum across the second dimension to match the intermediate_size
+            output_t = output_t.sum(axis=1)
+            print(f"After sum shape - output_t: {output_t.shape}")
             
             output_t = self.out_proj(output_t)
+            print(f"After out_proj shape - output_t: {output_t.shape}")
             outputs.append(output_t)
         
         output = mx.stack(outputs, axis=1)
+        print(f"Final output shape: {output.shape}")
         return output
 
 
