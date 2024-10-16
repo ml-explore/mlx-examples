@@ -175,7 +175,7 @@ data formats. Here are examples of these formats:
 `tools`:
 
 ```jsonl
-{"messages":[{"role":"user","content":"What is the weather in San Francisco?"},{"role":"assistant","tool_calls":[{"id":"call_id","type":"function","function":{"name":"get_current_weather","arguments":"{\"location\": \"San Francisco, USA\", \"format\": \"celsius\"}"}}]}],"tools":[{"type":"function","function":{"name":"get_current_weather","description":"Get the current weather","parameters":{"type":"object","properties":{"location":{"type":"string","description":"The city and country, eg. San Francisco, USA"},"format":{"type":"string","enum":["celsius","fahrenheit"]}},"required":["location","format"]}}}]}
+{"messages":[{"role":"user","content":"What is the weather in San Francisco?"},{"role":"assistant","tool_calls":[{"id":"call_id","type":"function","function":{"name":"get_current_weather","arguments":"{"location": "San Francisco, USA", "format": "celsius"}"}}]}],"tools":[{"type":"function","function":{"name":"get_current_weather","description":"Get the current weather","parameters":{"type":"object","properties":{"location":{"type":"string","description":"The city and country, eg. San Francisco, USA"},"format":{"type":"string","enum":["celsius","fahrenheit"]}},"required":["location","format"]}}}]}
 ```
 
 <details>
@@ -193,7 +193,7 @@ data formats. Here are examples of these formats:
                     "type": "function",
                     "function": {
                         "name": "get_current_weather",
-                        "arguments": "{\"location\": \"San Francisco, USA\", \"format\": \"celsius\"}"
+                        "arguments": "{"location": "San Francisco, USA", "format": "celsius"}"
                     }
                 }
             ]
