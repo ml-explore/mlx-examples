@@ -1,12 +1,12 @@
 # Copyright © 2023-2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask
 from .su_rope import SuScaledRotaryEmbedding
 
 
@@ -84,7 +84,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -143,7 +143,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
@@ -202,11 +202,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

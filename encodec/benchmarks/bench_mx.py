@@ -3,9 +3,10 @@
 import time
 
 import mlx.core as mx
-from utils import load
 
-model, processor = load("mlx-community/encodec-48khz-float32")
+from encodec import EncodecModel
+
+model, processor = EncodecModel.from_pretrained("mlx-community/encodec-48khz-float32")
 
 audio = mx.random.uniform(shape=(288000, 2))
 feats, mask = processor(audio)

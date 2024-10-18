@@ -162,19 +162,11 @@ class Model(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache=None,
+    ) -> mx.array:
         y = self.model(x, cache)
         return self.lm_head(y)
 
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

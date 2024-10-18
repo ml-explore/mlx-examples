@@ -32,6 +32,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mlx_lm.cache_prompt = mlx_lm.cache_prompt:main",
+            "mlx_lm.chat = mlx_lm.chat:main",
             "mlx_lm.convert = mlx_lm.convert:main",
             "mlx_lm.fuse = mlx_lm.fuse:main",
             "mlx_lm.generate = mlx_lm.generate:main",

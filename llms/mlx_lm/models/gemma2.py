@@ -1,7 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -64,7 +64,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
@@ -135,13 +135,11 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
-        r = self.self_attn(self.input_layernorm(x.astype(mx.float32)), mask, cache)
+        r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + self.post_attention_layernorm(r)
-        r = self.mlp(self.pre_feedforward_layernorm(h).astype(mx.float16)).astype(
-            mx.float32
-        )
+        r = self.mlp(self.pre_feedforward_layernorm(h))
         out = h + self.post_feedforward_layernorm(r)
         return out
 
@@ -200,11 +198,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.head_dim
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

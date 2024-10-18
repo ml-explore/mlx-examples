@@ -3,12 +3,12 @@
 import math
 from dataclasses import dataclass
 from functools import partial
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask
 
 
 @dataclass
@@ -22,14 +22,14 @@ class ModelArgs(BaseModelArgs):
     num_attention_heads: int
     layer_norm_epsilon: float
     vocab_size: int
-    num_key_value_heads: Optional[int] = None
+    num_key_value_heads: int
     mup_attn_multiplier: float = 1.0
     mup_use_scaling: bool = True
     mup_embedding_multiplier: float = 10.0
     mup_width_multiplier: float = 8.0
     rope_embedding_base: float = 1000000
     rope_position_scale: float = 1.0
-    blocksparse_block_size: Tuple[int] = (64,)
+    blocksparse_block_size: int = 64
     blocksparse_num_local_blocks: int = 16
     blocksparse_vert_stride: int = 8
 
@@ -61,7 +61,6 @@ class Attention(nn.Module):
 
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
-        assert args.num_key_value_heads is not None
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
         self.n_q_per_kv = n_heads // n_kv_heads
 
@@ -161,7 +160,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -230,7 +229,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
@@ -304,16 +303,8 @@ class Model(nn.Module):
     def layers(self):
         return self.model.layers
 
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
     def sanitize(self, weights):
         # Remove unused precomputed rotary freqs
         return {
             k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
         }
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads
