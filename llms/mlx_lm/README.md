@@ -18,8 +18,55 @@ see the [LoRA documentation](LORA.md).
 
 git pull 
 cd llms
+
+# use conda env:
+conda activate m3mlx
+
+# install deps:
 pip install -e .  
+
+
 ```
+
+Install log:
+
+``` 
+Looking in indexes: https://bytedpypi.byted.org/simple/
+Obtaining file:///Users/bytedance/ai/mlx-lm/llms
+  Preparing metadata (setup.py) ... done
+Requirement already satisfied: mlx>=0.17.0 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from mlx-lm==0.19.1) (0.18.0)
+Requirement already satisfied: numpy in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from mlx-lm==0.19.1) (1.26.4)
+Requirement already satisfied: transformers>=4.39.3 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (4.41.1)
+Requirement already satisfied: protobuf in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from mlx-lm==0.19.1) (5.27.0)
+Requirement already satisfied: pyyaml in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from mlx-lm==0.19.1) (6.0.1)
+Requirement already satisfied: jinja2 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from mlx-lm==0.19.1) (3.1.4)
+Requirement already satisfied: filelock in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (3.14.0)
+Requirement already satisfied: huggingface-hub<1.0,>=0.23.0 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (0.23.4)
+Requirement already satisfied: packaging>=20.0 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (24.0)
+Requirement already satisfied: regex!=2019.12.17 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (2024.5.15)
+Requirement already satisfied: requests in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (2.32.2)
+Requirement already satisfied: tokenizers<0.20,>=0.19 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (0.19.1)
+Requirement already satisfied: safetensors>=0.4.1 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (0.4.3)
+Requirement already satisfied: tqdm>=4.27 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (4.66.4)
+Requirement already satisfied: sentencepiece!=0.1.92,>=0.1.91 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (0.2.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from jinja2->mlx-lm==0.19.1) (2.1.5)
+Requirement already satisfied: fsspec>=2023.5.0 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.23.0->transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (2024.5.0)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.23.0->transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (4.12.0)
+Requirement already satisfied: charset-normalizer<4,>=2 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from requests->transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (3.3.2)
+Requirement already satisfied: idna<4,>=2.5 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from requests->transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (3.7)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from requests->transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (2.2.1)
+Requirement already satisfied: certifi>=2017.4.17 in /opt/miniconda3/envs/m3mlx/lib/python3.11/site-packages (from requests->transformers>=4.39.3->transformers[sentencepiece]>=4.39.3->mlx-lm==0.19.1) (2024.2.2)
+
+Installing collected packages: mlx-lm
+  Attempting uninstall: mlx-lm
+    Found existing installation: mlx-lm 0.18.2
+    Uninstalling mlx-lm-0.18.2:
+      Successfully uninstalled mlx-lm-0.18.2
+  Running setup.py develop for mlx-lm
+Successfully installed mlx-lm-0.19.1
+
+```
+
 
 ## Run MXL LLM Server
 
@@ -38,6 +85,9 @@ mlx_lm.server --model <path_to_model_or_hf_repo>
 For example:
 
 ```shell
+# https://huggingface.co/mlx-community/Ministral-8B-Instruct-2410-8bit
+mlx_lm.server --model mlx-community/Ministral-8B-Instruct-2410-8bit --trust-remote-code --port 8722
+
 mlx_lm.server --model mlx-community/Meta-Llama-3.1-8B-Instruct-8bit --trust-remote-code --port 8722
 mlx_lm.server --model mlx-community/Mistral-Nemo-Instruct-2407-8bit --trust-remote-code --port 8722
 mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit --trust-remote-code --port 8722
