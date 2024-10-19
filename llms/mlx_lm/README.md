@@ -94,6 +94,15 @@ mlx_lm.server --model mlx-community/Meta-Llama-3.1-8B-Instruct-8bit --trust-remo
 mlx_lm.server --model mlx-community/Mistral-Nemo-Instruct-2407-8bit --trust-remote-code --port 8722
 mlx_lm.server --model mlx-community/Mistral-7B-Instruct-v0.3-4bit --trust-remote-code --port 8722
 mlx_lm.server --model mlx-community/internlm2_5-7b-chat-8bit --trust-remote-code --port 8722
+
+# for run
+run:
+	mlx_lm.server --model mlx-community/Qwen2.5-14B-Instruct-8bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/Qwen2.5-7B-Instruct-4bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/Qwen2.5-7B-Instruct-8bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/Qwen2.5-14B-Instruct-4bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/Ministral-8B-Instruct-2410-4bit --trust-remote-code --port 8722
+	#mlx_lm.server --model mlx-community/Ministral-8B-Instruct-2410-8bit --trust-remote-code --port 8722
 ```
 
 This will start a text generation server on port `8080` of the `localhost`
