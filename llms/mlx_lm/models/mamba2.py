@@ -106,6 +106,13 @@ class Mamba2Block(nn.Module):
         self.head_dim = args.hidden_size // args.num_heads
         self.n_groups = args.n_groups
 
+        projection_size = 2 * args.intermediate_size + 2 * args.n_groups * args.state_size + args.num_heads
+        self.in_proj = nn.Linear(
+            args.hidden_size,
+            projection_size,
+            bias=args.use_bias
+        )
+
         self.conv_dim = args.intermediate_size + 2 * args.n_groups * args.state_size
         self.conv1d = DepthWiseConv1d(
             in_channels=self.conv_dim,
@@ -116,15 +123,6 @@ class Mamba2Block(nn.Module):
             padding=args.conv_kernel - 1
         )
 
-        projection_size = args.intermediate_size + self.conv_dim + args.num_heads
-        self.in_proj = nn.Linear(
-            args.hidden_size,
-            projection_size,
-            bias=args.use_bias
-        )
-
-        self.act = nn.SiLU()
-
         self.A_log = mx.zeros(args.num_heads)
         self.D = mx.ones((args.num_heads,))
         self.dt_bias = mx.zeros(args.num_heads)
@@ -132,10 +130,10 @@ class Mamba2Block(nn.Module):
         self.out_proj = nn.Linear(args.intermediate_size, args.hidden_size, bias=args.use_bias)
         self.norm = MambaRMSNormGated(args.intermediate_size, eps=args.layer_norm_epsilon)
 
-    def ssm_step(self, x, state, dt_proj):
+    def ssm_step(self, x, state, dt):
         A = -mx.exp(self.A_log)
         D = self.D
-        delta = nn.softplus(dt_proj + self.dt_bias)
+        dt = nn.softplus(dt + self.dt_bias)
         
         B, C = mx.split(x, indices_or_sections=[self.state_size * self.n_groups], axis=-1)
         
@@ -143,13 +141,13 @@ class Mamba2Block(nn.Module):
         B = B.reshape(batch_size, self.n_groups, self.state_size)
         C = C.reshape(batch_size, -1, self.state_size)
         
-        delta = delta.reshape(batch_size, self.num_heads, 1)
+        dt = dt.reshape(batch_size, self.num_heads, 1)
         A = A.reshape(1, self.num_heads, 1)
         
         if state is None:
-            new_state = delta * B
+            new_state = dt * B
         else:
-            new_state = delta * (B + state * mx.exp(delta * A))
+            new_state = dt * (B + state * mx.exp(dt * A))
         
         y = mx.sum(new_state[:, :, None, :] * C[:, None, :, :], axis=(-1, -2))
         y = y + D * x[:, :self.num_heads]
@@ -163,27 +161,26 @@ class Mamba2Block(nn.Module):
         outputs = []
         for t in range(T):
             xt = x[:, t, :]
-            xz = self.in_proj(xt)
+            zxbcdt = self.in_proj(xt)
             
-            x_t, z_t, dt_proj = mx.split(
-                xz,
+            z, xBC, dt = mx.split(
+                zxbcdt,
                 indices_or_sections=[self.conv_dim, self.conv_dim + self.intermediate_size],
                 axis=-1
             )
 
             # Use the new DepthWiseConv1d with caching
-            conv_out, cache[0] = self.conv1d(mx.expand_dims(x_t, 1), cache[0])
-            x_t = conv_out.squeeze(1)
-            x_t = nn.silu(x_t)
-            y_t, cache[1] = self.ssm_step(x_t, cache[1], dt_proj)
-            z_t = nn.silu(z_t)
+            conv_out, cache[0] = self.conv1d(mx.expand_dims(z, 1), cache[0])
+            z = conv_out.squeeze(1)
+            z = nn.silu(z)
+            y_t, cache[1] = self.ssm_step(z, cache[1], dt)
+            xBC = nn.silu(xBC)
             
             # Element-wise multiplication
-            output_t = y_t[:, :, None] * z_t[:, None, :]
+            output_t = y_t[:, :, None] * xBC[:, None, :]
             
-            # Sum across the second dimension to match the intermediate_size
+            output_t = self.norm(output_t)
             output_t = output_t.sum(axis=1)
-            
             output_t = self.out_proj(output_t)
             outputs.append(output_t)
         
