@@ -338,3 +338,30 @@ class MambaCache(_BaseCache):
     @state.setter
     def state(self, v):
         self.cache = v
+
+
+class Mamba2Cache:
+    def __init__(self, num_layers):
+        self.conv_states = [None] * num_layers
+        self.ssm_states = [None] * num_layers
+        self.seqlen_offset = 0
+
+    def __getitem__(self, idx):
+        return (self.conv_states[idx], self.ssm_states[idx])
+
+    def __setitem__(self, idx, value):
+        self.conv_states[idx], self.ssm_states[idx] = value
+
+    @property
+    def state(self):
+        return {
+            'conv_states': self.conv_states,
+            'ssm_states': self.ssm_states,
+            'seqlen_offset': self.seqlen_offset
+        }
+
+    @state.setter
+    def state(self, v):
+        self.conv_states = v['conv_states']
+        self.ssm_states = v['ssm_states']
+        self.seqlen_offset = v['seqlen_offset']

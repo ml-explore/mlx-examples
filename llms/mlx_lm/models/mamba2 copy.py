@@ -6,41 +6,37 @@ from typing import Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-
 from .base import BaseModelArgs
 
+# python -m mlx_lm.generate --model rokyang/mamba2-130m-hf  --prompt "hello how are you."
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    model_type: str = "mamba2"
-    num_heads: int = 128
-    head_dim: int = 64
-    vocab_size: int = 32768
-    hidden_size: int = 4096
-    state_size: int = 128
-    num_hidden_layers: int = 64
-    layer_norm_epsilon: float = 1e-5
-    pad_token_id: int = 1
-    bos_token_id: int = 0
-    eos_token_id: int = 2
-    expand: int = 2
-    conv_kernel: int = 4
-    n_groups: int = 8
-    use_bias: bool = False
-    use_conv_bias: bool = True
-    hidden_act: str = "silu"
-    initializer_range: float = 0.1
-    residual_in_fp32: bool = True
-    time_step_rank: Union[int, str] = "auto"
-    time_step_min: float = 0.001
-    time_step_max: float = 0.1
-    time_step_floor: float = 1e-4
+    num_heads: int
+    head_dim: int
+    vocab_size: int
+    hidden_size: int
+    state_size: int
+    num_hidden_layers: int
+    layer_norm_epsilon: float
+    expand: int
+    conv_kernel: int
+    n_groups: int
+    use_bias: bool
+    use_conv_bias: bool
+    initializer_range: float 
+    residual_in_fp32: bool
+    time_step_min: float
+    time_step_max: float
+    time_step_floor: float
+    rescale_prenorm_residual: bool
+    use_cache: bool
+    rms_norm: bool
+    chunk_size: int
+    tie_word_embeddings: bool
     time_step_limit: Tuple[float, float] = field(default_factory=lambda: (0.0, float("inf")))
-    rescale_prenorm_residual: bool = False
-    use_cache: bool = True
-    rms_norm: bool = True
-    chunk_size: int = 256
-    tie_word_embeddings: bool = False
+    time_step_rank: Union[int, str] = "auto"
+    model_type: str = "mamba2"
 
     def __post_init__(self):
         if not hasattr(self, "intermediate_size"):
@@ -79,15 +75,24 @@ class MambaRMSNormGated(nn.Module):
         hidden_states = hidden_states * mx.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states
 
+
 class DepthWiseConv1d(nn.Module):
-    def __init__(self, channels, kernel_size, bias=True, groups=1, padding=0):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, groups=None, padding=0):
         super().__init__()
-        self.channels = channels
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.padding = padding
-        self.groups = groups
-        self.weight = mx.random.normal((self.channels, kernel_size, 1))
-        self.bias = mx.zeros((channels,)) if bias else None
+        self.groups = groups if groups is not None else in_channels
+
+        # Ensure in_channels and out_channels are the same for depthwise conv
+        assert in_channels == out_channels, "In and out channels must be the same for depthwise convolution"
+        # Ensure groups is equal to in_channels for depthwise conv
+        assert self.groups == in_channels, "Groups must be equal to in_channels for depthwise convolution"
+
+        # Initialize weight with shape (out_channels, kernel_size, 1)
+        self.weight = mx.random.normal((out_channels, kernel_size, 1))
+        self.bias = mx.zeros((out_channels,)) if bias else None
 
     def __call__(self, x, cache=None):
         B, L, C = x.shape
@@ -116,16 +121,17 @@ class Mamba2Mixer(nn.Module):
         self.hidden_size = args.hidden_size
         self.state_size = args.state_size
         self.num_heads = args.num_heads
-        self.head_dim = args.head_dim
+        self.head_dim = args.hidden_size // args.num_heads
         self.n_groups = args.n_groups
 
         self.conv_dim = self.intermediate_size + 2 * self.n_groups * self.state_size
         self.conv1d = DepthWiseConv1d(
-            channels=self.conv_dim,
-            kernel_size=self.conv_kernel_size,
-            bias=self.args.use_conv_bias,
+            in_channels=self.conv_dim,
+            out_channels=self.conv_dim,
+            bias=args.use_conv_bias,
+            kernel_size=args.conv_kernel,
             groups=self.conv_dim,
-            padding=self.conv_kernel_size - 1,
+            padding=args.conv_kernel - 1
         )
 
         projection_size = self.intermediate_size + self.conv_dim + self.num_heads
@@ -135,33 +141,35 @@ class Mamba2Mixer(nn.Module):
             bias=args.use_bias
         )
 
-        self.act = nn.SiLU()
-        self.dt_bias = mx.ones((self.num_heads,))
-        self.A_log = mx.log(mx.arange(1, self.num_heads + 1))
-        self.D = mx.ones((self.num_heads,))
+        self.A_log = mx.zeros(self.num_heads)
+        self.D = mx.ones(self.num_heads)
+        self.dt_bias = mx.zeros(self.num_heads)
 
         self.norm = MambaRMSNormGated(self.intermediate_size, eps=args.layer_norm_epsilon)
 
         self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
 
-    def ssm_step(self, x, state=None):
+    def ssm_step(self, x, state, dt_proj):
         A = -mx.exp(self.A_log)
         D = self.D
-        deltaBC = self.x_proj(x)
-        delta, B, C = mx.split(
-            deltaBC,
-            indices_or_sections=[
-                self.time_step_rank,
-                self.time_step_rank + self.ssm_state_size,
-            ],
-            axis=-1,
-        )
-        delta = nn.softplus(self.dt_proj(delta))
-        new_state = mx.expand_dims(delta * x, -1) * mx.expand_dims(B, 1)
-        if state is not None:
-            new_state += state * mx.exp(mx.expand_dims(delta, -1) * A)
-        y = (new_state @ mx.expand_dims(C, -1)).squeeze(2)
-        y = y + D * x
+        delta = nn.softplus(dt_proj + self.dt_bias)
+        
+        B, C = mx.split(x, indices_or_sections=[self.state_size * self.n_groups], axis=-1)
+        
+        batch_size = B.shape[0]
+        B = B.reshape(batch_size, self.n_groups, self.state_size)
+        C = C.reshape(batch_size, -1, self.state_size)
+        
+        delta = delta.reshape(batch_size, self.num_heads, 1)
+        A = A.reshape(1, self.num_heads, 1)
+        
+        if state is None:
+            new_state = delta * B
+        else:
+            new_state = delta * (B + state * mx.exp(delta * A))
+        
+        y = mx.sum(new_state[:, :, None, :] * C[:, None, :, :], axis=(-1, -2))
+        y = y + D * x[:, :self.num_heads]
         return y, new_state
 
     def __call__(self, x, cache):
@@ -173,15 +181,28 @@ class Mamba2Mixer(nn.Module):
         for t in range(T):
             xt = x[:, t, :]
             xz = self.in_proj(xt)
-            x_t, z_t = xz.split(indices_or_sections=2, axis=1)
+            
+            x_t, z_t, dt_proj = mx.split(
+                xz,
+                indices_or_sections=[self.conv_dim, self.conv_dim + self.intermediate_size],
+                axis=-1
+            )
+
             conv_out, cache[0] = self.conv1d(mx.expand_dims(x_t, 1), cache[0])
             x_t = conv_out.squeeze(1)
             x_t = nn.silu(x_t)
-            y_t, cache[1] = self.ssm_step(x_t, cache[1])
+            y_t, cache[1] = self.ssm_step(x_t, cache[1], dt_proj)
             z_t = nn.silu(z_t)
-            output_t = y_t * z_t
+            
+            # Element-wise multiplication
+            output_t = y_t[:, :, None] * z_t[:, None, :]
+            
+            # Sum across the second dimension to match the intermediate_size
+            output_t = output_t.sum(axis=1)
+            
             output_t = self.out_proj(output_t)
             outputs.append(output_t)
+        
         output = mx.stack(outputs, axis=1)
         return output
 
@@ -239,6 +260,9 @@ class Model(nn.Module):
             logits = self.backbone.embeddings.as_linear(x)
         else:
             logits = self.lm_head(x)
+
+        print(logits)
+        print(logits.shape)
 
         return logits
 
