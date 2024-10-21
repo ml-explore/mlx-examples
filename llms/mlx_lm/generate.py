@@ -111,8 +111,10 @@ def setup_arg_parser():
         "--wire-model",
         "-w",
         action="store_true",
-        help=("Keep the model resident in memory. This can substantially "
-         "speedup generation for models large relative to the machine's RAM.")
+        help=(
+            "Keep the model resident in memory. This can substantially "
+            "speedup generation for models large relative to the machine's RAM."
+        ),
     )
 
     return parser
@@ -230,7 +232,8 @@ def main():
             raise ValueError(
                 "Cannot wire a model larger than the available RAM. You may "
                 "be able to increase the available RAM by setting "
-                "`sudo sysctl iogpu.wired_limit_mb=N` to a larger value")
+                "`sudo sysctl iogpu.wired_limit_mb=N` to a larger value"
+            )
 
     response = generate(
         model,
