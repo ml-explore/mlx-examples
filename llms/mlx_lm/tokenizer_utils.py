@@ -193,7 +193,9 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         self.tokens = []
 
     def _maybe_trim_space(self, current_text):
-        if current_text[0] != " ":
+        if len(current_text) == 0:
+            return current_text
+        elif current_text[0] != " ":
             return current_text
         elif not self.text:
             return current_text[1:]
