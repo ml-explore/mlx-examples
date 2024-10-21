@@ -130,7 +130,17 @@ def map_vae_weights(key, value):
     if "upsamplers" in key:
         key = key.replace("upsamplers.0.conv", "upsample")
 
-    # Map attention layers
+    # Map attention layers in SD-2-1-base:VAE
+    if "key" in key:
+        key = key.replace("key", "key_proj")
+    if "proj_attn" in key:
+        key = key.replace("proj_attn", "out_proj")
+    if "query" in key:
+        key = key.replace("query", "query_proj")
+    if "value" in key:
+        key = key.replace("value", "value_proj")
+
+    # Map attention layers in SDXL Turbo
     if "to_k" in key:
         key = key.replace("to_k", "key_proj")
     if "to_out.0" in key:
@@ -139,6 +149,7 @@ def map_vae_weights(key, value):
         key = key.replace("to_q", "query_proj")
     if "to_v" in key:
         key = key.replace("to_v", "value_proj")
+
 
     # Map the mid block
     if "mid_block.resnets.0" in key:
