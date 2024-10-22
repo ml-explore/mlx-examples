@@ -342,7 +342,7 @@ class MambaCache(_BaseCache):
 
 class Mamba2Cache(_BaseCache):
     conv_states: Optional[mx.array] = None
-    ssm_states: Optional[mx.array] = None
+    ssm_state: Optional[mx.array] = None
 
     def __getitem__(self, idx: int) -> Optional[mx.array]:
         if idx == 0:
