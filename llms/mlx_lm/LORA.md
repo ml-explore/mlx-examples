@@ -226,13 +226,12 @@ data formats. Here are examples of these formats:
 The format for the `arguments` field in a function varies for different models.
 Common formats include JSON strings and dictionaries. The example provided
 follows the format used by
-[OpenAI](https://platform.openai.com/docs/guides/fine-tuning/fine-tuning-examples),
+[OpenAI](https://platform.openai.com/docs/guides/fine-tuning/fine-tuning-examples)
 and [Mistral
 AI](https://github.com/mistralai/mistral-finetune?tab=readme-ov-file#instruct).
-In Hugging Face's [chat
-templates](https://huggingface.co/docs/transformers/main/en/chat_templating#a-complete-tool-use-example),
-a dictionary format is used. Refer to the documentation for the model you are
-fine-tuning for more details.
+A dictionary format is used in Hugging Face's [chat
+templates](https://huggingface.co/docs/transformers/main/en/chat_templating#a-complete-tool-use-example).
+Refer to the documentation for the model you are fine-tuning for more details.
 
 </details>
 
