@@ -338,3 +338,24 @@ class MambaCache(_BaseCache):
     @state.setter
     def state(self, v):
         self.cache = v
+
+
+class Mamba2Cache(_BaseCache):
+    """Cache for Mamba model inference containing conv cache and SSM state."""
+    conv_cache: Optional[mx.array] = None
+    ssm_state: Optional[mx.array] = None
+
+    def __getitem__(self, idx: int) -> Optional[mx.array]:
+        if idx == 0:
+            return self.conv_cache
+        elif idx == 1:
+            return self.ssm_state
+        raise IndexError("Cache index must be 0 or 1")
+
+    def __setitem__(self, idx: int, value: Optional[mx.array]):
+        if idx == 0:
+            self.conv_cache = value
+        elif idx == 1:
+            self.ssm_state = value
+        else:
+            raise IndexError("Cache index must be 0 or 1")

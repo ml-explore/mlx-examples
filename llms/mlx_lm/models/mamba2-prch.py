@@ -193,6 +193,7 @@ class Mamba2(nn.Module):
         self.dt_bias = nn.Parameter(torch.empty(args.nheads, device=device))
         self.A_log = nn.Parameter(torch.empty(args.nheads, device=device))
         self.D = nn.Parameter(torch.empty(args.nheads, device=device))
+        
         self.norm = RMSNorm(args.d_inner, device=device)
         self.out_proj = nn.Linear(args.d_inner, args.d_model, bias=False, device=device)
 
