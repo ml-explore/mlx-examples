@@ -2,6 +2,7 @@
 
 import argparse
 import time
+import signal
 
 import mlx.core as mx
 import models
@@ -13,37 +14,49 @@ def generate(
     prompt: str,
     max_tokens: int,
     temp: float = 0.0,
+    timeout: int = None,
 ):
-    prompt = tokenizer.encode(prompt)
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
 
-    tic = time.time()
-    tokens = []
-    skip = 0
-    for token, n in zip(
-        models.generate(prompt, model, args.temp),
-        range(args.max_tokens),
-    ):
-        if token == tokenizer.eos_token_id:
-            break
+    if timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(timeout)
 
-        if n == 0:
-            prompt_time = time.time() - tic
-            tic = time.time()
+    try:
+        prompt = tokenizer.encode(prompt)
 
-        tokens.append(token.item())
-        s = tokenizer.decode(tokens)
-        print(s[skip:], end="", flush=True)
-        skip = len(s)
-    print(tokenizer.decode(tokens)[skip:], flush=True)
-    gen_time = time.time() - tic
-    print("=" * 10)
-    if len(tokens) == 0:
-        print("No tokens generated for this prompt")
-        return
-    prompt_tps = prompt.size / prompt_time
-    gen_tps = (len(tokens) - 1) / gen_time
-    print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
-    print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        tic = time.time()
+        tokens = []
+        skip = 0
+        for token, n in zip(
+            models.generate(prompt, model, args.temp),
+            range(args.max_tokens),
+        ):
+            if token == tokenizer.eos_token_id:
+                break
+
+            if n == 0:
+                prompt_time = time.time() - tic
+                tic = time.time()
+
+            tokens.append(token.item())
+            s = tokenizer.decode(tokens)
+            print(s[skip:], end="", flush=True)
+            skip = len(s)
+        print(tokenizer.decode(tokens)[skip:], flush=True)
+        gen_time = time.time() - tic
+        print("=" * 10)
+        if len(tokens) == 0:
+            print("No tokens generated for this prompt")
+            return
+        prompt_tps = prompt.size / prompt_time
+        gen_tps = (len(tokens) - 1) / gen_time
+        print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
+        print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+    finally:
+        if timeout:
+            signal.alarm(0)
 
 
 if __name__ == "__main__":
@@ -83,4 +96,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     mx.random.seed(args.seed)
     model, tokenizer = models.load(args.gguf, args.repo)
-    generate(model, tokenizer, args.prompt, args.max_tokens, args.temp)
+    generate(model, tokenizer, args.prompt, args.max_tokens, args.temp, timeout=args.timeout)

@@ -1,6 +1,7 @@
 # Copyright © 2023 Apple Inc.
 
 import argparse
+import signal
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -27,82 +28,97 @@ if __name__ == "__main__":
     parser.add_argument("--preload-models", action="store_true")
     parser.add_argument("--output", default="out.png")
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
-    # Load the models
-    if args.model == "sdxl":
-        sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=args.float16)
-        if args.quantize:
-            nn.quantize(
-                sd.text_encoder_1, class_predicate=lambda _, m: isinstance(m, nn.Linear)
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
+
+    if args.timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(args.timeout)
+
+    try:
+        # Load the models
+        if args.model == "sdxl":
+            sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=args.float16)
+            if args.quantize:
+                nn.quantize(
+                    sd.text_encoder_1,
+                    class_predicate=lambda _, m: isinstance(m, nn.Linear),
+                )
+                nn.quantize(
+                    sd.text_encoder_2,
+                    class_predicate=lambda _, m: isinstance(m, nn.Linear),
+                )
+                nn.quantize(sd.unet, group_size=32, bits=8)
+            args.cfg = args.cfg or 0.0
+            args.steps = args.steps or 2
+        else:
+            sd = StableDiffusion(
+                "stabilityai/stable-diffusion-2-1-base", float16=args.float16
             )
-            nn.quantize(
-                sd.text_encoder_2, class_predicate=lambda _, m: isinstance(m, nn.Linear)
-            )
-            nn.quantize(sd.unet, group_size=32, bits=8)
-        args.cfg = args.cfg or 0.0
-        args.steps = args.steps or 2
-    else:
-        sd = StableDiffusion(
-            "stabilityai/stable-diffusion-2-1-base", float16=args.float16
+            if args.quantize:
+                nn.quantize(
+                    sd.text_encoder,
+                    class_predicate=lambda _, m: isinstance(m, nn.Linear),
+                )
+                nn.quantize(sd.unet, group_size=32, bits=8)
+            args.cfg = args.cfg or 7.5
+            args.steps = args.steps or 50
+
+        # Ensure that models are read in memory if needed
+        if args.preload_models:
+            sd.ensure_models_are_loaded()
+
+        # Generate the latent vectors using diffusion
+        latents = sd.generate_latents(
+            args.prompt,
+            n_images=args.n_images,
+            cfg_weight=args.cfg,
+            num_steps=args.steps,
+            seed=args.seed,
+            negative_text=args.negative_prompt,
         )
-        if args.quantize:
-            nn.quantize(
-                sd.text_encoder, class_predicate=lambda _, m: isinstance(m, nn.Linear)
-            )
-            nn.quantize(sd.unet, group_size=32, bits=8)
-        args.cfg = args.cfg or 7.5
-        args.steps = args.steps or 50
+        for x_t in tqdm(latents, total=args.steps):
+            mx.eval(x_t)
 
-    # Ensure that models are read in memory if needed
-    if args.preload_models:
-        sd.ensure_models_are_loaded()
+        # The following is not necessary but it may help in memory
+        # constrained systems by reusing the memory kept by the unet and the text
+        # encoders.
+        if args.model == "sdxl":
+            del sd.text_encoder_1
+            del sd.text_encoder_2
+        else:
+            del sd.text_encoder
+        del sd.unet
+        del sd.sampler
+        peak_mem_unet = mx.metal.get_peak_memory() / 1024**3
 
-    # Generate the latent vectors using diffusion
-    latents = sd.generate_latents(
-        args.prompt,
-        n_images=args.n_images,
-        cfg_weight=args.cfg,
-        num_steps=args.steps,
-        seed=args.seed,
-        negative_text=args.negative_prompt,
-    )
-    for x_t in tqdm(latents, total=args.steps):
-        mx.eval(x_t)
+        # Decode them into images
+        decoded = []
+        for i in tqdm(range(0, args.n_images, args.decoding_batch_size)):
+            decoded.append(sd.decode(x_t[i : i + args.decoding_batch_size]))
+            mx.eval(decoded[-1])
+        peak_mem_overall = mx.metal.get_peak_memory() / 1024**3
 
-    # The following is not necessary but it may help in memory
-    # constrained systems by reusing the memory kept by the unet and the text
-    # encoders.
-    if args.model == "sdxl":
-        del sd.text_encoder_1
-        del sd.text_encoder_2
-    else:
-        del sd.text_encoder
-    del sd.unet
-    del sd.sampler
-    peak_mem_unet = mx.metal.get_peak_memory() / 1024**3
+        # Arrange them on a grid
+        x = mx.concatenate(decoded, axis=0)
+        x = mx.pad(x, [(0, 0), (8, 8), (8, 8), (0, 0)])
+        B, H, W, C = x.shape
+        x = x.reshape(args.n_rows, B // args.n_rows, H, W, C).transpose(0, 2, 1, 3, 4)
+        x = x.reshape(args.n_rows * H, B // args.n_rows * W, C)
+        x = (x * 255).astype(mx.uint8)
 
-    # Decode them into images
-    decoded = []
-    for i in tqdm(range(0, args.n_images, args.decoding_batch_size)):
-        decoded.append(sd.decode(x_t[i : i + args.decoding_batch_size]))
-        mx.eval(decoded[-1])
-    peak_mem_overall = mx.metal.get_peak_memory() / 1024**3
+        # Save them to disc
+        im = Image.fromarray(np.array(x))
+        im.save(args.output)
 
-    # Arrange them on a grid
-    x = mx.concatenate(decoded, axis=0)
-    x = mx.pad(x, [(0, 0), (8, 8), (8, 8), (0, 0)])
-    B, H, W, C = x.shape
-    x = x.reshape(args.n_rows, B // args.n_rows, H, W, C).transpose(0, 2, 1, 3, 4)
-    x = x.reshape(args.n_rows * H, B // args.n_rows * W, C)
-    x = (x * 255).astype(mx.uint8)
-
-    # Save them to disc
-    im = Image.fromarray(np.array(x))
-    im.save(args.output)
-
-    # Report the peak memory used during generation
-    if args.verbose:
-        print(f"Peak memory used for the unet: {peak_mem_unet:.3f}GB")
-        print(f"Peak memory used overall:      {peak_mem_overall:.3f}GB")
+        # Report the peak memory used during generation
+        if args.verbose:
+            print(f"Peak memory used for the unet: {peak_mem_unet:.3f}GB")
+            print(f"Peak memory used overall:      {peak_mem_overall:.3f}GB")
+    finally:
+        if args.timeout:
+            signal.alarm(0)

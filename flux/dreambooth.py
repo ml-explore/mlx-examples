@@ -4,6 +4,7 @@ import argparse
 import time
 from functools import partial
 from pathlib import Path
+import signal
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -16,31 +17,42 @@ from PIL import Image
 from flux import FluxPipeline, Trainer, load_dataset
 
 
-def generate_progress_images(iteration, flux, args):
+def generate_progress_images(iteration, flux, args, timeout=None):
     """Generate images to monitor the progress of the finetuning."""
-    out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{iteration:07d}_progress.png"
-    print(f"Generating {str(out_file)}", flush=True)
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
 
-    # Generate some images and arrange them in a grid
-    n_rows = 2
-    n_images = 4
-    x = flux.generate_images(
-        args.progress_prompt,
-        n_images,
-        args.progress_steps,
-    )
-    x = mx.pad(x, [(0, 0), (4, 4), (4, 4), (0, 0)])
-    B, H, W, C = x.shape
-    x = x.reshape(n_rows, B // n_rows, H, W, C).transpose(0, 2, 1, 3, 4)
-    x = x.reshape(n_rows * H, B // n_rows * W, C)
-    x = mx.pad(x, [(4, 4), (4, 4), (0, 0)])
-    x = (x * 255).astype(mx.uint8)
+    if timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(timeout)
 
-    # Save them to disc
-    im = Image.fromarray(np.array(x))
-    im.save(out_file)
+    try:
+        out_dir = Path(args.output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_file = out_dir / f"{iteration:07d}_progress.png"
+        print(f"Generating {str(out_file)}", flush=True)
+
+        # Generate some images and arrange them in a grid
+        n_rows = 2
+        n_images = 4
+        x = flux.generate_images(
+            args.progress_prompt,
+            n_images,
+            args.progress_steps,
+        )
+        x = mx.pad(x, [(0, 0), (4, 4), (4, 4), (0, 0)])
+        B, H, W, C = x.shape
+        x = x.reshape(n_rows, B // n_rows, H, W, C).transpose(0, 2, 1, 3, 4)
+        x = x.reshape(n_rows * H, B // n_rows * W, C)
+        x = mx.pad(x, [(4, 4), (4, 4), (0, 0)])
+        x = (x * 255).astype(mx.uint8)
+
+        # Save them to disc
+        im = Image.fromarray(np.array(x))
+        im.save(out_file)
+    finally:
+        if timeout:
+            signal.alarm(0)
 
 
 def save_adapters(iteration, flux, args):
