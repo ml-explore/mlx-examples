@@ -1,14 +1,11 @@
-# Copyright © 2024 Apple Inc.
-
 import math
 from dataclasses import dataclass, field
 from typing import Tuple, Union
-
 import mlx.core as mx
 import mlx.nn as nn
-from .base import BaseModelArgs
 
-# python -m mlx_lm.generate --model rokyang/mamba2-130m-hf  --prompt "hello how are you."
+from .base import BaseModelArgs
+from .cache import MambaCache
 
 @dataclass
 class ModelArgs(BaseModelArgs):
@@ -24,7 +21,7 @@ class ModelArgs(BaseModelArgs):
     n_groups: int
     use_bias: bool
     use_conv_bias: bool
-    initializer_range: float 
+    initializer_range: float
     residual_in_fp32: bool
     time_step_min: float
     time_step_max: float
@@ -47,21 +44,6 @@ class ModelArgs(BaseModelArgs):
             self.time_step_rank = math.ceil(self.hidden_size / 16)
 
 
-class Mamba2Cache:
-    def __init__(self):
-        self.cache = [None, None]
-
-    def __setitem__(self, idx, value):
-        self.cache[idx] = value
-
-    def __getitem__(self, idx):
-        return self.cache[idx]
-
-    @property
-    def state(self):
-        return self.cache
-
-
 class MambaRMSNormGated(nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
         super().__init__()
@@ -74,7 +56,7 @@ class MambaRMSNormGated(nn.Module):
         variance = mx.mean(hidden_states ** 2, axis=-1, keepdims=True)
         hidden_states = hidden_states * mx.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states
-
+    
 
 class DepthWiseConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, bias=True, groups=None, padding=0):
@@ -109,9 +91,9 @@ class DepthWiseConv1d(nn.Module):
             y = y + self.bias
 
         return y, x[:, -K + 1 :, :]
+    
 
-
-class Mamba2Mixer(nn.Module):
+class Mamba2Block(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -124,35 +106,36 @@ class Mamba2Mixer(nn.Module):
         self.head_dim = args.hidden_size // args.num_heads
         self.n_groups = args.n_groups
 
-        self.conv_dim = self.intermediate_size + 2 * self.n_groups * self.state_size
-        self.conv1d = DepthWiseConv1d(
-            in_channels=self.conv_dim,
-            out_channels=self.conv_dim,
-            bias=args.use_conv_bias,
-            kernel_size=args.conv_kernel,
-            groups=self.conv_dim,
-            padding=args.conv_kernel - 1
-        )
-
-        projection_size = self.intermediate_size + self.conv_dim + self.num_heads
+        # projection_size = 2 * args.intermediate_size + 2 * args.n_groups * args.state_size + args.num_heads
+        projection_size = 2 * args.intermediate_size + 2 * args.state_size + args.num_heads
         self.in_proj = nn.Linear(
-            self.hidden_size,
+            args.hidden_size,
             projection_size,
             bias=args.use_bias
         )
 
-        self.A_log = mx.zeros(self.num_heads)
-        self.D = mx.ones(self.num_heads)
-        self.dt_bias = mx.zeros(self.num_heads)
+        # self.conv_dim = args.intermediate_size + 2 * args.n_groups * args.state_size
+        self.conv_dim = args.intermediate_size + 2 * args.state_size
+        self.conv1d = DepthWiseConv1d(
+            in_channels=self.conv_dim,
+            out_channels=self.conv_dim,
+            kernel_size=args.conv_kernel,
+            bias=args.use_conv_bias,
+            groups=self.conv_dim,
+            padding=args.conv_kernel - 1
+        )
 
-        self.norm = MambaRMSNormGated(self.intermediate_size, eps=args.layer_norm_epsilon)
+        self.A_log = mx.zeros(args.num_heads)
+        self.D = mx.ones((args.num_heads,))
+        self.dt_bias = mx.zeros(args.num_heads)
 
-        self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=args.use_bias)
+        self.out_proj = nn.Linear(args.intermediate_size, args.hidden_size, bias=args.use_bias)
+        self.norm = MambaRMSNormGated(args.intermediate_size, eps=args.layer_norm_epsilon)
 
-    def ssm_step(self, x, state, dt_proj):
+    def ssm_step(self, x, state, dt):
         A = -mx.exp(self.A_log)
         D = self.D
-        delta = nn.softplus(dt_proj + self.dt_bias)
+        dt = nn.softplus(dt + self.dt_bias)
         
         B, C = mx.split(x, indices_or_sections=[self.state_size * self.n_groups], axis=-1)
         
@@ -160,13 +143,13 @@ class Mamba2Mixer(nn.Module):
         B = B.reshape(batch_size, self.n_groups, self.state_size)
         C = C.reshape(batch_size, -1, self.state_size)
         
-        delta = delta.reshape(batch_size, self.num_heads, 1)
+        dt = dt.reshape(batch_size, self.num_heads, 1)
         A = A.reshape(1, self.num_heads, 1)
         
         if state is None:
-            new_state = delta * B
+            new_state = dt * B
         else:
-            new_state = delta * (B + state * mx.exp(delta * A))
+            new_state = dt * (B + state * mx.exp(dt * A))
         
         y = mx.sum(new_state[:, :, None, :] * C[:, None, :, :], axis=(-1, -2))
         y = y + D * x[:, :self.num_heads]
@@ -180,26 +163,31 @@ class Mamba2Mixer(nn.Module):
         outputs = []
         for t in range(T):
             xt = x[:, t, :]
-            xz = self.in_proj(xt)
+            zxbcdt = self.in_proj(xt)
             
-            x_t, z_t, dt_proj = mx.split(
-                xz,
-                indices_or_sections=[self.conv_dim, self.conv_dim + self.intermediate_size],
+            z, xBC, dt = mx.split(
+                zxbcdt,
+                # indices_or_sections=[self.conv_dim, self.conv_dim + self.intermediate_size],
+                indices_or_sections=[
+                    self.intermediate_size,
+                    self.intermediate_size + 2 * self.state_size,
+                    self.num_heads
+                ],
                 axis=-1
             )
 
-            conv_out, cache[0] = self.conv1d(mx.expand_dims(x_t, 1), cache[0])
-            x_t = conv_out.squeeze(1)
-            x_t = nn.silu(x_t)
-            y_t, cache[1] = self.ssm_step(x_t, cache[1], dt_proj)
-            z_t = nn.silu(z_t)
+            # Use the new DepthWiseConv1d with caching
+            conv_out, cache[0] = self.conv1d(mx.expand_dims(z, 1), cache[0])
+            z = conv_out.squeeze(1)
+            z = nn.silu(z)
+            y_t, cache[1] = self.ssm_step(z, cache[1], dt)
+            xBC = nn.silu(xBC)
             
             # Element-wise multiplication
-            output_t = y_t[:, :, None] * z_t[:, None, :]
+            output_t = y_t[:, :, None] * xBC[:, None, :]
             
-            # Sum across the second dimension to match the intermediate_size
+            output_t = self.norm(output_t)
             output_t = output_t.sum(axis=1)
-            
             output_t = self.out_proj(output_t)
             outputs.append(output_t)
         
@@ -207,10 +195,10 @@ class Mamba2Mixer(nn.Module):
         return output
 
 
-class Mamba2Block(nn.Module):
+class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.mixer = Mamba2Mixer(args)
+        self.mixer = Mamba2Block(args)
         self.norm = nn.RMSNorm(args.hidden_size)
 
     def __call__(self, x: mx.array, cache):
@@ -222,24 +210,16 @@ class Mamba2(nn.Module):
         super().__init__()
         self.args = args
         self.embeddings = nn.Embedding(args.vocab_size, args.hidden_size)
-        self.layers = [Mamba2Block(args) for idx in range(args.num_hidden_layers)]
+        self.layers = [ResidualBlock(args) for _ in range(args.num_hidden_layers)]
         self.norm_f = nn.RMSNorm(args.hidden_size, eps=args.layer_norm_epsilon)
 
-    def __call__(
-        self,
-        inputs: mx.array,
-        cache=None
-    ):
-        hidden_states = self.embeddings(inputs)
-        
+    def __call__(self, x: mx.array, cache):
+        x = self.embeddings(x)
         if cache is None:
-            cache = Mamba2Cache(len(self.layers))
-
-        for i, layer in enumerate(self.layers):
-            hidden_states = layer(hidden_states, cache[i])
-
-        hidden_states = self.norm_f(hidden_states)
-        return hidden_states
+            cache = [None] * len(self.layers)
+        for layer, c in zip(self.layers, cache):
+            x = layer(x, c)
+        return self.norm_f(x)
 
 
 class Model(nn.Module):
@@ -247,7 +227,10 @@ class Model(nn.Module):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
+        
         self.backbone = Mamba2(args)
+        # self.norm_f = nn.RMSNorm(args.hidden_size, eps=args.layer_norm_epsilon)
+
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
@@ -261,19 +244,16 @@ class Model(nn.Module):
         else:
             logits = self.lm_head(x)
 
-        print(logits)
-        print(logits.shape)
-
         return logits
-
+    
     def sanitize(self, weights):
         for k, v in weights.items():
             if "conv1d.weight" in k and v.ndim == 3:
                 weights[k] = v.moveaxis(2, 1)
         return weights
 
-    def make_cache(self, batch_size: int = 1):
-        return [Mamba2Cache() for _ in range(len(self.layers))]
+    def make_cache(self):
+        return [MambaCache() for _ in range(len(self.layers))]
 
     @property
     def layers(self):
