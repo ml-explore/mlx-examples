@@ -1,10 +1,8 @@
 # Copyright © 2024 Apple Inc.
 
 import json
-import os
+import pathlib
 import re
-import sys
-import zlib
 from typing import Callable, List, Optional, TextIO
 
 
@@ -39,19 +37,26 @@ def get_start(segments: List[dict]) -> Optional[float]:
 class ResultWriter:
     extension: str
 
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, output_name_template: str):
         self.output_dir = output_dir
+        self.output_name_template = output_name_template
 
     def __call__(
-        self, result: dict, audio_path: str, options: Optional[dict] = None, **kwargs
+        self, result: dict, audio_obj: str, options: Optional[dict] = None, **kwargs
     ):
-        audio_basename = os.path.basename(audio_path)
-        audio_basename = os.path.splitext(audio_basename)[0]
-        output_path = os.path.join(
-            self.output_dir, audio_basename + "." + self.extension
+        if isinstance(audio_obj, (str, pathlib.Path)):
+            basename = pathlib.Path(audio_obj).stem
+        else:
+            # mx.array, np.ndarray, etc
+            basename = "content"
+
+        output_basename = self.output_name_template.format(basename=basename)
+
+        output_path = (pathlib.Path(self.output_dir) / output_basename).with_suffix(
+            f".{self.extension}"
         )
 
-        with open(output_path, "w", encoding="utf-8") as f:
+        with output_path.open("wt", encoding="utf-8") as f:
             self.write_result(result, file=f, options=options, **kwargs)
 
     def write_result(
@@ -248,7 +253,7 @@ class WriteJSON(ResultWriter):
 
 
 def get_writer(
-    output_format: str, output_dir: str
+    output_format: str, output_dir: str, output_name_template: str
 ) -> Callable[[dict, TextIO, dict], None]:
     writers = {
         "txt": WriteTXT,
@@ -259,7 +264,9 @@ def get_writer(
     }
 
     if output_format == "all":
-        all_writers = [writer(output_dir) for writer in writers.values()]
+        all_writers = [
+            writer(output_dir, output_name_template) for writer in writers.values()
+        ]
 
         def write_all(
             result: dict, file: TextIO, options: Optional[dict] = None, **kwargs
@@ -269,4 +276,4 @@ def get_writer(
 
         return write_all
 
-    return writers[output_format](output_dir)
+    return writers[output_format](output_dir, output_name_template)
