@@ -14,7 +14,7 @@ data: "/path/to/training/data"
 seed: 0
 
 # Number of layers to fine-tune
-lora_layers: 16
+num_layers: 16
 
 # Minibatch size.
 batch_size: 4
