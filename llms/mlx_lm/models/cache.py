@@ -340,21 +340,130 @@ class MambaCache(_BaseCache):
         self.cache = v
 
 
-class Mamba2Cache(_BaseCache):
-    conv_states: Optional[mx.array] = None
-    ssm_state: Optional[mx.array] = None
+class Mamba2Cache:
+    batch_size: int
+    intermediate_size: int
+    state_size: int
+    conv_kernel: int
+    num_heads: int
+    head_dim: int
+    
+    def __init__(
+        self,
+        batch_size: int,
+        intermediate_size: int,
+        state_size: int,
+        conv_kernel: int,
+        num_heads: int,
+        head_dim: int
+    ):
+        self.batch_size = batch_size
+        self.intermediate_size = intermediate_size
+        self.state_size = state_size
+        self.conv_kernel = conv_kernel
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        
+        # Initialize conv state with proper dimensions
+        self.conv_dim = self.intermediate_size + 2 * self.state_size
+        self.conv_state = mx.zeros((batch_size, self.conv_dim, conv_kernel - 1))
+        
+        # Initialize SSM state
+        self.ssm_state = mx.zeros((
+            batch_size,
+            num_heads,
+            head_dim,
+            state_size
+        ))
 
-    def __getitem__(self, idx: int) -> Optional[mx.array]:
-        if idx == 0:
-            return self.conv_states
-        elif idx == 1:
-            return self.ssm_states
-        raise IndexError("Cache index must be 0 or 1")
+    def update_conv_state(self, x: mx.array) -> mx.array:
+        """
+        Update convolution state for incremental inference.
+        Args:
+            x: Input tensor containing projected values (B, conv_in_dim)
+        Returns:
+            Combined state tensor of shape (batch_size, conv_dim, kernel_size)
+        """
+        # Handle input shape
+        if x.ndim == 1:
+            x = mx.expand_dims(x, 0)  # Add batch dimension if needed
+        
+        # Ensure batch size matches
+        assert x.shape[0] == self.batch_size, f"Batch size mismatch: {x.shape[0]} vs {self.batch_size}"
+        
+        # Reshape x to match conv_dim
+        # The input x contains intermediate_size + 2 * state_size dimensions
+        x_reshaped = mx.reshape(x, (self.batch_size, -1))
+        x_padded = mx.pad(
+            x_reshaped,
+            [(0, 0), (0, self.conv_dim - x_reshaped.shape[1])],
+            mode='constant',
+            constant_values=0
+        )
+        
+        # Expand dims for concatenation
+        x_expanded = mx.expand_dims(x_padded, -1)  # Shape: (batch_size, conv_dim, 1)
+        
+        # Roll the existing state left by 1
+        rolled_state = mx.roll(self.conv_state, shift=-1, axis=-1)
+        
+        # Create update mask for the last position
+        update_pos = self.conv_kernel - 2
+        state_idx = mx.arange(self.conv_kernel - 1)
+        update_mask = state_idx == update_pos
+        
+        # Broadcast mask to match state dimensions
+        update_mask = mx.broadcast_to(
+            mx.reshape(update_mask, (1, 1, -1)),
+            rolled_state.shape
+        )
+        
+        # Update state with padded input
+        x_broadcast = mx.broadcast_to(x_expanded, (self.batch_size, self.conv_dim, 1))
+        self.conv_state = mx.where(
+            update_mask,
+            x_broadcast,
+            rolled_state
+        )
+        
+        # Return concatenated state for convolution
+        return mx.concatenate([self.conv_state, x_expanded], axis=-1)
 
-    def __setitem__(self, idx: int, value: Optional[mx.array]):
-        if idx == 0:
-            self.conv_states = value
-        elif idx == 1:
-            self.ssm_states = value
-        else:
-            raise IndexError("Cache index must be 0 or 1")
+    def update_ssm_state(self, dA: mx.array, dBx: mx.array) -> mx.array:
+        """
+        Update SSM state for incremental inference.
+        Args:
+            dA: State transition tensor of shape (batch_size, num_heads)
+            dBx: Input projection tensor of shape (batch_size, num_heads, head_dim, state_size)
+        Returns:
+            Updated SSM state of shape (batch_size, num_heads, head_dim, state_size)
+        """
+        # Add necessary dimensions to dA for broadcasting
+        # dA shape: (batch_size, num_heads) -> (batch_size, num_heads, 1, 1)
+        dA = mx.expand_dims(mx.expand_dims(dA, -1), -1)
+        
+        # Ensure dBx has the correct shape
+        assert dBx.shape[-1] == self.state_size, f"dBx state dimension mismatch: {dBx.shape[-1]} vs {self.state_size}"
+        assert dBx.shape[-2] == self.head_dim, f"dBx head dimension mismatch: {dBx.shape[-2]} vs {self.head_dim}"
+        
+        # Update state: state = dA * state + dBx
+        self.ssm_state = dA * self.ssm_state + dBx
+        
+        return self.ssm_state
+
+    @classmethod
+    def get_cache(
+        cls,
+        args,
+        batch_size: int,
+        max_seq_length: Optional[int]
+    ) -> "Mamba2Cache":
+        """Create a new cache instance with the given parameters."""
+        return cls(
+            batch_size=batch_size,
+            intermediate_size=args.intermediate_size,
+            state_size=args.state_size,
+            conv_kernel=args.conv_kernel,
+            num_heads=args.num_heads,
+            head_dim=args.head_dim
+        )
