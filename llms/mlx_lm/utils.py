@@ -248,13 +248,14 @@ def generate_step(
         model(y[:, :prefill_step_size], cache=prompt_cache)
         mx.eval([c.state for c in cache])
         y = y[:, prefill_step_size:]
+        mx.metal.clear_cache()
 
     y, logprobs = _step(y)
 
-    mx.async_eval(y)
+    mx.async_eval(y, logprobs)
     while True:
         next_y, next_logprobs = _step(y)
-        mx.async_eval(next_y)
+        mx.async_eval(next_y, next_logprobs)
         mx.eval(y)
         yield y, logprobs
         y, logprobs = next_y, next_logprobs
@@ -356,7 +357,9 @@ def generate(
             if formatter:
                 # We have to finalize so that the prob corresponds to the last segment
                 detokenizer.finalize()
-                formatter(detokenizer.last_segment, mx.exp(logprobs[token]).item())
+                with mx.stream(mx.cpu):
+                    prob = mx.exp(logprobs[token]).item()
+                formatter(detokenizer.last_segment, prob)
             else:
                 print(detokenizer.last_segment, end="", flush=True)
 
@@ -805,7 +808,7 @@ def convert(
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))
-    dtype = mx.float16 if quantize else getattr(mx, dtype)
+    dtype = getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
 
     if quantize and dequantize:

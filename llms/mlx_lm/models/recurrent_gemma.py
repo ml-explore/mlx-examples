@@ -440,7 +440,7 @@ class Model(nn.Module):
 
     def sanitize(self, weights):
         for k, v in weights.items():
-            if "conv_1d.weight" in k and v.ndim == 3:
+            if "conv_1d.weight" in k and v.shape[-1] != 1:
                 weights[k] = v.moveaxis(2, 1)
         if "lm_head.weight" not in weights:
             self.pop("lm_head")
