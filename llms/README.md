@@ -201,6 +201,31 @@ requests that use the same context. See the
 [example](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/examples/chat.py)
 for more usage details.
 
+### Slow Speed with Large Models
+
+> [!NOTE]
+    This requires macOS 15.0 or higher to work.
+
+Models which are large relative to the total RAM available on the machine can
+be slow. `mlx-lm` will attempt to make them faster by keeping the memory
+occupied by the model and cache wired. This requires macOS 15 or higher to
+work.
+
+If you see the following warning message:
+
+> [WARNING] Generating with a model that requires ...
+
+then the model will likely be very slow on the given machine. These cases can
+be sped up for models which fit in RAM with some room to spare. To increase the
+maximum wired limit, set the following `sysctl`:
+
+```bash
+sudo sysctl iogpu.wired_limit_mb=N
+```
+
+The value `N` should be larger than the size of the model in megabytes but
+smaller than the memory size of the machine.
+
 ### Supported Models
 
 `mlx-lm` supports thousands of Hugging Face format LLMs. If the model you want to
