@@ -1,5 +1,6 @@
 import argparse
 import time
+import signal
 
 import mlx.core as mx
 from decoder import SpeculativeDecoder
@@ -21,27 +22,38 @@ def load_model(model_name: str):
 def main(args):
     mx.random.seed(args.seed)
 
-    spec_decoder = SpeculativeDecoder(
-        model=load_model(args.model_name),
-        draft_model=load_model(args.draft_model_name),
-        tokenizer=args.model_name,
-        delta=args.delta,
-        num_draft=args.num_draft,
-    )
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
 
-    tic = time.time()
-    print(args.prompt)
-    if args.regular_decode:
-        spec_decoder.generate(args.prompt, max_tokens=args.max_tokens)
-    else:
-        stats = spec_decoder.speculative_decode(args.prompt, max_tokens=args.max_tokens)
+    if args.timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(args.timeout)
+
+    try:
+        spec_decoder = SpeculativeDecoder(
+            model=load_model(args.model_name),
+            draft_model=load_model(args.draft_model_name),
+            tokenizer=args.model_name,
+            delta=args.delta,
+            num_draft=args.num_draft,
+        )
+
+        tic = time.time()
+        print(args.prompt)
+        if args.regular_decode:
+            spec_decoder.generate(args.prompt, max_tokens=args.max_tokens)
+        else:
+            stats = spec_decoder.speculative_decode(args.prompt, max_tokens=args.max_tokens)
+            print("=" * 10)
+            print(f"Accepted {stats['n_accepted']} / {stats['n_draft']}.")
+            print(f"Decoding steps {stats['n_steps']}.")
+
+        toc = time.time()
         print("=" * 10)
-        print(f"Accepted {stats['n_accepted']} / {stats['n_draft']}.")
-        print(f"Decoding steps {stats['n_steps']}.")
-
-    toc = time.time()
-    print("=" * 10)
-    print(f"Full generation time {toc - tic:.3f}")
+        print(f"Full generation time {toc - tic:.3f}")
+    finally:
+        if args.timeout:
+            signal.alarm(0)
 
 
 if __name__ == "__main__":
@@ -90,6 +102,12 @@ if __name__ == "__main__":
         "--regular-decode",
         action="store_true",
         help="Use regular decoding instead of speculative decoding.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Timeout in seconds for the generation process.",
     )
     args = parser.parse_args()
     main(args)

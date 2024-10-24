@@ -3,6 +3,7 @@
 import argparse
 import codecs
 from pathlib import Path
+import signal
 
 import mlx.core as mx
 import requests
@@ -48,6 +49,12 @@ def parse_arguments():
         type=str,
         default=None,
         help="End of sequence token for tokenizer",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Timeout in seconds for the generation process.",
     )
     return parser.parse_args()
 
@@ -119,21 +126,32 @@ def generate_text(input_ids, pixel_values, model, processor, max_tokens, tempera
 def main():
     args = parse_arguments()
 
-    tokenizer_config = {}
-    if args.eos_token is not None:
-        tokenizer_config["eos_token"] = args.eos_token
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
 
-    processor, model = load_model(args.model, tokenizer_config)
+    if args.timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(args.timeout)
 
-    prompt = codecs.decode(args.prompt, "unicode_escape")
+    try:
+        tokenizer_config = {}
+        if args.eos_token is not None:
+            tokenizer_config["eos_token"] = args.eos_token
 
-    input_ids, pixel_values = prepare_inputs(processor, args.image, prompt)
+        processor, model = load_model(args.model, tokenizer_config)
 
-    print(prompt)
-    generated_text = generate_text(
-        input_ids, pixel_values, model, processor, args.max_tokens, args.temp
-    )
-    print(generated_text)
+        prompt = codecs.decode(args.prompt, "unicode_escape")
+
+        input_ids, pixel_values = prepare_inputs(processor, args.image, prompt)
+
+        print(prompt)
+        generated_text = generate_text(
+            input_ids, pixel_values, model, processor, args.max_tokens, args.temp
+        )
+        print(generated_text)
+    finally:
+        if args.timeout:
+            signal.alarm(0)
 
 
 if __name__ == "__main__":
