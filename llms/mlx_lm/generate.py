@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import signal
 
 import mlx.core as mx
 
@@ -107,6 +108,12 @@ def setup_arg_parser():
         default=None,
         help="A file containing saved KV caches to avoid recomputing them",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Timeout in seconds for the generation process.",
+    )
     return parser
 
 
@@ -146,90 +153,101 @@ def main():
     if args.cache_limit_gb is not None:
         mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
 
-    # Load the prompt cache and metadata if a cache file is provided
-    using_cache = args.prompt_cache_file is not None
-    if using_cache:
-        prompt_cache, metadata = load_prompt_cache(
-            args.prompt_cache_file, return_metadata=True
-        )
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
 
-    # Building tokenizer_config
-    tokenizer_config = (
-        {} if not using_cache else json.loads(metadata["tokenizer_config"])
-    )
-    if args.trust_remote_code:
-        tokenizer_config["trust_remote_code"] = True
-    if args.eos_token is not None:
-        tokenizer_config["eos_token"] = args.eos_token
+    if args.timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(args.timeout)
 
-    model_path = args.model
-    if using_cache:
-        if model_path is None:
-            model_path = metadata["model"]
-        elif model_path != metadata["model"]:
-            raise ValueError(
-                f"Providing a different model ({model_path}) than that "
-                f"used to create the prompt cache ({metadata['model']}) "
-                "is an error."
-            )
-    model_path = model_path or DEFAULT_MODEL
-
-    model, tokenizer = load(
-        model_path,
-        adapter_path=args.adapter_path,
-        tokenizer_config=tokenizer_config,
-    )
-
-    if args.use_default_chat_template:
-        if tokenizer.chat_template is None:
-            tokenizer.chat_template = tokenizer.default_chat_template
-    elif using_cache:
-        tokenizer.chat_template = metadata["chat_template"]
-
-    if not args.ignore_chat_template and (
-        hasattr(tokenizer, "apply_chat_template")
-        and tokenizer.chat_template is not None
-    ):
-        messages = [
-            {
-                "role": "user",
-                "content": sys.stdin.read() if args.prompt == "-" else args.prompt,
-            }
-        ]
-        prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-
-        # Treat the prompt as a suffix assuming that the prefix is in the
-        # stored kv cache.
+    try:
+        # Load the prompt cache and metadata if a cache file is provided
+        using_cache = args.prompt_cache_file is not None
         if using_cache:
-            test_prompt = tokenizer.apply_chat_template(
-                [{"role": "user", "content": "<query>"}],
-                tokenize=False,
-                add_generation_prompt=True,
+            prompt_cache, metadata = load_prompt_cache(
+                args.prompt_cache_file, return_metadata=True
             )
-            prompt = prompt[test_prompt.index("<query>") :]
-    else:
-        prompt = args.prompt
 
-    if args.colorize and not args.verbose:
-        raise ValueError("Cannot use --colorize with --verbose=False")
-    formatter = colorprint_by_t0 if args.colorize else None
+        # Building tokenizer_config
+        tokenizer_config = (
+            {} if not using_cache else json.loads(metadata["tokenizer_config"])
+        )
+        if args.trust_remote_code:
+            tokenizer_config["trust_remote_code"] = True
+        if args.eos_token is not None:
+            tokenizer_config["eos_token"] = args.eos_token
 
-    response = generate(
-        model,
-        tokenizer,
-        prompt,
-        args.max_tokens,
-        verbose=args.verbose,
-        formatter=formatter,
-        temp=args.temp,
-        top_p=args.top_p,
-        max_kv_size=args.max_kv_size,
-        prompt_cache=prompt_cache if using_cache else None,
-    )
-    if not args.verbose:
-        print(response)
+        model_path = args.model
+        if using_cache:
+            if model_path is None:
+                model_path = metadata["model"]
+            elif model_path != metadata["model"]:
+                raise ValueError(
+                    f"Providing a different model ({model_path}) than that "
+                    f"used to create the prompt cache ({metadata['model']}) "
+                    "is an error."
+                )
+        model_path = model_path or DEFAULT_MODEL
+
+        model, tokenizer = load(
+            model_path,
+            adapter_path=args.adapter_path,
+            tokenizer_config=tokenizer_config,
+        )
+
+        if args.use_default_chat_template:
+            if tokenizer.chat_template is None:
+                tokenizer.chat_template = tokenizer.default_chat_template
+        elif using_cache:
+            tokenizer.chat_template = metadata["chat_template"]
+
+        if not args.ignore_chat_template and (
+            hasattr(tokenizer, "apply_chat_template")
+            and tokenizer.chat_template is not None
+        ):
+            messages = [
+                {
+                    "role": "user",
+                    "content": sys.stdin.read() if args.prompt == "-" else args.prompt,
+                }
+            ]
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+
+            # Treat the prompt as a suffix assuming that the prefix is in the
+            # stored kv cache.
+            if using_cache:
+                test_prompt = tokenizer.apply_chat_template(
+                    [{"role": "user", "content": "<query>"}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                prompt = prompt[test_prompt.index("<query>") :]
+        else:
+            prompt = args.prompt
+
+        if args.colorize and not args.verbose:
+            raise ValueError("Cannot use --colorize with --verbose=False")
+        formatter = colorprint_by_t0 if args.colorize else None
+
+        response = generate(
+            model,
+            tokenizer,
+            prompt,
+            args.max_tokens,
+            verbose=args.verbose,
+            formatter=formatter,
+            temp=args.temp,
+            top_p=args.top_p,
+            max_kv_size=args.max_kv_size,
+            prompt_cache=prompt_cache if using_cache else None,
+        )
+        if not args.verbose:
+            print(response)
+    finally:
+        if args.timeout:
+            signal.alarm(0)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import argparse
 import time
 from functools import partial
 from pathlib import Path
+import signal
 
 import dataset
 import mlx.core as mx
@@ -67,16 +68,28 @@ def generate(
     model,
     out_file,
     num_samples=128,
+    timeout=None,
 ):
-    # Sample from the latent distribution:
-    z = mx.random.normal([num_samples, model.num_latent_dims])
+    def handler(signum, frame):
+        raise TimeoutError("Generation timed out")
 
-    # Decode the latent vectors to images:
-    images = model.decode(z)
+    if timeout:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(timeout)
 
-    # Save all images in a single file
-    grid_image = grid_image_from_batch(images, num_rows=8)
-    grid_image.save(out_file)
+    try:
+        # Sample from the latent distribution:
+        z = mx.random.normal([num_samples, model.num_latent_dims])
+
+        # Decode the latent vectors to images:
+        images = model.decode(z)
+
+        # Save all images in a single file
+        grid_image = grid_image_from_batch(images, num_rows=8)
+        grid_image.save(out_file)
+    finally:
+        if timeout:
+            signal.alarm(0)
 
 
 def main(args):
