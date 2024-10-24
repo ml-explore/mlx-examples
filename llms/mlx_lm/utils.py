@@ -58,8 +58,7 @@ def wired_limit(model):
     try:
         yield None
     finally:
-        # TODO... expose a synchronize??
-        mx.zeros((1,)).item()
+        mx.synchronize()
         mx.metal.set_wired_limit(old_limit)
 
 
