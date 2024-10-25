@@ -9,6 +9,37 @@ import mlx.core as mx
 import mlx.nn as nn
 
 
+def enable_gradient_checkpointing(module_class):
+    if hasattr(module_class, "_original_call"):
+        raise ValueError(
+            f"Gradient checkpointing is already enabled for {module_class.__name__}"
+        )
+
+    fn = module_class.__call__
+    module_class._original_call = fn
+
+    def checkpointed_fn(module_instance, *args, **kwargs):
+        def inner_fn(params, *args, **kwargs):
+            module_instance.update(params)
+            return fn(module_instance, *args, **kwargs)
+
+        return mx.checkpoint(inner_fn)(
+            module_instance.trainable_parameters(), *args, **kwargs
+        )
+
+    module_class.__call__ = checkpointed_fn
+
+
+def disable_gradient_checkpointing(module_class):
+    if not hasattr(module_class, "_original_call"):
+        raise ValueError(
+            f"Gradient checkpointing is not enabled for {module_class.__name__}"
+        )
+
+    module_class.__call__ = module_class._original_call
+    delattr(module_class, "_original_call")
+
+
 def _rope(pos: mx.array, dim: int, theta: float):
     scale = mx.arange(0, dim, 2, dtype=mx.float32) / dim
     omega = 1.0 / (theta**scale)

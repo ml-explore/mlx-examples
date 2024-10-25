@@ -7,6 +7,12 @@ import mlx.nn as nn
 from mlx.utils import tree_unflatten
 from tqdm import tqdm
 
+from .layers import (
+    DoubleStreamBlock,
+    SingleStreamBlock,
+    disable_gradient_checkpointing,
+    enable_gradient_checkpointing,
+)
 from .lora import LoRALinear
 from .sampler import FluxSampler
 from .utils import (
@@ -234,7 +240,7 @@ class FluxPipeline:
         for i, block in zip(range(num_blocks), all_blocks):
             loras = []
             for name, module in block.named_modules():
-                if isinstance(module, nn.Linear):
+                if isinstance(module, (nn.Linear, nn.QuantizedLinear)):
                     loras.append((name, LoRALinear.from_base(module, r=rank)))
             block.update_modules(tree_unflatten(loras))
 
@@ -244,3 +250,13 @@ class FluxPipeline:
             if isinstance(module, LoRALinear):
                 fused_layers.append((name, module.fuse()))
         self.flow.update_modules(tree_unflatten(fused_layers))
+
+    def gradient_checkpointing(self, enable: bool = True):
+        """Replace the call function of SingleStreamBlock and DoubleStreamBlock
+        to a checkpointing one."""
+        if enable:
+            enable_gradient_checkpointing(SingleStreamBlock)
+            enable_gradient_checkpointing(DoubleStreamBlock)
+        else:
+            disable_gradient_checkpointing(SingleStreamBlock)
+            disable_gradient_checkpointing(DoubleStreamBlock)

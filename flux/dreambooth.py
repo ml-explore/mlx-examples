@@ -16,6 +16,10 @@ from PIL import Image
 from flux import FluxPipeline, Trainer, load_dataset
 
 
+def quantization_predicate(name, m):
+    return hasattr(m, "to_quantized") and m.weight.shape[1] % 512 == 0
+
+
 def generate_progress_images(iteration, flux, args):
     """Generate images to monitor the progress of the finetuning."""
     out_dir = Path(args.output_dir)
@@ -24,11 +28,10 @@ def generate_progress_images(iteration, flux, args):
     print(f"Generating {str(out_file)}", flush=True)
 
     # Generate some images and arrange them in a grid
-    n_rows = 2
-    n_images = 4
+    n_rows = 2 if args.progress_num_images % 2 == 0 else 1
     x = flux.generate_images(
         args.progress_prompt,
-        n_images,
+        args.progress_num_images,
         args.progress_steps,
     )
     x = mx.pad(x, [(0, 0), (4, 4), (4, 4), (0, 0)])
@@ -41,6 +44,16 @@ def generate_progress_images(iteration, flux, args):
     # Save them to disc
     im = Image.fromarray(np.array(x))
     im.save(out_file)
+
+    # generate_images reloads the text encoders in order to remove them from
+    # RAM. In memory pressured environments this will swap the flow transformer
+    # to disk and back to RAM during generation.
+    #
+    # However, we have to requantize the text encoders for the next time we
+    # want to use them.
+    if args.quantize:
+        nn.quantize(flux.t5, class_predicate=quantization_predicate)
+        nn.quantize(flux.clip, class_predicate=quantization_predicate)
 
 
 def save_adapters(iteration, flux, args):
@@ -73,6 +86,17 @@ def setup_arg_parser():
             "schnell",
         ],
         help="Which flux model to train",
+    )
+    parser.add_argument(
+        "--quantize",
+        "-q",
+        action="store_true",
+        help="Quantize the models to reduce the memory required for training",
+    )
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Enable gradient checkpointing to reduce the memory required for training",
     )
     parser.add_argument(
         "--guidance", type=float, default=4.0, help="The guidance factor to use."
@@ -119,6 +143,12 @@ def setup_arg_parser():
         help="Generate images every PROGRESS_EVERY steps",
     )
     parser.add_argument(
+        "--progress-num-images",
+        type=int,
+        default=4,
+        help="How many progress images to generate",
+    )
+    parser.add_argument(
         "--checkpoint-every",
         type=int,
         default=50,
@@ -162,6 +192,14 @@ if __name__ == "__main__":
     # initial weights.
     mx.random.seed(0x0F0F0F0F)
     flux = FluxPipeline("flux-" + args.model)
+    if args.quantize:
+        nn.quantize(flux.flow, class_predicate=quantization_predicate)
+        nn.quantize(flux.t5, class_predicate=quantization_predicate)
+        nn.quantize(flux.clip, class_predicate=quantization_predicate)
+
+    if args.gradient_checkpointing:
+        flux.gradient_checkpointing()
+
     flux.flow.freeze()
     flux.linear_to_lora_layers(args.lora_rank, args.lora_blocks)
 
@@ -254,8 +292,12 @@ if __name__ == "__main__":
     guidance = mx.full((args.batch_size,), args.guidance, dtype=flux.dtype)
 
     # An initial generation to compare
-    generate_progress_images(0, flux, args)
+    # generate_progress_images(0, flux, args)
+    flux.reload_text_encoders()
+    del flux.t5
+    del flux.clip
 
+    mx.metal.reset_peak_memory()
     grads = None
     losses = []
     tic = time.time()
