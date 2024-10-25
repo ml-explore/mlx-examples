@@ -31,7 +31,7 @@ def configure_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--dtype",
-        help="Type to save the parameters, ignored if -q is given.",
+        help="Type to save the non-quantized parameters.",
         type=str,
         choices=["float16", "bfloat16", "float32"],
         default="float16",
