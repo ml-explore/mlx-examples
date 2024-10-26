@@ -107,6 +107,23 @@ def setup_arg_parser():
         default=None,
         help="A file containing saved KV caches to avoid recomputing them",
     )
+    parser.add_argument(
+        "--quantized-kv",
+        help="Whether to quantize the KV cache.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        help="Group size for kv cache quantization.",
+        default=64,
+    )
+    parser.add_argument(
+        "--kv-bits",
+        type=int,
+        help="Number of bits for kv cache quantization.",
+        default=8,
+    )
     return parser
 
 
@@ -150,7 +167,11 @@ def main():
     using_cache = args.prompt_cache_file is not None
     if using_cache:
         prompt_cache, metadata = load_prompt_cache(
-            args.prompt_cache_file, return_metadata=True
+            args.prompt_cache_file,
+            return_metadata=True,
+            quantized_kv=args.quantized_kv,
+            kv_group_size=args.kv_group_size,
+            kv_bits=args.kv_bits,
         )
 
     # Building tokenizer_config
@@ -227,6 +248,9 @@ def main():
         top_p=args.top_p,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
+        quantized_kv=args.quantized_kv,
+        kv_group_size=args.kv_group_size,
+        kv_bits=args.kv_bits,
     )
     if not args.verbose:
         print(response)
