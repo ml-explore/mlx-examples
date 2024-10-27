@@ -461,12 +461,13 @@ class APIHandler(BaseHTTPRequestHandler):
         token_logprobs = []
         top_tokens = []
 
-        prompt = self.get_prompt_cache(prompt)
+        prompt = mx.array(self.get_prompt_cache(prompt))
 
+        tic = time.perf_counter()
         for _, (token, logprobs) in zip(
             range(self.max_tokens),
             generate_step(
-                prompt=mx.array(prompt),
+                prompt=prompt,
                 model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
@@ -476,6 +477,10 @@ class APIHandler(BaseHTTPRequestHandler):
                 prompt_cache=self.prompt_cache.cache,
             ),
         ):
+            if n == 0:
+                prompt_time = time.perf_counter() - tic
+                tic = time.perf_counter()
+
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
@@ -507,6 +512,10 @@ class APIHandler(BaseHTTPRequestHandler):
             if stop_sequence_suffix is None
             else detokenizer.text[: -len(stop_sequence_suffix)]
         )
+        gen_time = time.perf_counter() - tic
+        prompt_tps = len(prompt) / prompt_time
+        gen_tps = len(tokens) / gen_time
+        peak_mem = mx.metal.get_peak_memory() / 1e9
         response = self.generate_response(
             text,
             finish_reason,
@@ -517,6 +526,9 @@ class APIHandler(BaseHTTPRequestHandler):
             tokens=tokens,
         )
 
+        logging.debug(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
+        logging.debug(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        logging.debug(f"Peak memory: {peak_mem:.3f} GB")
         response_json = json.dumps(response).encode()
         indent = "\t"  # Backslashes can't be inside of f-strings
         logging.debug(f"Outgoing Response: {json.dumps(response, indent=indent)}")
@@ -552,12 +564,12 @@ class APIHandler(BaseHTTPRequestHandler):
         stop_sequence_suffix = None
         logging.debug(f"Starting stream:")
 
-        prompt = self.get_prompt_cache(prompt)
+        prompt = mx.array(self.get_prompt_cache(prompt))
 
         for _, (token, _) in zip(
             range(self.max_tokens),
             generate_step(
-                prompt=mx.array(prompt),
+                prompt=prompt,
                 model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,

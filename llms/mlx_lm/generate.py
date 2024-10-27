@@ -238,6 +238,8 @@ def main():
         raise ValueError("Cannot use --colorize with --verbose=False")
     formatter = colorprint_by_t0 if args.colorize else None
 
+    sampler = make_sampler(
+        args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
     response = generate(
         model,
         tokenizer,
@@ -245,8 +247,7 @@ def main():
         args.max_tokens,
         verbose=args.verbose,
         formatter=formatter,
-        temp=args.temp,
-        top_p=args.top_p,
+        sampler=sampler,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
         kv_bits=args.kv_bits,
