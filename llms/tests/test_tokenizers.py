@@ -51,6 +51,9 @@ class TestTokenizers(unittest.TestCase):
         tokens = tokenizer.encode("3 3")
         check(tokens)
 
+        tokens = tokenizer.encode("import 'package:flutter/material.dart';")
+        check(tokens)
+
     def test_tokenizers(self):
         tokenizer_repos = [
             ("mlx-community/Qwen1.5-0.5B-Chat-4bit", BPEStreamingDetokenizer),
