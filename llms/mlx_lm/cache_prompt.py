@@ -8,7 +8,13 @@ import time
 import mlx.core as mx
 
 from .models.cache import make_prompt_cache, save_prompt_cache
-from .utils import load
+from .utils import (
+    DEFAULT_KV_BITS,
+    DEFAULT_KV_GROUP_SIZE,
+    check_quantized_kv_args,
+    load,
+    maybe_quantize_kv_cache,
+)
 
 
 def setup_arg_parser():
@@ -70,6 +76,24 @@ def setup_arg_parser():
         required=True,
         help="Message to be processed by the model ('-' reads from stdin)",
     )
+    parser.add_argument(
+        "--quantized-kv-start",
+        help="Use a quantized KV cache from this step onwards.",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        help="Group size for kv cache quantization.",
+        default=DEFAULT_KV_GROUP_SIZE,
+    )
+    parser.add_argument(
+        "--kv-bits",
+        type=int,
+        help="Number of bits for kv cache quantization.",
+        default=DEFAULT_KV_BITS,
+    )
     return parser
 
 
@@ -92,6 +116,8 @@ def main():
     )
 
     args.prompt = sys.stdin.read() if args.prompt == "-" else args.prompt
+
+    check_quantized_kv_args(args.quantized_kv_start, args.kv_group_size, args.kv_bits)
 
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
@@ -127,6 +153,7 @@ def main():
     start = time.time()
     max_msg_len = 0
     while y.size > 0:
+
         model(y[:step_size][None], cache=cache)
         mx.eval([c.state for c in cache])
         processed += min(y.size, step_size)
@@ -136,6 +163,11 @@ def main():
         msg = f"\rProcessed {processed:6d} tokens ({speed:6.2f} tok/s)"
         max_msg_len = max(max_msg_len, len(msg))
         print(msg + " " * (max_msg_len - len(msg)), end="", flush=True)
+
+        cache = maybe_quantize_kv_cache(
+            cache, args.quantized_kv_start, args.kv_group_size, args.kv_bits
+        )
+
     print()
     print(f"Peak memory: {mx.metal.get_peak_memory() / 2**30:.3f} GB")
 

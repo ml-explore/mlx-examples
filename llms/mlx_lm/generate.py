@@ -6,8 +6,8 @@ import sys
 
 import mlx.core as mx
 
-from .models.cache import load_prompt_cache
-from .utils import generate, load
+from .models.cache import QuantizedKVCache, load_prompt_cache
+from .utils import check_quantized_kv_args, generate, load
 
 DEFAULT_PROMPT = "hello"
 DEFAULT_MAX_TOKENS = 100
@@ -108,20 +108,23 @@ def setup_arg_parser():
         help="A file containing saved KV caches to avoid recomputing them",
     )
     parser.add_argument(
-        "--quantized-kv",
-        help="Whether to quantize the KV cache.",
-        action="store_true",
+        "--quantized-kv-start",
+        help="Use a quantized KV cache from this step onwards.",
+        type=int,
+        default=None,
     )
     parser.add_argument(
         "--kv-group-size",
         type=int,
-        help="Group size for kv cache quantization.",
+        help="Group size for kv cache quantization. "
+        "--quantized-kv-start must be provided to have an effect.",
         default=64,
     )
     parser.add_argument(
         "--kv-bits",
         type=int,
-        help="Number of bits for kv cache quantization.",
+        help="Number of bits for kv cache quantization. "
+        "--quantized-kv-start must be provided to have an effect.",
         default=8,
     )
     return parser
@@ -169,10 +172,14 @@ def main():
         prompt_cache, metadata = load_prompt_cache(
             args.prompt_cache_file,
             return_metadata=True,
-            quantized_kv=args.quantized_kv,
-            kv_group_size=args.kv_group_size,
-            kv_bits=args.kv_bits,
         )
+        if args.quantized_kv_start and isinstance(prompt_cache[0], QuantizedKVCache):
+            raise ValueError(
+                "Specified `--quantized-kv-start` but cache from "
+                "`--prompt-cache-file` is already quantized."
+            )
+
+    check_quantized_kv_args(args.quantized_kv_start, args.kv_group_size, args.kv_bits)
 
     # Building tokenizer_config
     tokenizer_config = (
@@ -248,7 +255,7 @@ def main():
         top_p=args.top_p,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
-        quantized_kv=args.quantized_kv,
+        quantized_kv_start=args.quantized_kv_start,
         kv_group_size=args.kv_group_size,
         kv_bits=args.kv_bits,
     )
