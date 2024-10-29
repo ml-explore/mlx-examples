@@ -238,6 +238,14 @@ class QuantizedKVCache(_BaseCache):
     def meta_state(self, v):
         self.step, self.offset, self.group_size, self.bits = map(int, v)
 
+    def is_trimmable(self):
+        return True
+
+    def trim(self, n):
+        n = min(self.offset, n)
+        self.offset -= n
+        return n
+
 
 class KVCache(_BaseCache):
     def __init__(self):
@@ -296,8 +304,11 @@ class KVCache(_BaseCache):
     def to_quantized(self, group_size: int = 64, bits: int = 4) -> QuantizedKVCache:
         quant_cache = QuantizedKVCache(group_size=group_size, bits=bits)
         quant_cache.offset = self.offset
-        quant_cache.keys = mx.quantize(self.keys, group_size=group_size, bits=bits)
-        quant_cache.values = mx.quantize(self.values, group_size=group_size, bits=bits)
+        if self.keys is not None:
+            quant_cache.keys = mx.quantize(self.keys, group_size=group_size, bits=bits)
+            quant_cache.values = mx.quantize(
+                self.values, group_size=group_size, bits=bits
+            )
         return quant_cache
 
 
@@ -443,8 +454,11 @@ class RotatingKVCache(_BaseCache):
     def to_quantized(self, group_size: int = 64, bits: int = 4) -> QuantizedKVCache:
         quant_cache = QuantizedKVCache(group_size=group_size, bits=bits)
         quant_cache.offset = self.offset
-        quant_cache.keys = mx.quantize(self.keys, group_size=group_size, bits=bits)
-        quant_cache.values = mx.quantize(self.values, group_size=group_size, bits=bits)
+        if self.keys is not None:
+            quant_cache.keys = mx.quantize(self.keys, group_size=group_size, bits=bits)
+            quant_cache.values = mx.quantize(
+                self.values, group_size=group_size, bits=bits
+            )
         return quant_cache
 
 
