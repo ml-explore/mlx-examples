@@ -41,7 +41,14 @@ class ModelNotFoundError(Exception):
 
 
 @contextlib.contextmanager
-def wired_limit(model):
+def wired_limit(model: nn.Module, streams: Optional[List[mx.Stream]] = None):
+    """
+    A context manager to temporarily change the wired limit.
+
+    Note, the wired limit should not be changed during an async eval.  If an
+    async eval could be running pass in the streams to synchronize with prior
+    to exiting the context manager.
+    """
     model_bytes = tree_reduce(
         lambda acc, x: acc + x.nbytes if isinstance(x, mx.array) else acc, model, 0
     )
@@ -52,13 +59,18 @@ def wired_limit(model):
         print(
             "[WARNING] Generating with a model that requires {model_mb} MB "
             "which is close to the maximum recommended size of {max_rec_mb} "
-            "MB. This can be very slow. See the documentation for possible work-arounds: "
+            "MB. This can be slow. See the documentation for possible work-arounds: "
+            "https://github.com/ml-explore/mlx-examples/tree/main/llms#large-models"
         )
     old_limit = mx.metal.set_wired_limit(max_rec_size)
     try:
         yield None
     finally:
-        mx.synchronize()
+        if streams is not None:
+            for s in streams:
+                mx.synchronize(s)
+        else:
+            mx.synchronize()
         mx.metal.set_wired_limit(old_limit)
 
 
