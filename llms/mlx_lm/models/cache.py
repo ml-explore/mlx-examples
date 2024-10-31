@@ -129,42 +129,6 @@ class _BaseCache:
         return False
 
 
-def quantized_scaled_dot_product_attention(
-    queries: mx.array,
-    q_keys: tuple[mx.array, mx.array, mx.array],
-    q_values: tuple[mx.array, mx.array, mx.array],
-    scale: float,
-    mask: Optional[mx.array],
-    group_size: int = 64,
-    bits: int = 8,
-) -> mx.array:
-    B, n_q_heads, L, D = queries.shape
-    n_kv_heads = q_keys[0].shape[-3]
-    n_repeats = n_q_heads // n_kv_heads
-
-    queries *= scale
-
-    if n_repeats > 1:
-        queries = mx.reshape(queries, (B, n_kv_heads, n_repeats, L, D))
-        q_keys = tree_map(lambda x: mx.expand_dims(x, axis=-3), q_keys)
-        q_values = tree_map(lambda x: mx.expand_dims(x, axis=-3), q_values)
-
-    scores = mx.quantized_matmul(
-        queries, *q_keys, transpose=True, group_size=group_size, bits=bits
-    )
-    if mask is not None:
-        scores += mask
-    scores = mx.softmax(scores, axis=-1, precise=True)
-    out = mx.quantized_matmul(
-        scores, *q_values, transpose=False, group_size=group_size, bits=bits
-    )
-
-    if n_repeats > 1:
-        out = mx.reshape(out, (B, n_q_heads, L, D))
-
-    return out
-
-
 class QuantizedKVCache(_BaseCache):
     def __init__(self, group_size: int = 64, bits: int = 8):
         self.keys = None
@@ -452,14 +416,7 @@ class RotatingKVCache(_BaseCache):
         return n
 
     def to_quantized(self, group_size: int = 64, bits: int = 4) -> QuantizedKVCache:
-        quant_cache = QuantizedKVCache(group_size=group_size, bits=bits)
-        quant_cache.offset = self.offset
-        if self.keys is not None:
-            quant_cache.keys = mx.quantize(self.keys, group_size=group_size, bits=bits)
-            quant_cache.values = mx.quantize(
-                self.values, group_size=group_size, bits=bits
-            )
-        return quant_cache
+        raise NotImplementedError("RotatingKVCache Quantization NYI")
 
 
 class MambaCache(_BaseCache):

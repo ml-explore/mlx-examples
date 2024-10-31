@@ -8,13 +8,9 @@ import time
 import mlx.core as mx
 
 from .models.cache import make_prompt_cache, save_prompt_cache
-from .utils import (
-    DEFAULT_KV_BITS,
-    DEFAULT_KV_GROUP_SIZE,
-    check_quantized_kv_args,
-    load,
-    maybe_quantize_kv_cache,
-)
+from .utils import load, maybe_quantize_kv_cache
+
+DEFAULT_QUANTIZED_KV_START = 5000
 
 
 def setup_arg_parser():
@@ -77,22 +73,24 @@ def setup_arg_parser():
         help="Message to be processed by the model ('-' reads from stdin)",
     )
     parser.add_argument(
-        "--quantized-kv-start",
-        help="Use a quantized KV cache from this step onwards.",
+        "--kv-bits",
         type=int,
+        help="Number of bits for KV cache quantization. "
+        "Defaults to no quantization.",
         default=None,
     )
     parser.add_argument(
         "--kv-group-size",
         type=int,
-        help="Group size for kv cache quantization.",
-        default=DEFAULT_KV_GROUP_SIZE,
+        help="Group size for KV cache quantization.",
+        default=64,
     )
     parser.add_argument(
-        "--kv-bits",
+        "--quantized-kv-start",
+        help="When --kv-bits is set, start quantizing the KV cache "
+        "from this step onwards.",
         type=int,
-        help="Number of bits for kv cache quantization.",
-        default=DEFAULT_KV_BITS,
+        default=DEFAULT_QUANTIZED_KV_START,
     )
     return parser
 
@@ -116,8 +114,6 @@ def main():
     )
 
     args.prompt = sys.stdin.read() if args.prompt == "-" else args.prompt
-
-    check_quantized_kv_args(args.quantized_kv_start, args.kv_group_size, args.kv_bits)
 
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
