@@ -186,6 +186,8 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         # https://github.com/openai/gpt-2/blob/master/src/encoder.py
         self.make_byte_decoder()
 
+        self._added_ids = set(tokenizer.added_tokens_decoder.keys())
+
     def reset(self):
         self.offset = 0
         self._unflushed = ""
@@ -205,12 +207,17 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
 
     def add_token(self, token):
         v = self.tokenmap[token]
-        if self._byte_decoder[v[0]] == 32:
+        is_added = token in self._added_ids
+        if is_added or self._byte_decoder[v[0]] == 32:
             current_text = bytearray(
                 self._byte_decoder[c] for c in self._unflushed
             ).decode("utf-8")
             self.text += self._maybe_trim_space(current_text)
-            self._unflushed = v
+            if is_added:
+                self.text += v
+                self._unflushed = ""
+            else:
+                self._unflushed = v
         else:
             self._unflushed += v
 
