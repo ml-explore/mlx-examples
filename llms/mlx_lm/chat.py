@@ -29,7 +29,16 @@ def setup_arg_parser():
         help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
-        "--temp", type=float, default=DEFAULT_TEMP, help="Sampling temperature"
+        "--max-tokens-per-sec",
+        type=int,
+        help="Maximum tokens to generate per second.",
+        default=None,
+    )
+    parser.add_argument(
+        "--max-tokens-per-sec",
+        type=int,
+        default=None,
+        help="Maximum tokens to generate per second",
     )
     parser.add_argument(
         "--top-p", type=float, default=DEFAULT_TOP_P, help="Sampling top-p"
@@ -56,7 +65,7 @@ def main():
         tokenizer_config={"trust_remote_code": True},
     )
 
-    print(f"[INFO] Starting chat sessiong with {args.model}. To exit, enter 'q'.")
+    print(f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.")
     prompt_cache = make_prompt_cache(model, args.max_kv_size)
     while True:
         query = input(">> ")
@@ -72,7 +81,9 @@ def main():
             prompt,
             temp=args.temp,
             top_p=args.top_p,
+            max_tokens_per_sec=args.max_tokens_per_sec,
             prompt_cache=prompt_cache,
+            max_tokens=4096 # Ensure this is set to a reasonable limit
         ):
             print(response, flush=True, end="")
         print()
