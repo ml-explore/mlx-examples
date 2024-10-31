@@ -160,7 +160,7 @@ def main():
         max_msg_len = max(max_msg_len, len(msg))
         print(msg + " " * (max_msg_len - len(msg)), end="", flush=True)
 
-        cache = maybe_quantize_kv_cache(
+        maybe_quantize_kv_cache(
             cache, args.quantized_kv_start, args.kv_group_size, args.kv_bits
         )
 

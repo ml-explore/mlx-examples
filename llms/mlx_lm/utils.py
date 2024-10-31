@@ -165,10 +165,10 @@ def maybe_quantize_kv_cache(prompt_cache, quantized_kv_start, kv_group_size, kv_
         and not isinstance(prompt_cache[0], cache.QuantizedKVCache)
         and prompt_cache[0].offset > quantized_kv_start
     ):
-        return [
-            c.to_quantized(group_size=kv_group_size, bits=kv_bits) for c in prompt_cache
-        ]
-    return prompt_cache
+        for i in range(len(prompt_cache)):
+            prompt_cache[i] = prompt_cache[i].to_quantized(
+                group_size=kv_group_size, bits=kv_bits
+            )
 
 
 def generate_step(
@@ -290,7 +290,7 @@ def generate_step(
             for processor in logits_processor:
                 logits = processor(tokens, logits)
 
-        prompt_cache = maybe_quantize_kv_cache(
+        maybe_quantize_kv_cache(
             prompt_cache, quantized_kv_start, kv_group_size, kv_bits
         )
 
