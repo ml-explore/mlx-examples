@@ -56,7 +56,7 @@ def main():
         tokenizer_config={"trust_remote_code": True},
     )
 
-    print(f"[INFO] Starting chat sessiong with {args.model}. To exit, enter 'q'.")
+    print(f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.")
     prompt_cache = make_prompt_cache(model, args.max_kv_size)
     while True:
         query = input(">> ")

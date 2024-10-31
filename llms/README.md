@@ -248,3 +248,28 @@ model, tokenizer = load(
     tokenizer_config={"eos_token": "<|endoftext|>", "trust_remote_code": True},
 )
 ```
+
+### Large Models
+
+> [!NOTE]
+    This requires macOS 15.0 or higher to work.
+
+Models which are large relative to the total RAM available on the machine can
+be slow. `mlx-lm` will attempt to make them faster by wiring the memory
+occupied by the model and cache. This requires macOS 15 or higher to
+work.
+
+If you see the following warning message:
+
+> [WARNING] Generating with a model that requires ...
+
+then the model will likely be slow on the given machine. If the model fits in
+RAM then it can often be sped up by increasing the system wired memory limit.
+To increase the limit, set the following `sysctl`:
+
+```bash
+sudo sysctl iogpu.wired_limit_mb=N
+```
+
+The value `N` should be larger than the size of the model in megabytes but
+smaller than the memory size of the machine.
