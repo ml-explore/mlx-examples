@@ -185,9 +185,9 @@ def generate_step(
     prompt_cache: Optional[Any] = None,
     logit_bias: Optional[Dict[int, float]] = None,
     logits_processor: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
-    quantized_kv_start: Optional[int] = None,
+    kv_bits: Optional[int] = None,
     kv_group_size: int = 64,
-    kv_bits: int = 8,
+    quantized_kv_start: int = 0,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -216,6 +216,11 @@ def generate_step(
         logits_processor (List[Callable[[mx.array, mx.array], mx.array]], optional):
             A list of functions that take tokens and logits and return the processed
             logits. Default: ``None``.
+        kv_bits (int, optional): Number of bits to use for KV cache quantization.
+            None implies no cache quantization. Default: ``None``.
+        kv_group_size (int): Group size for KV cache quantization. Default: ``64``.
+        quantized_kv_start (int): Step to begin using a quantized KV cache.
+            when ``kv_bits`` is non-None. Default: ``0``.
 
     Yields:
         Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
@@ -279,7 +284,6 @@ def generate_step(
 
     def _step(y):
 
-        nonlocal prompt_cache
         logits = model(y[None], cache=prompt_cache)
         logits = logits[:, -1, :]
 

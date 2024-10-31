@@ -94,7 +94,12 @@ class PhiAttention(nn.Module):
 
         scale = math.sqrt(1 / queries.shape[-1])
         output = scaled_dot_product_attention(
-            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+            queries.astype(mx.float32),
+            keys,
+            values,
+            cache=cache,
+            scale=scale,
+            mask=mask,
         ).astype(values.dtype)
 
         output = output.moveaxis(2, 1).reshape(B, L, -1)

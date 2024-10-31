@@ -96,6 +96,7 @@ class Attention(nn.Module):
             queries,
             keys,
             values,
+            cache=cache,
             scale=self.scale,
             mask=attention_mask,
         )

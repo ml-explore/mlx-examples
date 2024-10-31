@@ -258,9 +258,9 @@ def main():
         top_p=args.top_p,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
-        quantized_kv_start=args.quantized_kv_start,
-        kv_group_size=args.kv_group_size,
         kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
     )
     if not args.verbose:
         print(response)
