@@ -9,8 +9,8 @@ import mlx.core as mx
 from .models.cache import load_prompt_cache
 from .utils import generate, load
 
-DEFAULT_PROMPT = "hello"
-DEFAULT_MAX_TOKENS = 100
+DEFAULT_PROMPT = "Tell me a story!"
+DEFAULT_MAX_TOKENS = 1000
 DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
@@ -60,6 +60,12 @@ def setup_arg_parser():
         type=int,
         default=DEFAULT_MAX_TOKENS,
         help="Maximum number of tokens to generate",
+    )
+    parser.add_argument(
+        "--max-tokens-per-sec",
+        type=int,
+        default=None,
+        help="Maximum tokens to generate per second",
     )
     parser.add_argument(
         "--temp", type=float, default=DEFAULT_TEMP, help="Sampling temperature"
@@ -227,6 +233,7 @@ def main():
         top_p=args.top_p,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
+        max_tokens_per_sec=args.max_tokens_per_sec,
     )
     if not args.verbose:
         print(response)
