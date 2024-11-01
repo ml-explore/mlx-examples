@@ -74,6 +74,17 @@ class TestTokenizers(unittest.TestCase):
         tokenizer._detokenizer = NaiveStreamingDetokenizer(tokenizer)
         self.check_tokenizer(tokenizer)
 
+    def test_special_tokens(self):
+        tokenizer_repo = "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx"
+        tokenizer = self.download_tokenizer(tokenizer_repo)
+
+        detokenizer = tokenizer.detokenizer
+        detokenizer.reset()
+        detokenizer.add_token(tokenizer.eos_token_id)
+        detokenizer.finalize()
+
+        self.assertEqual(detokenizer.last_segment, tokenizer.eos_token)
+
 
 if __name__ == "__main__":
     unittest.main()
