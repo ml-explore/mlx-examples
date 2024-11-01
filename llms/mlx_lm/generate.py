@@ -91,12 +91,6 @@ def setup_arg_parser():
         help="Colorize output based on T[0] probability",
     )
     parser.add_argument(
-        "--cache-limit-gb",
-        type=int,
-        default=None,
-        help="Set the MLX cache limit in GB",
-    )
-    parser.add_argument(
         "--max-kv-size",
         type=int,
         help="Set the maximum key-value cache size",
@@ -163,9 +157,6 @@ def main():
     args = parser.parse_args()
 
     mx.random.seed(args.seed)
-
-    if args.cache_limit_gb is not None:
-        mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
 
     # Load the prompt cache and metadata if a cache file is provided
     using_cache = args.prompt_cache_file is not None
