@@ -181,7 +181,7 @@ def load_torch_weights_and_config(
         )
 
     if name_or_path.endswith(".pt"):
-        checkpoint = torch.load(name_or_path, map_location="cpu")
+        checkpoint = torch.load(name_or_path, map_location="cpu", weights_only=False)
         weights, config = checkpoint["model_state_dict"], checkpoint["dims"]
     else:
         name_or_path = Path(name_or_path)
