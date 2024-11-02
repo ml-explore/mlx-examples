@@ -95,7 +95,7 @@ def create_dataset(
     if "messages" in sample:
         return ChatDataset(data, tokenizer)
     elif prompt_feature in sample and completion_feature in sample:
-        return CompletionsDataset(data, tokenizer)
+        return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature)
     elif "text" in sample:
         return Dataset(data, tokenizer)
     else:
