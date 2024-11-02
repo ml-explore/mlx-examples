@@ -61,6 +61,8 @@ CONFIG_DEFAULTS = {
     "config": None,
     "grad_checkpoint": False,
     "lr_schedule": None,
+    "prompt_feature": "prompt",
+    "completion_feature": "completion",
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
 }
 

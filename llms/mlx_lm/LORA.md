@@ -247,8 +247,18 @@ Refer to the documentation for the model you are fine-tuning for more details.
 {"text": "This is an example for the model."}
 ```
 
-Note, the format is automatically determined by the dataset. Note also, keys in
-each line not expected by the loader will be ignored.
+Note, the format is automatically determined by the dataset. 
+
+For the completion data format, a different key can be used for the _prompt_ and for the _completion_ by specifying 
+the following, for example, in the YAML config:
+
+```yaml
+prompt_feature: "input"
+completion_feature: "output"
+```
+
+Here, `input` is now the expected key instead of "prompt" and `output` is the expected key instead of "completion". 
+Note also, keys in each line not expected by the loader will be ignored.
 
 > [!NOTE]
 > Each example in the datasets must be on a single line. Do not put more than
@@ -270,7 +280,7 @@ Otherwise, provide a mapping of keys in the dataset to the features MLX LM
 expects. Use a YAML config to specify the Hugging Face dataset arguments. For
 example:
 
-```
+```yaml
 hf_dataset:
   name: "billsum"
   prompt_feature: "text"
