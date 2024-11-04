@@ -11,6 +11,7 @@ from .utils import load, stream_generate
 DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
+DEFAULT_MAX_TOKENS = 256
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 
 
@@ -41,6 +42,13 @@ def setup_arg_parser():
         help="Set the maximum key-value cache size",
         default=None,
     )
+    parser.add_argument(
+        "--max-tokens",
+        "-m",
+        type=int,
+        default=DEFAULT_MAX_TOKENS,
+        help="Maximum number of tokens to generate",
+    )
     return parser
 
 
@@ -70,6 +78,7 @@ def main():
             model,
             tokenizer,
             prompt,
+            args.max_tokens,
             temp=args.temp,
             top_p=args.top_p,
             prompt_cache=prompt_cache,
