@@ -211,7 +211,6 @@ def load_custom_hf_dataset(args, tokenizer: PreTrainedTokenizer):
         prompt_f = hf_args.get("prompt_feature", None)
         completion_f = hf_args.get("completion_feature", None)
         chat_f = hf_args.get("chat_feature", None)
-
         if args.train:
             train_split = hf_args.get("train_split", "train[:80%]")
             valid_split = hf_args.get("valid_split", "train[-10%:]")
