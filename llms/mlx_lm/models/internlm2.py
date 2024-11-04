@@ -1,10 +1,12 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -17,6 +19,7 @@ class ModelArgs(BaseModelArgs):
     rms_norm_eps: float
     vocab_size: int
     bias: bool = True
+    max_position_embeddings: int = 32768
     num_key_value_heads: int = None
     rope_theta: float = 10000
     rope_traditional: bool = False
@@ -32,8 +35,50 @@ class ModelArgs(BaseModelArgs):
             if not all(key in self.rope_scaling for key in required_keys):
                 raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
-            if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
+            if self.rope_scaling["type"] not in ["linear", "dynamic"]:
+                raise ValueError(
+                    "rope_scaling 'type' currently only supports 'linear' or 'dynamic"
+                )
+
+
+class DynamicNTKScalingRoPE(nn.Module):
+    """Implements the rotary positional encoding with Dynamic NTK scaling."""
+
+    def __init__(
+        self,
+        dims: int,
+        max_position_embeddings: int = 2048,
+        traditional: bool = False,
+        base: float = 10000,
+        scale: float = 1.0,
+    ):
+        super().__init__()
+        self.max_position_embeddings = max_position_embeddings
+        self.original_base = base
+        self.dims = dims
+        self.traditional = traditional
+        self.scale = scale
+
+    def extra_repr(self):
+        return f"{self.dims}, traditional={self.traditional}, max_position_embeddings={self.max_position_embeddings}, scaling_factor={self.scaling_factor}"
+
+    def __call__(self, x, offset: int = 0):
+        seq_len = x.shape[1] + offset
+        if seq_len > self.max_position_embeddings:
+            base = self.original_base * (
+                (self.scale * seq_len / self.max_position_embeddings) - (self.scale - 1)
+            ) ** (self.dims / (self.dims - 2))
+        else:
+            base = self.original_base
+
+        return mx.fast.rope(
+            x,
+            self.dims,
+            traditional=self.traditional,
+            base=base,
+            scale=self.scale,
+            offset=offset,
+        )
 
 
 class Attention(nn.Module):
@@ -56,10 +101,12 @@ class Attention(nn.Module):
         rope_scale = (
             1 / args.rope_scaling["factor"]
             if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
-            else 1
+            else 2.0
         )
-        self.rope = nn.RoPE(
+
+        self.rope = DynamicNTKScalingRoPE(
             head_dim,
+            max_position_embeddings=args.max_position_embeddings,
             traditional=args.rope_traditional,
             base=args.rope_theta,
             scale=rope_scale,
@@ -69,7 +116,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -94,8 +141,8 @@ class Attention(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.wo(output)
@@ -124,7 +171,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.attention(self.attention_norm(x), mask, cache)
         h = x + r
@@ -150,10 +197,7 @@ class InternLM2Model(nn.Module):
     ):
         h = self.tok_embeddings(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -185,14 +229,10 @@ class Model(nn.Module):
             out = self.output(out)
         return out
 
+    def sanitize(self, weights):
+        # Remove unused precomputed rotary freqs
+        return {k: v for k, v in weights.items() if "attention.rope.inv_freq" not in k}
+
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import inspect
 import math
 from dataclasses import dataclass
@@ -6,6 +8,7 @@ from typing import Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
+from .base import create_attention_mask, scaled_dot_product_attention
 from .switch_layers import SwitchMLP
 
 
@@ -68,8 +71,13 @@ class RoPEAttention(nn.Module):
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries.astype(mx.float32),
+            keys,
+            values,
+            cache=cache,
+            scale=scale,
+            mask=mask,
         ).astype(values.dtype)
         output = output.moveaxis(2, 1).reshape(B, L, -1)
 
@@ -165,12 +173,9 @@ class Model(nn.Module):
         self,
         x: mx.array,
         mask: mx.array = None,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
+        cache=None,
+    ) -> mx.array:
+        mask = create_attention_mask(x, cache)
 
         y = self.transformer(x, mask, cache)
         return self.lm_head(y)
@@ -193,11 +198,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.transformer.h
-
-    @property
-    def head_dim(self):
-        return self.args.model_dim // self.args.num_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_heads

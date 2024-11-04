@@ -16,9 +16,34 @@ conda install -c conda-forge mlx-lm
 
 The `mlx-lm` package also has:
 
-- [LoRA and QLoRA fine-tuning](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md)
+- [LoRA, QLoRA, and full fine-tuning](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md)
 - [Merging models](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/MERGE.md)
 - [HTTP model serving](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/SERVER.md)
+
+### Quick Start
+
+To generate text with an LLM use:
+
+```bash
+mlx_lm.generate --prompt "Hi!"
+```
+
+To chat with an LLM use:
+
+```bash
+mlx_lm.chat
+```
+
+This will give you a chat REPL that you can use to interact with the LLM. The
+chat context is preserved during the lifetime of the REPL.
+
+Commands in `mlx-lm` typically take command line options which let you specify
+the model, sampling parameters, and more. Use `-h` to see a list of available
+options for a command, e.g.:
+
+```bash
+mlx_lm.generate -h
+```
 
 ### Python API
 
@@ -29,7 +54,14 @@ from mlx_lm import load, generate
 
 model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.3-4bit")
 
-response = generate(model, tokenizer, prompt="hello", verbose=True)
+prompt = "Write a story about Einstein"
+
+messages = [{"role": "user", "content": prompt}]
+prompt = tokenizer.apply_chat_template(
+    messages, tokenize=False, add_generation_prompt=True
+)
+
+response = generate(model, tokenizer, prompt=prompt, verbose=True)
 ```
 
 To see a description of all the arguments you can do:
@@ -37,6 +69,10 @@ To see a description of all the arguments you can do:
 ```
 >>> help(generate)
 ```
+
+Check out the [generation
+example](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm/examples/generate_response.py)
+to see how to use the API in more detail.
 
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
@@ -74,6 +110,11 @@ repo = "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
 model, tokenizer = load(repo)
 
 prompt = "Write a story about Einstein"
+
+messages = [{"role": "user", "content": prompt}]
+prompt = tokenizer.apply_chat_template(
+    messages, tokenize=False, add_generation_prompt=True
+)
 
 for t in stream_generate(model, tokenizer, prompt, max_tokens=512):
     print(t, end="", flush=True)
@@ -120,10 +161,50 @@ mlx_lm.convert \
     --upload-repo mlx-community/my-4bit-mistral
 ```
 
+### Long Prompts and Generations 
+
+`mlx-lm` has some tools to scale efficiently to long prompts and generations:
+
+- A rotating fixed-size key-value cache.
+- Prompt caching
+
+To use the rotating key-value cache pass the argument `--max-kv-size n` where
+`n` can be any integer. Smaller values like `512` will use very little RAM but
+result in worse quality. Larger values like `4096` or higher will use more RAM
+but have better quality.
+
+Caching prompts can substantially speedup reusing the same long context with
+different queries. To cache a prompt use `mlx_lm.cache_prompt`. For example:
+
+```bash
+cat prompt.txt | mlx_lm.cache_prompt \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --prompt - \
+  --prompt-cache-file mistral_prompt.safetensors
+``` 
+
+Then use the cached prompt with `mlx_lm.generate`:
+
+```
+mlx_lm.generate \
+    --prompt-cache-file mistral_prompt.safetensors \
+    --prompt "\nSummarize the above text."
+```
+
+The cached prompt is treated as a prefix to the supplied prompt. Also notice
+when using a cached prompt, the model to use is read from the cache and need
+not be supplied explicitly.
+
+Prompt caching can also be used in the Python API in order to to avoid
+recomputing the prompt. This is useful in multi-turn dialogues or across
+requests that use the same context. See the
+[example](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/examples/chat.py)
+for more usage details.
+
 ### Supported Models
 
-The example supports Hugging Face format Mistral, Llama, and Phi-2 style
-models.  If the model you want to run is not supported, file an
+`mlx-lm` supports thousands of Hugging Face format LLMs. If the model you want to
+run is not supported, file an
 [issue](https://github.com/ml-explore/mlx-examples/issues/new) or better yet,
 submit a pull request.
 
@@ -167,3 +248,28 @@ model, tokenizer = load(
     tokenizer_config={"eos_token": "<|endoftext|>", "trust_remote_code": True},
 )
 ```
+
+### Large Models
+
+> [!NOTE]
+    This requires macOS 15.0 or higher to work.
+
+Models which are large relative to the total RAM available on the machine can
+be slow. `mlx-lm` will attempt to make them faster by wiring the memory
+occupied by the model and cache. This requires macOS 15 or higher to
+work.
+
+If you see the following warning message:
+
+> [WARNING] Generating with a model that requires ...
+
+then the model will likely be slow on the given machine. If the model fits in
+RAM then it can often be sped up by increasing the system wired memory limit.
+To increase the limit, set the following `sysctl`:
+
+```bash
+sudo sysctl iogpu.wired_limit_mb=N
+```
+
+The value `N` should be larger than the size of the model in megabytes but
+smaller than the memory size of the machine.

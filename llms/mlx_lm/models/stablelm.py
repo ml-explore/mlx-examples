@@ -1,11 +1,12 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 from dataclasses import dataclass
-from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -119,8 +120,8 @@ class Attention(nn.Module):
 
         # Finally perform the attention computation
         scale = math.sqrt(1 / queries.shape[-1])
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=scale, mask=mask
         ).astype(values.dtype)
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
@@ -196,24 +197,12 @@ class Model(nn.Module):
         self,
         x: mx.array,
         mask: mx.array = None,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
-
+        cache=None,
+    ) -> mx.array:
+        mask = create_attention_mask(x, cache)
         y = self.model(x, mask, cache)
         return self.lm_head(y)
 
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

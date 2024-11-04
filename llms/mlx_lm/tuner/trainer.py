@@ -1,5 +1,7 @@
 # Copyright © 2024 Apple Inc.
 
+import glob
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,6 +10,7 @@ from typing import Union
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten
 
 
@@ -141,9 +144,16 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
             f" examples but only has {len(dataset)}."
         )
 
+    # If running in distributed mode (N machines) then each one should skip N-1
+    # samples
+    step = mx.distributed.init().size()
+    if batch_size % step != 0:
+        raise ValueError("The batch size must be divisible by the number of workers")
+
     # Make the batches:
     batch_idx = [
-        idx[i : i + batch_size] for i in range(0, len(idx) - batch_size + 1, batch_size)
+        idx[i : i + batch_size : step]
+        for i in range(0, len(idx) - batch_size + 1, batch_size)
     ]
 
     while True:
@@ -152,9 +162,7 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
             # Encode batch
             batch = [tokenizer.encode(dataset[j]) for j in batch_idx[i]]
             for b in batch:
-                if b[-1] == tokenizer.eos_token_id:
-                    print("[WARNING] Example already has an EOS token appended")
-                else:
+                if b[-1] != tokenizer.eos_token_id:
                     b.append(tokenizer.eos_token_id)
 
             lengths = [len(x) for x in batch]
@@ -171,9 +179,9 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
             max_length_in_batch = pad_to * ((max(lengths) + pad_to - 1) // pad_to)
             max_length_in_batch = min(max_length_in_batch, max_seq_length)
 
-            batch_arr = np.zeros((batch_size, max_length_in_batch), np.int32)
+            batch_arr = np.zeros((batch_size // step, max_length_in_batch), np.int32)
 
-            for j in range(batch_size):
+            for j in range(batch_size // step):
                 truncated_length = min(lengths[j], max_seq_length)
                 batch_arr[j, :truncated_length] = batch[j][:truncated_length]
                 lengths[j] = (
@@ -197,7 +205,7 @@ def evaluate(
     loss: callable = default_loss,
     iterate_batches: callable = iterate_batches,
 ):
-    all_losses = []
+    all_losses = 0
     ntokens = 0
 
     index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
@@ -212,10 +220,14 @@ def evaluate(
         ),
     ):
         losses, toks = loss(model, *batch)
-        all_losses.append((losses * toks).item())
-        ntokens += toks.item()
+        all_losses += losses * toks
+        ntokens += toks
+        mx.eval(all_losses, ntokens)
 
-    return np.sum(all_losses) / ntokens
+    all_losses = mx.distributed.all_sum(all_losses)
+    ntokens = mx.distributed.all_sum(ntokens)
+
+    return (all_losses / ntokens).item()
 
 
 class TrainingCallback:
@@ -241,6 +253,11 @@ def train(
     training_callback: TrainingCallback = None,
 ):
     print(f"Starting training..., iters: {args.iters}")
+    world = mx.distributed.init()
+    world_size = world.size()
+    rank = world.rank()
+    if world_size > 1:
+        print(f"Node {rank} of {world_size}")
 
     if args.grad_checkpoint:
         grad_checkpoint(model.layers[0])
@@ -251,6 +268,9 @@ def train(
         # Forward and backward pass
         (lvalue, toks), grad = loss_value_and_grad(model, *batch)
 
+        # All reduce the gradients if running in distributed mode
+        grad = average_gradients(grad)
+
         # Model update
         optimizer.update(model, grad)
 
@@ -258,8 +278,9 @@ def train(
 
     loss_value_and_grad = nn.value_and_grad(model, loss)
 
-    losses = []
+    losses = 0
     n_tokens = 0
+    steps = 0
     trained_tokens = 0
     # Main training loop
     start = time.perf_counter()
@@ -288,9 +309,13 @@ def train(
                 iterate_batches=iterate_batches,
             )
             val_time = time.perf_counter() - stop
-            print(
-                f"Iter {it}: " f"Val loss {val_loss:.3f}, " f"Val took {val_time:.3f}s"
-            )
+            if rank == 0:
+                print(
+                    f"Iter {it}: "
+                    f"Val loss {val_loss:.3f}, "
+                    f"Val took {val_time:.3f}s",
+                    flush=True,
+                )
 
             if training_callback is not None:
                 val_info = {
@@ -303,30 +328,33 @@ def train(
             start = time.perf_counter()
 
         lvalue, toks = step(batch)
-        mx.eval(state, lvalue, toks)
-
-        # Record loss
-        losses.append(lvalue.item())
-        n_tokens += toks.item()
+        losses += lvalue
+        n_tokens += toks
+        steps += 1
+        mx.eval(state, losses, n_tokens)
 
         # Report training loss if needed
         if it % args.steps_per_report == 0 or it == args.iters:
             stop = time.perf_counter()
 
-            train_loss = np.mean(losses)
+            train_loss = mx.distributed.all_sum(losses).item()
+            train_loss /= steps * mx.distributed.init().size()
+            n_tokens = mx.distributed.all_sum(n_tokens).item()
             learning_rate = optimizer.learning_rate.item()
             it_sec = args.steps_per_report / (stop - start)
             tokens_sec = float(n_tokens) / (stop - start)
             trained_tokens += n_tokens
             peak_mem = mx.metal.get_peak_memory() / 2**30
-            print(
-                f"Iter {it}: Train loss {train_loss:.3f}, "
-                f"Learning Rate {learning_rate:.3e}, "
-                f"It/sec {it_sec:.3f}, "
-                f"Tokens/sec {tokens_sec:.3f}, "
-                f"Trained Tokens {trained_tokens}, "
-                f"Peak mem {peak_mem:.3f} GB"
-            )
+            if rank == 0:
+                print(
+                    f"Iter {it}: Train loss {train_loss:.3f}, "
+                    f"Learning Rate {learning_rate:.3e}, "
+                    f"It/sec {it_sec:.3f}, "
+                    f"Tokens/sec {tokens_sec:.3f}, "
+                    f"Trained Tokens {trained_tokens}, "
+                    f"Peak mem {peak_mem:.3f} GB",
+                    flush=True,
+                )
 
             if training_callback is not None:
                 train_info = {
@@ -340,30 +368,25 @@ def train(
                 }
                 training_callback.on_train_loss_report(train_info)
 
-            losses = []
+            losses = 0
             n_tokens = 0
+            steps = 0
             start = time.perf_counter()
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
-            save_adapter(model, args.adapter_file)
+            adapter_weights = dict(tree_flatten(model.trainable_parameters()))
+            mx.save_safetensors(str(args.adapter_file), adapter_weights)
             checkpoint = (
                 Path(args.adapter_file).parent / f"{it:07d}_adapters.safetensors"
             )
-            save_adapter(model, checkpoint)
+            mx.save_safetensors(str(checkpoint), adapter_weights)
             print(
                 f"Iter {it}: Saved adapter weights to "
                 f"{args.adapter_file} and {checkpoint}."
             )
 
-    # save final adapter weights
-    save_adapter(model, args.adapter_file)
-    print(f"Saved final adapter weights to {args.adapter_file}.")
-
-
-def save_adapter(
-    model: nn.Module,
-    adapter_file: Union[str, Path],
-):
-    flattened_tree = tree_flatten(model.trainable_parameters())
-    mx.save_safetensors(str(adapter_file), dict(flattened_tree))
+    # Save final weights
+    adapter_weights = dict(tree_flatten(model.trainable_parameters()))
+    mx.save_safetensors(str(args.adapter_file), adapter_weights)
+    print(f"Saved final weights to {args.adapter_file}.")

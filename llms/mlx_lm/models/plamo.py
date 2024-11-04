@@ -1,11 +1,13 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -60,8 +62,8 @@ class Attention(nn.Module):
         self,
         hidden_states: mx.array,
         attention_mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
+        cache: Optional[Any] = None,
+    ) -> mx.array:
         bsz, q_len, _ = hidden_states.shape
 
         queries = self.q_proj(hidden_states)
@@ -87,10 +89,14 @@ class Attention(nn.Module):
             queries = self.rotary_emb(queries)
             keys = self.rotary_emb(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
+        keys = mx.tile(keys, [1, self.config.n_shared_head, 1, 1])
+        values = mx.tile(values, [1, self.config.n_shared_head, 1, 1])
+
+        output = scaled_dot_product_attention(
             queries,
             keys,
             values,
+            cache=cache,
             scale=self.scale,
             mask=attention_mask,
         )
@@ -125,8 +131,8 @@ class PlamoDecoderLayer(nn.Module):
         self,
         hidden_states: mx.array,
         attention_mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[Any, ...]:
+        cache: Optional[Any] = None,
+    ):
         # from LlamaDecoder
         residual = hidden_states
 
@@ -167,14 +173,11 @@ class PlamoModel(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
-        cache: Optional[List[Union[Tuple[mx.array, mx.array], None]]] = None,
-    ) -> Tuple[mx.array, Optional[List[Union[Tuple[mx.array, mx.array], None]]]]:
+        cache: Optional[Any] = None,
+    ) -> mx.array:
         h = self.embed_tokens(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(self.embed_tokens.weight.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None for _ in range(len(self.layers.layers))]
@@ -198,19 +201,11 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
-        cache: Optional[List[Tuple[mx.array, mx.array]]] = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache: Optional[Any] = None,
+    ) -> mx.array:
         out = self.model(inputs, cache)
         return self.lm_head(out)
 
     @property
     def layers(self):
         return self.model.layers.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_attention_heads // self.args.n_shared_head

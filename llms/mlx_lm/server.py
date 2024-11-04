@@ -3,20 +3,36 @@
 import argparse
 import json
 import logging
+import platform
 import time
 import uuid
 import warnings
-from functools import lru_cache
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Dict, List, Literal, NamedTuple, Optional, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import mlx.core as mx
-import mlx.nn as nn
-from transformers import PreTrainedTokenizer
+from huggingface_hub import scan_cache_dir
 
-from .tokenizer_utils import TokenizerWrapper
+from ._version import __version__
+from .models.cache import make_prompt_cache
 from .utils import generate_step, load
+
+
+def get_system_fingerprint():
+    gpu_arch = mx.metal.device_info()["architecture"] if mx.metal.is_available() else ""
+    return f"{__version__}-{mx.__version__}-{platform.platform()}-{gpu_arch}"
 
 
 class StopCondition(NamedTuple):
@@ -58,6 +74,21 @@ def stopping_criteria(
     return StopCondition(stop_met=False, trim_length=0)
 
 
+def sequence_overlap(s1: Sequence, s2: Sequence) -> bool:
+    """
+    Checks if a suffix of s1 has overlap with a prefix of s2
+
+    Args:
+        s1 (Sequence): The first sequence
+        s2 (Sequence): The second sequence
+
+    Returns:
+        bool: If the two sequences have overlap
+    """
+    max_overlap = min(len(s1), len(s2))
+    return any(s1[-i:] == s2[:i] for i in range(1, max_overlap + 1))
+
+
 def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     default_role_mapping = {
         "system_prompt": (
@@ -82,6 +113,13 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     return prompt.rstrip()
 
 
+@dataclass
+class PromptCache:
+    cache: List[Any] = field(default_factory=list)
+    model_key: Tuple[str, Optional[str]] = ("", None)
+    tokens: List[int] = field(default_factory=list)
+
+
 class ModelProvider:
     def __init__(self, cli_args: argparse.Namespace):
         """Load models on demand and persist them across the whole process."""
@@ -101,13 +139,15 @@ class ModelProvider:
                 "Local models must be relative to the current working dir."
             )
 
-    def load(self, model_path):
-        if self.model_key == model_path:
+    # Added in adapter_path to load dynamically
+    def load(self, model_path, adapter_path=None):
+        if self.model_key == (model_path, adapter_path):
             return self.model, self.tokenizer
 
         # Remove the old model if it exists.
         self.model = None
         self.tokenizer = None
+        self.model_key = None
 
         # Building tokenizer_config
         tokenizer_config = {
@@ -119,18 +159,22 @@ class ModelProvider:
         if model_path == "default_model" and self.cli_args.model is not None:
             model, tokenizer = load(
                 self.cli_args.model,
-                adapter_path=self.cli_args.adapter_path,
+                adapter_path=(
+                    adapter_path if adapter_path else self.cli_args.adapter_path
+                ),  # if the user doesn't change the model but adds an adapter path
                 tokenizer_config=tokenizer_config,
             )
         else:
             self._validate_model_path(model_path)
-            model, tokenizer = load(model_path, tokenizer_config=tokenizer_config)
+            model, tokenizer = load(
+                model_path, adapter_path=adapter_path, tokenizer_config=tokenizer_config
+            )
 
         if self.cli_args.use_default_chat_template:
             if tokenizer.chat_template is None:
                 tokenizer.chat_template = tokenizer.default_chat_template
 
-        self.model_key = model_path
+        self.model_key = (model_path, adapter_path)
         self.model = model
         self.tokenizer = tokenizer
 
@@ -138,12 +182,21 @@ class ModelProvider:
 
 
 class APIHandler(BaseHTTPRequestHandler):
-    def __init__(self, model_provider: ModelProvider, *args, **kwargs):
+    def __init__(
+        self,
+        model_provider: ModelProvider,
+        *args,
+        prompt_cache: Optional[PromptCache] = None,
+        system_fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
         """
         Create static request specific metadata
         """
         self.created = int(time.time())
         self.model_provider = model_provider
+        self.prompt_cache = prompt_cache or PromptCache()
+        self.system_fingerprint = system_fingerprint or get_system_fingerprint()
         super().__init__(*args, **kwargs)
 
     def _set_cors_headers(self):
@@ -173,6 +226,7 @@ class APIHandler(BaseHTTPRequestHandler):
         endpoints = {
             "/v1/completions": self.handle_text_completions,
             "/v1/chat/completions": self.handle_chat_completions,
+            "/chat/completions": self.handle_chat_completions,
         }
 
         if self.path not in endpoints:
@@ -193,8 +247,12 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Extract request parameters from the body
         self.stream = self.body.get("stream", False)
+        self.stream_options = self.body.get("stream_options", None)
         self.requested_model = self.body.get("model", "default_model")
-        self.max_tokens = self.body.get("max_tokens", 100)
+        self.adapter = self.body.get("adapters", None)
+        self.max_tokens = self.body.get("max_completion_tokens", None)
+        if self.max_tokens is None:
+            self.max_tokens = self.body.get("max_tokens", 512)
         self.temperature = self.body.get("temperature", 1.0)
         self.top_p = self.body.get("top_p", 1.0)
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
@@ -205,7 +263,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Load the model if needed
         try:
-            self.model, self.tokenizer = self.model_provider.load(self.requested_model)
+            self.model, self.tokenizer = self.model_provider.load(
+                self.requested_model, self.adapter
+            )
         except:
             self._set_completion_headers(404)
             self.end_headers()
@@ -279,6 +339,8 @@ class APIHandler(BaseHTTPRequestHandler):
 
         if not isinstance(self.requested_model, str):
             raise ValueError("model must be a string")
+        if self.adapter is not None and not isinstance(self.adapter, str):
+            raise ValueError("adapter must be a string")
 
     def generate_response(
         self,
@@ -318,7 +380,7 @@ class APIHandler(BaseHTTPRequestHandler):
         # Static response
         response = {
             "id": self.request_id,
-            "system_fingerprint": f"fp_{uuid.uuid4()}",
+            "system_fingerprint": self.system_fingerprint,
             "object": self.object_type,
             "model": self.requested_model,
             "created": self.created,
@@ -363,16 +425,30 @@ class APIHandler(BaseHTTPRequestHandler):
 
         return response
 
+    def get_prompt_cache(self, prompt):
+        cache_len = len(self.prompt_cache.tokens)
+        if (
+            self.prompt_cache.model_key != self.model_provider.model_key
+            or cache_len >= len(prompt)
+            or self.prompt_cache.tokens != prompt[:cache_len]
+        ):
+            self.prompt_cache.model_key = self.model_provider.model_key
+            self.prompt_cache.cache = make_prompt_cache(self.model_provider.model)
+        else:
+            prompt = prompt[cache_len:]
+        self.prompt_cache.tokens.extend(prompt)
+        return prompt
+
     def handle_completion(
         self,
-        prompt: mx.array,
+        prompt: List[int],
         stop_id_sequences: List[List[int]],
     ):
         """
         Generate a response to a prompt and send it to the client in a single batch.
 
         Args:
-            prompt (mx.array): The prompt, in token form inside of a mlx array
+            prompt (List[int]): The tokenized prompt.
             stop_id_sequences (List[List[int]]): A list of stop words passed
               to the stopping_criteria function
         """
@@ -384,17 +460,21 @@ class APIHandler(BaseHTTPRequestHandler):
         logging.debug(f"Starting completion:")
         token_logprobs = []
         top_tokens = []
-        for (token, logprobs), _ in zip(
+
+        prompt = self.get_prompt_cache(prompt)
+
+        for _, (token, logprobs) in zip(
+            range(self.max_tokens),
             generate_step(
-                prompt=prompt,
+                prompt=mx.array(prompt),
                 model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 repetition_context_size=self.repetition_context_size,
                 logit_bias=self.logit_bias,
+                prompt_cache=self.prompt_cache.cache,
             ),
-            range(self.max_tokens),
         ):
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
@@ -405,7 +485,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 top_indices = sorted_indices[: self.logprobs]
                 top_logprobs = logprobs[top_indices]
                 top_token_info = zip(top_indices.tolist(), top_logprobs.tolist())
-                top_tokens.append(dict(top_token_info))
+                top_tokens.append(tuple(top_token_info))
 
             token_logprobs.append(logprobs[token].item())
 
@@ -420,6 +500,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     )
                 break
 
+        self.prompt_cache.tokens.extend(tokens)
         detokenizer.finalize()
         text = (
             detokenizer.text
@@ -449,16 +530,17 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def handle_stream(
         self,
-        prompt: mx.array,
+        prompt: List[int],
         stop_id_sequences: List[List[int]],
     ):
         """
-        Generate response to prompt and foward it to the client using a Server Sent Events (SSE) stream.
+        Generate response to prompt and foward it to the client using a Server
+        Sent Events (SSE) stream.
 
         Args:
-            prompt (mx.array): The prompt, in token form inside of a mlx array
-            stop_id_sequences (List[List[int]]):
-                A list of stop words passed to the stopping_criteria function
+            prompt (mx.array): The tokenized prompt
+            stop_id_sequences (List[List[int]]): A list of stop words passed to
+              the stopping_criteria function
         """
         # No additional headers are needed, call end_headers
         self.end_headers()
@@ -467,31 +549,26 @@ class APIHandler(BaseHTTPRequestHandler):
         detokenizer.reset()
         tokens = []
 
-        max_stop_id_sequence_len = len(max(stop_id_sequences, default=[]))
-        # Buffer to store the last `max_stop_id_sequence_len` tokens
-        # to check for stop conditions before writing to the stream.
-        stop_sequence_buffer = []
         stop_sequence_suffix = None
         logging.debug(f"Starting stream:")
-        for (token, _), _ in zip(
+
+        prompt = self.get_prompt_cache(prompt)
+
+        for _, (token, _) in zip(
+            range(self.max_tokens),
             generate_step(
-                prompt=prompt,
+                prompt=mx.array(prompt),
                 model=self.model,
                 temp=self.temperature,
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 repetition_context_size=self.repetition_context_size,
+                prompt_cache=self.prompt_cache.cache,
             ),
-            range(self.max_tokens),
         ):
             detokenizer.add_token(token)
             logging.debug(detokenizer.text)
             tokens.append(token)
-            stop_sequence_buffer.append(token)
-
-            # Continue generating tokens until buffer is as large as the longest stop_id_sequence
-            if len(stop_sequence_buffer) < max_stop_id_sequence_len:
-                continue
 
             stop_condition = stopping_criteria(
                 tokens,
@@ -505,28 +582,59 @@ class APIHandler(BaseHTTPRequestHandler):
                     )
                 break
 
+            # If the end of tokens overlaps with a stop sequence, generate new
+            # tokens until we know if the stop sequence is hit or not
+            if any(
+                (sequence_overlap(tokens, sequence) for sequence in stop_id_sequences)
+            ):
+                continue
+
             new_text = detokenizer.last_segment
-            response = self.generate_response(new_text, None)
-            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-            self.wfile.flush()
-            stop_sequence_buffer = []
+            if new_text:
+                response = self.generate_response(new_text, None)
+                self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+                self.wfile.flush()
+
+        self.prompt_cache.tokens.extend(tokens)
 
         # check is there any remaining text to send
-        if stop_sequence_buffer:
-            next_chunk = (
-                detokenizer.last_segment
-                if stop_sequence_suffix is None
-                else detokenizer.last_segment[: -len(stop_sequence_suffix)]
-            )
-            response = self.generate_response(next_chunk, "length")
-
+        detokenizer.finalize()
+        last_segment = detokenizer.last_segment
+        if last_segment:
+            if stop_sequence_suffix is not None:
+                last_segment = last_segment[: -len(stop_sequence_suffix)]
+            response = self.generate_response(last_segment, "length")
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
             self.wfile.flush()
+
+        if self.stream_options is not None and self.stream_options["include_usage"]:
+            response = self.completion_usage_response(len(prompt), len(tokens))
+            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
 
         self.wfile.write("data: [DONE]\n\n".encode())
         self.wfile.flush()
 
-    def handle_chat_completions(self) -> mx.array:
+    def completion_usage_response(
+        self,
+        prompt_token_count: Optional[int] = None,
+        completion_token_count: Optional[int] = None,
+    ):
+        response = {
+            "id": self.request_id,
+            "system_fingerprint": self.system_fingerprint,
+            "object": "chat.completion",
+            "model": self.requested_model,
+            "created": self.created,
+            "choices": [],
+            "usage": {
+                "prompt_tokens": prompt_token_count,
+                "completion_tokens": completion_token_count,
+                "total_tokens": prompt_token_count + completion_token_count,
+            },
+        }
+        return response
+
+    def handle_chat_completions(self) -> List[int]:
         """
         Handle a chat completion request.
 
@@ -541,13 +649,13 @@ class APIHandler(BaseHTTPRequestHandler):
         self.object_type = (
             "chat.completions.chunk" if self.stream else "chat.completions"
         )
-
         if (
             hasattr(self.tokenizer, "apply_chat_template")
             and self.tokenizer.chat_template
         ):
             prompt = self.tokenizer.apply_chat_template(
                 body["messages"],
+                body.get("tools", None),
                 tokenize=True,
                 add_generation_prompt=True,
             )
@@ -555,9 +663,9 @@ class APIHandler(BaseHTTPRequestHandler):
             prompt = convert_chat(body["messages"], body.get("role_mapping"))
             prompt = self.tokenizer.encode(prompt)
 
-        return mx.array(prompt)
+        return prompt
 
-    def handle_text_completions(self) -> mx.array:
+    def handle_text_completions(self) -> List[int]:
         """
         Handle a text completion request.
 
@@ -567,11 +675,48 @@ class APIHandler(BaseHTTPRequestHandler):
         # Determine response type
         self.request_id = f"cmpl-{uuid.uuid4()}"
         self.object_type = "text_completion"
-
         assert "prompt" in self.body, "Request did not contain a prompt"
-        prompt_text = self.body["prompt"]
-        prompt = self.tokenizer.encode(prompt_text)
-        return mx.array(prompt)
+        return self.tokenizer.encode(self.body["prompt"])
+
+    def do_GET(self):
+        """
+        Respond to a GET request from a client.
+        """
+        if self.path == "/v1/models":
+            self.handle_models_request()
+        else:
+            self._set_completion_headers(404)
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+
+    def handle_models_request(self):
+        """
+        Handle a GET request for the /v1/models endpoint.
+        """
+        self._set_completion_headers(200)
+        self.end_headers()
+
+        # Scan the cache directory for downloaded mlx models
+        hf_cache_info = scan_cache_dir()
+        downloaded_models = [
+            repo for repo in hf_cache_info.repos if "mlx" in repo.repo_id
+        ]
+
+        # Create a list of available models
+        models = [
+            {
+                "id": repo.repo_id,
+                "object": "model",
+                "created": self.created,
+            }
+            for repo in downloaded_models
+        ]
+
+        response = {"object": "list", "data": models}
+
+        response_json = json.dumps(response).encode()
+        self.wfile.write(response_json)
+        self.wfile.flush()
 
 
 def run(
@@ -582,9 +727,16 @@ def run(
     handler_class=APIHandler,
 ):
     server_address = (host, port)
+    prompt_cache = PromptCache()
     httpd = server_class(
         server_address,
-        lambda *args, **kwargs: handler_class(model_provider, *args, **kwargs),
+        lambda *args, **kwargs: handler_class(
+            model_provider,
+            prompt_cache=prompt_cache,
+            system_fingerprint=get_system_fingerprint(),
+            *args,
+            **kwargs,
+        ),
     )
     warnings.warn(
         "mlx_lm.server is not recommended for production as "

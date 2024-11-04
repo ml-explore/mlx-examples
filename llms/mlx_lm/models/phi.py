@@ -1,3 +1,5 @@
+# Copyright © 2023-2024 Apple Inc.
+
 import math
 from dataclasses import dataclass
 from typing import Tuple
@@ -5,7 +7,7 @@ from typing import Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -91,8 +93,13 @@ class PhiAttention(nn.Module):
             keys = self.rope(keys)
 
         scale = math.sqrt(1 / queries.shape[-1])
-        output = mx.fast.scaled_dot_product_attention(
-            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries.astype(mx.float32),
+            keys,
+            values,
+            cache=cache,
+            scale=scale,
+            mask=mask,
         ).astype(values.dtype)
 
         output = output.moveaxis(2, 1).reshape(B, L, -1)
@@ -138,13 +145,11 @@ class PhiModel(nn.Module):
 
     def __call__(self, x, cache):
         x = self.embed_tokens(x)
+
+        mask = create_attention_mask(x, cache)
+
         if cache is None:
             cache = [None] * len(self.layers)
-
-        mask = None
-        if x.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(x.shape[1])
-            mask = mask.astype(x.dtype)
 
         for layer, c in zip(self.layers, cache):
             x = layer(x, mask, c)
@@ -162,19 +167,11 @@ class Model(nn.Module):
     def __call__(
         self,
         x: mx.array,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache=None,
+    ) -> mx.array:
         y = self.model(x, cache)
         return self.lm_head(y)
 
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

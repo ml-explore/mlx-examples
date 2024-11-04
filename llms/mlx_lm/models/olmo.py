@@ -1,17 +1,19 @@
+# Copyright © 2023-2024 Apple Inc.
+
+import sys
 from dataclasses import dataclass
-from sys import exit
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask
 
 try:
     import hf_olmo
 except ImportError:
     print("To run olmo install ai2-olmo: pip install ai2-olmo")
-    exit(1)
+    sys.exit(1)
 
 
 @dataclass
@@ -66,7 +68,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -96,7 +98,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.attend(self.att_norm(x), mask, cache)
         h = x + r
@@ -126,10 +128,7 @@ class Transformer(nn.Module):
     ):
         h = self.wte(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.blocks)
@@ -175,11 +174,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.transformer.blocks
-
-    @property
-    def head_dim(self):
-        return self.args.d_model // self.args.n_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.n_heads

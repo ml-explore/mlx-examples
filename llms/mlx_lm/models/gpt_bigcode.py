@@ -1,11 +1,13 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs, create_additive_causal_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -55,7 +57,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -72,8 +74,8 @@ class Attention(nn.Module):
         if cache is not None:
             keys, values = cache.update_and_fetch(keys, values)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.c_proj(output)
@@ -112,7 +114,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.attn(self.ln_1(x), mask, cache)
         h = x + r
@@ -147,10 +149,7 @@ class GPTBigCodeModel(nn.Module):
             position_ids = mx.array(np.arange(L))
             hidden_states += self.wpe(position_ids)
 
-            mask = create_additive_causal_mask(
-                hidden_states.shape[1], cache[0].offset if cache is not None else 0
-            )
-            mask = mask.astype(hidden_states.dtype)
+            mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)
@@ -185,11 +184,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.transformer.h
-
-    @property
-    def head_dim(self):
-        return self.args.n_embd // self.args.n_head
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

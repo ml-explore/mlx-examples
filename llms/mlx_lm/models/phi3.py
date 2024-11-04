@@ -1,10 +1,12 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, KVCache
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 from .su_rope import SuScaledRotaryEmbedding
 
 
@@ -33,9 +35,9 @@ class ModelArgs(BaseModelArgs):
             if not all(key in self.rope_scaling for key in required_keys):
                 raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
-            if self.rope_scaling["type"] not in ["su", "linear"]:
+            if self.rope_scaling["type"] not in ["longrope", "su", "linear"]:
                 print(
-                    "[WARNING] rope_scaling 'type' currently only supports 'linear' and 'su'; setting rope scaling to false."
+                    "[WARNING] rope_scaling 'type' currently only supports 'linear', 'su', and 'longrope'; setting rope scaling to false."
                 )
                 self.rope_scaling = None
 
@@ -57,19 +59,17 @@ class Attention(nn.Module):
         self.qkv_proj = nn.Linear(dim, op_size, bias=False)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
 
-        rope_scale = 1.0
-        if args.rope_scaling and args.rope_scaling["type"] == "su":
+        if args.rope_scaling and args.rope_scaling["type"] in ["longrope", "su"]:
             self.rope = SuScaledRotaryEmbedding(
                 head_dim,
-                traditional=False,
                 base=args.rope_theta,
-                scale=rope_scale,
                 max_position_embeddings=args.max_position_embeddings,
                 original_max_position_embeddings=args.original_max_position_embeddings,
                 short_factor=args.rope_scaling["short_factor"],
                 long_factor=args.rope_scaling["long_factor"],
             )
         else:
+            rope_scale = 1.0
             if args.rope_scaling and args.rope_scaling["type"] == "linear":
                 assert isinstance(args.rope_scaling["factor"], float)
                 rope_scale = 1 / args.rope_scaling["factor"]
@@ -84,7 +84,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -107,8 +107,8 @@ class Attention(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
@@ -143,7 +143,7 @@ class TransformerBlock(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[KVCache] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
         h = x + r
@@ -172,10 +172,7 @@ class Phi3Model(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(h.dtype)
+        mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -205,11 +202,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads

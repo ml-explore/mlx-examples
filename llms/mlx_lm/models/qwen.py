@@ -1,10 +1,11 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -63,8 +64,8 @@ class Attention(nn.Module):
             queries = self.rotary_emb(queries)
             keys = self.rotary_emb(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 
@@ -122,11 +123,7 @@ class QwenModel(nn.Module):
     def __call__(self, inputs, mask=None, cache=None):
         x = self.wte(inputs)
 
-        mask = None
-        T = x.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(x.dtype)
+        mask = create_attention_mask(x, cache)
 
         if cache is None:
             cache = [None] * len(self.h)
@@ -151,19 +148,11 @@ class Model(nn.Module):
         self,
         x: mx.array,
         mask: mx.array = None,
-        cache: mx.array = None,
-    ) -> Tuple[mx.array, mx.array]:
+        cache=None,
+    ) -> mx.array:
         y = self.transformer(x, mask, cache)
         return self.lm_head(y)
 
     @property
     def layers(self):
         return self.transformer.h
-
-    @property
-    def head_dim(self):
-        return self.args.hidden_size // self.args.num_attention_heads
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_attention_heads
