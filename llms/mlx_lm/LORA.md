@@ -304,19 +304,18 @@ You can specify a list of HF datasets using the `hf_datasets` (plural) configura
 each with the same structure as above.  For example:
 
 ```yaml
-hf_datasets: [
-  "hf_dataset":
+hf_datasets: 
+- hf_dataset:
     name: "Open-Orca/OpenOrca"
     train_split: "train[:90%]"
     valid_split: "train[-10%:]"
     prompt_feature: "question"
-    completion_feature: "response",
-  "hf_dataset":
+    completion_feature: "response"
+- hf_dataset:
     name: "trl-lib/ultrafeedback_binarized"
     train_split: "train[:90%]"
     valid_split: "train[-10%:]"
     chat_feature: "chosen"
-]
 ```
 
 - Arguments specified in `config` will be passed as keyword arguments to
