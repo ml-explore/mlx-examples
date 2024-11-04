@@ -26,7 +26,7 @@ pip install mlx-whisper
 At its simplest:
 
 ```sh
-mlx_whisper audio_file.mp3  # output name will re-use basename of audio file path
+mlx_whisper audio_file.mp3
 ```
 
 This will make a text file `audio_file.txt` with the results.
@@ -35,19 +35,14 @@ Use `-f` to specify the output format and `--model` to specify the model. There
 are many other supported command line options. To see them all, run
 `mlx_whisper -h`.
 
-Alternatively, you can pipe in the audio content of other programs via stdin,
-useful when `mlx_whisper` acts as a composable command line utility.
+You can also pipe the audio content of other programs via stdin:
 
 ```sh
-# hypothetical demo of audio content via stdin
-# default output file name will be content.*
-some-process | mlx_whisper
-
-# hypothetical demo of media content via stdin
-# use --output-name to name your output artifacts
-some-downloader https://some.url/media?id=lecture42 | mlx_whisper --output-name mlx-demo
+some-process | mlx_whisper -
 ```
 
+The default output file name will be `content.*`. You can specify the name with
+the `--output-name` flag.
 
 #### API
 

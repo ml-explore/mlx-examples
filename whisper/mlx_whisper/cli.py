@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import pathlib
 import traceback
 import warnings
 
@@ -40,8 +41,11 @@ def build_parser():
     parser.add_argument(
         "--output-name",
         type=str,
-        default="{basename}",
-        help="logical name of transcription/translation output files, before --output-format extensions",
+        default=None,
+        help=(
+            "The name of transcription/translation output files before "
+            "--output-format extensions"
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -207,10 +211,10 @@ def main():
     path_or_hf_repo: str = args.pop("model")
     output_dir: str = args.pop("output_dir")
     output_format: str = args.pop("output_format")
-    output_name_template: str = args.pop("output_name")
+    output_name: str = args.pop("output_name")
     os.makedirs(output_dir, exist_ok=True)
 
-    writer = get_writer(output_format, output_dir, output_name_template)
+    writer = get_writer(output_format, output_dir)
     word_options = [
         "highlight_words",
         "max_line_count",
@@ -233,13 +237,16 @@ def main():
             # receive the contents from stdin rather than read a file
             audio_obj = audio.load_audio(from_stdin=True)
 
+            output_name = output_name or "content"
+        else:
+            output_name = output_name or pathlib.Path(audio_obj).stem
         try:
             result = transcribe(
                 audio_obj,
                 path_or_hf_repo=path_or_hf_repo,
                 **args,
             )
-            writer(result, audio_obj, **writer_args)
+            writer(result, output_name, **writer_args)
         except Exception as e:
             traceback.print_exc()
             print(f"Skipping {audio_obj} due to {type(e).__name__}: {str(e)}")

@@ -39,7 +39,7 @@ def load_audio(file: str = Optional[str], sr: int = SAMPLE_RATE, from_stdin=Fals
     """
 
     # This launches a subprocess to decode audio while down-mixing
-    # and resampling as necessary.  Requires the ffmpeg CLI in PATH.
+    # and resampling as necessary. Requires the ffmpeg CLI in PATH.
     if from_stdin:
         cmd = ["ffmpeg", "-i", "pipe:0"]
     else:
