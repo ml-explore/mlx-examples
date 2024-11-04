@@ -97,7 +97,7 @@ class CompletionsDatasetCollection:
 
         while True:
             try:
-                if (curr_idx + 1) < len(item):
+                if (curr_idx + 1) <= len(item):
                     return item[curr_idx]
                 else:
                     curr_idx -= len(item)
