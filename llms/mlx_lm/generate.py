@@ -191,6 +191,7 @@ def main():
         model_path,
         adapter_path=args.adapter_path,
         tokenizer_config=tokenizer_config,
+        sequential_load=mx.distributed.init().size() > 1,
     )
     for eos_token in args.extra_eos_token:
         tokenizer.add_eos_token(eos_token)
@@ -234,13 +235,17 @@ def main():
     else:
         draft_model = None
     sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
+
+    world = mx.distributed.init()
+    print(f"Node {world.rank()} of {world.size()}", flush=True)
+    world.barrier()
     response = generate(
         model,
         tokenizer,
         prompt,
         max_tokens=args.max_tokens,
         sampler=sampler,
-        verbose=args.verbose and mx.distributed.init().rank() == 0,
+        verbose=args.verbose and world.rank() == 0,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
         kv_bits=args.kv_bits,
