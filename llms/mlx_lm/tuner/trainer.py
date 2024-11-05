@@ -140,7 +140,7 @@ def iterate_delineated_batches(
 ):
     """
     A version of iterate_batches that works with completion datasets, tracks the boundaries between input/output tokens
-    (using create_delineated_batches), and returns the lengths of input tokens as well as the full sequences.
+    and returns the lengths of input tokens as well as that of the full sequences.
     """
     idx = sorted(range(len(dataset)), key=lambda i: len(dataset[i]))
     if len(dataset) < batch_size:
