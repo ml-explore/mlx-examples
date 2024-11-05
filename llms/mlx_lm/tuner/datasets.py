@@ -63,6 +63,9 @@ class CompletionsDataset(Dataset):
         self._prompt_key = prompt_key
         self._completion_key = completion_key
 
+    def get_prompt_and_completion(self, idx: int):
+        return self._data[idx][self._prompt_key], self._data[idx][self._completion_key]
+
     def __getitem__(self, idx: int):
         data = self._data[idx]
         text = self._tokenizer.apply_chat_template(
