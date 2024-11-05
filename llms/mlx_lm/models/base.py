@@ -42,7 +42,7 @@ def create_attention_mask(h: mx.array, cache: Optional[Any] = None):
         if cache is not None and cache[0] is not None:
             c = cache[0]
             if hasattr(c, "max_size"):
-                offset = min(c.max_size - 1, c.offset)
+                offset = min(c.max_size, c.offset)
                 window_size = c.max_size
             else:
                 offset = c.offset
