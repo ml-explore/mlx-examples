@@ -42,6 +42,9 @@ class TestTokenizers(unittest.TestCase):
             text += detokenizer.last_segment
             self.assertEqual(text, expected_text)
 
+        tokens = tokenizer.encode("こんにちは！私の名前はAI")
+        check(tokens)
+
         tokens = tokenizer.encode("a ,b")
         check(tokens)
 
