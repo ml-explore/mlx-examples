@@ -29,6 +29,7 @@ from .tuner.utils import load_adapters
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
     "phi-msft": "phixtral",
+    "falcon_mamba": "mamba",
 }
 
 MAX_FILE_SIZE_GB = 5
