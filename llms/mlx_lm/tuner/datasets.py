@@ -74,6 +74,9 @@ class CompletionsDataset:
             for d in data
         ]
 
+    def get_prompt_and_completion(self, idx: int):
+        return self._data[idx][self._prompt_key], self._data[idx][self._completion_key]
+
     def __getitem__(self, idx: int):
         return self._data[idx]
 
