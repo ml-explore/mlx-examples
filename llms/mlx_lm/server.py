@@ -64,7 +64,7 @@ def stopping_criteria(
           end if it has (`trim_length`).
     """
     if tokens and tokens[-1] == eos_token_id:
-        return StopCondition(stop_met=True, trim_length=1)
+        return StopCondition(stop_met=True, trim_length=0)
 
     for stop_ids in stop_id_sequences:
         if len(tokens) >= len(stop_ids):
@@ -253,7 +253,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.max_tokens = self.body.get("max_completion_tokens", None)
         if self.max_tokens is None:
             self.max_tokens = self.body.get("max_tokens", 512)
-        self.temperature = self.body.get("temperature", 1.0)
+        self.temperature = self.body.get("temperature", 0.0)
         self.top_p = self.body.get("top_p", 1.0)
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)

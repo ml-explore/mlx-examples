@@ -204,8 +204,7 @@ def generate_step(
             when ``kv_bits`` is non-None. Default: ``0``.
 
     Yields:
-        Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
-          one token and a vector of log probabilities.
+        Tuple[mx.array, mx.array]: One token and a vector of log probabilities.
     """
 
     y = prompt
@@ -272,19 +271,21 @@ def stream_generate(
     prompt: Union[str, List[int]],
     max_tokens: int = 100,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> Generator[Tuple[str, int, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
 
     Args:
-        prompt (Union[str, List[int]]): The input prompt.
         model (nn.Module): The model to use for generation.
-        max_tokens (int): The ma
+        tokenizer (PreTrainedTokenizer): The tokenizer.
+        prompt (Union[str, List[int]]): The input prompt string or integer tokens.
+        max_tokens (int): The maximum number of tokens. Default: ``100``.
         kwargs: The remaining options get passed to :func:`generate_step`.
           See :func:`generate_step` for more details.
 
     Yields:
-        Generator[Tuple[mx.array, mx.array]]: A generator producing text.
+        Tuple[str, int, mx.array]:
+            The next text segment, token, and vector of log probabilities.
     """
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
@@ -300,10 +301,14 @@ def stream_generate(
             range(max_tokens),
             generate_step(prompt_tokens, model, **kwargs),
         ):
-            detokenizer.add_token(token)
-            if n == (max_tokens - 1) or token == tokenizer.eos_token_id:
+            if token == tokenizer.eos_token_id:
                 break
-            # Yield the last segment if streaming
+
+            detokenizer.add_token(token)
+
+            if n == (max_tokens - 1):
+                break
+
             yield detokenizer.last_segment, token, logits
 
         detokenizer.finalize()
@@ -318,7 +323,7 @@ def generate(
     verbose: bool = False,
     formatter: Optional[Callable] = None,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> str:
     """
     Generate a complete response from the model.
 
