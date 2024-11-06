@@ -35,8 +35,7 @@ MODEL_REMAPPING = {
 MAX_FILE_SIZE_GB = 5
 
 # A stream on the default device just for generation
-# generation_stream = mx.new_stream(mx.default_device())
-generation_stream = mx.default_stream(mx.default_device())
+generation_stream = mx.new_stream(mx.default_device())
 
 
 class ModelNotFoundError(Exception):
