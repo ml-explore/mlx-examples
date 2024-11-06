@@ -308,18 +308,13 @@ def generate_step(
         y = y[prefill_step_size:]
         mx.metal.clear_cache()
 
-    y, logprobs = _step(y)
-
-    mx.async_eval(y, logprobs)
     n = 0
     while True:
-        next_y, next_logprobs = _step(y)
-        mx.async_eval(next_y, next_logprobs)
+        y, logprobs = _step(y)
+        n += 1
         yield y.item(), logprobs
         if n % 256 == 0:
             mx.metal.clear_cache()
-        n += 1
-        y, logprobs = next_y, next_logprobs
 
 
 def stream_generate(
@@ -457,6 +452,7 @@ def load_config(model_path: Path) -> dict:
 def load_model(
     model_path: Path,
     lazy: bool = False,
+    sequential_load: bool = False,
     model_config: dict = {},
     get_model_classes: Callable[[dict], Tuple[Type[nn.Module], Type]] = _get_classes,
 ) -> nn.Module:
@@ -522,7 +518,16 @@ def load_model(
 
     model.load_weights(list(weights.items()))
 
+    if mx.distributed.init().size() > 1:
+        if not hasattr(model, "shard"):
+            raise RuntimeError("Model doesn't support distributed inference.")
+        model.shard()
+
     if not lazy:
+        weights.clear()
+        if sequential_load:
+            for layer in model.layers:
+                mx.eval(layer.parameters())
         mx.eval(model.parameters())
 
     model.eval()
@@ -535,6 +540,7 @@ def load(
     model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
+    sequential_load: bool = False,
 ) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
@@ -550,6 +556,8 @@ def load(
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
+        sequential_load (bool): If True then load each layer sequentially to
+            ensure that we are not wasting memory.
     Returns:
         Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
@@ -559,7 +567,7 @@ def load(
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path, lazy, model_config)
+    model = load_model(model_path, lazy, sequential_load, model_config)
     if adapter_path is not None:
         model = load_adapters(model, adapter_path)
         model.eval()
