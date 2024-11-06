@@ -235,6 +235,10 @@ def train_model(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
     )
+
+    if args.mask_inputs:
+        print("Masking inputs..")
+
     # Train model
     train(
         model=model,
