@@ -1,6 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
 from functools import partial
+from typing import Callable, Dict, Optional
 
 import mlx.core as mx
 
@@ -25,7 +26,7 @@ def make_sampler(
           be filtered by min_p sampling.
 
     Returns:
-        Callabel[mx.array, mx.array]:
+        Callable[mx.array, mx.array]:
             A sampler which takes log-probabilities and returns tokens.
     """
     if temp == 0:
@@ -38,7 +39,11 @@ def make_sampler(
         return lambda x: categorical_sampling(x, temp)
 
 
-def make_logits_processors():
+def make_logits_processors(
+    logit_bias: Optional[Dict[int, float]] = None,
+    repetition_penalty: Optional[float] = None,
+    repetition_context_size: Optional[int] = 20,
+):
     """
     Make logits processors for use with ``generate_step``.
 
@@ -48,8 +53,13 @@ def make_logits_processors():
         repetition_context_size (int, optional): The number of tokens to
           consider for repetition penalty. Default: ``20``.
         logit_bias (dictionary, optional): Additive logit bias.
-    """
 
+    Returns:
+        List[Callable[[mx.array, mx.array], mx.array]]:
+            A list of logits processors. Each processor in the list is a
+            callable which takes an array of tokens and an array of logits
+            and returns the updated logits.
+    """
     logits_processors = []
     if logit_bias:
         indices = mx.array(list(logit_bias.keys()))
@@ -60,6 +70,12 @@ def make_logits_processors():
             return logits
 
         logits_processors.append(logit_bias_processor)
+
+    if repetition_penalty and repetition_penalty != 0.0:
+        logits_processors.append(
+            make_repetition_penalty(repetition_penalty, repetition_context_size)
+        )
+    return logits_processors
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
@@ -159,7 +175,7 @@ def categorical_sampling(logits, temp):
     return mx.random.categorical(logits * (1 / temp))
 
 
-def repetition_penalty(penalty: float, context_size: int = 20):
+def make_repetition_penalty(penalty: float, context_size: int = 20):
     """
     Make repetition penalty processor.
 
@@ -177,7 +193,7 @@ def repetition_penalty(penalty: float, context_size: int = 20):
     if penalty < 0 or not isinstance(penalty, float):
         raise ValueError(f"penalty must be a non-negative float, got {penalty}")
 
-    def repetition_penalty_processor(logits, tokens):
+    def repetition_penalty_processor(tokens, logits):
         if len(tokens) > 0:
             tokens = tokens[-context_size:]
             selected_logits = logits[:, tokens]
