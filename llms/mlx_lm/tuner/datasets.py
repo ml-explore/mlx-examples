@@ -113,7 +113,7 @@ class CompletionsDatasetCollection:
 
     def get_prompt_and_completion(self, idx: int):
         def getitem(dataset: CompletionsDataset, index: int):
-            dataset.get_prompt_and_completion(index)
+            return dataset.get_prompt_and_completion(index)
 
         return self.__fetch_and_process_item__(idx, getitem)
 
