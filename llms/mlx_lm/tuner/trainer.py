@@ -168,7 +168,7 @@ def iterate_delineated_batches(
             for j in batch_idx[i]:
                 prompt, completion = dataset.get_prompt_and_completion(j)
                 prompt_length, completion_length = input_and_output_lengths(
-                    prompt, prompt, tokenizer
+                    prompt, completion, tokenizer
                 )
 
                 prompt_lengths.append(prompt_length)
