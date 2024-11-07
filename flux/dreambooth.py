@@ -13,7 +13,7 @@ from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten, tree_map, tree_reduce
 from PIL import Image
 
-from flux import FluxPipeline, Trainer, load_dataset
+from mlx_flux import FluxPipeline, Trainer, load_dataset
 
 
 def generate_progress_images(iteration, flux, args):

@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from flux import FluxPipeline
+from mlx_flux import FluxPipeline
 
 
 def to_latent_size(image_size):
