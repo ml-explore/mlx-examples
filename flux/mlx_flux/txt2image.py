@@ -1,14 +1,13 @@
 # Copyright © 2024 Apple Inc.
 
 import argparse
-
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from mlx_flux import FluxPipeline
+from .flux import FluxPipeline
 
 
 def to_latent_size(image_size):
@@ -39,7 +38,7 @@ def load_adapter(flux, adapter_file, fuse=False):
         flux.fuse_lora_layers()
 
 
-if __name__ == "__main__":
+def build_parser():
     parser = argparse.ArgumentParser(
         description="Generate images from a textual prompt using stable diffusion"
     )
@@ -62,7 +61,11 @@ if __name__ == "__main__":
     parser.add_argument("--adapter")
     parser.add_argument("--fuse-adapter", action="store_true")
     parser.add_argument("--no-t5-padding", dest="t5_padding", action="store_false")
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     # Load the models
     flux = FluxPipeline("flux-" + args.model, t5_padding=args.t5_padding)
@@ -93,7 +96,7 @@ if __name__ == "__main__":
     # First we get and eval the conditioning
     conditioning = next(latents)
     mx.eval(conditioning)
-    peak_mem_conditioning = mx.metal.get_peak_memory() / 1024**3
+    peak_mem_conditioning = mx.metal.get_peak_memory() / 1024 ** 3
     mx.metal.reset_peak_memory()
 
     # The following is not necessary but it may help in memory constrained
@@ -108,15 +111,15 @@ if __name__ == "__main__":
     # The following is not necessary but it may help in memory constrained
     # systems by reusing the memory kept by the flow transformer.
     del flux.flow
-    peak_mem_generation = mx.metal.get_peak_memory() / 1024**3
+    peak_mem_generation = mx.metal.get_peak_memory() / 1024 ** 3
     mx.metal.reset_peak_memory()
 
     # Decode them into images
     decoded = []
     for i in tqdm(range(0, args.n_images, args.decoding_batch_size)):
-        decoded.append(flux.decode(x_t[i : i + args.decoding_batch_size], latent_size))
+        decoded.append(flux.decode(x_t[i: i + args.decoding_batch_size], latent_size))
         mx.eval(decoded[-1])
-    peak_mem_decoding = mx.metal.get_peak_memory() / 1024**3
+    peak_mem_decoding = mx.metal.get_peak_memory() / 1024 ** 3
     peak_mem_overall = max(
         peak_mem_conditioning, peak_mem_generation, peak_mem_decoding
     )
@@ -148,3 +151,7 @@ if __name__ == "__main__":
         print(f"Peak memory used for the generation: {peak_mem_generation:.3f}GB")
         print(f"Peak memory used for the decoding:   {peak_mem_decoding:.3f}GB")
         print(f"Peak memory used overall:            {peak_mem_overall:.3f}GB")
+
+
+if __name__ == "__main__":
+    main()
