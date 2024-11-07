@@ -39,14 +39,14 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
-
     # Package configuration
-    packages=find_namespace_packages(include=["mlx_flux", "mlx_flux.*"]),  # 明确指定包含的包
+    packages=find_namespace_packages(
+        include=["mlx_flux", "mlx_flux.*"]
+    ),  # 明确指定包含的包
     package_data={
         "mlx_flux": ["*.py"],
     },
     include_package_data=True,
-
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [

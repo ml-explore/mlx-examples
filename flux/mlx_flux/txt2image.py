@@ -1,6 +1,7 @@
 # Copyright © 2024 Apple Inc.
 
 import argparse
+
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
@@ -96,7 +97,7 @@ def main():
     # First we get and eval the conditioning
     conditioning = next(latents)
     mx.eval(conditioning)
-    peak_mem_conditioning = mx.metal.get_peak_memory() / 1024 ** 3
+    peak_mem_conditioning = mx.metal.get_peak_memory() / 1024**3
     mx.metal.reset_peak_memory()
 
     # The following is not necessary but it may help in memory constrained
@@ -111,15 +112,15 @@ def main():
     # The following is not necessary but it may help in memory constrained
     # systems by reusing the memory kept by the flow transformer.
     del flux.flow
-    peak_mem_generation = mx.metal.get_peak_memory() / 1024 ** 3
+    peak_mem_generation = mx.metal.get_peak_memory() / 1024**3
     mx.metal.reset_peak_memory()
 
     # Decode them into images
     decoded = []
     for i in tqdm(range(0, args.n_images, args.decoding_batch_size)):
-        decoded.append(flux.decode(x_t[i: i + args.decoding_batch_size], latent_size))
+        decoded.append(flux.decode(x_t[i : i + args.decoding_batch_size], latent_size))
         mx.eval(decoded[-1])
-    peak_mem_decoding = mx.metal.get_peak_memory() / 1024 ** 3
+    peak_mem_decoding = mx.metal.get_peak_memory() / 1024**3
     peak_mem_overall = max(
         peak_mem_conditioning, peak_mem_generation, peak_mem_decoding
     )
