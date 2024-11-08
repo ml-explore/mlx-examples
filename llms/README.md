@@ -101,7 +101,8 @@ To see a description of all the arguments you can do:
 #### Streaming
 
 For streaming generation, use the `stream_generate` function. This returns a
-generator object which streams the output text. For example,
+generator object which streams the output text, token, and log probabilities.
+For example,
 
 ```python
 from mlx_lm import load, stream_generate
@@ -116,7 +117,7 @@ prompt = tokenizer.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 
-for t in stream_generate(model, tokenizer, prompt, max_tokens=512):
+for text, *_ in stream_generate(model, tokenizer, prompt, max_tokens=512):
     print(t, end="", flush=True)
 print()
 ```
