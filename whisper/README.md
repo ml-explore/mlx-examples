@@ -25,7 +25,7 @@ pip install mlx-whisper
 
 At its simplest:
 
-```
+```sh
 mlx_whisper audio_file.mp3
 ```
 
@@ -34,6 +34,15 @@ This will make a text file `audio_file.txt` with the results.
 Use `-f` to specify the output format and `--model` to specify the model. There
 are many other supported command line options. To see them all, run
 `mlx_whisper -h`.
+
+You can also pipe the audio content of other programs via stdin:
+
+```sh
+some-process | mlx_whisper -
+```
+
+The default output file name will be `content.*`. You can specify the name with
+the `--output-name` flag.
 
 #### API
 
@@ -103,7 +112,7 @@ python convert.py --help
 ```
 
 By default, the conversion script will make the directory `mlx_models`
-and save the converted `weights.npz` and `config.json` there. 
+and save the converted `weights.npz` and `config.json` there.
 
 Each time it is run, `convert.py` will overwrite any model in the provided
 path. To save different models, make sure to set `--mlx-path` to a unique

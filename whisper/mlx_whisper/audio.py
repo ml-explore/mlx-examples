@@ -3,7 +3,7 @@
 import os
 from functools import lru_cache
 from subprocess import CalledProcessError, run
-from typing import Union
+from typing import Optional, Union
 
 import mlx.core as mx
 import numpy as np
@@ -21,7 +21,7 @@ FRAMES_PER_SECOND = SAMPLE_RATE // HOP_LENGTH  # 10ms per audio frame
 TOKENS_PER_SECOND = SAMPLE_RATE // N_SAMPLES_PER_TOKEN  # 20ms per audio token
 
 
-def load_audio(file: str, sr: int = SAMPLE_RATE):
+def load_audio(file: str = Optional[str], sr: int = SAMPLE_RATE, from_stdin=False):
     """
     Open an audio file and read as mono waveform, resampling as necessary
 
@@ -39,19 +39,21 @@ def load_audio(file: str, sr: int = SAMPLE_RATE):
     """
 
     # This launches a subprocess to decode audio while down-mixing
-    # and resampling as necessary.  Requires the ffmpeg CLI in PATH.
+    # and resampling as necessary. Requires the ffmpeg CLI in PATH.
+    if from_stdin:
+        cmd = ["ffmpeg", "-i", "pipe:0"]
+    else:
+        cmd = ["ffmpeg", "-nostdin", "-i", file]
+
     # fmt: off
-    cmd = [
-        "ffmpeg",
-        "-nostdin",
+    cmd.extend([
         "-threads", "0",
-        "-i", file,
         "-f", "s16le",
         "-ac", "1",
         "-acodec", "pcm_s16le",
         "-ar", str(sr),
         "-"
-    ]
+    ])
     # fmt: on
     try:
         out = run(cmd, capture_output=True, check=True).stdout

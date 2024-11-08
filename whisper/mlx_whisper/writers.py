@@ -1,10 +1,8 @@
 # Copyright © 2024 Apple Inc.
 
 import json
-import os
+import pathlib
 import re
-import sys
-import zlib
 from typing import Callable, List, Optional, TextIO
 
 
@@ -43,15 +41,13 @@ class ResultWriter:
         self.output_dir = output_dir
 
     def __call__(
-        self, result: dict, audio_path: str, options: Optional[dict] = None, **kwargs
+        self, result: dict, output_name: str, options: Optional[dict] = None, **kwargs
     ):
-        audio_basename = os.path.basename(audio_path)
-        audio_basename = os.path.splitext(audio_basename)[0]
-        output_path = os.path.join(
-            self.output_dir, audio_basename + "." + self.extension
+        output_path = (pathlib.Path(self.output_dir) / output_name).with_suffix(
+            f".{self.extension}"
         )
 
-        with open(output_path, "w", encoding="utf-8") as f:
+        with output_path.open("wt", encoding="utf-8") as f:
             self.write_result(result, file=f, options=options, **kwargs)
 
     def write_result(

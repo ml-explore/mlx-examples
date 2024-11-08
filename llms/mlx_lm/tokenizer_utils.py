@@ -6,12 +6,6 @@ from transformers import AutoTokenizer
 REPLACEMENT_CHAR = "\ufffd"
 
 
-def _remove_space(x):
-    if x and x[0] == " ":
-        return x[1:]
-    return x
-
-
 class StreamingDetokenizer:
     """The streaming detokenizer interface so that we can detokenize one token at a time.
 
@@ -123,42 +117,42 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
 
     def __init__(self, tokenizer, trim_space=True):
         self.trim_space = trim_space
+        self._sep = "\u2581".encode()
 
         # Extract the tokens in a list from id to text
         self.tokenmap = [""] * (max(tokenizer.vocab.values()) + 1)
         for value, tokenid in tokenizer.vocab.items():
-            self.tokenmap[tokenid] = value
-
-        # Replace bytes with their value
-        for i in range(len(self.tokenmap)):
-            if self.tokenmap[i].startswith("<0x"):
-                self.tokenmap[i] = chr(int(self.tokenmap[i][3:5], 16))
+            if value.startswith("<0x"):
+                # Replace bytes with their value
+                self.tokenmap[tokenid] = bytes([int(value[3:5], 16)])
+            else:
+                self.tokenmap[tokenid] = value.encode()
 
         self.reset()
 
     def reset(self):
         self.offset = 0
-        self._unflushed = ""
+        self._unflushed = b""
         self.text = ""
         self.tokens = []
 
+    def _flush(self):
+        text = self._unflushed.replace(self._sep, b" ").decode("utf-8")
+        if not self.text and self.trim_space and text and text[0] == " ":
+            text = text[1:]
+        self.text += text
+
     def add_token(self, token):
         v = self.tokenmap[token]
-        if v[0] == "\u2581":
-            if self.text or not self.trim_space:
-                self.text += self._unflushed.replace("\u2581", " ")
-            else:
-                self.text = _remove_space(self._unflushed.replace("\u2581", " "))
+        if v.startswith(self._sep):
+            self._flush()
             self._unflushed = v
         else:
             self._unflushed += v
 
     def finalize(self):
-        if self.text or not self.trim_space:
-            self.text += self._unflushed.replace("\u2581", " ")
-        else:
-            self.text = _remove_space(self._unflushed.replace("\u2581", " "))
-        self._unflushed = ""
+        self._flush()
+        self._unflushed = b""
 
 
 class BPEStreamingDetokenizer(StreamingDetokenizer):
