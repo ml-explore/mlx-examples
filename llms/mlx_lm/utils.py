@@ -8,6 +8,7 @@ import json
 import logging
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
@@ -42,6 +43,32 @@ class ModelNotFoundError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+
+@dataclass
+class GenerationResponse:
+    """
+    The output of :func:`stream_generate`.
+
+    Args:
+        text (str): The next segment of decoded text. This can be an empty string.
+        token (int): The next token.
+        logprobs (mx.array): A vector of log probabilities.
+        prompt_tokens (int): The number of tokens in the prompt.
+        prompt_tps (float): The prompt processing tokens-per-second.
+        generation_tokens (int): The number of generated tokens.
+        generation_tps (float): The tokens-per-second for generation.
+        peak_memory (float): The peak memory used so far in GB.
+    """
+
+    text: str
+    token: int
+    logprobs: mx.array
+    prompt_tokens: int
+    prompt_tps: float
+    generation_tokens: int
+    generation_tps: float
+    peak_memory: float
 
 
 @contextlib.contextmanager
@@ -290,17 +317,20 @@ def stream_generate(
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
 
-    prompt_tokens = mx.array(
-        prompt if isinstance(prompt, list) else tokenizer.encode(prompt)
-    )
+    prompt = mx.array(prompt if isinstance(prompt, list) else tokenizer.encode(prompt))
     detokenizer = tokenizer.detokenizer
 
     with wired_limit(model, [generation_stream]):
         detokenizer.reset()
-        for n, (token, logits) in zip(
+        tic = time.perf_counter()
+        for n, (token, logprobs) in zip(
             range(max_tokens),
-            generate_step(prompt_tokens, model, **kwargs),
+            generate_step(prompt, model, **kwargs),
         ):
+            if n == 0:
+                prompt_time = time.perf_counter() - tic
+                prompt_tps = prompt.size / prompt_time
+                tic = time.perf_counter()
             if token == tokenizer.eos_token_id:
                 break
 
@@ -309,17 +339,34 @@ def stream_generate(
             if n == (max_tokens - 1):
                 break
 
-            yield detokenizer.last_segment, token, logits
+            yield GenerationResponse(
+                text=detokenizer.last_segment,
+                token=token,
+                logprobs=logprobs,
+                prompt_tokens=prompt.size,
+                prompt_tps=prompt_tps,
+                generation_tokens=n + 1,
+                generation_tps=(n + 1) / (time.perf_counter() - tic),
+                peak_memory=mx.metal.get_peak_memory() / 1e9,
+            )
 
         detokenizer.finalize()
-        yield detokenizer.last_segment, token, logits
+        yield GenerationResponse(
+            text=detokenizer.last_segment,
+            token=token,
+            logprobs=logprobs,
+            prompt_tokens=prompt.size,
+            prompt_tps=prompt_tps,
+            generation_tokens=n + 1,
+            generation_tps=(n + 1) / (time.perf_counter() - tic),
+            peak_memory=mx.metal.get_peak_memory() / 1e9,
+        )
 
 
 def generate(
     model: nn.Module,
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
     prompt: str,
-    max_tokens: int = 100,
     verbose: bool = False,
     formatter: Optional[Callable] = None,
     **kwargs,
@@ -331,67 +378,41 @@ def generate(
        model (nn.Module): The language model.
        tokenizer (PreTrainedTokenizer): The tokenizer.
        prompt (str): The string prompt.
-       max_tokens (int): The maximum number of tokens. Default: ``100``.
        verbose (bool): If ``True``, print tokens and timing information.
            Default: ``False``.
-       formatter (Optional[Callable]): A function which takes a token and a
-           probability and displays it.
-       kwargs: The remaining options get passed to :func:`generate_step`.
-          See :func:`generate_step` for more details.
+       kwargs: The remaining options get passed to :func:`stream_generate`.
+          See :func:`stream_generate` for more details.
     """
-    if not isinstance(tokenizer, TokenizerWrapper):
-        tokenizer = TokenizerWrapper(tokenizer)
-
+    if formatter is not None:
+        print(
+            "Text formatting has been deprecated and will be removed in the next version."
+        )
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)
 
-    prompt_tokens = mx.array(tokenizer.encode(prompt))
-    detokenizer = tokenizer.detokenizer
-
-    with wired_limit(model, [generation_stream]):
-        tic = time.perf_counter()
-        detokenizer.reset()
-        for n, (token, logprobs) in zip(
-            range(max_tokens),
-            generate_step(prompt_tokens, model, **kwargs),
-        ):
-            if n == 0:
-                prompt_time = time.perf_counter() - tic
-                tic = time.perf_counter()
-            if token == tokenizer.eos_token_id:
-                break
-            detokenizer.add_token(token)
-
-            if verbose:
-                if formatter:
-                    # We have to finalize so that the prob corresponds to the last segment
-                    detokenizer.finalize()
-                    prob = mx.exp(logprobs[token]).item()
-                    formatter(detokenizer.last_segment, prob)
-                else:
-                    print(detokenizer.last_segment, end="", flush=True)
-
-        token_count = n + 1
-        detokenizer.finalize()
-
+    full_text = ""
+    for response in stream_generate(model, tokenizer, prompt, **kwargs):
         if verbose:
-            gen_time = time.perf_counter() - tic
-            print(detokenizer.last_segment, flush=True)
-            print("=" * 10)
-            if token_count == 0:
-                print("No tokens generated for this prompt")
-                return
-            prompt_tps = prompt_tokens.size / prompt_time
-            gen_tps = (token_count - 1) / gen_time
-            print(
-                f"Prompt: {prompt_tokens.size} tokens, {prompt_tps:.3f} tokens-per-sec"
-            )
-            print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
-            peak_mem = mx.metal.get_peak_memory() / 1e9
-            print(f"Peak memory: {peak_mem:.3f} GB")
+            print(response.text, end="", flush=True)
+        full_text += response.text
 
-        return detokenizer.text
+    if verbose:
+        print()
+        print("=" * 10)
+        if len(full_text) == 0:
+            print("No text generated for this prompt")
+            return
+        print(
+            f"Prompt: {response.prompt_tokens} tokens, "
+            f"{response.prompt_tps:.3f} tokens-per-sec"
+        )
+        print(
+            f"Generation: {response.generation_tokens} tokens, "
+            f"{response.generation_tps:.3f} tokens-per-sec"
+        )
+        print(f"Peak memory: {response.peak_memory:.3f} GB")
+    return full_text
 
 
 def load_config(model_path: Path) -> dict:

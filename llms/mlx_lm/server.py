@@ -464,25 +464,21 @@ class APIHandler(BaseHTTPRequestHandler):
 
         text = ""
         tic = time.perf_counter()
-        for n, (segment, token, logprobs) in enumerate(
-            stream_generate(
-                model=self.model,
-                tokenizer=self.tokenizer,
-                prompt=prompt,
-                max_tokens=self.max_tokens,
-                temp=self.temperature,
-                repetition_penalty=self.repetition_penalty,
-                repetition_context_size=self.repetition_context_size,
-                logit_bias=self.logit_bias,
-                prompt_cache=self.prompt_cache.cache,
-            ),
+        for gen_response in stream_generate(
+            model=self.model,
+            tokenizer=self.tokenizer,
+            prompt=prompt,
+            max_tokens=self.max_tokens,
+            temp=self.temperature,
+            repetition_penalty=self.repetition_penalty,
+            repetition_context_size=self.repetition_context_size,
+            logit_bias=self.logit_bias,
+            prompt_cache=self.prompt_cache.cache,
         ):
-            if n == 0:
-                prompt_time = time.perf_counter() - tic
-                tic = time.perf_counter()
-
-            text += segment
+            text += gen_response.text
             logging.debug(text)
+            token = gen_response.token
+            logprobs = gen_response.logprobs
             tokens.append(token)
 
             if self.logprobs > 0:
@@ -523,13 +519,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
         self.prompt_cache.tokens.extend(tokens)
 
-        gen_time = time.perf_counter() - tic
-        prompt_tps = len(prompt) / prompt_time
-        gen_tps = len(tokens) / gen_time
-        peak_mem = mx.metal.get_peak_memory() / 1e9
-        logging.debug(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
-        logging.debug(f"Generation: {gen_tps:.3f} tokens-per-sec")
-        logging.debug(f"Peak memory: {peak_mem:.3f} GB")
+        logging.debug(f"Prompt: {gen_response.prompt_tps:.3f} tokens-per-sec")
+        logging.debug(f"Generation: {gen_response.generation_tps:.3f} tokens-per-sec")
+        logging.debug(f"Peak memory: {gen_response.peak_memory:.3f} GB")
 
         if self.stream:
             response = self.generate_response(segment, finish_reason)
