@@ -188,7 +188,7 @@ The adapters are saved in `mlx_output` and can be used directly by the
 
 ```shell
 python txt2image.py --model dev --save-raw --image-size 512x512 --n-images 1 \
-    --adapter mlx_output/final_adapter.safetensors \
+    --adapter mlx_output/final_adapters.safetensors \
     --fuse-adapter \
     --no-t5-padding \
     'A photo of an sks dog lying on the sand at a beach in Greece'
