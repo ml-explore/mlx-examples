@@ -282,13 +282,11 @@ if __name__ == "__main__":
             generate_progress_images(i + 1, flux, args)
 
         if (i + 1) % args.checkpoint_every == 0:
-            file_name = f"{i + 1:07d}_adapters.safetensors"
-            save_adapters(file_name, flux, args)
+            save_adapters(f"{i + 1:07d}_adapters.safetensors", flux, args)
 
         if (i + 1) % 10 == 0:
             losses = []
             tic = time.time()
 
-    final_adapter = "final_adapter.safetensors"
-    save_adapters(final_adapter, flux, args)
+    save_adapters("final_adapters.safetensors", flux, args)
     print(f"Training successful. Saved final weights to {args.adapter_file}.")

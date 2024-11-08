@@ -222,12 +222,9 @@ def save_config(
         config (dict): The model configuration.
         config_path (Union[str, Path]): Model configuration file path.
     """
-    # Clean unused keys
-    config.pop("_name_or_path", None)
-
-    # sort the config for better readability
+    # Sort the config for better readability
     config = dict(sorted(config.items()))
 
-    # write the updated config to the config_path (if provided)
+    # Write the config to the provided file
     with open(config_path, "w") as fid:
         json.dump(config, fid, indent=4)
