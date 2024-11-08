@@ -269,7 +269,7 @@ class Model(nn.Module):
         cache=None,
     ):
         out = self.model(inputs, cache)
-        return self.embed_tokens.as_linear(out)
+        return self.model.embed_tokens.as_linear(out)
 
     def sanitize(self, weights):
         if "model.layers.0.mlp.experts.0.up_proj.weight" not in weights:
