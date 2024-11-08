@@ -74,7 +74,7 @@ def main():
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        for response, *_ in stream_generate(
+        for response in stream_generate(
             model,
             tokenizer,
             prompt,
@@ -83,7 +83,7 @@ def main():
             top_p=args.top_p,
             prompt_cache=prompt_cache,
         ):
-            print(response, flush=True, end="")
+            print(response.text, flush=True, end="")
         print()
 
 

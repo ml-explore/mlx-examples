@@ -378,29 +378,28 @@ def generate(
        model (nn.Module): The language model.
        tokenizer (PreTrainedTokenizer): The tokenizer.
        prompt (str): The string prompt.
+       max_tokens (int): The maximum number of tokens. Default: ``100``.
        verbose (bool): If ``True``, print tokens and timing information.
            Default: ``False``.
        kwargs: The remaining options get passed to :func:`stream_generate`.
           See :func:`stream_generate` for more details.
     """
     if formatter is not None:
-        print(
-            "Text formatting has been deprecated and will be removed in the next version."
-        )
+        print("Text formatting is deprecated and will be removed in the next version.")
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)
 
-    full_text = ""
+    text = ""
     for response in stream_generate(model, tokenizer, prompt, **kwargs):
         if verbose:
             print(response.text, end="", flush=True)
-        full_text += response.text
+        text += response.text
 
     if verbose:
         print()
         print("=" * 10)
-        if len(full_text) == 0:
+        if len(text) == 0:
             print("No text generated for this prompt")
             return
         print(
@@ -412,7 +411,7 @@ def generate(
             f"{response.generation_tps:.3f} tokens-per-sec"
         )
         print(f"Peak memory: {response.peak_memory:.3f} GB")
-    return full_text
+    return text
 
 
 def load_config(model_path: Path) -> dict:

@@ -475,7 +475,8 @@ class APIHandler(BaseHTTPRequestHandler):
             logit_bias=self.logit_bias,
             prompt_cache=self.prompt_cache.cache,
         ):
-            text += gen_response.text
+            segment = gen_response.text
+            text += segment
             logging.debug(text)
             token = gen_response.token
             logprobs = gen_response.logprobs
