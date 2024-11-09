@@ -27,7 +27,7 @@ from huggingface_hub import scan_cache_dir
 
 from ._version import __version__
 from .models.cache import make_prompt_cache
-from .utils import generate_step, load
+from .utils import load, stream_generate
 
 
 def get_system_fingerprint():
@@ -64,7 +64,7 @@ def stopping_criteria(
           end if it has (`trim_length`).
     """
     if tokens and tokens[-1] == eos_token_id:
-        return StopCondition(stop_met=True, trim_length=1)
+        return StopCondition(stop_met=True, trim_length=0)
 
     for stop_ids in stop_id_sequences:
         if len(tokens) >= len(stop_ids):
@@ -253,7 +253,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.max_tokens = self.body.get("max_completion_tokens", None)
         if self.max_tokens is None:
             self.max_tokens = self.body.get("max_tokens", 512)
-        self.temperature = self.body.get("temperature", 1.0)
+        self.temperature = self.body.get("temperature", 0.0)
         self.top_p = self.body.get("top_p", 1.0)
         self.repetition_penalty = self.body.get("repetition_penalty", 1.0)
         self.repetition_context_size = self.body.get("repetition_context_size", 20)
@@ -290,10 +290,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Call endpoint specific method
         prompt = endpoints[self.path]()
-
-        # Call method based on response type
-        method = self.handle_stream if self.stream else self.handle_completion
-        method(prompt, stop_id_sequences)
+        self.handle_completion(prompt, stop_id_sequences)
 
     def validate_model_parameters(self):
         """
@@ -452,32 +449,40 @@ class APIHandler(BaseHTTPRequestHandler):
             stop_id_sequences (List[List[int]]): A list of stop words passed
               to the stopping_criteria function
         """
-        detokenizer = self.tokenizer.detokenizer
-        detokenizer.reset()
         tokens = []
         finish_reason = "length"
         stop_sequence_suffix = None
-        logging.debug(f"Starting completion:")
+        if self.stream:
+            self.end_headers()
+            logging.debug(f"Starting stream:")
+        else:
+            logging.debug(f"Starting completion:")
         token_logprobs = []
         top_tokens = []
 
         prompt = self.get_prompt_cache(prompt)
 
-        for _, (token, logprobs) in zip(
-            range(self.max_tokens),
-            generate_step(
-                prompt=mx.array(prompt),
+        text = ""
+        tic = time.perf_counter()
+        for n, (segment, token, logprobs) in enumerate(
+            stream_generate(
                 model=self.model,
+                tokenizer=self.tokenizer,
+                prompt=prompt,
+                max_tokens=self.max_tokens,
                 temp=self.temperature,
-                top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 repetition_context_size=self.repetition_context_size,
                 logit_bias=self.logit_bias,
                 prompt_cache=self.prompt_cache.cache,
             ),
         ):
-            detokenizer.add_token(token)
-            logging.debug(detokenizer.text)
+            if n == 0:
+                prompt_time = time.perf_counter() - tic
+                tic = time.perf_counter()
+
+            text += segment
+            logging.debug(text)
             tokens.append(token)
 
             if self.logprobs > 0:
@@ -498,121 +503,63 @@ class APIHandler(BaseHTTPRequestHandler):
                     stop_sequence_suffix = self.tokenizer.decode(
                         tokens[-stop_condition.trim_length :]
                     )
+                    text = text[: -len(stop_sequence_suffix)]
                 break
 
-        self.prompt_cache.tokens.extend(tokens)
-        detokenizer.finalize()
-        text = (
-            detokenizer.text
-            if stop_sequence_suffix is None
-            else detokenizer.text[: -len(stop_sequence_suffix)]
-        )
-        response = self.generate_response(
-            text,
-            finish_reason,
-            len(prompt),
-            len(tokens),
-            token_logprobs=token_logprobs,
-            top_tokens=top_tokens,
-            tokens=tokens,
-        )
-
-        response_json = json.dumps(response).encode()
-        indent = "\t"  # Backslashes can't be inside of f-strings
-        logging.debug(f"Outgoing Response: {json.dumps(response, indent=indent)}")
-
-        # Send an additional Content-Length header when it is known
-        self.send_header("Content-Length", str(len(response_json)))
-        self.end_headers()
-
-        self.wfile.write(response_json)
-        self.wfile.flush()
-
-    def handle_stream(
-        self,
-        prompt: List[int],
-        stop_id_sequences: List[List[int]],
-    ):
-        """
-        Generate response to prompt and foward it to the client using a Server
-        Sent Events (SSE) stream.
-
-        Args:
-            prompt (mx.array): The tokenized prompt
-            stop_id_sequences (List[List[int]]): A list of stop words passed to
-              the stopping_criteria function
-        """
-        # No additional headers are needed, call end_headers
-        self.end_headers()
-
-        detokenizer = self.tokenizer.detokenizer
-        detokenizer.reset()
-        tokens = []
-
-        stop_sequence_suffix = None
-        logging.debug(f"Starting stream:")
-
-        prompt = self.get_prompt_cache(prompt)
-
-        for _, (token, _) in zip(
-            range(self.max_tokens),
-            generate_step(
-                prompt=mx.array(prompt),
-                model=self.model,
-                temp=self.temperature,
-                top_p=self.top_p,
-                repetition_penalty=self.repetition_penalty,
-                repetition_context_size=self.repetition_context_size,
-                prompt_cache=self.prompt_cache.cache,
-            ),
-        ):
-            detokenizer.add_token(token)
-            logging.debug(detokenizer.text)
-            tokens.append(token)
-
-            stop_condition = stopping_criteria(
-                tokens,
-                stop_id_sequences,
-                self.tokenizer.eos_token_id,
-            )
-            if stop_condition.stop_met:
-                if stop_condition.trim_length:
-                    stop_sequence_suffix = self.tokenizer.decode(
-                        tokens[-stop_condition.trim_length :]
+            if self.stream:
+                # If the end of tokens overlaps with a stop sequence, generate new
+                # tokens until we know if the stop sequence is hit or not
+                if any(
+                    (
+                        sequence_overlap(tokens, sequence)
+                        for sequence in stop_id_sequences
                     )
-                break
-
-            # If the end of tokens overlaps with a stop sequence, generate new
-            # tokens until we know if the stop sequence is hit or not
-            if any(
-                (sequence_overlap(tokens, sequence) for sequence in stop_id_sequences)
-            ):
-                continue
-
-            new_text = detokenizer.last_segment
-            if new_text:
-                response = self.generate_response(new_text, None)
-                self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-                self.wfile.flush()
+                ):
+                    continue
+                elif segment:
+                    response = self.generate_response(segment, None)
+                    self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+                    self.wfile.flush()
 
         self.prompt_cache.tokens.extend(tokens)
 
-        # check is there any remaining text to send
-        detokenizer.finalize()
-        last_segment = detokenizer.last_segment
-        if last_segment:
-            if stop_sequence_suffix is not None:
-                last_segment = last_segment[: -len(stop_sequence_suffix)]
-            response = self.generate_response(last_segment, "length")
+        gen_time = time.perf_counter() - tic
+        prompt_tps = len(prompt) / prompt_time
+        gen_tps = len(tokens) / gen_time
+        peak_mem = mx.metal.get_peak_memory() / 1e9
+        logging.debug(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
+        logging.debug(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        logging.debug(f"Peak memory: {peak_mem:.3f} GB")
+
+        if self.stream:
+            response = self.generate_response(segment, finish_reason)
             self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
             self.wfile.flush()
+            if self.stream_options is not None and self.stream_options["include_usage"]:
+                response = self.completion_usage_response(len(prompt), len(tokens))
+                self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
+                self.wfile.flush()
+            self.wfile.write("data: [DONE]\n\n".encode())
+            self.wfile.flush()
+        else:
+            response = self.generate_response(
+                text,
+                finish_reason,
+                len(prompt),
+                len(tokens),
+                token_logprobs=token_logprobs,
+                top_tokens=top_tokens,
+                tokens=tokens,
+            )
+            response_json = json.dumps(response).encode()
+            indent = "\t"  # Backslashes can't be inside of f-strings
+            logging.debug(f"Outgoing Response: {json.dumps(response, indent=indent)}")
 
-        if self.stream_options is not None and self.stream_options["include_usage"]:
-            response = self.completion_usage_response(len(prompt), len(tokens))
-            self.wfile.write(f"data: {json.dumps(response)}\n\n".encode())
-
-        self.wfile.write("data: [DONE]\n\n".encode())
-        self.wfile.flush()
+            # Send an additional Content-Length header when it is known
+            self.send_header("Content-Length", str(len(response_json)))
+            self.end_headers()
+            self.wfile.write(response_json)
+            self.wfile.flush()
 
     def completion_usage_response(
         self,
