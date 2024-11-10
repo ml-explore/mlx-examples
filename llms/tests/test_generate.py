@@ -46,7 +46,7 @@ class TestGenerate(unittest.TestCase):
             "hello",
             max_tokens=5,
             verbose=False,
-            logits_processor=[logits_processor],
+            logits_processors=[logits_processor],
         )
         self.assertEqual(len(all_toks), len(init_toks) + 5)
 
