@@ -6,15 +6,18 @@ import sys
 
 import mlx.core as mx
 
-from .models.cache import load_prompt_cache
+from .models.cache import QuantizedKVCache, load_prompt_cache
 from .utils import generate, load
 
 DEFAULT_PROMPT = "hello"
 DEFAULT_MAX_TOKENS = 100
 DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
+DEFAULT_MIN_P = 0.0
+DEFAULT_MIN_TOKENS_TO_KEEP = 1
 DEFAULT_SEED = 0
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
+DEFAULT_QUANTIZED_KV_START = 5000
 
 
 def str2bool(string):
@@ -51,6 +54,7 @@ def setup_arg_parser():
     )
     parser.add_argument(
         "--prompt",
+        "-p",
         default=DEFAULT_PROMPT,
         help="Message to be processed by the model ('-' reads from stdin)",
     )
@@ -66,6 +70,15 @@ def setup_arg_parser():
     )
     parser.add_argument(
         "--top-p", type=float, default=DEFAULT_TOP_P, help="Sampling top-p"
+    )
+    parser.add_argument(
+        "--min-p", type=float, default=DEFAULT_MIN_P, help="Sampling min-p"
+    )
+    parser.add_argument(
+        "--min-tokens-to-keep",
+        type=float,
+        default=DEFAULT_MIN_TOKENS_TO_KEEP,
+        help="Minimum tokens to keep for min-p sampling.",
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
     parser.add_argument(
@@ -90,12 +103,6 @@ def setup_arg_parser():
         help="Colorize output based on T[0] probability",
     )
     parser.add_argument(
-        "--cache-limit-gb",
-        type=int,
-        default=None,
-        help="Set the MLX cache limit in GB",
-    )
-    parser.add_argument(
         "--max-kv-size",
         type=int,
         help="Set the maximum key-value cache size",
@@ -106,6 +113,26 @@ def setup_arg_parser():
         type=str,
         default=None,
         help="A file containing saved KV caches to avoid recomputing them",
+    )
+    parser.add_argument(
+        "--kv-bits",
+        type=int,
+        help="Number of bits for KV cache quantization. "
+        "Defaults to no quantization.",
+        default=None,
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        help="Group size for KV cache quantization.",
+        default=64,
+    )
+    parser.add_argument(
+        "--quantized-kv-start",
+        help="When --kv-bits is set, start quantizing the KV cache "
+        "from this step onwards.",
+        type=int,
+        default=DEFAULT_QUANTIZED_KV_START,
     )
     return parser
 
@@ -143,15 +170,22 @@ def main():
 
     mx.random.seed(args.seed)
 
-    if args.cache_limit_gb is not None:
-        mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
-
     # Load the prompt cache and metadata if a cache file is provided
     using_cache = args.prompt_cache_file is not None
     if using_cache:
         prompt_cache, metadata = load_prompt_cache(
-            args.prompt_cache_file, return_metadata=True
+            args.prompt_cache_file,
+            return_metadata=True,
         )
+        if isinstance(prompt_cache[0], QuantizedKVCache):
+            if args.kv_bits is not None and args.kv_bits != prompt_cache[0].bits:
+                raise ValueError(
+                    "--kv-bits does not match the kv cache loaded from --prompt-cache-file."
+                )
+            if args.kv_group_size != prompt_cache[0].group_size:
+                raise ValueError(
+                    "--kv-group-size does not match the kv cache loaded from --prompt-cache-file."
+                )
 
     # Building tokenizer_config
     tokenizer_config = (
@@ -225,8 +259,13 @@ def main():
         formatter=formatter,
         temp=args.temp,
         top_p=args.top_p,
+        min_p=args.min_p,
+        min_tokens_to_keep=args.min_tokens_to_keep,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
+        kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
     )
     if not args.verbose:
         print(response)
