@@ -76,6 +76,11 @@ You can specify the output location with `--adapter-path`.
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
 
+### Input Masking
+There are custom functions for masking the input sequence of tokens during the loss calculation to ensure 
+the model is not being penalized for not recreating the prompt.  To fine-tune with masked input sequences,
+use the `--mask-inputs` argument.
+
 ### Evaluate
 
 To compute test set perplexity use:

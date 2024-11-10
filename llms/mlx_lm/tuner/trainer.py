@@ -130,7 +130,7 @@ def input_length(
     return output_begin
 
 
-def iterate_delineated_batches(
+def iterate_completion_batches(
     dataset: CompletionsDataset,
     tokenizer: PreTrainedTokenizer,
     batch_size: int,
