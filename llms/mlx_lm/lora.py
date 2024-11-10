@@ -182,7 +182,7 @@ def train_model(
         default_loss,
         input_masked_loss,
         iterate_batches,
-        iterate_delineated_batches,
+        iterate_completion_batches,
     )
 
     model.freeze()
@@ -246,7 +246,7 @@ def train_model(
         val_dataset=valid_set,
         training_callback=training_callback,
         iterate_batches=(
-            iterate_delineated_batches if args.mask_inputs else iterate_batches
+            iterate_completion_batches if args.mask_inputs else iterate_batches
         ),
         loss=input_masked_loss if args.mask_inputs else default_loss,
     )
