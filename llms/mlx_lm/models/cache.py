@@ -321,24 +321,33 @@ class RotatingKVCache(_BaseCache):
         return n
 
 
-class MambaCache(_BaseCache):
+class MambaCache:
     def __init__(self):
+        # cache[0] is conv state, cache[1] is ssm state
         self.cache = [None, None]
         self.offset = 0
-
+        
     def __setitem__(self, idx, value):
         self.cache[idx] = value
-
+        
     def __getitem__(self, idx):
         return self.cache[idx]
-
+        
     @property
     def state(self):
         return self.cache
-
+        
     @state.setter
     def state(self, v):
         self.cache = v
+
+    @property
+    def conv_states(self):
+        return [self.cache[0]]
+    
+    @property
+    def ssm_states(self):
+        return [self.cache[1]]
 
 
 
