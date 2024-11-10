@@ -350,28 +350,11 @@ class MambaCache:
         return [self.cache[1]]
 
 
-
-class Mamba2Cache(_BaseCache):
-    def __init__(
-            self,
-            batch_size,
-            conv_kernel
-        ):
-        self.conv_kernel: mx.array = conv_kernel
-        self.conv_states: mx.array = [None]
-        self.ssm_states = [None]
-        self.seqlen_offset = 0
+class Mamba2Cache:
+    def __init__(self):
+        self.conv_states = [None]  # Initialize as None, will be set on first use
+        self.ssm_states = [None]   # Initialize as None, will be set on first use
         
-    def reset(self):
-        self.conv_states = None
-        self.ssm_state = None
-        
-    def update(self, layer_idx: int, new_conv_state: mx.array, cache_position: mx.array) -> mx.array:
-        conv_state = self.conv_states[layer_idx]
-        cache_position = cache_position.clamp(0, self.conv_kernel - 1)
-
-        conv_state = conv_state.roll(shifts=-1, dims=-1)
-        conv_state[:, :, cache_position] = new_conv_state
-        self.conv_states[layer_idx].zero_()
-        self.conv_states[layer_idx] += conv_state
-        return self.conv_states[layer_idx]
+    @property
+    def state(self):
+        return [self.conv_states[0], self.ssm_states[0]]
