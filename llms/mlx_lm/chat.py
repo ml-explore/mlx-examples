@@ -5,7 +5,7 @@ import json
 
 import mlx.core as mx
 
-from .models.cache import load_prompt_cache, make_prompt_cache, save_prompt_cache
+from .models.cache import make_prompt_cache
 from .utils import load, stream_generate
 
 DEFAULT_TEMP = 0.0
