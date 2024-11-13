@@ -61,8 +61,8 @@ def wired_limit(model: nn.Module, streams: Optional[List[mx.Stream]] = None):
         model_mb = model_bytes // 2**20
         max_rec_mb = max_rec_size // 2**20
         print(
-            "[WARNING] Generating with a model that requires {model_mb} MB "
-            "which is close to the maximum recommended size of {max_rec_mb} "
+            f"[WARNING] Generating with a model that requires {model_mb} MB "
+            f"which is close to the maximum recommended size of {max_rec_mb} "
             "MB. This can be slow. See the documentation for possible work-arounds: "
             "https://github.com/ml-explore/mlx-examples/tree/main/llms#large-models"
         )
