@@ -48,6 +48,7 @@ def prepare_dataset(batch_size, split, root=None):
         .batch(batch_size)
         .to_stream()
         .prefetch(4, 4)
+        .to_buffer()
     )
     return data_iter
 
