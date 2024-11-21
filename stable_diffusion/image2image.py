@@ -95,7 +95,7 @@ if __name__ == "__main__":
         cfg_weight=args.cfg,
         num_steps=args.steps,
         negative_text=args.negative_prompt,
-        seed=args.seed
+        seed=args.seed,
     )
     for x_t in tqdm(latents, total=int(args.steps * args.strength)):
         mx.eval(x_t)
