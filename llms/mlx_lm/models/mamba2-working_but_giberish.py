@@ -179,65 +179,84 @@ class Mamba2Block(nn.Module):
 
     def __call__(self, u: mx.array, cache=None):
         batch_size, seq_len, dimension = u.shape
-        assert seq_len == 1, "Input should be a single token"
 
-        # Initialize cache states directly using indices
-        if cache[0] is None:  # conv state
-            conv_dim = self.args.intermediate_size + 2 * self.args.state_size
-            cache[0] = mx.zeros((batch_size, self.args.conv_kernel - 1, conv_dim))
-
-        if cache[1] is None:  # ssm state
-            cache[1] = mx.zeros((
-                batch_size,
-                self.args.num_heads,
-                self.args.head_dim,
-                self.args.state_size
-            ))
-
-        zxbcdt = self.in_proj(u)
-        
-        n_heads = self.args.num_heads
-        z = zxbcdt[:, :, :self.args.intermediate_size]
-        xBC = zxbcdt[:, :, self.args.intermediate_size:self.args.intermediate_size + 2*self.args.state_size + self.args.intermediate_size]
-        dt = zxbcdt[:, :, -(n_heads):]
-
-        dt = mx.reshape(dt, (batch_size, n_heads))
-        dt = mx.clip(nn.softplus(dt + self.dt_bias), self.args.time_step_min, self.args.time_step_max)
-        dt = mx.maximum(dt, self.args.time_step_floor)
-
-        xBC = self.conv1d(xBC, cache=cache)
-        xBC = silu(xBC)
-
-        x = xBC[:, :, :self.args.intermediate_size]
-        B = xBC[:, :, self.args.intermediate_size:self.args.intermediate_size + self.args.state_size]
-        C = xBC[:, :, -self.args.state_size:]
-
-        x = mx.reshape(x, (batch_size, 1, n_heads, self.args.head_dim))
-        x = mx.squeeze(x, axis=1)
-        B = mx.reshape(B, (batch_size, 1, self.args.state_size))
-        B = mx.broadcast_to(B, (batch_size, n_heads, self.args.state_size))
-        B = mx.expand_dims(B, axis=2)
-        C = mx.reshape(C, (batch_size, 1, self.args.state_size))
-        C = mx.broadcast_to(C, (batch_size, n_heads, self.args.state_size))
-        C = mx.expand_dims(C, axis=3)
-
+        # Initialize the negative A matrix
         A = -mx.exp(self.A_log)
-        dA = mx.exp(dt * mx.expand_dims(A, 0))
-        dA = mx.expand_dims(mx.expand_dims(dA, -1), -1)
+        
+        # Process sequence in chunks if needed
+        outputs = []
+        current_cache = cache
+        
+        for i in range(seq_len):
+            # Extract current token
+            current_input = u[:, i:i+1, :]
+            
+            # Initialize cache states if needed
+            if current_cache[0] is None:  # conv state
+                conv_dim = self.args.intermediate_size + 2 * self.args.state_size
+                current_cache[0] = mx.zeros((batch_size, self.args.conv_kernel - 1, conv_dim))
 
-        x = mx.expand_dims(x, axis=3)
-        dBx = mx.matmul(x, B)
-        # Update ssm state directly using cache[1]
-        cache[1] = cache[1] * dA + dBx
+            if current_cache[1] is None:  # ssm state
+                current_cache[1] = mx.zeros((
+                    batch_size,
+                    self.args.num_heads,
+                    self.args.head_dim,
+                    self.args.state_size
+                ))
 
-        y = mx.matmul(cache[1], C)
-        y = mx.squeeze(y, axis=-1)
-        y = y + x[:, :, :, 0] * mx.expand_dims(self.D, -1)
-        y = mx.reshape(y, (batch_size, 1, n_heads * self.args.head_dim))
-        y = self.norm(y + z)
+            # Project input
+            zxbcdt = self.in_proj(current_input)
+            
+            n_heads = self.args.num_heads
+            z = zxbcdt[:, :, :self.args.intermediate_size]
+            xBC = zxbcdt[:, :, self.args.intermediate_size:self.args.intermediate_size + 2*self.args.state_size + self.args.intermediate_size]
+            dt = zxbcdt[:, :, -(n_heads):]
 
-        return self.out_proj(y)
+            # Process time steps
+            dt = mx.reshape(dt, (batch_size, n_heads))
+            dt = mx.clip(nn.softplus(dt + self.dt_bias), self.args.time_step_min, self.args.time_step_max)
+            dt = mx.maximum(dt, self.args.time_step_floor)
 
+            # Apply convolution
+            xBC = self.conv1d(xBC, cache=current_cache)
+            xBC = silu(xBC)
+
+            # Split states
+            x = xBC[:, :, :self.args.intermediate_size]
+            B = xBC[:, :, self.args.intermediate_size:self.args.intermediate_size + self.args.state_size]
+            C = xBC[:, :, -self.args.state_size:]
+
+            # Reshape for SSM
+            x = mx.reshape(x, (batch_size, 1, n_heads, self.args.head_dim))
+            x = mx.squeeze(x, axis=1)
+            B = mx.reshape(B, (batch_size, 1, self.args.state_size))
+            B = mx.broadcast_to(B, (batch_size, n_heads, self.args.state_size))
+            B = mx.expand_dims(B, axis=2)
+            C = mx.reshape(C, (batch_size, 1, self.args.state_size))
+            C = mx.broadcast_to(C, (batch_size, n_heads, self.args.state_size))
+            C = mx.expand_dims(C, axis=3)
+
+            # SSM updates
+            dA = mx.exp(dt * mx.expand_dims(A, 0))
+            dA = mx.expand_dims(mx.expand_dims(dA, -1), -1)
+
+            # Update state
+            x = mx.expand_dims(x, axis=3)
+            dBx = mx.matmul(x, B)
+            current_cache[1] = current_cache[1] * dA + dBx
+
+            # Compute output
+            y = mx.matmul(current_cache[1], C)
+            y = mx.squeeze(y, axis=-1)
+            y = y + x[:, :, :, 0] * mx.expand_dims(self.D, -1)
+            y = mx.reshape(y, (batch_size, 1, n_heads * self.args.head_dim))
+            y = self.norm(y + z)
+            
+            outputs.append(self.out_proj(y))
+
+        # Concatenate all outputs
+        return mx.concatenate(outputs, axis=1)
+    
 
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):

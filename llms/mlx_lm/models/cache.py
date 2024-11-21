@@ -419,34 +419,20 @@ class RotatingKVCache(_BaseCache):
         raise NotImplementedError("RotatingKVCache Quantization NYI")
 
 
-class MambaCache:
+class MambaCache(_BaseCache):
     def __init__(self):
-        # [conv_state, ssm_state]
         self.cache = [None, None]
-        self.offset = 0  # Sliding window caching
-    
+
     def __setitem__(self, idx, value):
         self.cache[idx] = value
-        
+
     def __getitem__(self, idx):
         return self.cache[idx]
-    
+
     @property
     def state(self):
         return self.cache
-    
+
     @state.setter
     def state(self, v):
         self.cache = v
-    
-    @property
-    def conv_states(self):
-        return [self.cache[0]]
-    
-    @property
-    def ssm_states(self):
-        return [self.cache[1]]
-    
-    def reset(self):
-        self.cache = [None, None]
-        self.offset = 0
