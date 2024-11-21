@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--preload-models", action="store_true")
     parser.add_argument("--output", default="out.png")
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args()
 
     # Load the models
@@ -94,6 +95,7 @@ if __name__ == "__main__":
         cfg_weight=args.cfg,
         num_steps=args.steps,
         negative_text=args.negative_prompt,
+        seed=args.seed,
     )
     for x_t in tqdm(latents, total=int(args.steps * args.strength)):
         mx.eval(x_t)
