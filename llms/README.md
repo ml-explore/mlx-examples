@@ -100,8 +100,9 @@ To see a description of all the arguments you can do:
 
 #### Streaming
 
-For streaming generation, use the `stream_generate` function. This returns a
-generator object which streams the output text, token, and log probabilities.
+For streaming generation, use the `stream_generate` function. This yields
+a generation response object.
+
 For example,
 
 ```python

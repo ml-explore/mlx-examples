@@ -182,20 +182,21 @@ def maybe_quantize_kv_cache(prompt_cache, quantized_kv_start, kv_group_size, kv_
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
-    temp: float = 0.0,
-    repetition_penalty: Optional[float] = None,
-    repetition_context_size: Optional[int] = 20,
-    top_p: float = 1.0,
-    min_p: float = 0.0,
-    min_tokens_to_keep: int = 1,
-    prefill_step_size: int = 512,
+    *,
+    sampler: Optional[Callable[mx.array, mx.array]] = None,
+    logits_processors: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
     max_kv_size: Optional[int] = None,
     prompt_cache: Optional[Any] = None,
-    logit_bias: Optional[Dict[int, float]] = None,
-    logits_processors: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
+    prefill_step_size: int = 512,
     kv_bits: Optional[int] = None,
     kv_group_size: int = 64,
     quantized_kv_start: int = 0,
+    temp: Optional[float] = None,
+    repetition_penalty: Optional[float] = None,
+    repetition_context_size: Optional[int] = None,
+    top_p: Optional[float] = None,
+    min_p: Optional[float] = None,
+    min_tokens_to_keep: Optional[int] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -203,32 +204,21 @@ def generate_step(
     Args:
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
-        temp (float): The temperature for sampling, if 0 the argmax is used.
-          Default: ``0``.
-        repetition_penalty (float, optional): The penalty factor for repeating
-          tokens.
-        repetition_context_size (int, optional): The number of tokens to
-          consider for repetition penalty. Default: ``20``.
-        top_p (float, optional): Nulceus sampling, higher means model considers
-          more less likely words.
-        min_p (float, optional): The minimum value (scaled by the top token's
-          probability) that a token probability must have to be considered.
-        min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
-          be filtered by min_p sampling.
         prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
         prompt_cache (List[Any], optional): A pre-computed prompt cache. Note, if
           provided, the cache will be updated in place.
-        logit_bias (dictionary, optional): Additive logit bias.
+        sampler (Callable[mx.array, mx.array], optional): A sampler for sampling a
+          token from a vector of log probabilities. Default: ``None``.
         logits_processors (List[Callable[[mx.array, mx.array], mx.array]], optional):
-            A list of functions that take tokens and logits and return the processed
-            logits. Default: ``None``.
+          A list of functions that take tokens and logits and return the processed
+          logits. Default: ``None``.
         kv_bits (int, optional): Number of bits to use for KV cache quantization.
-            None implies no cache quantization. Default: ``None``.
+          None implies no cache quantization. Default: ``None``.
         kv_group_size (int): Group size for KV cache quantization. Default: ``64``.
         quantized_kv_start (int): Step to begin using a quantized KV cache.
-            when ``kv_bits`` is non-None. Default: ``0``.
+           when ``kv_bits`` is non-None. Default: ``0``.
 
     Yields:
         Tuple[mx.array, mx.array]: One token and a vector of log probabilities.
@@ -246,10 +236,22 @@ def generate_step(
     elif len(prompt_cache) != len(model.layers):
         raise ValueError("Wrong number of layers in the prompt cache.")
 
-    sampler = make_sampler(temp, top_p, min_p, min_tokens_to_keep)
-    logits_processors = logits_processors or []
-    logits_processors.extend(
-        make_logits_processors(logit_bias, repetition_penalty, repetition_context_size)
+    if temp is not None or top_p is not None or min_tokens_to_keep is not None:
+        print(
+            "[Warning] Specifying sampling arguments to ``generate_step`` is "
+            "deprecated. Pass in a ``sampler`` instead."
+        )
+    if repetition_penalty is not None:
+        print(
+            "[Warning] Specifying ``repetition_penalty`` is deprecated. "
+            "Pass in ``logits_processors`` instead."
+        )
+
+    sampler = sampler or make_sampler(
+        temp or 0.0, top_p or 0.0, min_p or 0.0, min_tokens_to_keep or 1
+    )
+    logits_processors = logits_processors or make_logits_processors(
+        None, repetition_penalty, repetition_context_size or 20
     )
 
     def _step(y):
@@ -385,7 +387,10 @@ def generate(
           See :func:`stream_generate` for more details.
     """
     if formatter is not None:
-        print("Text formatting is deprecated and will be removed in the next version.")
+        print(
+            "[Warning] Text formatting is deprecated and no longer used. "
+            "The argument will be removed in a future version."
+        )
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)

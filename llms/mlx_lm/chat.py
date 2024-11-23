@@ -6,6 +6,7 @@ import json
 import mlx.core as mx
 
 from .models.cache import make_prompt_cache
+from .sample_utils import make_sampler
 from .utils import load, stream_generate
 
 DEFAULT_TEMP = 0.0
@@ -79,8 +80,7 @@ def main():
             tokenizer,
             prompt,
             args.max_tokens,
-            temp=args.temp,
-            top_p=args.top_p,
+            sampler=make_sampler(args.temp, args.top_p),
             prompt_cache=prompt_cache,
         ):
             print(response.text, flush=True, end="")

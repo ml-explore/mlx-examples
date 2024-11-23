@@ -27,6 +27,7 @@ from huggingface_hub import scan_cache_dir
 
 from ._version import __version__
 from .models.cache import make_prompt_cache
+from .sample_utils import make_logits_processors, make_sampler
 from .utils import load, stream_generate
 
 
@@ -464,15 +465,17 @@ class APIHandler(BaseHTTPRequestHandler):
 
         text = ""
         tic = time.perf_counter()
+        sampler = make_sampler(self.temperature)
+        logits_processors = make_logits_processors(
+            self.logit_bias, self.repetition_penalty, self.repetition_context_size
+        )
         for gen_response in stream_generate(
             model=self.model,
             tokenizer=self.tokenizer,
             prompt=prompt,
             max_tokens=self.max_tokens,
-            temp=self.temperature,
-            repetition_penalty=self.repetition_penalty,
-            repetition_context_size=self.repetition_context_size,
-            logit_bias=self.logit_bias,
+            sampler=sampler,
+            logits_processors=logits_processors,
             prompt_cache=self.prompt_cache.cache,
         ):
             segment = gen_response.text

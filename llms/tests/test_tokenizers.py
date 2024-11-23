@@ -34,10 +34,11 @@ class TestTokenizers(unittest.TestCase):
             detokenizer = tokenizer.detokenizer
             detokenizer.reset()
             text = ""
-            for t in tokens:
+            for e, t in enumerate(tokens):
                 detokenizer.add_token(t)
                 seg = detokenizer.last_segment
                 text += seg
+                self.assertEqual(detokenizer.tokens, tokens[: e + 1])
             detokenizer.finalize()
             text += detokenizer.last_segment
             self.assertEqual(text, expected_text)

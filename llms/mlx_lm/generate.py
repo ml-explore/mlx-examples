@@ -7,6 +7,7 @@ import sys
 import mlx.core as mx
 
 from .models.cache import QuantizedKVCache, load_prompt_cache
+from .sample_utils import make_sampler
 from .utils import generate, load
 
 DEFAULT_PROMPT = "hello"
@@ -218,16 +219,14 @@ def main():
     else:
         prompt = args.prompt
 
+    sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
     response = generate(
         model,
         tokenizer,
         prompt,
         max_tokens=args.max_tokens,
         verbose=args.verbose,
-        temp=args.temp,
-        top_p=args.top_p,
-        min_p=args.min_p,
-        min_tokens_to_keep=args.min_tokens_to_keep,
+        sampler=sampler,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
         kv_bits=args.kv_bits,
