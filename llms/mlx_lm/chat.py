@@ -5,7 +5,8 @@ import json
 
 import mlx.core as mx
 
-from .models.cache import load_prompt_cache, make_prompt_cache, save_prompt_cache
+from .models.cache import make_prompt_cache
+from .sample_utils import make_sampler
 from .utils import load, stream_generate
 
 DEFAULT_TEMP = 0.0
@@ -74,16 +75,15 @@ def main():
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        for response, *_ in stream_generate(
+        for response in stream_generate(
             model,
             tokenizer,
             prompt,
             args.max_tokens,
-            temp=args.temp,
-            top_p=args.top_p,
+            sampler=make_sampler(args.temp, args.top_p),
             prompt_cache=prompt_cache,
         ):
-            print(response, flush=True, end="")
+            print(response.text, flush=True, end="")
         print()
 
 

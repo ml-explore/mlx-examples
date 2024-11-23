@@ -73,16 +73,16 @@ class NaiveStreamingDetokenizer(StreamingDetokenizer):
 
     def reset(self):
         self.offset = 0
-        self._tokens = []
+        self.tokens = []
         self._text = ""
         self._current_tokens = []
         self._current_text = ""
 
     def add_token(self, token):
         self._current_tokens.append(token)
+        self.tokens.append(token)
 
     def finalize(self):
-        self._tokens.extend(self._current_tokens)
         self._text += self._tokenizer.decode(self._current_tokens)
         self._current_tokens = []
         self._current_text = ""
@@ -97,15 +97,10 @@ class NaiveStreamingDetokenizer(StreamingDetokenizer):
             ):
                 self._current_text = self._current_text[:-1]
         if self._current_text and self._current_text[-1] == "\n":
-            self._tokens.extend(self._current_tokens)
             self._text += self._current_text
             self._current_tokens.clear()
             self._current_text = ""
         return self._text + self._current_text
-
-    @property
-    def tokens(self):
-        return self._tokens
 
 
 class SPMStreamingDetokenizer(StreamingDetokenizer):
@@ -143,6 +138,7 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         self.text += text
 
     def add_token(self, token):
+        self.tokens.append(token)
         v = self.tokenmap[token]
         if v.startswith(self._sep):
             self._flush()
@@ -200,6 +196,7 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         return current_text
 
     def add_token(self, token):
+        self.tokens.append(token)
         v = self.tokenmap[token]
         is_added = token in self._added_ids
         if is_added or self._byte_decoder[v[0]] == 32:
