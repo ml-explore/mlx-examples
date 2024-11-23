@@ -23,14 +23,6 @@ max_tokens = 1_000
 # Specify if tokens and timing information will be printed
 verbose = True
 
-# Some optional arguments for causal language model generation
-generation_args = {
-    "temp": 0.7,
-    "repetition_penalty": 1.2,
-    "repetition_context_size": 20,
-    "top_p": 0.95,
-}
-
 # Generate a response with the specified settings
 response = generate(
     model=model,
@@ -38,5 +30,4 @@ response = generate(
     prompt=prompt,
     max_tokens=max_tokens,
     verbose=verbose,
-    **generation_args,
 )

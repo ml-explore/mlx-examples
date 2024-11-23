@@ -61,7 +61,7 @@ prompt = tokenizer.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 
-response = generate(model, tokenizer, prompt=prompt, verbose=True)
+text = generate(model, tokenizer, prompt=prompt, verbose=True)
 ```
 
 To see a description of all the arguments you can do:
@@ -100,8 +100,9 @@ To see a description of all the arguments you can do:
 
 #### Streaming
 
-For streaming generation, use the `stream_generate` function. This returns a
-generator object which streams the output text, token, and log probabilities.
+For streaming generation, use the `stream_generate` function. This yields
+a generation response object.
+
 For example,
 
 ```python
@@ -117,8 +118,8 @@ prompt = tokenizer.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 
-for text, *_ in stream_generate(model, tokenizer, prompt, max_tokens=512):
-    print(t, end="", flush=True)
+for response in stream_generate(model, tokenizer, prompt, max_tokens=512):
+    print(response.text, end="", flush=True)
 print()
 ```
 

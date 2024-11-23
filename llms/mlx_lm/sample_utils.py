@@ -1,5 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import math
 from functools import partial
 from typing import Callable, Dict, Optional
 
@@ -80,7 +81,7 @@ def make_logits_processors(
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
 def min_p_sampling(
-    logits: mx.array,
+    logprobs: mx.array,
     min_p: float,
     min_tokens_to_keep: int = 1,
     temperature=1.0,
@@ -93,7 +94,7 @@ def min_p_sampling(
     aggressive given a very high-probability token.
 
     Args:
-        logits: The logits from the model's output.
+        logprobs: A vector of log probabilities.
         min_p (float): Minimum token probability. Typical values are in the
             0.01-0.2 range, comparably selective as setting `top_p` in the
             0.99-0.8 range.
@@ -111,28 +112,27 @@ def min_p_sampling(
         )
     # reference implementation: https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py#L531-L605
 
-    # Softmax probabilities
-    probs = mx.softmax(logits * (1 / temperature), axis=-1)
+    logprobs = logprobs * (1 / temperature)
 
     # Indices sorted in decreasing order
-    sorted_indices = mx.argsort(-logits).squeeze(0)
-    sorted_probs = probs[..., sorted_indices]
+    sorted_indices = mx.argsort(-logprobs).squeeze(0)
+    sorted_logprobs = logprobs[..., sorted_indices]
 
     # Top probability
-    top_probs = probs[..., sorted_indices[0]]
+    top_logprobs = logprobs[..., sorted_indices[0]]
 
     # Calculate the min_p threshold
-    scaled_min_p = min_p * top_probs
+    scaled_min_p = top_logprobs + math.log(min_p)
 
     # Mask tokens that have a probability less than the scaled min_p
-    tokens_to_remove = sorted_probs < scaled_min_p
+    tokens_to_remove = sorted_logprobs < scaled_min_p
     tokens_to_remove[..., :min_tokens_to_keep] = False
 
     # Create pool of tokens with probability less than scaled min_p
-    selected_probs = mx.where(tokens_to_remove, 0, sorted_probs)
+    selected_logprobs = mx.where(tokens_to_remove, -float("inf"), sorted_logprobs)
 
     # Return sampled token
-    sorted_token = mx.random.categorical(mx.log(selected_probs))
+    sorted_token = mx.random.categorical(selected_logprobs)
     return sorted_indices[sorted_token]
 
 
