@@ -589,9 +589,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Determine response type
         self.request_id = f"chatcmpl-{uuid.uuid4()}"
-        self.object_type = (
-            "chat.completions.chunk" if self.stream else "chat.completions"
-        )
+        self.object_type = "chat.completion.chunk" if self.stream else "chat.completion"
         if (
             hasattr(self.tokenizer, "apply_chat_template")
             and self.tokenizer.chat_template
