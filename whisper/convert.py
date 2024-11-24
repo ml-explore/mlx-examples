@@ -174,11 +174,6 @@ def load_torch_weights_and_config(
                 "*.txt",
             ],
         )
-    else:
-        raise RuntimeError(
-            f"Model {name_or_path} is not found in {available_models()},"
-            "on Hugging Face or as a local path."
-        )
 
     if name_or_path.endswith(".pt"):
         checkpoint = torch.load(name_or_path, map_location="cpu", weights_only=False)
