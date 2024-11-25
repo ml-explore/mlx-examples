@@ -300,7 +300,7 @@ def stream_generate(
     prompt: Union[str, List[int]],
     max_tokens: int = 100,
     **kwargs,
-) -> Generator[Tuple[str, int, mx.array], None, None]:
+) -> Generator[GenerationResponse, None, None]:
     """
     A generator producing text based on the given prompt from the model.
 
@@ -313,8 +313,8 @@ def stream_generate(
           See :func:`generate_step` for more details.
 
     Yields:
-        Tuple[str, int, mx.array]:
-            The next text segment, token, and vector of log probabilities.
+        GenerationResponse: An instance containing the generated text segment and
+            associated metadata. See :class:`GenerationResponse` for details.
     """
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
