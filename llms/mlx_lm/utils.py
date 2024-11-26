@@ -321,7 +321,9 @@ def stream_generate(
         tokenizer = TokenizerWrapper(tokenizer)
 
     if not isinstance(prompt, mx.array):
-        prompt = mx.array(prompt if isinstance(prompt, list) else tokenizer.encode(prompt))
+        prompt = mx.array(
+            prompt if isinstance(prompt, list) else tokenizer.encode(prompt)
+        )
 
     detokenizer = tokenizer.detokenizer
 
