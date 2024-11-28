@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from flux import FluxPipeline
+from .flux import FluxPipeline
 
 
 def to_latent_size(image_size):
@@ -39,7 +39,7 @@ def load_adapter(flux, adapter_file, fuse=False):
         flux.fuse_lora_layers()
 
 
-if __name__ == "__main__":
+def build_parser():
     parser = argparse.ArgumentParser(
         description="Generate images from a textual prompt using stable diffusion"
     )
@@ -62,7 +62,11 @@ if __name__ == "__main__":
     parser.add_argument("--adapter")
     parser.add_argument("--fuse-adapter", action="store_true")
     parser.add_argument("--no-t5-padding", dest="t5_padding", action="store_false")
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     # Load the models
     flux = FluxPipeline("flux-" + args.model, t5_padding=args.t5_padding)
@@ -148,3 +152,7 @@ if __name__ == "__main__":
         print(f"Peak memory used for the generation: {peak_mem_generation:.3f}GB")
         print(f"Peak memory used for the decoding:   {peak_mem_decoding:.3f}GB")
         print(f"Peak memory used overall:            {peak_mem_overall:.3f}GB")
+
+
+if __name__ == "__main__":
+    main()

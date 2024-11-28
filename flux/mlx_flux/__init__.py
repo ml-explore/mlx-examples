@@ -1,5 +1,6 @@
 # Copyright © 2024 Apple Inc.
 
+from ._version import __version__
 from .datasets import Dataset, load_dataset
 from .flux import FluxPipeline
 from .lora import LoRALinear

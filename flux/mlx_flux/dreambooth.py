@@ -13,7 +13,9 @@ from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten, tree_map, tree_reduce
 from PIL import Image
 
-from flux import FluxPipeline, Trainer, load_dataset, save_config
+from .datasets import load_dataset
+from .flux import FluxPipeline
+from .trainer import Trainer
 
 
 def generate_progress_images(iteration, flux, args):
@@ -153,7 +155,7 @@ def setup_arg_parser():
     return parser
 
 
-if __name__ == "__main__":
+def main():
     parser = setup_arg_parser()
     args = parser.parse_args()
 
@@ -290,3 +292,7 @@ if __name__ == "__main__":
 
     save_adapters("final_adapters.safetensors", flux, args)
     print(f"Training successful. Saved final weights to {args.adapter_file}.")
+
+
+if __name__ == "__main__":
+    main()
