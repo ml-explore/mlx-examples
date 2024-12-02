@@ -92,7 +92,7 @@ curl localhost:8080/v1/chat/completions \
 
 - `system_fingerprint`: A unique identifier for the system.
 
-- `object`: Any of "chat.completions", "chat.completions.chunk" (for
+- `object`: Any of "chat.completion", "chat.completion.chunk" (for
   streaming), or "text.completion".
 
 - `model`: The model repo or path (e.g. `"mlx-community/Llama-3.2-3B-Instruct-4bit"`).

@@ -7,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -92,10 +92,11 @@ class Attention(nn.Module):
         keys = mx.tile(keys, [1, self.config.n_shared_head, 1, 1])
         values = mx.tile(values, [1, self.config.n_shared_head, 1, 1])
 
-        output = mx.fast.scaled_dot_product_attention(
+        output = scaled_dot_product_attention(
             queries,
             keys,
             values,
+            cache=cache,
             scale=self.scale,
             mask=attention_mask,
         )

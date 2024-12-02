@@ -42,7 +42,6 @@ response = generate(
     tokenizer,
     prompt=prompt,
     verbose=True,
-    temp=0.0,
     prompt_cache=prompt_cache,
 )
 

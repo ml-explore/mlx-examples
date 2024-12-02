@@ -760,6 +760,38 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_hunyuan(self):
+        from mlx_lm.models import hunyuan
+
+        args = hunyuan.ModelArgs(
+            model_type="hunyuan",
+            hidden_size=128,
+            attention_bias=False,
+            intermediate_size=256,
+            num_attention_heads=4,
+            num_hidden_layers=4,
+            num_key_value_heads=2,
+            rms_norm_eps=1e-4,
+            rope_theta=1000,
+            vocab_size=1000,
+            moe_topk=2,
+            num_experts=2,
+            num_shared_expert=1,
+            use_mixed_mlp_moe=True,
+            use_qk_norm=True,
+            rope_scaling={
+                "alpha": 1000.0,
+                "factor": 1.0,
+                "type": "dynamic",
+            },
+            use_cla=True,
+            cla_share_factor=2,
+        )
+        model = hunyuan.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

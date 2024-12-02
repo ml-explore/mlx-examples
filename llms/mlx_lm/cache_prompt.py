@@ -8,7 +8,9 @@ import time
 import mlx.core as mx
 
 from .models.cache import make_prompt_cache, save_prompt_cache
-from .utils import load
+from .utils import load, maybe_quantize_kv_cache
+
+DEFAULT_QUANTIZED_KV_START = 5000
 
 
 def setup_arg_parser():
@@ -70,6 +72,26 @@ def setup_arg_parser():
         required=True,
         help="Message to be processed by the model ('-' reads from stdin)",
     )
+    parser.add_argument(
+        "--kv-bits",
+        type=int,
+        help="Number of bits for KV cache quantization. "
+        "Defaults to no quantization.",
+        default=None,
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        help="Group size for KV cache quantization.",
+        default=64,
+    )
+    parser.add_argument(
+        "--quantized-kv-start",
+        help="When --kv-bits is set, start quantizing the KV cache "
+        "from this step onwards.",
+        type=int,
+        default=DEFAULT_QUANTIZED_KV_START,
+    )
     return parser
 
 
@@ -127,8 +149,10 @@ def main():
     start = time.time()
     max_msg_len = 0
     while y.size > 0:
+
         model(y[:step_size][None], cache=cache)
         mx.eval([c.state for c in cache])
+        mx.metal.clear_cache()
         processed += min(y.size, step_size)
         y = y[step_size:]
         current = time.time()
@@ -136,15 +160,19 @@ def main():
         msg = f"\rProcessed {processed:6d} tokens ({speed:6.2f} tok/s)"
         max_msg_len = max(max_msg_len, len(msg))
         print(msg + " " * (max_msg_len - len(msg)), end="", flush=True)
+
+        maybe_quantize_kv_cache(
+            cache, args.quantized_kv_start, args.kv_group_size, args.kv_bits
+        )
+
     print()
-    print(f"Peak memory: {mx.metal.get_peak_memory() / 2**30:.3f} GB")
+    print(f"Peak memory: {mx.metal.get_peak_memory() / 1e9:.3f} GB")
 
     print("Saving...")
     metadata = {}
     metadata["model"] = args.model
     metadata["chat_template"] = tokenizer.chat_template
     metadata["tokenizer_config"] = json.dumps(tokenizer_config)
-    print(f"Peak memory: {mx.metal.get_peak_memory() / 2**30:.3f} GB")
     save_prompt_cache(args.prompt_cache_file, cache, metadata)
 
 

@@ -1,5 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import contextlib
 import copy
 import glob
 import importlib
@@ -7,6 +8,7 @@ import json
 import logging
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
@@ -14,12 +16,12 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, 
 import mlx.core as mx
 import mlx.nn as nn
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten
+from mlx.utils import tree_flatten, tree_reduce
 from transformers import PreTrainedTokenizer
 
 # Local imports
-from .models import base, cache
-from .sample_utils import categorical_sampling, min_p_sampling, top_p_sampling
+from .models import cache
+from .sample_utils import make_logits_processors, make_sampler
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import dequantize as dequantize_model
 from .tuner.utils import load_adapters
@@ -28,15 +30,79 @@ from .tuner.utils import load_adapters
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
     "phi-msft": "phixtral",
+    "falcon_mamba": "mamba",
 }
 
 MAX_FILE_SIZE_GB = 5
+
+# A stream on the default device just for generation
+generation_stream = mx.new_stream(mx.default_device())
 
 
 class ModelNotFoundError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+
+@dataclass
+class GenerationResponse:
+    """
+    The output of :func:`stream_generate`.
+
+    Args:
+        text (str): The next segment of decoded text. This can be an empty string.
+        token (int): The next token.
+        logprobs (mx.array): A vector of log probabilities.
+        prompt_tokens (int): The number of tokens in the prompt.
+        prompt_tps (float): The prompt processing tokens-per-second.
+        generation_tokens (int): The number of generated tokens.
+        generation_tps (float): The tokens-per-second for generation.
+        peak_memory (float): The peak memory used so far in GB.
+    """
+
+    text: str
+    token: int
+    logprobs: mx.array
+    prompt_tokens: int
+    prompt_tps: float
+    generation_tokens: int
+    generation_tps: float
+    peak_memory: float
+
+
+@contextlib.contextmanager
+def wired_limit(model: nn.Module, streams: Optional[List[mx.Stream]] = None):
+    """
+    A context manager to temporarily change the wired limit.
+
+    Note, the wired limit should not be changed during an async eval.  If an
+    async eval could be running pass in the streams to synchronize with prior
+    to exiting the context manager.
+    """
+    model_bytes = tree_reduce(
+        lambda acc, x: acc + x.nbytes if isinstance(x, mx.array) else acc, model, 0
+    )
+    max_rec_size = mx.metal.device_info()["max_recommended_working_set_size"]
+    if model_bytes > 0.9 * max_rec_size:
+        model_mb = model_bytes // 2**20
+        max_rec_mb = max_rec_size // 2**20
+        print(
+            f"[WARNING] Generating with a model that requires {model_mb} MB "
+            f"which is close to the maximum recommended size of {max_rec_mb} "
+            "MB. This can be slow. See the documentation for possible work-arounds: "
+            "https://github.com/ml-explore/mlx-examples/tree/main/llms#large-models"
+        )
+    old_limit = mx.metal.set_wired_limit(max_rec_size)
+    try:
+        yield None
+    finally:
+        if streams is not None:
+            for s in streams:
+                mx.synchronize(s)
+        else:
+            mx.synchronize()
+        mx.metal.set_wired_limit(old_limit)
 
 
 def _get_classes(config: dict):
@@ -101,43 +167,36 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
     return model_path
 
 
-def apply_repetition_penalty(logits: mx.array, tokens: mx.array, penalty: float):
-    """
-    Apply repetition penalty to specific logits based on the given context.
-
-    Paper: https://arxiv.org/abs/1909.05858
-
-    Args:
-        logits (mx.array): The logits produced by the language model.
-        tokens (mx.array): A list of N previous tokens.
-        penalty (float): The repetition penalty factor to be applied.
-
-    Returns:
-        logits (mx.array): Logits with repetition penalty applied to generated tokens.
-    """
-    if len(tokens) > 0:
-        selected_logits = logits[:, tokens]
-        selected_logits = mx.where(
-            selected_logits < 0, selected_logits * penalty, selected_logits / penalty
-        )
-        logits[:, tokens] = selected_logits
-    return logits
+def maybe_quantize_kv_cache(prompt_cache, quantized_kv_start, kv_group_size, kv_bits):
+    if (
+        kv_bits is not None
+        and not isinstance(prompt_cache[0], cache.QuantizedKVCache)
+        and prompt_cache[0].offset > quantized_kv_start
+    ):
+        for i in range(len(prompt_cache)):
+            prompt_cache[i] = prompt_cache[i].to_quantized(
+                group_size=kv_group_size, bits=kv_bits
+            )
 
 
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
-    temp: float = 0.0,
-    repetition_penalty: Optional[float] = None,
-    repetition_context_size: Optional[int] = 20,
-    top_p: float = 1.0,
-    min_p: float = 0.0,
-    min_tokens_to_keep: int = 1,
-    prefill_step_size: int = 512,
+    *,
+    sampler: Optional[Callable[mx.array, mx.array]] = None,
+    logits_processors: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
     max_kv_size: Optional[int] = None,
     prompt_cache: Optional[Any] = None,
-    logit_bias: Optional[Dict[int, float]] = None,
-    logits_processor: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
+    prefill_step_size: int = 512,
+    kv_bits: Optional[int] = None,
+    kv_group_size: int = 64,
+    quantized_kv_start: int = 0,
+    temp: Optional[float] = None,
+    repetition_penalty: Optional[float] = None,
+    repetition_context_size: Optional[int] = None,
+    top_p: Optional[float] = None,
+    min_p: Optional[float] = None,
+    min_tokens_to_keep: Optional[int] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing token ids based on the given prompt from the model.
@@ -145,166 +204,180 @@ def generate_step(
     Args:
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
-        temp (float): The temperature for sampling, if 0 the argmax is used.
-          Default: ``0``.
-        repetition_penalty (float, optional): The penalty factor for repeating
-          tokens.
-        repetition_context_size (int, optional): The number of tokens to
-          consider for repetition penalty. Default: ``20``.
-        top_p (float, optional): Nulceus sampling, higher means model considers
-          more less likely words.
-        min_p (float, optional): The minimum value (scaled by the top token's
-          probability) that a token probability must have to be considered.
-        min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
-          be filtered by min_p sampling.
         prefill_step_size (int): Step size for processing the prompt.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
         prompt_cache (List[Any], optional): A pre-computed prompt cache. Note, if
           provided, the cache will be updated in place.
-        logit_bias (dictionary, optional): Additive logit bias.
-        logits_processor (List[Callable[[mx.array, mx.array], mx.array]], optional):
-            A list of functions that take tokens and logits and return the processed
-            logits. Default: ``None``.
+        sampler (Callable[mx.array, mx.array], optional): A sampler for sampling a
+          token from a vector of log probabilities. Default: ``None``.
+        logits_processors (List[Callable[[mx.array, mx.array], mx.array]], optional):
+          A list of functions that take tokens and logits and return the processed
+          logits. Default: ``None``.
+        kv_bits (int, optional): Number of bits to use for KV cache quantization.
+          None implies no cache quantization. Default: ``None``.
+        kv_group_size (int): Group size for KV cache quantization. Default: ``64``.
+        quantized_kv_start (int): Step to begin using a quantized KV cache.
+           when ``kv_bits`` is non-None. Default: ``0``.
 
     Yields:
-        Generator[Tuple[mx.array, mx.array], None, None]: A generator producing
-          one token and a vector of log probabilities.
+        Tuple[mx.array, mx.array]: One token and a vector of log probabilities.
     """
-
-    def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        logprobs = logits - mx.logsumexp(logits)
-
-        if temp == 0:
-            token = mx.argmax(logits, axis=-1)
-        else:
-            if top_p > 0 and top_p < 1.0:
-                token = top_p_sampling(logits, top_p, temp)
-            elif min_p != 0.0:
-                token = min_p_sampling(logits, min_p, min_tokens_to_keep, temp)
-            else:
-                token = categorical_sampling(logits, temp)
-
-        return token, logprobs
-
-    if repetition_penalty and (
-        repetition_penalty < 0 or not isinstance(repetition_penalty, float)
-    ):
-        raise ValueError(
-            f"repetition_penalty must be a non-negative float, got {repetition_penalty}"
-        )
-
-    logits_processor = logits_processor or []
-
-    if repetition_penalty:
-
-        def repetition_penalty_processor(tokens, logits):
-            return apply_repetition_penalty(
-                logits, tokens[-repetition_context_size:], repetition_penalty
-            )
-
-        logits_processor.append(repetition_penalty_processor)
-
-    if logit_bias:
-        indices = mx.array(list(logit_bias.keys()))
-        values = mx.array(list(logit_bias.values()))
-
-        def logit_bias_processor(_, logits):
-            logits[:, indices] += values
-            return logits
-
-        logits_processor.append(logit_bias_processor)
 
     y = prompt
     tokens = None
 
     # Create the KV cache for generation
     if prompt_cache is None:
-        prompt_cache = cache.make_prompt_cache(model, max_kv_size)
+        prompt_cache = cache.make_prompt_cache(
+            model,
+            max_kv_size=max_kv_size,
+        )
     elif len(prompt_cache) != len(model.layers):
         raise ValueError("Wrong number of layers in the prompt cache.")
 
+    if temp is not None or top_p is not None or min_tokens_to_keep is not None:
+        print(
+            "[Warning] Specifying sampling arguments to ``generate_step`` is "
+            "deprecated. Pass in a ``sampler`` instead."
+        )
+    if repetition_penalty is not None:
+        print(
+            "[Warning] Specifying ``repetition_penalty`` is deprecated. "
+            "Pass in ``logits_processors`` instead."
+        )
+
+    sampler = sampler or make_sampler(
+        temp or 0.0, top_p or 0.0, min_p or 0.0, min_tokens_to_keep or 1
+    )
+    logits_processors = logits_processors or make_logits_processors(
+        None, repetition_penalty, repetition_context_size or 20
+    )
+
     def _step(y):
-        logits = model(y[None], cache=prompt_cache)
-        logits = logits[:, -1, :]
+        with mx.stream(generation_stream):
+            logits = model(y[None], cache=prompt_cache)
+            logits = logits[:, -1, :]
 
-        if logits_processor:
-            nonlocal tokens
-            tokens = mx.concat([tokens, y]) if tokens is not None else y
+            if logits_processors:
+                nonlocal tokens
+                tokens = mx.concat([tokens, y]) if tokens is not None else y
 
-            for processor in logits_processor:
-                logits = processor(tokens, logits)
+                for processor in logits_processors:
+                    logits = processor(tokens, logits)
 
-        y, logprobs = sample(logits)
-        return y, logprobs.squeeze(0)
+            maybe_quantize_kv_cache(
+                prompt_cache, quantized_kv_start, kv_group_size, kv_bits
+            )
 
-    while y.size > prefill_step_size:
-        model(y[:prefill_step_size][None], cache=prompt_cache)
-        mx.eval([c.state for c in prompt_cache])
-        y = y[prefill_step_size:]
-        mx.metal.clear_cache()
+            logprobs = logits - mx.logsumexp(logits, keepdims=True)
+            y = sampler(logprobs)
+            return y, logprobs.squeeze(0)
 
-    y, logprobs = _step(y)
+    with mx.stream(generation_stream):
+        while y.size > prefill_step_size:
+            model(y[:prefill_step_size][None], cache=prompt_cache)
+            mx.eval([c.state for c in prompt_cache])
+            y = y[prefill_step_size:]
+            mx.metal.clear_cache()
+
+        y, logprobs = _step(y)
 
     mx.async_eval(y, logprobs)
+    n = 0
     while True:
         next_y, next_logprobs = _step(y)
         mx.async_eval(next_y, next_logprobs)
         yield y.item(), logprobs
+        if n % 256 == 0:
+            mx.metal.clear_cache()
+        n += 1
         y, logprobs = next_y, next_logprobs
 
 
 def stream_generate(
     model: nn.Module,
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
-    prompt: str,
+    prompt: Union[str, mx.array, List[int]],
     max_tokens: int = 100,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> Generator[GenerationResponse, None, None]:
     """
     A generator producing text based on the given prompt from the model.
 
     Args:
-        prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
-        max_tokens (int): The ma
+        tokenizer (PreTrainedTokenizer): The tokenizer.
+        prompt (Union[str, mx.array, List[int]]): The input prompt string or integer tokens.
+        max_tokens (int): The maximum number of tokens. Default: ``100``.
         kwargs: The remaining options get passed to :func:`generate_step`.
           See :func:`generate_step` for more details.
 
     Yields:
-        Generator[Tuple[mx.array, mx.array]]: A generator producing text.
+        GenerationResponse: An instance containing the generated text segment and
+            associated metadata. See :class:`GenerationResponse` for details.
     """
     if not isinstance(tokenizer, TokenizerWrapper):
         tokenizer = TokenizerWrapper(tokenizer)
 
-    prompt_tokens = mx.array(tokenizer.encode(prompt))
+    if not isinstance(prompt, mx.array):
+        prompt = mx.array(
+            prompt if isinstance(prompt, list) else tokenizer.encode(prompt)
+        )
+
     detokenizer = tokenizer.detokenizer
 
-    detokenizer.reset()
-    for n, (token, _) in zip(
-        range(max_tokens),
-        generate_step(prompt_tokens, model, **kwargs),
-    ):
-        if token == tokenizer.eos_token_id:
-            break
-        detokenizer.add_token(token)
+    with wired_limit(model, [generation_stream]):
+        detokenizer.reset()
+        tic = time.perf_counter()
+        for n, (token, logprobs) in zip(
+            range(max_tokens),
+            generate_step(prompt, model, **kwargs),
+        ):
+            if n == 0:
+                prompt_time = time.perf_counter() - tic
+                prompt_tps = prompt.size / prompt_time
+                tic = time.perf_counter()
+            if token == tokenizer.eos_token_id:
+                break
 
-        # Yield the last segment if streaming
-        yield detokenizer.last_segment
+            detokenizer.add_token(token)
 
-    detokenizer.finalize()
-    yield detokenizer.last_segment
+            if n == (max_tokens - 1):
+                break
+
+            yield GenerationResponse(
+                text=detokenizer.last_segment,
+                token=token,
+                logprobs=logprobs,
+                prompt_tokens=prompt.size,
+                prompt_tps=prompt_tps,
+                generation_tokens=n + 1,
+                generation_tps=(n + 1) / (time.perf_counter() - tic),
+                peak_memory=mx.metal.get_peak_memory() / 1e9,
+            )
+
+        detokenizer.finalize()
+        yield GenerationResponse(
+            text=detokenizer.last_segment,
+            token=token,
+            logprobs=logprobs,
+            prompt_tokens=prompt.size,
+            prompt_tps=prompt_tps,
+            generation_tokens=n + 1,
+            generation_tps=(n + 1) / (time.perf_counter() - tic),
+            peak_memory=mx.metal.get_peak_memory() / 1e9,
+        )
 
 
 def generate(
     model: nn.Module,
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
     prompt: str,
-    max_tokens: int = 100,
     verbose: bool = False,
     formatter: Optional[Callable] = None,
     **kwargs,
-) -> Union[str, Generator[str, None, None]]:
+) -> str:
     """
     Generate a complete response from the model.
 
@@ -315,63 +388,40 @@ def generate(
        max_tokens (int): The maximum number of tokens. Default: ``100``.
        verbose (bool): If ``True``, print tokens and timing information.
            Default: ``False``.
-       formatter (Optional[Callable]): A function which takes a token and a
-           probability and displays it.
-       kwargs: The remaining options get passed to :func:`generate_step`.
-          See :func:`generate_step` for more details.
+       kwargs: The remaining options get passed to :func:`stream_generate`.
+          See :func:`stream_generate` for more details.
     """
-    if not isinstance(tokenizer, TokenizerWrapper):
-        tokenizer = TokenizerWrapper(tokenizer)
-
+    if formatter is not None:
+        print(
+            "[Warning] Text formatting is deprecated and no longer used. "
+            "The argument will be removed in a future version."
+        )
     if verbose:
         print("=" * 10)
         print("Prompt:", prompt)
 
-    prompt_tokens = mx.array(tokenizer.encode(prompt))
-    detokenizer = tokenizer.detokenizer
-
-    tic = time.perf_counter()
-    detokenizer.reset()
-
-    for n, (token, logprobs) in zip(
-        range(max_tokens),
-        generate_step(prompt_tokens, model, **kwargs),
-    ):
-        if n == 0:
-            prompt_time = time.perf_counter() - tic
-            tic = time.perf_counter()
-        if token == tokenizer.eos_token_id:
-            break
-        detokenizer.add_token(token)
-
+    text = ""
+    for response in stream_generate(model, tokenizer, prompt, **kwargs):
         if verbose:
-            if formatter:
-                # We have to finalize so that the prob corresponds to the last segment
-                detokenizer.finalize()
-                with mx.stream(mx.cpu):
-                    prob = mx.exp(logprobs[token]).item()
-                formatter(detokenizer.last_segment, prob)
-            else:
-                print(detokenizer.last_segment, end="", flush=True)
-
-    token_count = n + 1
-    detokenizer.finalize()
+            print(response.text, end="", flush=True)
+        text += response.text
 
     if verbose:
-        gen_time = time.perf_counter() - tic
-        print(detokenizer.last_segment, flush=True)
+        print()
         print("=" * 10)
-        if token_count == 0:
-            print("No tokens generated for this prompt")
+        if len(text) == 0:
+            print("No text generated for this prompt")
             return
-        prompt_tps = prompt_tokens.size / prompt_time
-        gen_tps = (token_count - 1) / gen_time
-        print(f"Prompt: {prompt_tokens.size} tokens, {prompt_tps:.3f} tokens-per-sec")
-        print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
-        peak_mem = mx.metal.get_peak_memory() / 2**30
-        print(f"Peak memory: {peak_mem:.3f} GB")
-
-    return detokenizer.text
+        print(
+            f"Prompt: {response.prompt_tokens} tokens, "
+            f"{response.prompt_tps:.3f} tokens-per-sec"
+        )
+        print(
+            f"Generation: {response.generation_tokens} tokens, "
+            f"{response.generation_tps:.3f} tokens-per-sec"
+        )
+        print(f"Peak memory: {response.peak_memory:.3f} GB")
+    return text
 
 
 def load_config(model_path: Path) -> dict:
@@ -553,7 +603,9 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         f"""
         # {upload_repo}
 
-        The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path}) using mlx-lm version **{__version__}**.
+        The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was
+        converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path})
+        using mlx-lm version **{__version__}**.
 
         ## Use with mlx
 

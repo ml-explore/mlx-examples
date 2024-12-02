@@ -34,13 +34,17 @@ class TestTokenizers(unittest.TestCase):
             detokenizer = tokenizer.detokenizer
             detokenizer.reset()
             text = ""
-            for t in tokens:
+            for e, t in enumerate(tokens):
                 detokenizer.add_token(t)
                 seg = detokenizer.last_segment
                 text += seg
+                self.assertEqual(detokenizer.tokens, tokens[: e + 1])
             detokenizer.finalize()
             text += detokenizer.last_segment
             self.assertEqual(text, expected_text)
+
+        tokens = tokenizer.encode("こんにちは！私の名前はAI")
+        check(tokens)
 
         tokens = tokenizer.encode("a ,b")
         check(tokens)
@@ -49,6 +53,9 @@ class TestTokenizers(unittest.TestCase):
         check(tokens)
 
         tokens = tokenizer.encode("3 3")
+        check(tokens)
+
+        tokens = tokenizer.encode("import 'package:flutter/material.dart';")
         check(tokens)
 
     def test_tokenizers(self):
@@ -70,6 +77,17 @@ class TestTokenizers(unittest.TestCase):
         tokenizer = self.download_tokenizer("mlx-community/Llama-3.2-1B-Instruct-4bit")
         tokenizer._detokenizer = NaiveStreamingDetokenizer(tokenizer)
         self.check_tokenizer(tokenizer)
+
+    def test_special_tokens(self):
+        tokenizer_repo = "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx"
+        tokenizer = self.download_tokenizer(tokenizer_repo)
+
+        detokenizer = tokenizer.detokenizer
+        detokenizer.reset()
+        detokenizer.add_token(tokenizer.eos_token_id)
+        detokenizer.finalize()
+
+        self.assertEqual(detokenizer.last_segment, tokenizer.eos_token)
 
 
 if __name__ == "__main__":

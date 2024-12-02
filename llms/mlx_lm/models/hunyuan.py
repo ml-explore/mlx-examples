@@ -2,7 +2,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -14,37 +14,59 @@ from .switch_layers import SwitchGLU
 @dataclass
 class ModelArgs(BaseModelArgs):
     model_type: str
+    vocab_size: int
     hidden_size: int
     num_hidden_layers: int
     intermediate_size: int
     num_attention_heads: int
-    num_experts_per_tok: int
+    num_key_value_heads: int
+    attention_bias: bool
+    moe_topk: int
     num_experts: int
-    moe_intermediate_size: int
-    shared_expert_intermediate_size: int
+    num_shared_expert: int
+    use_mixed_mlp_moe: bool
+    use_qk_norm: bool
     rms_norm_eps: float
-    vocab_size: int
-    num_key_value_heads: Optional[int] = None
-    rope_theta: float = 1000000
-    rope_traditional: bool = False
+    rope_theta: float
+    use_cla: bool
+    cla_share_factor: 2
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
     tie_word_embeddings: bool = False
 
     def __post_init__(self):
-        if self.num_key_value_heads is None:
-            self.num_key_value_heads = self.num_attention_heads
 
         if self.rope_scaling:
             required_keys = {"factor", "type"}
             if not all(key in self.rope_scaling for key in required_keys):
                 raise ValueError(f"rope_scaling must contain keys {required_keys}")
 
-            if self.rope_scaling["type"] != "linear":
-                raise ValueError("rope_scaling 'type' currently only supports 'linear'")
+
+class DynamicNTKAlphaRoPE(nn.Module):
+    def __init__(
+        self,
+        dims: int,
+        base: float = 10000,
+        scaling_alpha: float = 1.0,
+    ):
+        super().__init__()
+        self.dims = dims
+        base = base * scaling_alpha ** (dims / (dims - 2))
+        self._freqs = base ** (mx.arange(0, self.dims, 2) / self.dims)
+
+    def __call__(self, x, offset: int = 0):
+        return mx.fast.rope(
+            x,
+            self.dims,
+            traditional=False,
+            base=None,
+            scale=1.0,
+            offset=offset,
+            freqs=self._freqs,
+        )
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, kv_proj: bool, args: ModelArgs):
         super().__init__()
 
         dim = args.hidden_size
@@ -55,15 +77,24 @@ class Attention(nn.Module):
         head_dim = args.hidden_size // n_heads
         self.scale = head_dim**-0.5
 
-        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=True)
-        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=True)
-        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=args.attention_bias)
+        if kv_proj:
+            self.k_proj = nn.Linear(
+                dim, n_kv_heads * head_dim, bias=args.attention_bias
+            )
+            self.v_proj = nn.Linear(
+                dim, n_kv_heads * head_dim, bias=args.attention_bias
+            )
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=args.attention_bias)
+        self.use_qk_norm = args.use_qk_norm
+        if self.use_qk_norm:
+            self.query_layernorm = nn.RMSNorm(head_dim, args.rms_norm_eps)
+            self.key_layernorm = nn.RMSNorm(head_dim, args.rms_norm_eps)
 
-        self.rope = nn.RoPE(
+        self.rope = DynamicNTKAlphaRoPE(
             head_dim,
-            traditional=args.rope_traditional,
             base=args.rope_theta,
+            scaling_alpha=args.rope_scaling["alpha"],
         )
 
     def __call__(
@@ -71,29 +102,38 @@ class Attention(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         cache: Optional[Any] = None,
+        kv_states=None,
     ) -> mx.array:
         B, L, D = x.shape
 
-        queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+        queries = self.q_proj(x)
+
+        if kv_states is None:
+            keys, values = self.k_proj(x), self.v_proj(x)
+            kv_states = keys, values
+        else:
+            keys, values = kv_states
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
+        offset = cache.offset if cache else 0
+        queries = self.rope(queries, offset=offset)
+        keys = self.rope(keys, offset=offset)
+        if self.use_qk_norm:
+            queries = self.query_layernorm(queries)
+            keys = self.key_layernorm(keys)
+
         if cache is not None:
-            queries = self.rope(queries, offset=cache.offset)
-            keys = self.rope(keys, offset=cache.offset)
             keys, values = cache.update_and_fetch(keys, values)
-        else:
-            queries = self.rope(queries)
-            keys = self.rope(keys)
 
         output = scaled_dot_product_attention(
             queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.o_proj(output)
+        return self.o_proj(output), kv_states
 
 
 class MLP(nn.Module):
@@ -107,21 +147,30 @@ class MLP(nn.Module):
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-class Qwen2MoeSparseMoeBlock(nn.Module):
+class Gate(nn.Module):
+    def __init__(self, dim, num_experts):
+        super().__init__()
+        self.wg = nn.Linear(dim, num_experts, bias=False)
+
+    def __call__(self, x) -> mx.array:
+        return self.wg(x)
+
+
+class MoeBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         dim = args.hidden_size
-        intermediate_size = args.moe_intermediate_size
-        shared_expert_intermediate_size = args.shared_expert_intermediate_size
+        intermediate_size = args.intermediate_size
+        self.use_shared_mlp = args.use_mixed_mlp_moe
+
+        if args.use_mixed_mlp_moe:
+            self.shared_mlp = MLP(dim, intermediate_size * args.num_shared_expert)
 
         self.num_experts = num_experts = args.num_experts
-        self.top_k = args.num_experts_per_tok
+        self.top_k = args.moe_topk
 
-        self.gate = nn.Linear(dim, num_experts, bias=False)
+        self.gate = Gate(dim, num_experts)
         self.switch_mlp = SwitchGLU(dim, intermediate_size, num_experts)
-
-        self.shared_expert = MLP(dim, shared_expert_intermediate_size)
-        self.shared_expert_gate = nn.Linear(dim, 1, bias=False)
 
     def __call__(
         self,
@@ -137,20 +186,19 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         y = self.switch_mlp(x, inds)
         y = (y * scores[..., None]).sum(axis=-2)
 
-        shared_expert_output = self.shared_expert(x)
-        shared_expert_output = (
-            mx.sigmoid(self.shared_expert_gate(x)) * shared_expert_output
-        )
+        if self.use_shared_mlp:
+            shared_expert_output = self.shared_mlp(x)
+            y = y + shared_expert_output
 
-        return y + shared_expert_output
+        return y
 
 
-class Qwen2MoeDecoderLayer(nn.Module):
-    def __init__(self, args: ModelArgs):
+class DecoderLayer(nn.Module):
+    def __init__(self, args: ModelArgs, kv_proj: bool):
         super().__init__()
         self.hidden_size = args.hidden_size
-        self.self_attn = Attention(args)
-        self.mlp = Qwen2MoeSparseMoeBlock(args)
+        self.self_attn = Attention(kv_proj, args)
+        self.mlp = MoeBlock(args)
 
         self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(
@@ -163,15 +211,18 @@ class Qwen2MoeDecoderLayer(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         cache: Optional[Any] = None,
-    ) -> mx.array:
-        r = self.self_attn(self.input_layernorm(x), mask, cache)
+        shared_kv_states: Optional[Tuple[mx.array, mx.array]] = None,
+    ):
+        r, shared_kv_states = self.self_attn(
+            self.input_layernorm(x), mask, cache, shared_kv_states
+        )
         h = x + r
         r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
-        return out
+        return out, shared_kv_states
 
 
-class Qwen2MoeModel(nn.Module):
+class HunYuanModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
@@ -180,7 +231,8 @@ class Qwen2MoeModel(nn.Module):
         assert self.vocab_size > 0
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-            Qwen2MoeDecoderLayer(args=args) for _ in range(args.num_hidden_layers)
+            DecoderLayer(args=args, kv_proj=(i % args.cla_share_factor) == 0)
+            for i in range(args.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
 
@@ -196,8 +248,10 @@ class Qwen2MoeModel(nn.Module):
         if cache is None:
             cache = [None] * len(self.layers)
 
-        for layer, c in zip(self.layers, cache):
-            h = layer(h, mask, c)
+        for i, (layer, c) in enumerate(zip(self.layers, cache)):
+            if i % self.args.cla_share_factor == 0:
+                shared_kv_states = None
+            h, shared_kv_states = layer(h, mask, c, shared_kv_states)
 
         return self.norm(h)
 
@@ -207,8 +261,7 @@ class Model(nn.Module):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
-        self.model = Qwen2MoeModel(args)
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.model = HunYuanModel(args)
 
     def __call__(
         self,
@@ -216,7 +269,7 @@ class Model(nn.Module):
         cache=None,
     ):
         out = self.model(inputs, cache)
-        return self.lm_head(out)
+        return self.model.embed_tokens.as_linear(out)
 
     def sanitize(self, weights):
         if "model.layers.0.mlp.experts.0.up_proj.weight" not in weights:
