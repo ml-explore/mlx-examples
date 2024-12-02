@@ -25,7 +25,7 @@ class FluxSampler:
     ):
         t = mx.linspace(start, stop, num_steps + 1)
 
-        if self._schnell:
+        if not self._schnell:
             t = self._time_shift(image_sequence_length, t)
 
         return t.tolist()
