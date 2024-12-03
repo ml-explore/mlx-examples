@@ -77,7 +77,7 @@ def setup_arg_parser():
     )
     parser.add_argument(
         "--min-tokens-to-keep",
-        type=float,
+        type=int,
         default=DEFAULT_MIN_TOKENS_TO_KEEP,
         help="Minimum tokens to keep for min-p sampling.",
     )
