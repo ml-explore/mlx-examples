@@ -77,7 +77,7 @@ to see how to use the API in more detail.
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
 
-You can convert models in the Python API with:
+You can convert models using the Python API:
 
 ```python
 from mlx_lm import convert
@@ -162,6 +162,10 @@ mlx_lm.convert \
     -q \
     --upload-repo mlx-community/my-4bit-mistral
 ```
+
+Models can also be converted and quantized directly in the
+[mlx-my-repo]https://huggingface.co/spaces/mlx-community/mlx-my-repo) Hugging
+Face Space.
 
 ### Long Prompts and Generations 
 
