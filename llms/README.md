@@ -77,7 +77,9 @@ to see how to use the API in more detail.
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
 
-You can convert models directly via the Hugging Face Space [here](https://huggingface.co/spaces/mlx-community/mlx-my-repo) or in the Python API with:
+You can convert models in the [Hugging Face
+Space](https://huggingface.co/spaces/mlx-community/mlx-my-repo) or using the
+Python API:
 
 ```python
 from mlx_lm import convert

@@ -8,5 +8,3 @@ parent directory.
 
 This package also supports fine tuning with LoRA or QLoRA. For more information
 see the [LoRA documentation](LORA.md).
-
-🆕 You can directly convert models in Q4/ Q8 via the Hugging Face Space [here](https://huggingface.co/spaces/mlx-community/mlx-my-repo).
