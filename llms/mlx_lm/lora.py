@@ -58,6 +58,8 @@ CONFIG_DEFAULTS = {
     "test_batches": 500,
     "max_seq_length": 2048,
     "lr_schedule": None,
+    "prompt_feature": "prompt",
+    "completion_feature": "completion",
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
 }
 
