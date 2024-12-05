@@ -167,6 +167,8 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
 
     def __init__(self, tokenizer):
 
+        self.tokenizer = tokenizer
+
         self.clean_spaces = tokenizer.clean_up_tokenization_spaces
 
         # Extract the tokens in a list from id to text
@@ -208,6 +210,9 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
             ).decode("utf-8")
             self.text += self._maybe_trim_space(current_text)
             if is_added:
+                # We need to manually encode and decode the added tokens in case special characters
+                # used for `\n` / `\t` have been manually added in the added tokens
+                v = self.tokenizer.decode(self.tokenizer.encode(v))
                 self.text += v
                 self._unflushed = ""
             else:
