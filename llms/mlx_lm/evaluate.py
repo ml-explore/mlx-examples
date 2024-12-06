@@ -342,7 +342,7 @@ def main():
 
     filename = f"eval_{args.model.replace('/', '_')}_{('_'.join(args.tasks))}_{args.num_shots:02d}.json"
     output_path = Path(args.output_dir) / filename
-    output_path.write_text(json.dumps(results, indent=4))
+    output_path.write_text(json.dumps(results["results"], indent=4))
     print("Results:")
     for result in results["results"].values():
         print(json.dumps(result, indent=4))
