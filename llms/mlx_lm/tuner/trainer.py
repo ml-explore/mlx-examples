@@ -166,7 +166,7 @@ def iterate_completion_batches(
             for j in batch_idx[i]:
                 prompt, completion = dataset.get_prompt_and_completion(j)
                 prompt_lengths.append(input_length(prompt, completion, tokenizer))
-                full_sequence = tokenizer.encode(dataset[j], add_special_tokens=False)
+                full_sequence = tokenizer.encode(dataset[j])
                 if full_sequence[-1] != tokenizer.eos_token_id:
                     full_sequence.append(tokenizer.eos_token_id)
                 batch.append(full_sequence)
