@@ -14,9 +14,9 @@ import mlx.nn as nn
 import numpy as np
 from lm_eval.api.model import LM
 from lm_eval.api.registry import register_model
-from mlx_lm.models.cache import make_prompt_cache
 from tqdm import tqdm
 
+from .models.cache import make_prompt_cache
 from .utils import load, stream_generate
 
 PAD = 0
