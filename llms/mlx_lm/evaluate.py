@@ -8,6 +8,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
 
+import lm_eval
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
@@ -323,6 +324,9 @@ def main():
     parser.add_argument("--seed", type=int, default=123, help="Random seed.")
     args = parser.parse_args()
 
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # Silence tokenizer warnings
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -341,7 +345,7 @@ def main():
     )
 
     filename = f"eval_{args.model.replace('/', '_')}_{('_'.join(args.tasks))}_{args.num_shots:02d}_v_{version('lm_eval')}.json"
-    output_path = Path(args.output_dir) / filename
+    output_path = output_dir / filename
     output_path.write_text(json.dumps(results["results"], indent=4))
     print("Results:")
     for result in results["results"].values():
