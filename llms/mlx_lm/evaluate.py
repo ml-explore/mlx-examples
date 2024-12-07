@@ -344,7 +344,10 @@ def main():
         fewshot_random_seed=args.seed,
     )
 
-    filename = f"eval_{args.model.replace('/', '_')}_{('_'.join(args.tasks))}_{args.num_shots:02d}_v_{version('lm_eval')}.json"
+    model_name = args.model.replace("/", "_")
+    task_names = "_".join(args.tasks)
+    ver = version("lm_eval")
+    filename = f"eval_{model_name}_{task_names}_{args.num_shots:02d}_v_{ver}.json"
     output_path = output_dir / filename
     output_path.write_text(json.dumps(results["results"], indent=4))
     print("Results:")
