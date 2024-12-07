@@ -254,21 +254,29 @@ class TokenizerWrapper:
     huggingface tokenizer.
     """
 
-    def __init__(self, tokenizer, detokenizer_class=NaiveStreamingDetokenizer):
+    def __init__(
+        self, tokenizer, detokenizer_class=NaiveStreamingDetokenizer, eos_token_ids=None
+    ):
         self._tokenizer = tokenizer
         self._detokenizer = detokenizer_class(tokenizer)
+        self._eos_token_ids = eos_token_ids or [tokenizer.eos_token_id]
 
     def __getattr__(self, attr):
         if attr == "detokenizer":
             return self._detokenizer
+        elif attr == "eos_token_ids":
+            return self._eos_token_ids
         elif attr.startswith("_"):
             return self.__getattribute__(attr)
         else:
             return getattr(self._tokenizer, attr)
 
     def __setattr__(self, attr, value):
-        if attr == "detokenizer":
-            raise AttributeError("Cannot set the detokenizer.")
+        if attr in {"detokenizer", "eos_token_ids"}:
+            if attr == "detokenizer":
+                raise AttributeError("Cannot set the detokenizer.")
+            elif attr == "eos_token_ids":
+                self._eos_token_ids = value
         elif attr.startswith("_"):
             super().__setattr__(attr, value)
         else:
@@ -315,7 +323,7 @@ def _is_bpe_decoder(decoder):
     return isinstance(decoder, dict) and decoder.get("type", None) == "ByteLevel"
 
 
-def load_tokenizer(model_path, tokenizer_config_extra={}):
+def load_tokenizer(model_path, tokenizer_config_extra={}, model_config={}):
     """Load a huggingface tokenizer and try to infer the type of streaming
     detokenizer to use.
 
@@ -336,7 +344,11 @@ def load_tokenizer(model_path, tokenizer_config_extra={}):
             elif _is_bpe_decoder(tokenizer_content["decoder"]):
                 detokenizer_class = BPEStreamingDetokenizer
 
+    eos_token_id = model_config["eos_token_id"]
+    eos_token_ids = eos_token_id if isinstance(eos_token_id, list) else [eos_token_id]
+
     return TokenizerWrapper(
         AutoTokenizer.from_pretrained(model_path, **tokenizer_config_extra),
         detokenizer_class,
+        eos_token_ids=eos_token_ids,
     )
