@@ -101,7 +101,7 @@ class MLXLM(LM):
                 targets[:, i : i + step_size] == mx.argmax(logits, axis=-1)
             )
 
-            mx.eval(score, is_greedy)
+            mx.eval(score, ig)
             mx.metal.clear_cache()
 
             is_greedy.append(ig)
