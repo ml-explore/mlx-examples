@@ -144,6 +144,13 @@ def linear_to_lora_layers(
                 "mixer.out_proj",
             ]
         )
+    elif model.model_type == "mamba2":
+        keys = set(
+            [
+                "mixer.in_proj",
+                "mixer.out_proj",
+            ]
+        )
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 
