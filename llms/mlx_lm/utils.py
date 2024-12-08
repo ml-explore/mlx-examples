@@ -551,8 +551,9 @@ def load(
     if adapter_path is not None:
         model = load_adapters(model, adapter_path)
         model.eval()
-
-    tokenizer = load_tokenizer(model_path, tokenizer_config, model_config=config)
+    tokenizer = load_tokenizer(
+        model_path, tokenizer_config, eos_token_id=config["eos_token_id"]
+    )
 
     return model, tokenizer
 
@@ -562,7 +563,7 @@ def fetch_from_hub(
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
     config = load_config(model_path)
     model = load_model(model_path, lazy, model_config=config)
-    tokenizer = load_tokenizer(model_path, model_config=config)
+    tokenizer = load_tokenizer(model_path, eos_token_id=config["eos_token_id"])
     return model, config, tokenizer
 
 

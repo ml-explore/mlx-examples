@@ -259,7 +259,11 @@ class TokenizerWrapper:
     ):
         self._tokenizer = tokenizer
         self._detokenizer = detokenizer_class(tokenizer)
-        self._eos_token_ids = set(eos_token_ids) if eos_token_ids is not None else {tokenizer.eos_token_id}
+        self._eos_token_ids = (
+            set(eos_token_ids)
+            if eos_token_ids is not None
+            else {tokenizer.eos_token_id}
+        )
 
     def __getattr__(self, attr):
         if attr == "detokenizer":
@@ -323,7 +327,7 @@ def _is_bpe_decoder(decoder):
     return isinstance(decoder, dict) and decoder.get("type", None) == "ByteLevel"
 
 
-def load_tokenizer(model_path, tokenizer_config_extra={}, model_config={}):
+def load_tokenizer(model_path, tokenizer_config_extra={}, eos_token_id=None):
     """Load a huggingface tokenizer and try to infer the type of streaming
     detokenizer to use.
 
@@ -344,8 +348,9 @@ def load_tokenizer(model_path, tokenizer_config_extra={}, model_config={}):
             elif _is_bpe_decoder(tokenizer_content["decoder"]):
                 detokenizer_class = BPEStreamingDetokenizer
 
-    eos_token_id = model_config["eos_token_id"]
-    eos_token_ids = set(eos_token_id) if isinstance(eos_token_id, list) else {eos_token_id}
+    eos_token_ids = (
+        set(eos_token_id) if isinstance(eos_token_id, list) else {eos_token_id}
+    )
 
     return TokenizerWrapper(
         AutoTokenizer.from_pretrained(model_path, **tokenizer_config_extra),
