@@ -81,6 +81,22 @@ There are custom functions for masking the sequence of tokens associated with th
 during the loss calculation to ensure the model is not being penalized for not recreating the prompt.  To fine-tune 
 with masked input sequences, use the `--mask-inputs` argument.
 
+This functionality expects a ```response_template``` parameter in the configuration that is either a string representing
+a [string that indicate the start of the model's response](https://huggingface.co/docs/transformers/en/chat_templating#what-are-generation-prompts) 
+or its corresopnding tokens.  This is used to create the mask that excludes the tokens associated from the rest of
+the sequence from loss calculations.  For example (ChatML):
+
+```yaml
+response_template: "<|im_start|>assistant"
+```
+
+or (for the corresponding tokens of Gemma's response template)
+
+```yaml
+response_template: [106, 2516]
+```
+
+
 ### Evaluate
 
 To compute test set perplexity use:

@@ -5,7 +5,7 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -64,6 +64,10 @@ class TrainingArgs:
         default=False,
         metadata={"help": "Use gradient checkpointing to reduce memory use."},
     )
+    response_generation_tokens: Optional[List[int]] = field(
+        default_factory=list,
+        metadata={"help": "List of token ids that mark the beginning of the response"},
+    )
 
 
 def input_masked_loss(model, inputs, response_prefix_lengths, lengths):
@@ -114,6 +118,7 @@ def iterate_completion_batches(
     batch_size: int,
     max_seq_length: int,
     train: bool = False,
+    response_generation_tokens: Optional[List[int]] = None,
 ):
     """
     A version of iterate_batches that works with completion datasets, tracks the boundaries between input/output tokens
@@ -146,14 +151,14 @@ def iterate_completion_batches(
                 if full_sequence[-1] != tokenizer.eos_token_id:
                     full_sequence.append(tokenizer.eos_token_id)
                 batch.append(full_sequence)
-                if len(dataset.response_token_ids) > 1:
+                if len(response_generation_tokens) > 1:
                     response_marker_begin, response_marker_end = contains(
-                        dataset.response_token_ids, full_sequence
+                        response_generation_tokens, full_sequence
                     )
                     response_prefix_lengths.append(response_marker_end + 1)
                 else:
                     response_marker_begin = full_sequence.index(
-                        dataset.response_token_ids[0]
+                        response_generation_tokens[0]
                     )
                     response_prefix_lengths.append(response_marker_begin + 1)
 
@@ -190,7 +195,14 @@ def iterate_completion_batches(
             break
 
 
-def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
+def iterate_batches(
+    dataset,
+    tokenizer,
+    batch_size,
+    max_seq_length,
+    train=False,
+    response_generation_tokens=None,
+):
     # Sort by length:
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))
     if len(dataset) < batch_size:
@@ -253,6 +265,7 @@ def evaluate(
     max_seq_length=2048,
     loss: callable = default_loss,
     iterate_batches: callable = iterate_batches,
+    response_generation_tokens: Optional[List[int]] = None,
 ):
     all_losses = mx.array(0.0)
     ntokens = mx.array(0)
@@ -266,6 +279,7 @@ def evaluate(
             tokenizer=tokenizer,
             batch_size=batch_size,
             max_seq_length=max_seq_length,
+            response_generation_tokens=response_generation_tokens,
         ),
     ):
         losses, toks = loss(model, *batch)
@@ -341,6 +355,7 @@ def train(
             batch_size=args.batch_size,
             max_seq_length=args.max_seq_length,
             train=True,
+            response_generation_tokens=args.response_generation_tokens,
         ),
     ):
         # Report validation loss if needed, the first validation loss
@@ -356,6 +371,7 @@ def train(
                 num_batches=args.val_batches,
                 max_seq_length=args.max_seq_length,
                 iterate_batches=iterate_batches,
+                response_generation_tokens=args.response_generation_tokens,
             )
             val_time = time.perf_counter() - stop
             if rank == 0:

@@ -12,7 +12,7 @@ import mlx.optimizers as optim
 import numpy as np
 import yaml
 
-from .tokenizer_utils import TokenizerWrapper
+from .tokenizer_utils import TokenizerWrapper, no_bos_or_eos
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import (
@@ -63,6 +63,7 @@ CONFIG_DEFAULTS = {
     "lr_schedule": None,
     "hf_datasets": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
+    "response_template": None,
 }
 
 
@@ -217,6 +218,17 @@ def train_model(
     adapter_file = adapter_path / "adapters.safetensors"
     save_config(vars(args), adapter_path / "adapter_config.json")
 
+    if isinstance(args.response_template, str):
+        response_generation_tokens = tokenizer.encode(
+            args.response_template, add_special_tokens=False
+        )
+    else:
+        if not all([item.isinstance(int) for item in args.response_template]):
+            raise ValueError(
+                "Response template must be a list of integers if it is not a string."
+            )
+        response_generation_tokens = args.response_template
+
     # init training args
     training_args = TrainingArgs(
         batch_size=args.batch_size,
@@ -228,6 +240,9 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
+        response_generation_tokens=no_bos_or_eos(
+            response_generation_tokens, tokenizer.bos_token_id, tokenizer.eos_token_id
+        ),
     )
 
     model.train()
