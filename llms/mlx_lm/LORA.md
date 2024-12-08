@@ -76,6 +76,27 @@ You can specify the output location with `--adapter-path`.
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
 
+### Input Masking
+There are custom functions for masking the sequence of tokens associated with the `prompt` in a completion dataset
+during the loss calculation to ensure the model is not being penalized for not recreating the prompt.  To fine-tune 
+with masked input sequences, use the `--mask-inputs` argument.
+
+This functionality expects a ```response_template``` parameter in the configuration that is either a string representing
+a [string that indicate the start of the model's response](https://huggingface.co/docs/transformers/en/chat_templating#what-are-generation-prompts) 
+or its corresopnding tokens.  This is used to create the mask that excludes the tokens associated from the rest of
+the sequence from loss calculations.  For example (ChatML):
+
+```yaml
+response_template: "<|im_start|>assistant"
+```
+
+or (for the corresponding tokens of Gemma's response template)
+
+```yaml
+response_template: [106, 2516]
+```
+
+
 ### Evaluate
 
 To compute test set perplexity use:
@@ -267,7 +288,7 @@ it on the command line. For example, pass `--data mlx-community/wikisql` to
 train on the pre-formatted WikiwSQL data.
 
 Otherwise, provide a mapping of keys in the dataset to the features MLX LM
-expects. Use a YAML config to specify the Hugging Face dataset arguments. For
+expects. Use a YAML config to specify the Hugging Face (HF)  dataset arguments. For
 example:
 
 ```
@@ -279,10 +300,28 @@ hf_dataset:
 
 - Use `prompt_feature` and `completion_feature` to specify keys for a
   `completions` dataset. Use `text_feature` to specify the key for a `text`
-  dataset. 
+  dataset. Use `chat_feature` to specify the key for a chat dataset.
 
 - To specify the train, valid, or test splits, set the corresponding
   `{train,valid,test}_split` argument. 
+
+You can specify a list of HF datasets using the `hf_datasets` (plural) configuration, which is a list of records
+each with the same structure as above.  For example:
+
+```yaml
+hf_datasets: 
+- hf_dataset:
+    name: "Open-Orca/OpenOrca"
+    train_split: "train[:90%]"
+    valid_split: "train[-10%:]"
+    prompt_feature: "question"
+    completion_feature: "response"
+- hf_dataset:
+    name: "trl-lib/ultrafeedback_binarized"
+    train_split: "train[:90%]"
+    valid_split: "train[-10%:]"
+    chat_feature: "chosen"
+```
 
 - Arguments specified in `config` will be passed as keyword arguments to
   [`datasets.load_dataset`](https://huggingface.co/docs/datasets/v2.20.0/en/package_reference/loading_methods#datasets.load_dataset).

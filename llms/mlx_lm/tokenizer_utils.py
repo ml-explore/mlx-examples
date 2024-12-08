@@ -1,5 +1,6 @@
 import json
 from functools import partial
+from typing import List
 
 from transformers import AutoTokenizer
 
@@ -340,3 +341,8 @@ def load_tokenizer(model_path, tokenizer_config_extra={}):
         AutoTokenizer.from_pretrained(model_path, **tokenizer_config_extra),
         detokenizer_class,
     )
+
+
+def no_bos_or_eos(sequence: List, bos: int, eos: int) -> List:
+    removed_bos = sequence if sequence[0] != bos else sequence[1:]
+    return removed_bos[:-1] if removed_bos[-1] == eos else removed_bos
