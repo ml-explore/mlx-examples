@@ -249,12 +249,13 @@ def remove_lora_layers(model: nn.Module) -> nn.Module:
     return model
 
 
-def print_trainable_parameters(model):
-    def nparams(m):
-        if isinstance(m, (nn.QuantizedLinear, nn.QuantizedEmbedding)):
-            return m.weight.size * (32 // m.bits)
-        return sum(v.size for _, v in tree_flatten(m.parameters()))
+def nparams(module):
+    if isinstance(module, (nn.QuantizedLinear, nn.QuantizedEmbedding)):
+        return module.weight.size * 32 // module.bits
+    return sum(v.size for _, v in tree_flatten(module.parameters()))
 
+
+def print_trainable_parameters(model):
     leaf_modules = tree_flatten(
         model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
     )
