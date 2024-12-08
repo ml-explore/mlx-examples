@@ -259,7 +259,7 @@ class TokenizerWrapper:
     ):
         self._tokenizer = tokenizer
         self._detokenizer = detokenizer_class(tokenizer)
-        self._eos_token_ids = eos_token_ids or [tokenizer.eos_token_id]
+        self._eos_token_ids = set(eos_token_ids) if eos_token_ids is not None else {tokenizer.eos_token_id}
 
     def __getattr__(self, attr):
         if attr == "detokenizer":
@@ -276,7 +276,7 @@ class TokenizerWrapper:
             if attr == "detokenizer":
                 raise AttributeError("Cannot set the detokenizer.")
             elif attr == "eos_token_ids":
-                self._eos_token_ids = value
+                self._eos_token_ids = set(value) if value is not None else set()
         elif attr.startswith("_"):
             super().__setattr__(attr, value)
         else:
@@ -345,7 +345,7 @@ def load_tokenizer(model_path, tokenizer_config_extra={}, model_config={}):
                 detokenizer_class = BPEStreamingDetokenizer
 
     eos_token_id = model_config["eos_token_id"]
-    eos_token_ids = eos_token_id if isinstance(eos_token_id, list) else [eos_token_id]
+    eos_token_ids = set(eos_token_id) if isinstance(eos_token_id, list) else {eos_token_id}
 
     return TokenizerWrapper(
         AutoTokenizer.from_pretrained(model_path, **tokenizer_config_extra),
