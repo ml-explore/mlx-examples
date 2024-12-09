@@ -289,4 +289,4 @@ if __name__ == "__main__":
             tic = time.time()
 
     save_adapters("final_adapters.safetensors", flux, args)
-    print(f"Training successful. Saved final weights to {args.adapter_file}.")
+    print("Training successful.")
