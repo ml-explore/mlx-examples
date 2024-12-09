@@ -132,7 +132,7 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         self.tokens = []
 
     def _flush(self):
-        text = self._unflushed.replace(self._sep, b" ").decode("utf-8")
+        text = self._unflushed.replace(self._sep, b" ").decode("utf-8", "replace")
         if not self.text and self.trim_space and text and text[0] == " ":
             text = text[1:]
         self.text += text
@@ -202,7 +202,7 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         if is_added or self._byte_decoder[v[0]] == 32:
             current_text = bytearray(
                 self._byte_decoder[c] for c in self._unflushed
-            ).decode("utf-8")
+            ).decode("utf-8", "replace")
             self.text += self._maybe_trim_space(current_text)
             if is_added:
                 self.text += v
@@ -214,7 +214,8 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
 
     def finalize(self):
         current_text = bytearray(self._byte_decoder[c] for c in self._unflushed).decode(
-            "utf-8"
+            "utf-8",
+            "replace",
         )
         self.text += self._maybe_trim_space(current_text)
         self._unflushed = ""
