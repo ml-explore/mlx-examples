@@ -812,6 +812,25 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_exaone(self):
+        from mlx_lm.models import exaone
+
+        args = exaone.ModelArgs(
+            model_type="exaone",
+            hidden_size=128,
+            num_layers=4,
+            intermediate_size=256,
+            num_attention_heads=8,
+            num_key_value_heads=2,
+            vocab_size=1000,
+            layer_norm_epsilon=1e-4,
+            rope_theta=10000,
+        )
+        model = exaone.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_layers
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
