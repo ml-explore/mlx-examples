@@ -2,8 +2,10 @@
 import unittest
 
 import mlx.core as mx
+import mlx.nn as nn
 from mlx.utils import tree_map
 from mlx_lm.models.cache import KVCache, RotatingKVCache, make_prompt_cache
+from mlx_lm.models import rope_utils
 
 
 class TestModels(unittest.TestCase):
@@ -125,6 +127,16 @@ class TestModels(unittest.TestCase):
         k, v = cache.update_and_fetch(x, x)
         self.assertEqual(cache.offset, 22)
         self.assertTrue(mx.allclose(x, k[..., -2:, :]))
+
+    def test_rope(self):
+        rope = rope_utils.initialize_rope(32, base=100, traditional=False)
+        self.assertTrue(isinstance(rope, nn.RoPE))
+
+        rope = rope_utils.initialize_rope(32, base=100, traditional=False, scaling_config={"rope_type": "linear", "factor": 10.0})
+        self.assertTrue(isinstance(rope, nn.RoPE))
+
+        rope = rope_utils.initialize_rope(32, base=100, traditional=False, scaling_config={"rope_type": "llama3", "factor": 2.0})
+        self.assertTrue(isinstance(rope, rope_utils.Llama3RoPE))
 
     def model_test_runner(self, model, model_type, vocab_size, num_layers):
 

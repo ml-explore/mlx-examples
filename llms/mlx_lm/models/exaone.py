@@ -7,6 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
+from .rope_utils import initialize_rope
 
 
 @dataclass
@@ -28,76 +29,6 @@ class ModelArgs(BaseModelArgs):
     attention_bias: bool = False
     mlp_bias: bool = False
 
-    def __post_init__(self):
-        if self.rope_scaling:
-            rope_type = self.rope_scaling.get("type") or self.rope_scaling.get(
-                "rope_type"
-            )
-            if rope_type is None:
-                raise ValueError(
-                    "rope_scaling must contain either 'type' or 'rope_type'"
-                )
-            if rope_type not in ["linear", "dynamic", "llama3", "default"]:
-                raise ValueError(
-                    "rope_scaling 'type' currently only supports 'linear', 'dynamic', 'llama3', or 'default'"
-                )
-
-
-class ExaoneRotaryEmbedding(nn.Module):
-    def __init__(
-        self,
-        dims: int,
-        max_position_embeddings: int = 2048,
-        traditional: bool = False,
-        base: float = 10000,
-        scale: float = 1.0,
-        rope_type: str = "default",
-        rope_scaling: Optional[Dict[str, Union[float, str]]] = None,
-    ):
-        super().__init__()
-        self.dims = dims
-        self.max_position_embeddings = max_position_embeddings
-        self.traditional = traditional
-        self.scale = scale
-        self.rope_type = rope_type
-        self.rope_scaling = rope_scaling
-        self.base = base
-
-    def __call__(self, x, offset: int = 0):
-        return mx.fast.rope(
-            x,
-            self.dims,
-            traditional=self.traditional,
-            base=self.base,
-            scale=self.scale,
-            offset=offset,
-            freqs=None,
-        )
-
-
-def initialize_rope(args: ModelArgs):
-    head_dim = args.head_dim or (args.hidden_size // args.num_attention_heads)
-    rope_scaling = args.rope_scaling
-    rope_type = "default"
-    rope_scale = 1.0
-
-    if rope_scaling is not None:
-        rope_type = rope_scaling.get("type") or rope_scaling.get("rope_type", "default")
-        if rope_type == "linear":
-            rope_scale = 1 / rope_scaling["factor"]
-        elif rope_type in ["llama3", "dynamic"]:
-            rope_scale = 1.0
-
-    return ExaoneRotaryEmbedding(
-        dims=head_dim,
-        max_position_embeddings=args.max_position_embeddings or 2048,
-        traditional=args.rope_traditional,
-        base=args.rope_theta,
-        scale=rope_scale,
-        rope_type=rope_type,
-        rope_scaling=rope_scaling,
-    )
-
 
 class AttentionModule(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -113,7 +44,8 @@ class AttentionModule(nn.Module):
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=args.attention_bias)
         self.out_proj = nn.Linear(n_heads * head_dim, dim, bias=args.attention_bias)
 
-        self.rope = initialize_rope(args)
+        self.rope = initialize_rope(
+            self.head_dim, args.rope_theta, args.rope_traditional, args.rope_scaling, args.max_position_embeddings)
 
     def __call__(
         self, x: mx.array, mask: Optional[mx.array] = None, cache: Optional[Any] = None
