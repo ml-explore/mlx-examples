@@ -144,6 +144,8 @@ def linear_to_lora_layers(
                 "mixer.out_proj",
             ]
         )
+    elif model.model_type == "exaone":
+        keys = set(["attn.attention.q_proj", "attn.attention.v_proj"])
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 
