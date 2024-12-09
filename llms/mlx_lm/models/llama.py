@@ -56,7 +56,12 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
 
         self.rope = initialize_rope(
-            self.head_dim, args.rope_theta, args.rope_traditional, args.rope_scaling, args.max_position_embeddings)
+            self.head_dim,
+            args.rope_theta,
+            args.rope_traditional,
+            args.rope_scaling,
+            args.max_position_embeddings,
+        )
 
     def __call__(
         self,

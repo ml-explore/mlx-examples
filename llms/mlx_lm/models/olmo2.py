@@ -56,8 +56,12 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
 
         self.rope = initialize_rope(
-            self.head_dim, args.rope_theta, args.rope_traditional, args.rope_scaling, args.max_position_embeddings)
-
+            self.head_dim,
+            args.rope_theta,
+            args.rope_traditional,
+            args.rope_scaling,
+            args.max_position_embeddings,
+        )
 
         self.q_norm = nn.RMSNorm(n_heads * head_dim, args.rms_norm_eps)
         self.k_norm = nn.RMSNorm(n_kv_heads * head_dim, args.rms_norm_eps)

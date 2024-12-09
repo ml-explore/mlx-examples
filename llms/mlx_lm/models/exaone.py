@@ -45,7 +45,12 @@ class AttentionModule(nn.Module):
         self.out_proj = nn.Linear(n_heads * head_dim, dim, bias=args.attention_bias)
 
         self.rope = initialize_rope(
-            self.head_dim, args.rope_theta, args.rope_traditional, args.rope_scaling, args.max_position_embeddings)
+            self.head_dim,
+            args.rope_theta,
+            args.rope_traditional,
+            args.rope_scaling,
+            args.max_position_embeddings,
+        )
 
     def __call__(
         self, x: mx.array, mask: Optional[mx.array] = None, cache: Optional[Any] = None

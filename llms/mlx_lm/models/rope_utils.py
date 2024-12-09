@@ -1,6 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
 from typing import Optional
+
 import mlx.core as mx
 import mlx.nn as nn
 
@@ -60,9 +61,17 @@ class Llama3RoPE(nn.Module):
         )
 
 
-def initialize_rope(dims, base, traditional, scaling_config: Optional[dict] = None, max_position_embeddings: Optional[int] = None):
+def initialize_rope(
+    dims,
+    base,
+    traditional,
+    scaling_config: Optional[dict] = None,
+    max_position_embeddings: Optional[int] = None,
+):
     if scaling_config is not None:
-        rope_type = scaling_config.get("type") or scaling_config.get("rope_type", "default")
+        rope_type = scaling_config.get("type") or scaling_config.get(
+            "rope_type", "default"
+        )
     else:
         rope_type = "default"
 
