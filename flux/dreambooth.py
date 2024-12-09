@@ -149,12 +149,6 @@ def setup_arg_parser():
         "--output-dir", default="mlx_output", help="Folder to save the checkpoints in"
     )
 
-    parser.add_argument(
-        "--final-adapter-file",
-        default="final_adapters.safetensors",
-        help="The file name in the output-dir of the final adapter including the extension .safetensors",
-    )
-
     parser.add_argument("dataset")
     return parser
 
@@ -294,5 +288,5 @@ if __name__ == "__main__":
             losses = []
             tic = time.time()
 
-    save_adapters(args.final_adapter_file, flux, args)
-    print(f"Training successful. Saved final weights to {args.final_adapter_file}.")
+    save_adapters("final_adapters.safetensors", flux, args)
+    print(f"Training successful. Saved final weights to {args.adapter_file}.")
