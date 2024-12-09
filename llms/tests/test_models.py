@@ -827,9 +827,7 @@ class TestModels(unittest.TestCase):
             rope_theta=10000,
         )
         model = exaone.Model(args)
-        self.model_test_runner(
-            model, args.model_type, args.vocab_size, args.num_layers
-        )
+        self.model_test_runner(model, args.model_type, args.vocab_size, args.num_layers)
 
 
 if __name__ == "__main__":
