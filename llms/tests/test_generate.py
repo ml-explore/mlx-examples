@@ -2,6 +2,7 @@
 
 import unittest
 
+from mlx_lm.sample_utils import make_logits_processors
 from mlx_lm.utils import generate, load
 
 
@@ -25,8 +26,8 @@ class TestGenerate(unittest.TestCase):
             self.tokenizer,
             "hello",
             max_tokens=5,
+            logits_processors=make_logits_processors(logit_bias),
             verbose=False,
-            logit_bias=logit_bias,
         )
         self.assertEqual(text, "!!!!!")
 

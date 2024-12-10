@@ -61,7 +61,7 @@ prompt = tokenizer.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 
-response = generate(model, tokenizer, prompt=prompt, verbose=True)
+text = generate(model, tokenizer, prompt=prompt, verbose=True)
 ```
 
 To see a description of all the arguments you can do:
@@ -77,7 +77,7 @@ to see how to use the API in more detail.
 The `mlx-lm` package also comes with functionality to quantize and optionally
 upload models to the Hugging Face Hub.
 
-You can convert models in the Python API with:
+You can convert models using the Python API:
 
 ```python
 from mlx_lm import convert
@@ -100,8 +100,9 @@ To see a description of all the arguments you can do:
 
 #### Streaming
 
-For streaming generation, use the `stream_generate` function. This returns a
-generator object which streams the output text, token, and log probabilities.
+For streaming generation, use the `stream_generate` function. This yields
+a generation response object.
+
 For example,
 
 ```python
@@ -117,8 +118,8 @@ prompt = tokenizer.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 
-for text, *_ in stream_generate(model, tokenizer, prompt, max_tokens=512):
-    print(t, end="", flush=True)
+for response in stream_generate(model, tokenizer, prompt, max_tokens=512):
+    print(response.text, end="", flush=True)
 print()
 ```
 
@@ -161,6 +162,10 @@ mlx_lm.convert \
     -q \
     --upload-repo mlx-community/my-4bit-mistral
 ```
+
+Models can also be converted and quantized directly in the
+[mlx-my-repo]https://huggingface.co/spaces/mlx-community/mlx-my-repo) Hugging
+Face Space.
 
 ### Long Prompts and Generations 
 

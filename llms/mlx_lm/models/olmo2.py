@@ -63,6 +63,9 @@ class Attention(nn.Module):
             args.max_position_embeddings,
         )
 
+        self.q_norm = nn.RMSNorm(n_heads * head_dim, args.rms_norm_eps)
+        self.k_norm = nn.RMSNorm(n_kv_heads * head_dim, args.rms_norm_eps)
+
     def __call__(
         self,
         x: mx.array,
@@ -72,6 +75,8 @@ class Attention(nn.Module):
         B, L, D = x.shape
 
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+        queries = self.q_norm(queries)
+        keys = self.k_norm(keys)
 
         # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
@@ -120,8 +125,10 @@ class TransformerBlock(nn.Module):
         self.hidden_size = args.hidden_size
         self.self_attn = Attention(args)
         self.mlp = MLP(args)
-        self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(
+            args.hidden_size, eps=args.rms_norm_eps
+        )
+        self.post_feedforward_layernorm = nn.RMSNorm(
             args.hidden_size, eps=args.rms_norm_eps
         )
         self.args = args
@@ -132,9 +139,9 @@ class TransformerBlock(nn.Module):
         mask: Optional[mx.array] = None,
         cache: Optional[Any] = None,
     ) -> mx.array:
-        r = self.self_attn(self.input_layernorm(x), mask, cache)
+        r = self.post_attention_layernorm(self.self_attn(x, mask, cache))
         h = x + r
-        r = self.mlp(self.post_attention_layernorm(h))
+        r = self.post_feedforward_layernorm(self.mlp(h))
         out = h + r
         return out
 

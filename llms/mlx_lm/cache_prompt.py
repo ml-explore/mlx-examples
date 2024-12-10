@@ -8,7 +8,7 @@ import time
 import mlx.core as mx
 
 from .models.cache import make_prompt_cache, save_prompt_cache
-from .utils import load, maybe_quantize_kv_cache
+from .utils import generate_step, load
 
 DEFAULT_QUANTIZED_KV_START = 5000
 
@@ -49,12 +49,6 @@ def setup_arg_parser():
         "--use-default-chat-template",
         action="store_true",
         help="Use the default chat template",
-    )
-    parser.add_argument(
-        "--cache-limit-gb",
-        type=int,
-        default=None,
-        help="Set the MLX cache limit in GB",
     )
     parser.add_argument(
         "--max-kv-size",
@@ -99,9 +93,6 @@ def main():
     parser = setup_arg_parser()
     args = parser.parse_args()
 
-    if args.cache_limit_gb is not None:
-        mx.metal.set_cache_limit(args.cache_limit_gb * 1024 * 1024 * 1024)
-
     # Building tokenizer_config
     tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
     if args.eos_token is not None:
@@ -144,26 +135,28 @@ def main():
     y = mx.array(tokenizer.encode(prompt))
 
     # Process the prompt
-    processed = 0
-    step_size = 512
     start = time.time()
     max_msg_len = 0
-    while y.size > 0:
 
-        model(y[:step_size][None], cache=cache)
-        mx.eval([c.state for c in cache])
-        mx.metal.clear_cache()
-        processed += min(y.size, step_size)
-        y = y[step_size:]
+    def callback(processed, total_tokens):
         current = time.time()
         speed = processed / (current - start)
         msg = f"\rProcessed {processed:6d} tokens ({speed:6.2f} tok/s)"
+        nonlocal max_msg_len
         max_msg_len = max(max_msg_len, len(msg))
         print(msg + " " * (max_msg_len - len(msg)), end="", flush=True)
 
-        maybe_quantize_kv_cache(
-            cache, args.quantized_kv_start, args.kv_group_size, args.kv_bits
-        )
+    for _ in generate_step(
+        y,
+        model,
+        max_tokens=0,
+        prompt_cache=cache,
+        kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
+        prompt_progress_callback=callback,
+    ):
+        pass
 
     print()
     print(f"Peak memory: {mx.metal.get_peak_memory() / 1e9:.3f} GB")

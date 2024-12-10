@@ -7,6 +7,7 @@ import sys
 import mlx.core as mx
 
 from .models.cache import QuantizedKVCache, load_prompt_cache
+from .sample_utils import make_sampler
 from .utils import generate, load
 
 DEFAULT_PROMPT = "hello"
@@ -42,15 +43,15 @@ def setup_arg_parser():
         help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
-        "--trust-remote-code",
-        action="store_true",
-        help="Enable trusting remote code for tokenizer",
-    )
-    parser.add_argument(
         "--eos-token",
         type=str,
         default=None,
         help="End of sequence token for tokenizer",
+    )
+    parser.add_argument(
+        "--system-prompt",
+        default=None,
+        help="System prompt to be used for the chat template",
     )
     parser.add_argument(
         "--prompt",
@@ -76,7 +77,7 @@ def setup_arg_parser():
     )
     parser.add_argument(
         "--min-tokens-to-keep",
-        type=float,
+        type=int,
         default=DEFAULT_MIN_TOKENS_TO_KEEP,
         help="Minimum tokens to keep for min-p sampling.",
     )
@@ -96,11 +97,6 @@ def setup_arg_parser():
         type=str2bool,
         default=True,
         help="Log verbose output when 'True' or 'T' or only print the response when 'False' or 'F'",
-    )
-    parser.add_argument(
-        "--colorize",
-        action="store_true",
-        help="Colorize output based on T[0] probability",
     )
     parser.add_argument(
         "--max-kv-size",
@@ -137,33 +133,6 @@ def setup_arg_parser():
     return parser
 
 
-def colorprint(color, s):
-    color_codes = {
-        "black": 30,
-        "red": 31,
-        "green": 32,
-        "yellow": 33,
-        "blue": 34,
-        "magenta": 35,
-        "cyan": 36,
-        "white": 39,
-    }
-    ccode = color_codes.get(color, 30)
-    print(f"\033[1m\033[{ccode}m{s}\033[0m", end="", flush=True)
-
-
-def colorprint_by_t0(s, t0):
-    if t0 > 0.95:
-        color = "white"
-    elif t0 > 0.70:
-        color = "green"
-    elif t0 > 0.30:
-        color = "yellow"
-    else:
-        color = "red"
-    colorprint(color, s)
-
-
 def main():
     parser = setup_arg_parser()
     args = parser.parse_args()
@@ -191,8 +160,7 @@ def main():
     tokenizer_config = (
         {} if not using_cache else json.loads(metadata["tokenizer_config"])
     )
-    if args.trust_remote_code:
-        tokenizer_config["trust_remote_code"] = True
+    tokenizer_config["trust_remote_code"] = True
     if args.eos_token is not None:
         tokenizer_config["eos_token"] = args.eos_token
 
@@ -224,12 +192,16 @@ def main():
         hasattr(tokenizer, "apply_chat_template")
         and tokenizer.chat_template is not None
     ):
-        messages = [
+        if args.system_prompt is not None:
+            messages = [{"role": "system", "content": args.system_prompt}]
+        else:
+            messages = []
+        messages.append(
             {
                 "role": "user",
                 "content": sys.stdin.read() if args.prompt == "-" else args.prompt,
             }
-        ]
+        )
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -237,8 +209,9 @@ def main():
         # Treat the prompt as a suffix assuming that the prefix is in the
         # stored kv cache.
         if using_cache:
+            messages[-1]["content"] = "<query>"
             test_prompt = tokenizer.apply_chat_template(
-                [{"role": "user", "content": "<query>"}],
+                messages,
                 tokenize=False,
                 add_generation_prompt=True,
             )
@@ -246,21 +219,14 @@ def main():
     else:
         prompt = args.prompt
 
-    if args.colorize and not args.verbose:
-        raise ValueError("Cannot use --colorize with --verbose=False")
-    formatter = colorprint_by_t0 if args.colorize else None
-
+    sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
     response = generate(
         model,
         tokenizer,
         prompt,
-        args.max_tokens,
+        max_tokens=args.max_tokens,
         verbose=args.verbose,
-        formatter=formatter,
-        temp=args.temp,
-        top_p=args.top_p,
-        min_p=args.min_p,
-        min_tokens_to_keep=args.min_tokens_to_keep,
+        sampler=sampler,
         max_kv_size=args.max_kv_size,
         prompt_cache=prompt_cache if using_cache else None,
         kv_bits=args.kv_bits,
