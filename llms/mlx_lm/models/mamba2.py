@@ -65,6 +65,7 @@ def silu(x):
 
 def ssd(x, A, B, C, chunk_size):
     batch, seqlen, nheads, dim = x.shape
+
     B = mx.expand_dims(B, axis=2)
     C = mx.expand_dims(C, axis=2)
     
