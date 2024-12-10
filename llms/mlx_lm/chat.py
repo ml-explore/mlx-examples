@@ -79,7 +79,7 @@ def main():
             model,
             tokenizer,
             prompt,
-            args.max_tokens,
+            max_tokens=args.max_tokens,
             sampler=make_sampler(args.temp, args.top_p),
             prompt_cache=prompt_cache,
         ):
