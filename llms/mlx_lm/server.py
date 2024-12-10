@@ -465,7 +465,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         text = ""
         tic = time.perf_counter()
-        sampler = make_sampler(self.temperature)
+        sampler = make_sampler(self.temperature, top_p=self.top_p)
         logits_processors = make_logits_processors(
             self.logit_bias, self.repetition_penalty, self.repetition_context_size
         )
