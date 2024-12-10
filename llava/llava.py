@@ -104,31 +104,21 @@ class LlavaModel(nn.Module):
         self, image_features, inputs_embeds, input_ids
     ):
         image_token_index = self.config.image_token_index
-        num_images, num_image_patches, embed_dim = image_features.shape
+        batch_size, num_image_patches, embed_dim = image_features.shape
 
         # Positions of <image> tokens in input_ids, assuming batch size is 1
-        image_positions = np.where(input_ids[0] == image_token_index)[0].tolist()
+        image_positions = mx.array(
+            np.where(input_ids[0] == image_token_index)[0], mx.uint32
+        )
 
-        if len(image_positions) != num_images:
+        if len(image_positions) != num_image_patches:
             raise ValueError(
                 f"The number of image tokens ({len(image_positions)}) does not "
-                f" match the number of image inputs ({num_images})."
+                f" match the number of image patches ({num_image_patches})."
             )
 
-        text_segments = []
-        start_idx = 0
-
-        for position in image_positions:
-            text_segments.append(inputs_embeds[:, start_idx:position])
-            start_idx = position + 1
-
-        image_embeddings = mx.split(image_features, image_features.shape[0])
-        final_embeddings = [v for p in zip(text_segments, image_embeddings) for v in p]
-        final_embeddings += [inputs_embeds[:, start_idx:]]
-
-        # Create a final embedding of shape
-        # (1, num_image_patches*num_images + sequence_len, embed_dim)
-        return mx.concatenate(final_embeddings, axis=1)
+        inputs_embeds[0, image_positions] = image_features
+        return inputs_embeds
 
     def __call__(self, input_ids: mx.array, pixel_values: mx.array, cache=None):
         input_embddings = self.get_input_embeddings(input_ids, pixel_values)
