@@ -76,9 +76,9 @@ def main():
             messages, tokenize=False, add_generation_prompt=True
         )
         for response in stream_generate(
-            model,
-            tokenizer,
-            prompt,
+            model=model,
+            tokenizer=tokenizer,
+            prompt=prompt,
             max_tokens=args.max_tokens,
             sampler=make_sampler(args.temp, args.top_p),
             prompt_cache=prompt_cache,
