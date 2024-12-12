@@ -51,7 +51,7 @@ class StreamingDetokenizer:
         text = self.text
         segment = text[self.offset :]
         self.offset = len(text)
-        return text
+        return segment
 
 
 class NaiveStreamingDetokenizer(StreamingDetokenizer):
