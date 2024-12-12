@@ -299,6 +299,9 @@ def generate_step(
         prompt_processed_tokens = 0
         while y.size > prefill_step_size:
             model(y[:prefill_step_size][None], cache=prompt_cache)
+            maybe_quantize_kv_cache(
+                prompt_cache, quantized_kv_start, kv_group_size, kv_bits
+            )
             mx.eval([c.state for c in prompt_cache])
             prompt_progress_callback(prompt_processed_tokens, total_prompt_tokens)
             prompt_processed_tokens += prefill_step_size
