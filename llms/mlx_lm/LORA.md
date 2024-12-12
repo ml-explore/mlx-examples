@@ -7,12 +7,37 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Mistral
 - Llama
 - Phi2
+- Phi3
+- Phi3 Small
+- PhiMOE
+- Phixtral
+- Plamo
 - Mixtral
+- Qwen
 - Qwen2
+- Qwen2 MOE
 - Gemma
+- Gemma2
 - OLMo
+- OLMo2
 - MiniCPM
 - InternLM2
+- Mamba
+- Mamba2
+- EXAONE
+- Hunyuan
+- GPT 2
+- GPT Neo
+- GPT BigCode
+- Deepseek
+- Deepseek2
+- OpenLM
+- StableLM
+- Cohere
+- DBRX
+- Nemotron
+- Recurrent Gemma
+- Starcoder
 
 ## Contents
 
