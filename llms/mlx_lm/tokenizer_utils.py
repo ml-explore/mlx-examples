@@ -3,8 +3,6 @@ from functools import partial
 
 from transformers import AutoTokenizer
 
-REPLACEMENT_CHAR = "\ufffd"
-
 
 class StreamingDetokenizer:
     """The streaming detokenizer interface so that we can detokenize one token at a time.
@@ -51,11 +49,9 @@ class StreamingDetokenizer:
     def last_segment(self):
         """Return the last segment of readable text since last time this property was accessed."""
         text = self.text
-        if text and text[-1] != REPLACEMENT_CHAR:
-            segment = text[self.offset :]
-            self.offset = len(text)
-            return segment
-        return ""
+        segment = text[self.offset :]
+        self.offset = len(text)
+        return text
 
 
 class NaiveStreamingDetokenizer(StreamingDetokenizer):
