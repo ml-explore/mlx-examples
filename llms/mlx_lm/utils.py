@@ -260,6 +260,8 @@ def generate_step(
         kv_bits=kv_bits,
     )
 
+    sampler = sampler or (lambda x: mx.argmax(x, axis=-1))
+
     def _step(y):
         with mx.stream(generation_stream):
             logits = model(y[None], cache=prompt_cache)
