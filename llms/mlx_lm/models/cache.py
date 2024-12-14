@@ -6,7 +6,6 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
-
 def make_prompt_cache(
     model: nn.Module,
     max_kv_size: Optional[int] = None,
@@ -33,7 +32,7 @@ def make_prompt_cache(
         ]
     else:
         return [KVCache() for _ in range(num_layers)]
-
+        
 
 def save_prompt_cache(file_name: str, cache: List[Any], metadata: Dict[str, str] = {}):
     """
@@ -264,6 +263,13 @@ class KVCache(_BaseCache):
         n = min(self.offset, n)
         self.offset -= n
         return n
+    def trim_from_behind(self, n):
+        old_size = self.keys.shape[2]
+        self.keys = self.keys[..., -n:, :]
+        self.values = self.values[..., -n:, :]
+        new_size = self.keys.shape[2]
+        trimmed = old_size - new_size
+        self.offset -= trimmed
 
     def to_quantized(self, group_size: int = 64, bits: int = 4) -> QuantizedKVCache:
         quant_cache = QuantizedKVCache(group_size=group_size, bits=bits)
@@ -416,7 +422,8 @@ class RotatingKVCache(_BaseCache):
         return n
 
     def to_quantized(self, group_size: int = 64, bits: int = 4) -> QuantizedKVCache:
-        raise NotImplementedError("RotatingKVCache Quantization NYI")
+        return self
+        #raise NotImplementedError("RotatingKVCache Quantization NYI")
 
 
 class MambaCache(_BaseCache):

@@ -34,18 +34,22 @@ def create_causal_mask(N: int, offset: int = 0, window_size: Optional[int] = Non
     return mask * -1e9
 
 
-def create_attention_mask(h: mx.array, cache: Optional[Any] = None):
+def create_attention_mask(h: mx.array, cache: Optional[Any] = None, reference_cache_idx: Optional[int] = None) -> mx.array:
     T = h.shape[1]
     if T > 1:
         window_size = None
         offset = 0
         if cache is not None and cache[0] is not None:
-            c = cache[0]
+            if reference_cache_idx is not None:
+                c = cache[reference_cache_idx]
+            else:
+                c = cache[0]
             if hasattr(c, "max_size"):
                 offset = min(c.max_size, c.offset)
                 window_size = c.max_size
             else:
                 offset = c.offset
+        
         mask = create_causal_mask(T, offset, window_size=window_size)
         mask = mask.astype(h.dtype)
     else:
