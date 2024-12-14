@@ -503,10 +503,10 @@ def stream_generate(
     detokenizer = tokenizer.detokenizer
 
     if draft_model is None:
-        kwargs.pop("num_draft_tokens")
+        kwargs.pop("num_draft_tokens", None)
         token_generator = generate_step(prompt, model, **kwargs)
     else:
-        kwargs.pop("max_kv_size")
+        kwargs.pop("max_kv_size", None)
         token_generator = speculative_generate_step(
             prompt, model, draft_model, **kwargs
         )
