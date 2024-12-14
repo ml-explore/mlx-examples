@@ -96,6 +96,7 @@ def linear_to_lora_layers(
         "gemma2",
         "starcoder2",
         "cohere",
+        "cohere2",
         "minicpm",
         "deepseek",
         "olmo2",
