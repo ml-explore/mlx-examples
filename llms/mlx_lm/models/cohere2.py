@@ -29,7 +29,6 @@ class ModelArgs(BaseModelArgs):
 
 
 class LayerNorm2D(nn.Module):
-
     def __init__(self, d1, d2, eps):
         super().__init__()
         self.weight = mx.zeros((d1, d2))
