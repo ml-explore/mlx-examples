@@ -131,6 +131,18 @@ def setup_arg_parser():
         type=int,
         default=DEFAULT_QUANTIZED_KV_START,
     )
+    parser.add_argument(
+        "--draft-model",
+        type=str,
+        help="A model to be used for speculative decoding.",
+        default=None,
+    )
+    parser.add_argument(
+        "--num-draft-tokens",
+        type=int,
+        help="Number of tokens to draft when using speculative decoding.",
+        default=2,
+    )
     return parser
 
 
@@ -211,11 +223,16 @@ def main():
                 add_generation_prompt=True,
             )
             prompt = prompt[test_prompt.index("<query>") :]
-
         prompt = tokenizer.encode(prompt, add_special_tokens=False)
     else:
         prompt = tokenizer.encode(prompt)
 
+    if args.draft_model is not None:
+        draft_model, draft_tokenizer = load(args.draft_model)
+        if draft_tokenizer.vocab_size != tokenizer.vocab_size:
+            raise ValueError("Draft model tokenizer does not match model tokenizer.")
+    else:
+        draft_model = None
     sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
     response = generate(
         model,
@@ -229,6 +246,8 @@ def main():
         kv_bits=args.kv_bits,
         kv_group_size=args.kv_group_size,
         quantized_kv_start=args.quantized_kv_start,
+        draft_model=draft_model,
+        num_draft_tokens=args.num_draft_tokens,
     )
     if not args.verbose:
         print(response)
