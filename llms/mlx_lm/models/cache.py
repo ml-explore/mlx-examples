@@ -263,13 +263,6 @@ class KVCache(_BaseCache):
         n = min(self.offset, n)
         self.offset -= n
         return n
-    def trim_from_behind(self, n):
-        old_size = self.keys.shape[2]
-        self.keys = self.keys[..., -n:, :]
-        self.values = self.values[..., -n:, :]
-        new_size = self.keys.shape[2]
-        trimmed = old_size - new_size
-        self.offset -= trimmed
 
     def to_quantized(self, group_size: int = 64, bits: int = 4) -> QuantizedKVCache:
         quant_cache = QuantizedKVCache(group_size=group_size, bits=bits)
