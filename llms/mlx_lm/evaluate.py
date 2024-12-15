@@ -32,7 +32,7 @@ def _len_longest_common_prefix(a, b):
 
 
 def _rstrip_until(s, untils):
-    """Limit a string <s> to the first occurence of any substring in untils."""
+    """Limit a string <s> to the first occurrence of any substring in untils."""
     l = len(s)
     f = [s.find(u) for u in untils]
     f = [l if x < 0 else x for x in f]
