@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
-import codecs
 import json
 import sys
 
@@ -189,7 +188,7 @@ def main():
     elif using_cache:
         tokenizer.chat_template = metadata["chat_template"]
 
-    prompt = codecs.decode(args.prompt, "unicode_escape")
+    prompt = args.prompt.replace("\\n", "\n").replace("\\t", "\t")
     prompt = sys.stdin.read() if prompt == "-" else prompt
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
