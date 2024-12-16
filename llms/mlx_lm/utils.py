@@ -187,9 +187,10 @@ def maybe_quantize_kv_cache(prompt_cache, quantized_kv_start, kv_group_size, kv_
         and prompt_cache[0].offset > quantized_kv_start
     ):
         for i in range(len(prompt_cache)):
-            prompt_cache[i] = prompt_cache[i].to_quantized(
-                group_size=kv_group_size, bits=kv_bits
-            )
+            if isinstance(prompt_cache[i], cache.KVCache):
+                prompt_cache[i] = prompt_cache[i].to_quantized(
+                    group_size=kv_group_size, bits=kv_bits
+                )
 
 
 def generate_step(
