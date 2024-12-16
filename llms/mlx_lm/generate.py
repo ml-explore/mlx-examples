@@ -190,7 +190,7 @@ def main():
         tokenizer.chat_template = metadata["chat_template"]
 
     prompt = codecs.decode(args.prompt, "unicode_escape")
-
+    prompt = sys.stdin.read() if prompt == "-" else prompt
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
         and tokenizer.chat_template is not None
@@ -199,12 +199,7 @@ def main():
             messages = [{"role": "system", "content": args.system_prompt}]
         else:
             messages = []
-        messages.append(
-            {
-                "role": "user",
-                "content": sys.stdin.read() if prompt == "-" else prompt,
-            }
-        )
+        messages.append({"role": "user", "content": prompt})
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
