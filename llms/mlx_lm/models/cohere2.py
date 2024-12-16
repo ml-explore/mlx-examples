@@ -205,11 +205,3 @@ class Model(nn.Module):
     @property
     def layers(self):
         return self.model.layers
-
-    @property
-    def head_dim(self):
-        return self.args.head_dim
-
-    @property
-    def n_kv_heads(self):
-        return self.args.num_key_value_heads
