@@ -6,8 +6,9 @@ from typing import Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
+from .base import BaseModelArgs, create_causal_mask, scaled_dot_product_attention
 from .cache import KVCache, RotatingKVCache
+
 
 @dataclass
 class ModelArgs(BaseModelArgs):
@@ -26,16 +27,6 @@ class ModelArgs(BaseModelArgs):
     layer_norm_bias: bool = False
     sliding_window: int = 4096
     sliding_window_pattern: int = 4
-
-
-class LayerNorm2D(nn.Module):
-    def __init__(self, d1, d2, eps):
-        super().__init__()
-        self.weight = mx.zeros((d1, d2))
-        self.eps = eps
-
-    def __call__(self, x):
-        return self.weight * mx.fast.layer_norm(x, None, None, self.eps)
 
 
 class Attention(nn.Module):
@@ -64,11 +55,7 @@ class Attention(nn.Module):
 
         self.rope = nn.RoPE(head_dim, traditional=True, base=args.rope_theta)
 
-        self.sliding_window = (
-            args.sliding_window
-            if (layer_idx + 1) % args.sliding_window_pattern != 0
-            else None
-        )
+        self.use_sliding_window = (layer_idx + 1) % args.sliding_window_pattern != 0
 
     def __call__(
         self,
@@ -85,7 +72,7 @@ class Attention(nn.Module):
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
 
         # Apply RoPE only if sliding window is enabled
-        if self.sliding_window is not None:
+        if self.use_sliding_window:
             if cache is None:
                 queries = self.rope(queries)
                 keys = self.rope(keys)
@@ -95,13 +82,11 @@ class Attention(nn.Module):
 
         if cache is not None:
             keys, values = cache.update_and_fetch(keys, values)
-        # Apply sliding window attention if enabled
-        if self.sliding_window is not None:
-            window_size = self.sliding_window
-            keys = keys[..., -window_size:, :]
-            values = values[..., -window_size:, :]
-            if mask is not None:
-                mask = mask[..., -window_size:]
+
+        if self.use_sliding_window and mask is not None:
+            key_len = keys.shape[-2]
+            if mask.shape[-1] != key_len:
+                mask = mask[..., -key_len:]
 
         output = scaled_dot_product_attention(
             queries, keys, values, cache=cache, scale=self.scale, mask=mask
@@ -170,7 +155,12 @@ class CohereModel(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        mask = create_attention_mask(h, cache, reference_idx=self.args.sliding_window_pattern - 1)
+        T = h.shape[1]
+        if T > 1:
+            offset = cache[0].offset if cache else 0
+            mask = create_causal_mask(T, offset).astype(h.dtype)
+        else:
+            mask = None
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -197,14 +187,19 @@ class Model(nn.Module):
         out = self.model.embed_tokens.as_linear(out)
         out = out * self.model.args.logit_scale
         return out
-    
+
     def make_cache(self):
         caches = []
         for i in range(self.args.num_hidden_layers):
-            if i % self.args.sliding_window_pattern == self.args.sliding_window_pattern - 1:
+            if (
+                i % self.args.sliding_window_pattern
+                == self.args.sliding_window_pattern - 1
+            ):
                 caches.append(KVCache())
             else:
-                caches.append(RotatingKVCache(max_size=self.args.sliding_window, keep=0))
+                caches.append(
+                    RotatingKVCache(max_size=self.args.sliding_window, keep=0)
+                )
         return caches
 
     @property
