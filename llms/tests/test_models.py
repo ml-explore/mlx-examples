@@ -863,7 +863,10 @@ class TestModels(unittest.TestCase):
             sliding_window_pattern=4,
         )
         model = cohere2.Model(args)
-        self.model_test_runner(model, args.model_type, args.vocab_size, args.num_hidden_layers)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
