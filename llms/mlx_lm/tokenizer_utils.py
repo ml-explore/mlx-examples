@@ -158,9 +158,6 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
     _space_matches = (".", "?", "!", ",", "n't", "'m", "'s", "'ve", "'re")
 
     def __init__(self, tokenizer):
-
-        self.tokenizer = tokenizer
-
         self.clean_spaces = tokenizer.clean_up_tokenization_spaces
 
         # Extract the tokens in a list from id to text
