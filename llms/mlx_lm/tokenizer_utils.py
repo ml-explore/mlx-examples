@@ -3,8 +3,6 @@ from functools import partial
 
 from transformers import AutoTokenizer
 
-REPLACEMENT_CHAR = "\ufffd"
-
 
 class StreamingDetokenizer:
     """The streaming detokenizer interface so that we can detokenize one token at a time.
@@ -51,11 +49,9 @@ class StreamingDetokenizer:
     def last_segment(self):
         """Return the last segment of readable text since last time this property was accessed."""
         text = self.text
-        if text and text[-1] != REPLACEMENT_CHAR:
-            segment = text[self.offset :]
-            self.offset = len(text)
-            return segment
-        return ""
+        segment = text[self.offset :]
+        self.offset = len(text)
+        return segment
 
 
 class NaiveStreamingDetokenizer(StreamingDetokenizer):
@@ -132,7 +128,7 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         self.tokens = []
 
     def _flush(self):
-        text = self._unflushed.replace(self._sep, b" ").decode("utf-8")
+        text = self._unflushed.replace(self._sep, b" ").decode("utf-8", "replace")
         if not self.text and self.trim_space and text and text[0] == " ":
             text = text[1:]
         self.text += text
@@ -199,22 +195,21 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         self.tokens.append(token)
         v = self.tokenmap[token]
         is_added = token in self._added_ids
-        if is_added or self._byte_decoder[v[0]] == 32:
-            current_text = bytearray(
-                self._byte_decoder[c] for c in self._unflushed
-            ).decode("utf-8")
-            self.text += self._maybe_trim_space(current_text)
-            if is_added:
-                self.text += v
-                self._unflushed = ""
-            else:
-                self._unflushed = v
-        else:
+        if not is_added:
             self._unflushed += v
+        text = bytearray(self._byte_decoder[c] for c in self._unflushed).decode(
+            "utf-8", "replace"
+        )
+        if is_added:
+            text += v
+        if not text.endswith("\ufffd"):
+            self.text += self._maybe_trim_space(text)
+            self._unflushed = ""
 
     def finalize(self):
         current_text = bytearray(self._byte_decoder[c] for c in self._unflushed).decode(
-            "utf-8"
+            "utf-8",
+            "replace",
         )
         self.text += self._maybe_trim_space(current_text)
         self._unflushed = ""

@@ -851,6 +851,22 @@ class TestModels(unittest.TestCase):
         model = exaone.Model(args)
         self.model_test_runner(model, args.model_type, args.vocab_size, args.num_layers)
 
+    def test_cohere2(self):
+        from mlx_lm.models import cohere2
+
+        args = cohere2.ModelArgs(
+            model_type="cohere2",
+            hidden_size=4096,
+            head_dim=128,
+            num_hidden_layers=40,
+            sliding_window=4096,
+            sliding_window_pattern=4,
+        )
+        model = cohere2.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

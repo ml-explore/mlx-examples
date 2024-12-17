@@ -190,7 +190,7 @@ def make_repetition_penalty(penalty: float, context_size: int = 20):
         Callable[[mx.array, List[int]], mx.array]:
             The repetition penalty processor.
     """
-    if penalty < 0 or not isinstance(penalty, float):
+    if penalty < 0 or not isinstance(penalty, (int, float)):
         raise ValueError(f"penalty must be a non-negative float, got {penalty}")
 
     def repetition_penalty_processor(tokens, logits):
