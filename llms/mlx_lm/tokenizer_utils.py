@@ -198,9 +198,6 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
             return current_text[1:]
         return current_text
 
-    def _is_single_space(self, v):
-        return
-
     def add_token(self, token):
         self.tokens.append(token)
         v = self.tokenmap[token]
