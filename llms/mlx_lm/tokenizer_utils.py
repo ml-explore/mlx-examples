@@ -127,23 +127,23 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         self.text = ""
         self.tokens = []
 
-    def _flush(self):
+    def _try_flush(self, force=False):
         text = self._unflushed.replace(self._sep, b" ").decode("utf-8", "replace")
+        if not force and text.endswith("\ufffd"):
+            return
         if not self.text and self.trim_space and text and text[0] == " ":
             text = text[1:]
         self.text += text
+        self._unflushed = b""
 
     def add_token(self, token):
         self.tokens.append(token)
         v = self.tokenmap[token]
-        if v.startswith(self._sep):
-            self._flush()
-            self._unflushed = v
-        else:
-            self._unflushed += v
+        self._unflushed += v
+        self._try_flush()
 
     def finalize(self):
-        self._flush()
+        self._try_flush(force=True)
         self._unflushed = b""
 
 
