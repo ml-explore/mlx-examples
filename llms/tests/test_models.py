@@ -182,7 +182,7 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.dtype, t)
 
             cache = make_prompt_cache(model)
-            outputs = model(inputs, cache)
+            outputs = model(inputs, cache=cache)
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 

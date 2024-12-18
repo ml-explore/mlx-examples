@@ -187,11 +187,12 @@ class Qwen2MoeModel(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         h = self.embed_tokens(inputs)
 
-        mask = create_attention_mask(h, cache)
+        mask = mask or create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -213,9 +214,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, mask, cache)
         return self.lm_head(out)
 
     def sanitize(self, weights):

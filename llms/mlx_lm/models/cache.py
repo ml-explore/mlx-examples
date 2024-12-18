@@ -10,7 +10,6 @@ from mlx.utils import tree_flatten, tree_map, tree_unflatten
 def make_prompt_cache(
     model: nn.Module,
     max_kv_size: Optional[int] = None,
-    lengths: Optional[mx.array] = None,
 ) -> List[Any]:
     """
     Construct the model's cache for use when cgeneration.
@@ -23,22 +22,17 @@ def make_prompt_cache(
         max_kv_size (Optional[int]): If provided and the model does not have a
             ``make_cache`` method, a ``RotatingKVCache`` is used with a maximum
             size of ``max_kv_size``
-        lengths (Optional[array]): If provided these sequence lengths will be
-            used mask the KV cache. Useful for batch inputs.
     """
     if hasattr(model, "make_cache"):
         return model.make_cache()
 
     num_layers = len(model.layers)
     if max_kv_size is not None:
-        cache = [
+        return [
             RotatingKVCache(max_size=max_kv_size, keep=4) for _ in range(num_layers)
         ]
     else:
-        cache = [KVCache() for _ in range(num_layers)]
-
-    cache[0].lengths = lengths
-    return cache
+        return [KVCache() for _ in range(num_layers)]
 
 
 def save_prompt_cache(file_name: str, cache: List[Any], metadata: Dict[str, str] = {}):
