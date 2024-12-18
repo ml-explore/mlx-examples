@@ -135,17 +135,15 @@ class Mamba2Block(nn.Module):
         batch_size, seq_len, _ = u.shape
         
         # Project input
-        proj = self.in_proj(u) # [batch, seq_len, d_in_proj]
+        proj = self.in_proj(u)
         
-        # Calculate split indices and slice tensors
+        # Split projections
         z = proj[..., :self.d_inner]
         x_conv = proj[..., self.d_inner:self.d_inner + (self.d_inner + 2 * self.n_groups * self.d_state)]
         dt = proj[..., -self.n_heads:]
         
-        # Process time steps
+        # Process time steps - simplified to match PyTorch
         dt = nn.softplus(dt + self.dt_bias)
-        dt = mx.clip(dt, self.args.time_step_min, self.args.time_step_max)
-        dt = mx.maximum(dt, self.args.time_step_floor)
         
         # Convolution and activation
         x_conv, conv_state = self.conv1d(x_conv, cache[0] if cache else None)
@@ -158,27 +156,19 @@ class Mamba2Block(nn.Module):
         B = x_conv[..., self.d_inner:self.d_inner + self.d_state]
         C = x_conv[..., -self.d_state:]
         
-        # Reshape x for SSM
+        # Reshape for SSM processing
         x = mx.reshape(x, (batch_size, seq_len, self.n_heads, self.d_head))
         
-        # Process B and C without reshaping heads
-        B = mx.expand_dims(B, axis=2)  # [batch, seq_len, 1, d_state]
-        B = mx.broadcast_to(B, (batch_size, seq_len, self.n_heads, self.d_state))
-        
-        C = mx.expand_dims(C, axis=2)  # [batch, seq_len, 1, d_state]
-        C = mx.broadcast_to(C, (batch_size, seq_len, self.n_heads, self.d_state))
-        
-        # Initialize or get previous state
+        # Initialize state
         if cache and cache[1] is not None:
             prev_state = cache[1]
         else:
             prev_state = mx.zeros((batch_size, self.n_heads, self.d_head, self.d_state))
         
-        # Compute dA
-        dA = -mx.exp(self.A_log)  # [n_heads]
-        dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads)) # Ensure correct shape
-        dA = mx.exp(mx.expand_dims(dt * mx.expand_dims(dA, 0), -1)) # [batch, seq_len, n_heads, 1]
-        dA = mx.expand_dims(dA, -1) # [batch, seq_len, n_heads, 1, 1]
+        # Compute dA - simplified to match PyTorch
+        A = -mx.exp(self.A_log)
+        dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
+        dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
         
         # Process sequence
         next_state = prev_state
@@ -186,26 +176,22 @@ class Mamba2Block(nn.Module):
         
         for t in range(seq_len):
             # Get current step tensors
-            xt = x[:, t] # [batch, n_heads, d_head]
-            Bt = B[:, t] # [batch, n_heads, d_state]
-            Ct = C[:, t] # [batch, n_heads, d_state]
-            dAt = dA[:, t] # [batch, n_heads, 1, 1]
+            xt = x[:, t]  # [batch, n_heads, d_head]
+            Bt = B[:, t]  # [batch, n_heads, d_state]
+            Ct = C[:, t]  # [batch, n_heads, d_state]
+            dAt = dA[:, t]  # [batch, n_heads]
             
-            # Update state
+            # Compute dBx using einsum to match PyTorch
+            dBx = mx.einsum('bh,bn,bhp->bhpn', dAt, Bt, xt)
+            
+            # Update state - matches PyTorch implementation
             next_state = (
-                next_state * dAt + # Broadcasting: [batch, n_heads, d_head, d_state] * [batch, n_heads, 1, 1]
-                mx.matmul(
-                    mx.expand_dims(xt, -1), # [batch, n_heads, d_head, 1]
-                    mx.expand_dims(Bt, -2) # [batch, n_heads, 1, d_state]
-                )
+                next_state * mx.expand_dims(dAt, axis=(-1, -2)) + 
+                dBx
             )
             
             # Compute output
-            yt = mx.matmul(
-                next_state, # [batch, n_heads, d_head, d_state]
-                mx.expand_dims(Ct, -1) # [batch, n_heads, d_state, 1]
-            )
-            yt = mx.squeeze(yt, -1) # [batch, n_heads, d_head]
+            yt = mx.einsum('bhpn,bn->bhp', next_state, Ct)
             yt = yt + xt * mx.expand_dims(self.D, -1)
             
             # Reshape and normalize
