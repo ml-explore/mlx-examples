@@ -135,7 +135,6 @@ class QuantizedKVCache(_BaseCache):
         self.values = None
         self.offset = 0
         self.step = 256
-        self.lengths = None
         self.group_size = group_size
         self.bits = bits
 
@@ -218,7 +217,6 @@ class KVCache(_BaseCache):
         self.values = None
         self.offset = 0
         self.step = 256
-        self.lengths = None
 
     def update_and_fetch(self, keys, values):
         prev = self.offset
@@ -287,7 +285,6 @@ class RotatingKVCache(_BaseCache):
         self.offset = 0
         self.max_size = max_size
         self.step = step
-        self.lengths = None
         self._idx = 0
 
     def _trim(self, trim_size, v, append=None):
