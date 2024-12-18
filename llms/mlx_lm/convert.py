@@ -30,6 +30,12 @@ def configure_parser() -> argparse.ArgumentParser:
         "--q-bits", help="Bits per weight for quantization.", type=int, default=4
     )
     parser.add_argument(
+        "--q-type",
+        choices=["affine", "affine-packed"],
+        default="affine",
+        help="The type of quantization to apply",
+    )
+    parser.add_argument(
         "--dtype",
         help="Type to save the non-quantized parameters.",
         type=str,
