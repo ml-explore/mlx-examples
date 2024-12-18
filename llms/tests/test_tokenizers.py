@@ -58,6 +58,9 @@ class TestTokenizers(unittest.TestCase):
         tokens = tokenizer.encode("import 'package:flutter/material.dart';")
         check(tokens)
 
+        tokens = tokenizer.encode("hello\nworld")
+        check(tokens)
+
     def test_tokenizers(self):
         tokenizer_repos = [
             ("mlx-community/Qwen1.5-0.5B-Chat-4bit", BPEStreamingDetokenizer),
@@ -65,6 +68,7 @@ class TestTokenizers(unittest.TestCase):
             ("mlx-community/Phi-3.5-mini-instruct-4bit", SPMStreamingDetokenizer),
             ("mlx-community/Mistral-7B-Instruct-v0.3", SPMStreamingDetokenizer),
             ("mlx-community/Llama-3.2-1B-Instruct-4bit", BPEStreamingDetokenizer),
+            ("mlx-community/Falcon3-7B-Instruct-4bit", BPEStreamingDetokenizer),
         ]
         for tokenizer_repo, expected_detokenizer in tokenizer_repos:
             with self.subTest(tokenizer=tokenizer_repo):

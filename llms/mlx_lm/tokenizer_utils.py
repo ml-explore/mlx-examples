@@ -127,23 +127,23 @@ class SPMStreamingDetokenizer(StreamingDetokenizer):
         self.text = ""
         self.tokens = []
 
-    def _flush(self):
+    def _try_flush(self, force=False):
         text = self._unflushed.replace(self._sep, b" ").decode("utf-8", "replace")
+        if not force and text.endswith("\ufffd"):
+            return
         if not self.text and self.trim_space and text and text[0] == " ":
             text = text[1:]
         self.text += text
+        self._unflushed = b""
 
     def add_token(self, token):
         self.tokens.append(token)
         v = self.tokenmap[token]
-        if v.startswith(self._sep):
-            self._flush()
-            self._unflushed = v
-        else:
-            self._unflushed += v
+        self._unflushed += v
+        self._try_flush()
 
     def finalize(self):
-        self._flush()
+        self._try_flush(force=True)
         self._unflushed = b""
 
 
@@ -158,7 +158,6 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
     _space_matches = (".", "?", "!", ",", "n't", "'m", "'s", "'ve", "'re")
 
     def __init__(self, tokenizer):
-
         self.clean_spaces = tokenizer.clean_up_tokenization_spaces
 
         # Extract the tokens in a list from id to text
@@ -172,13 +171,21 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
         # https://github.com/openai/gpt-2/blob/master/src/encoder.py
         self.make_byte_decoder()
 
-        self._added_ids = set(tokenizer.added_tokens_decoder.keys())
-
     def reset(self):
         self.offset = 0
         self._unflushed = ""
         self.text = ""
         self.tokens = []
+
+    def _decode_bytes(self, seq):
+        barr = bytearray()
+        for c in seq:
+            res = self._byte_decoder.get(c, False)
+            if res:
+                barr.append(res)
+            else:
+                barr.extend(bytes(c, "utf-8"))
+        return barr.decode("utf-8", "replace")
 
     def _maybe_trim_space(self, current_text):
         if len(current_text) == 0:
@@ -194,15 +201,14 @@ class BPEStreamingDetokenizer(StreamingDetokenizer):
     def add_token(self, token):
         self.tokens.append(token)
         v = self.tokenmap[token]
-        is_added = token in self._added_ids
-        if not is_added:
-            self._unflushed += v
-        text = bytearray(self._byte_decoder[c] for c in self._unflushed).decode(
-            "utf-8", "replace"
-        )
-        if is_added:
-            text += v
-        if not text.endswith("\ufffd"):
+        self._unflushed += v
+        text = self._decode_bytes(self._unflushed)
+
+        # For multi-byte utf-8 wait until they are complete
+        # For single spaces wait until the next token to clean it if needed
+        if not text.endswith("\ufffd") and not (
+            len(v) == 1 and self._byte_decoder[v[0]] == 32
+        ):
             self.text += self._maybe_trim_space(text)
             self._unflushed = ""
 
