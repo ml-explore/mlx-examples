@@ -23,7 +23,12 @@ class BaseModelArgs:
         )
 
 
-def create_causal_mask(N: int, offset: int = 0, window_size: Optional[int] = None):
+def create_causal_mask(
+    N: int,
+    offset: int = 0,
+    window_size: Optional[int] = None,
+    lengths: Optional[mx.array] = None,
+):
     rinds = mx.arange(offset + N)
     linds = mx.arange(offset, offset + N) if offset else rinds
     linds = linds[:, None]
@@ -31,12 +36,18 @@ def create_causal_mask(N: int, offset: int = 0, window_size: Optional[int] = Non
     mask = linds < rinds
     if window_size is not None:
         mask = mask | (linds > rinds + window_size)
+    if lengths is not None:
+        mask = mx.repeat(mask[None], lengths.shape[0], axis=0)
+        lengths = lengths[:, None, None]
+        mask = mask | (rinds[None] >= lengths)
+        mask = mask[:, None]
     return mask * -1e9
 
 
 def create_attention_mask(h: mx.array, cache: Optional[Any] = None):
     T = h.shape[1]
     if T > 1:
+        lengths = None
         window_size = None
         offset = 0
         if cache is not None and cache[0] is not None:
@@ -46,7 +57,8 @@ def create_attention_mask(h: mx.array, cache: Optional[Any] = None):
                 window_size = c.max_size
             else:
                 offset = c.offset
-        mask = create_causal_mask(T, offset, window_size=window_size)
+            lengths = getattr(c, "lengths", None)
+        mask = create_causal_mask(T, offset, window_size=window_size, lengths=lengths)
         mask = mask.astype(h.dtype)
     else:
         mask = None

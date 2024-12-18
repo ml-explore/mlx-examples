@@ -10,6 +10,7 @@ from mlx.utils import tree_flatten, tree_map, tree_unflatten
 def make_prompt_cache(
     model: nn.Module,
     max_kv_size: Optional[int] = None,
+    lengths: Optional[mx.array] = None,
 ) -> List[Any]:
     """
     Construct the model's cache for use when cgeneration.
@@ -22,17 +23,22 @@ def make_prompt_cache(
         max_kv_size (Optional[int]): If provided and the model does not have a
             ``make_cache`` method, a ``RotatingKVCache`` is used with a maximum
             size of ``max_kv_size``
+        lengths (Optional[array]): If provided these sequence lengths will be
+            used mask the KV cache. Useful for batch inputs.
     """
     if hasattr(model, "make_cache"):
         return model.make_cache()
 
     num_layers = len(model.layers)
     if max_kv_size is not None:
-        return [
+        cache = [
             RotatingKVCache(max_size=max_kv_size, keep=4) for _ in range(num_layers)
         ]
     else:
-        return [KVCache() for _ in range(num_layers)]
+        cache = [KVCache() for _ in range(num_layers)]
+
+    cache[0].lengths = lengths
+    return cache
 
 
 def save_prompt_cache(file_name: str, cache: List[Any], metadata: Dict[str, str] = {}):
@@ -135,6 +141,7 @@ class QuantizedKVCache(_BaseCache):
         self.values = None
         self.offset = 0
         self.step = 256
+        self.lengths = None
         self.group_size = group_size
         self.bits = bits
 
@@ -217,6 +224,7 @@ class KVCache(_BaseCache):
         self.values = None
         self.offset = 0
         self.step = 256
+        self.lengths = None
 
     def update_and_fetch(self, keys, values):
         prev = self.offset
@@ -285,6 +293,7 @@ class RotatingKVCache(_BaseCache):
         self.offset = 0
         self.max_size = max_size
         self.step = step
+        self.lengths = None
         self._idx = 0
 
     def _trim(self, trim_size, v, append=None):
