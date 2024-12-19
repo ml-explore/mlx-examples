@@ -23,7 +23,12 @@ class BaseModelArgs:
         )
 
 
-def create_causal_mask(N: int, offset: int = 0, window_size: Optional[int] = None):
+def create_causal_mask(
+    N: int,
+    offset: int = 0,
+    window_size: Optional[int] = None,
+    lengths: Optional[mx.array] = None,
+):
     rinds = mx.arange(offset + N)
     linds = mx.arange(offset, offset + N) if offset else rinds
     linds = linds[:, None]
@@ -31,6 +36,9 @@ def create_causal_mask(N: int, offset: int = 0, window_size: Optional[int] = Non
     mask = linds < rinds
     if window_size is not None:
         mask = mask | (linds > rinds + window_size)
+    if lengths is not None:
+        lengths = lengths[:, None, None, None]
+        mask = mask | (rinds >= lengths)
     return mask * -1e9
 
 

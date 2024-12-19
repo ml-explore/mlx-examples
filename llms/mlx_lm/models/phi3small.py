@@ -258,13 +258,15 @@ class Phi3Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         h = self.embed_tokens(inputs)
         if self.mup_embedding_multiplier:
             h = self.mup_embedding_multiplier * h
 
-        mask = create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -290,9 +292,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, mask, cache)
         out = self.model.embed_tokens.as_linear(out)
         if self.mup_width_multiplier:
             out = out / self.mup_width_multiplier

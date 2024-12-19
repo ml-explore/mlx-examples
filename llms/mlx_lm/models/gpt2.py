@@ -126,6 +126,7 @@ class GPT2Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         _, L = inputs.shape
@@ -138,7 +139,8 @@ class GPT2Model(nn.Module):
             position_ids = mx.array(np.arange(L))
             hidden_states += self.wpe(position_ids)
 
-            mask = create_attention_mask(hidden_states, cache)
+            if mask is None:
+                mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)
@@ -159,9 +161,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, mask, cache)
         out = self.model.wte.as_linear(out)
         return out
 

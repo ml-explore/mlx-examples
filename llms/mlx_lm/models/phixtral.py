@@ -175,7 +175,9 @@ class Model(nn.Module):
         mask: mx.array = None,
         cache=None,
     ) -> mx.array:
-        mask = create_attention_mask(x, cache)
+
+        if mask is None:
+            mask = create_attention_mask(x, cache)
 
         y = self.transformer(x, mask, cache)
         return self.lm_head(y)

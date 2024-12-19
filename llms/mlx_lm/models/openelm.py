@@ -178,11 +178,13 @@ class OpenELMModel(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         h = self.token_embeddings(inputs)
 
-        mask = create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -205,9 +207,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.transformer(inputs, cache)
+        out = self.transformer(inputs, mask, cache)
         if self.args.share_input_output_layers:
             out = self.transformer.token_embeddings.as_linear(out)
         else:

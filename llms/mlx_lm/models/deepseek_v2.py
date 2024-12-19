@@ -370,9 +370,12 @@ class DeepseekV2Model(nn.Module):
         self,
         x: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
-        mask = create_attention_mask(h, cache)
+
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -395,8 +398,9 @@ class Model(nn.Module):
         self,
         inputs: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, cache, mask)
         return self.lm_head(out)
 
     def sanitize(self, weights):
