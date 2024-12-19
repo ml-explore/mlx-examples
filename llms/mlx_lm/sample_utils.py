@@ -12,6 +12,7 @@ def make_sampler(
     top_p: float = 0.0,
     min_p: float = 0.0,
     min_tokens_to_keep: int = 1,
+    top_k: int = -1,
 ) -> Callable[mx.array, mx.array]:
     """
     Make a sampler function for use with ``generate_step``.
@@ -25,6 +26,8 @@ def make_sampler(
           probability) that a token probability must have to be considered.
         min_tokens_to_keep (int, optional): Minimum number of tokens that cannot
           be filtered by min_p sampling.
+        top_k (int, optional): The top k tokens ranked by probability to constrain
+          the sampling to.
 
     Returns:
         Callable[mx.array, mx.array]:
@@ -36,6 +39,8 @@ def make_sampler(
         return lambda x: top_p_sampling(x, top_p, temp)
     elif min_p != 0.0:
         return lambda x: min_p_sampling(x, min_p, min_tokens_to_keep, temp)
+    elif top_k > 0:
+        return lambda x: top_k_sampling(x, top_k, temp)
     else:
         return lambda x: categorical_sampling(x, temp)
 
@@ -80,6 +85,33 @@ def make_logits_processors(
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
+def top_k_sampling(
+    logprobs: mx.array,
+    top_k: int,
+    temperature=1.0,
+) -> mx.array:
+    """
+    Sample from only the top K tokens ranked by probability.
+
+    Args:
+        logprobs: A vector of log probabilities.
+        top_k (int): Top k tokens to sample from.
+    """
+    vocab_size = logprobs.shape[-1]
+    if not isinstance(top_k, int) or not (0 < top_k < vocab_size):
+        raise ValueError(
+            f"`top_k` has to be an integer in the (0, {vocab_size}] interval,"
+            f" but is {top_k}."
+        )
+    logprobs = logprobs * (1 / temperature)
+    mask_idx = mx.argpartition(-logprobs, kth=top_k - 1, axis=-1)[..., top_k:]
+    masked_logprobs = mx.put_along_axis(
+        logprobs, mask_idx, mx.array(-float("inf"), logprobs.dtype), axis=-1
+    )
+    return mx.random.categorical(masked_logprobs, axis=-1)
+
+
+@partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
 def min_p_sampling(
     logprobs: mx.array,
     min_p: float,
@@ -87,7 +119,7 @@ def min_p_sampling(
     temperature=1.0,
 ) -> mx.array:
     """
-    Apply min-p sampling to the logits.
+    Apply min-p sampling to the logprobs.
 
     Min-p keeps all tokens that are above a minimum probability, scaled by the
     probability of the most likely token. As a result, the filter is more

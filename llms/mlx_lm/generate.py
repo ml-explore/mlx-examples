@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
-import codecs
 import json
 import sys
 
@@ -189,8 +188,8 @@ def main():
     elif using_cache:
         tokenizer.chat_template = metadata["chat_template"]
 
-    prompt = codecs.decode(args.prompt, "unicode_escape")
-
+    prompt = args.prompt.replace("\\n", "\n").replace("\\t", "\t")
+    prompt = sys.stdin.read() if prompt == "-" else prompt
     if not args.ignore_chat_template and (
         hasattr(tokenizer, "apply_chat_template")
         and tokenizer.chat_template is not None
@@ -199,12 +198,7 @@ def main():
             messages = [{"role": "system", "content": args.system_prompt}]
         else:
             messages = []
-        messages.append(
-            {
-                "role": "user",
-                "content": sys.stdin.read() if prompt == "-" else prompt,
-            }
-        )
+        messages.append({"role": "user", "content": prompt})
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
