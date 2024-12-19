@@ -198,7 +198,8 @@ class InternLM2Model(nn.Module):
     ):
         h = self.tok_embeddings(inputs)
 
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

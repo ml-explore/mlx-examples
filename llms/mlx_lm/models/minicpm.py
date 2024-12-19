@@ -163,7 +163,8 @@ class MiniCPMModel(nn.Module):
     ):
         h = self.embed_tokens(inputs) * self.args.scale_emb
 
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

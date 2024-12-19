@@ -178,7 +178,8 @@ class PlamoModel(nn.Module):
     ) -> mx.array:
         h = self.embed_tokens(inputs)
 
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None for _ in range(len(self.layers.layers))]

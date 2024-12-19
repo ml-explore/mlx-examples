@@ -153,7 +153,8 @@ class GPTNeoXModel(nn.Module):
 
         hidden_states = self.embed_in(inputs)
 
-        mask = mask or create_attention_mask(hidden_states, cache)
+        if mask is None:
+            mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)

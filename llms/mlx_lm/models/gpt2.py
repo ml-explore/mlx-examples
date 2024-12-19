@@ -139,7 +139,8 @@ class GPT2Model(nn.Module):
             position_ids = mx.array(np.arange(L))
             hidden_states += self.wpe(position_ids)
 
-            mask = mask or create_attention_mask(hidden_states, cache)
+            if mask is None:
+                mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)

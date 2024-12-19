@@ -166,7 +166,8 @@ class GemmaModel(nn.Module):
         h = self.embed_tokens(inputs)
         h = h * (self.args.hidden_size**0.5)
 
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

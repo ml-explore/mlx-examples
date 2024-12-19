@@ -214,7 +214,8 @@ class DeepseekModel(nn.Module):
         mask: Optional[mx.array] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

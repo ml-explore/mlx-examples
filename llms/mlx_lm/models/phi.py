@@ -146,7 +146,8 @@ class PhiModel(nn.Module):
     def __call__(self, x, mask, cache):
         x = self.embed_tokens(x)
 
-        mask = mask or create_attention_mask(x, cache)
+        if mask is None:
+            mask = create_attention_mask(x, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

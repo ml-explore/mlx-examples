@@ -265,7 +265,8 @@ class Phi3Model(nn.Module):
         if self.mup_embedding_multiplier:
             h = self.mup_embedding_multiplier * h
 
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)

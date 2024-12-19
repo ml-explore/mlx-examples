@@ -37,10 +37,8 @@ def create_causal_mask(
     if window_size is not None:
         mask = mask | (linds > rinds + window_size)
     if lengths is not None:
-        mask = mx.repeat(mask[None], lengths.shape[0], axis=0)
-        lengths = lengths[:, None, None]
-        mask = mask | (rinds[None] >= lengths)
-        mask = mask[:, None]
+        lengths = lengths[:, None, None, None]
+        mask = mask | (rinds >= lengths)
     return mask * -1e9
 
 

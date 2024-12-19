@@ -183,6 +183,12 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
+            if model_type != "mamba":
+                mask = create_causal_mask(inputs.shape[1], 0).astype(t)
+                outputs = model(inputs, mask=mask)
+                self.assertEqual(outputs.shape, (1, 2, vocab_size))
+                self.assertEqual(outputs.dtype, t)
+
             outputs = model(mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache)
             self.assertEqual(outputs.shape, (1, 1, vocab_size))
             self.assertEqual(outputs.dtype, t)

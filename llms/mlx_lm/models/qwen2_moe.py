@@ -192,7 +192,8 @@ class Qwen2MoeModel(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        mask = mask or create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
