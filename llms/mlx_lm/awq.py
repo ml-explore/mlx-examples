@@ -430,7 +430,7 @@ def main():
     if group is not None:
         calibration_data = dist_split(calibration_data, group)
 
-    # awq_quantize(model, calibration_data, bits=args.bits, group_size=args.group_size)
+    awq_quantize(model, calibration_data, bits=args.bits, group_size=args.group_size)
 
     save_model(model, tokenizer, config, model_path, args.mlx_path)
 
