@@ -83,6 +83,9 @@ class MLXLM(LM):
         self._model, self._tokenizer = load(path_or_hf_repo)
         self._max_tokens = max_tokens or self._tokenizer.model_max_length
 
+        # Needed by HF implementation methods (tokenizer_name, apply_chat_template, and, tok_encode)
+        self.tokenizer = self._tokenizer
+
     def _score_fn(self, inputs, tokenize=True, step_size=32):
         if tokenize:
             inputs = self._tokenizer.encode(inputs)
@@ -220,6 +223,10 @@ class MLXLM(LM):
             tokenize=False,
         )
         return [(r[0], r[1] == r[2]) for r in results]
+
+    tokenizer_name = lm_eval.models.huggingface.HFLM.tokenizer_name
+    apply_chat_template = lm_eval.models.huggingface.HFLM.apply_chat_template
+    tok_encode = lm_eval.models.huggingface.HFLM.tok_encode
 
     def loglikelihood_rolling(self, requests) -> list[float]:
         """Compute full log-likelihood of a string, with no truncation, for perplexity computation
