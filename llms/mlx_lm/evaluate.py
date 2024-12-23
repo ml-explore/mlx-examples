@@ -322,6 +322,18 @@ def main():
         help="Maximum nunber of tokens to generate. Defaults to the model's max context length.",
     )
     parser.add_argument("--seed", type=int, default=123, help="Random seed.")
+    parser.add_argument(
+        "--fewshot-as-multiturn",
+        action="store_true",
+        help="Whether to provide the fewshot examples as a multiturn conversation or a single user turn.",
+        default=False,
+    )
+    parser.add_argument(
+        "--apply-chat-template",
+        action="store_true",
+        help="Specifies whether to apply a chat template to the prompt",
+        default=False,
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -337,6 +349,8 @@ def main():
     results = lm_eval.simple_evaluate(
         model=lm,
         tasks=args.tasks,
+        fewshot_as_multiturn=args.fewshot_as_multiturn,
+        apply_chat_template=args.apply_chat_template,
         num_fewshot=args.num_shots,
         random_seed=args.seed,
         numpy_random_seed=args.seed,
