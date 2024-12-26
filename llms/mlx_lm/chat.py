@@ -5,12 +5,14 @@ import json
 
 import mlx.core as mx
 
-from .models.cache import load_prompt_cache, make_prompt_cache, save_prompt_cache
+from .models.cache import make_prompt_cache
+from .sample_utils import make_sampler
 from .utils import load, stream_generate
 
 DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_SEED = 0
+DEFAULT_MAX_TOKENS = 256
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 
 
@@ -41,6 +43,13 @@ def setup_arg_parser():
         help="Set the maximum key-value cache size",
         default=None,
     )
+    parser.add_argument(
+        "--max-tokens",
+        "-m",
+        type=int,
+        default=DEFAULT_MAX_TOKENS,
+        help="Maximum number of tokens to generate",
+    )
     return parser
 
 
@@ -56,7 +65,7 @@ def main():
         tokenizer_config={"trust_remote_code": True},
     )
 
-    print(f"[INFO] Starting chat sessiong with {args.model}. To exit, enter 'q'.")
+    print(f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.")
     prompt_cache = make_prompt_cache(model, args.max_kv_size)
     while True:
         query = input(">> ")
@@ -70,11 +79,11 @@ def main():
             model,
             tokenizer,
             prompt,
-            temp=args.temp,
-            top_p=args.top_p,
+            max_tokens=args.max_tokens,
+            sampler=make_sampler(args.temp, args.top_p),
             prompt_cache=prompt_cache,
         ):
-            print(response, flush=True, end="")
+            print(response.text, flush=True, end="")
         print()
 
 

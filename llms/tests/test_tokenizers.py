@@ -34,13 +34,17 @@ class TestTokenizers(unittest.TestCase):
             detokenizer = tokenizer.detokenizer
             detokenizer.reset()
             text = ""
-            for t in tokens:
+            for e, t in enumerate(tokens):
                 detokenizer.add_token(t)
                 seg = detokenizer.last_segment
                 text += seg
+                self.assertEqual(detokenizer.tokens, tokens[: e + 1])
             detokenizer.finalize()
             text += detokenizer.last_segment
             self.assertEqual(text, expected_text)
+
+        tokens = tokenizer.encode("こんにちは！私の名前はAI")
+        check(tokens)
 
         tokens = tokenizer.encode("a ,b")
         check(tokens)
@@ -51,6 +55,12 @@ class TestTokenizers(unittest.TestCase):
         tokens = tokenizer.encode("3 3")
         check(tokens)
 
+        tokens = tokenizer.encode("import 'package:flutter/material.dart';")
+        check(tokens)
+
+        tokens = tokenizer.encode("hello\nworld")
+        check(tokens)
+
     def test_tokenizers(self):
         tokenizer_repos = [
             ("mlx-community/Qwen1.5-0.5B-Chat-4bit", BPEStreamingDetokenizer),
@@ -58,6 +68,7 @@ class TestTokenizers(unittest.TestCase):
             ("mlx-community/Phi-3.5-mini-instruct-4bit", SPMStreamingDetokenizer),
             ("mlx-community/Mistral-7B-Instruct-v0.3", SPMStreamingDetokenizer),
             ("mlx-community/Llama-3.2-1B-Instruct-4bit", BPEStreamingDetokenizer),
+            ("mlx-community/Falcon3-7B-Instruct-4bit", BPEStreamingDetokenizer),
         ]
         for tokenizer_repo, expected_detokenizer in tokenizer_repos:
             with self.subTest(tokenizer=tokenizer_repo):
@@ -70,6 +81,17 @@ class TestTokenizers(unittest.TestCase):
         tokenizer = self.download_tokenizer("mlx-community/Llama-3.2-1B-Instruct-4bit")
         tokenizer._detokenizer = NaiveStreamingDetokenizer(tokenizer)
         self.check_tokenizer(tokenizer)
+
+    def test_special_tokens(self):
+        tokenizer_repo = "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx"
+        tokenizer = self.download_tokenizer(tokenizer_repo)
+
+        detokenizer = tokenizer.detokenizer
+        detokenizer.reset()
+        detokenizer.add_token(tokenizer.eos_token_id)
+        detokenizer.finalize()
+
+        self.assertEqual(detokenizer.last_segment, tokenizer.eos_token)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -74,8 +74,8 @@ class Attention(nn.Module):
         if cache is not None:
             keys, values = cache.update_and_fetch(keys, values)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.c_proj(output)
@@ -137,6 +137,7 @@ class GPTBigCodeModel(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         B, L = inputs.shape
@@ -149,7 +150,8 @@ class GPTBigCodeModel(nn.Module):
             position_ids = mx.array(np.arange(L))
             hidden_states += self.wpe(position_ids)
 
-            mask = create_attention_mask(hidden_states, cache)
+            if mask is None:
+                mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)
@@ -172,9 +174,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.transformer(inputs, cache)
+        out = self.transformer(inputs, mask, cache)
         if self.args.tie_word_embeddings:
             out = self.transformer.wte.as_linear(out)
         else:

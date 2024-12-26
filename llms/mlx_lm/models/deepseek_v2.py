@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 from .switch_layers import SwitchGLU
 
 
@@ -235,8 +235,8 @@ class DeepseekV2Attention(nn.Module):
 
         queries = mx.concatenate([q_nope, q_pe], axis=-1)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
@@ -370,9 +370,12 @@ class DeepseekV2Model(nn.Module):
         self,
         x: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
-        mask = create_attention_mask(h, cache)
+
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -395,8 +398,9 @@ class Model(nn.Module):
         self,
         inputs: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, cache, mask)
         return self.lm_head(out)
 
     def sanitize(self, weights):

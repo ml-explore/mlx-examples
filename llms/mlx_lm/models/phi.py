@@ -7,7 +7,7 @@ from typing import Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -93,8 +93,13 @@ class PhiAttention(nn.Module):
             keys = self.rope(keys)
 
         scale = math.sqrt(1 / queries.shape[-1])
-        output = mx.fast.scaled_dot_product_attention(
-            queries.astype(mx.float32), keys, values, scale=scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries.astype(mx.float32),
+            keys,
+            values,
+            cache=cache,
+            scale=scale,
+            mask=mask,
         ).astype(values.dtype)
 
         output = output.moveaxis(2, 1).reshape(B, L, -1)
@@ -138,10 +143,11 @@ class PhiModel(nn.Module):
             config.hidden_size, eps=config.layer_norm_eps
         )
 
-    def __call__(self, x, cache):
+    def __call__(self, x, mask, cache):
         x = self.embed_tokens(x)
 
-        mask = create_attention_mask(x, cache)
+        if mask is None:
+            mask = create_attention_mask(x, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -162,9 +168,10 @@ class Model(nn.Module):
     def __call__(
         self,
         x: mx.array,
+        mask: mx.array = None,
         cache=None,
     ) -> mx.array:
-        y = self.model(x, cache)
+        y = self.model(x, mask, cache)
         return self.lm_head(y)
 
     @property

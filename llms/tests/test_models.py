@@ -2,7 +2,10 @@
 import unittest
 
 import mlx.core as mx
+import mlx.nn as nn
 from mlx.utils import tree_map
+from mlx_lm.models import rope_utils
+from mlx_lm.models.base import create_causal_mask
 from mlx_lm.models.cache import KVCache, RotatingKVCache, make_prompt_cache
 
 
@@ -126,6 +129,42 @@ class TestModels(unittest.TestCase):
         self.assertEqual(cache.offset, 22)
         self.assertTrue(mx.allclose(x, k[..., -2:, :]))
 
+    def test_causal_mask_lengths(self):
+        mx.random.seed(8)
+        B, N_q, T_q, N_kv, T_kv, D = (4, 8, 3, 2, 3, 2)
+        lengths = mx.array([1, 2, 3, 1])
+        q = mx.random.uniform(shape=(B, N_q, T_q, D))
+        k = mx.random.uniform(shape=(B, N_kv, T_kv, D))
+        v = k
+        mask = create_causal_mask(T_q, 0, lengths=lengths)
+
+        out1 = mx.fast.scaled_dot_product_attention(q, k, v, scale=1.0, mask=mask)
+        q[1, :, 2:] = mx.ones_like(q[1, :, 2:])
+        k[1, :, 2:] = mx.ones_like(k[1, :, 2:])
+        v[1, :, 2:] = mx.ones_like(v[1, :, 2:])
+        out2 = mx.fast.scaled_dot_product_attention(q, k, v, scale=1.0, mask=mask)
+        self.assertTrue(mx.allclose(out1[1, :, :2], out2[1, :, :2]))
+
+    def test_rope(self):
+        rope = rope_utils.initialize_rope(32, base=100, traditional=False)
+        self.assertTrue(isinstance(rope, nn.RoPE))
+
+        rope = rope_utils.initialize_rope(
+            32,
+            base=100,
+            traditional=False,
+            scaling_config={"rope_type": "linear", "factor": 10.0},
+        )
+        self.assertTrue(isinstance(rope, nn.RoPE))
+
+        rope = rope_utils.initialize_rope(
+            32,
+            base=100,
+            traditional=False,
+            scaling_config={"rope_type": "llama3", "factor": 2.0},
+        )
+        self.assertTrue(isinstance(rope, rope_utils.Llama3RoPE))
+
     def model_test_runner(self, model, model_type, vocab_size, num_layers):
 
         self.assertEqual(len(model.layers), num_layers)
@@ -140,9 +179,15 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.dtype, t)
 
             cache = make_prompt_cache(model)
-            outputs = model(inputs, cache)
+            outputs = model(inputs, cache=cache)
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
+
+            if model_type != "mamba":
+                mask = create_causal_mask(inputs.shape[1], 0).astype(t)
+                outputs = model(inputs, mask=mask)
+                self.assertEqual(outputs.shape, (1, 2, vocab_size))
+                self.assertEqual(outputs.dtype, t)
 
             outputs = model(mx.argmax(outputs[0, -1:, :], keepdims=True), cache=cache)
             self.assertEqual(outputs.shape, (1, 1, vocab_size))
@@ -756,6 +801,91 @@ class TestModels(unittest.TestCase):
             block_types=["recurrent", "recurrent", "attention"],
         )
         model = recurrent_gemma.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_hunyuan(self):
+        from mlx_lm.models import hunyuan
+
+        args = hunyuan.ModelArgs(
+            model_type="hunyuan",
+            hidden_size=128,
+            attention_bias=False,
+            intermediate_size=256,
+            num_attention_heads=4,
+            num_hidden_layers=4,
+            num_key_value_heads=2,
+            rms_norm_eps=1e-4,
+            rope_theta=1000,
+            vocab_size=1000,
+            moe_topk=2,
+            num_experts=2,
+            num_shared_expert=1,
+            use_mixed_mlp_moe=True,
+            use_qk_norm=True,
+            rope_scaling={
+                "alpha": 1000.0,
+                "factor": 1.0,
+                "type": "dynamic",
+            },
+            use_cla=True,
+            cla_share_factor=2,
+        )
+        model = hunyuan.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_olmo2(self):
+        from mlx_lm.models import olmo2
+
+        args = olmo2.ModelArgs(
+            model_type="olmo2",
+            hidden_size=128,
+            attention_bias=False,
+            intermediate_size=256,
+            num_attention_heads=4,
+            num_hidden_layers=4,
+            num_key_value_heads=2,
+            rms_norm_eps=1e-4,
+            rope_theta=1000,
+            vocab_size=1000,
+        )
+        model = olmo2.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_exaone(self):
+        from mlx_lm.models import exaone
+
+        args = exaone.ModelArgs(
+            model_type="exaone",
+            hidden_size=128,
+            num_layers=4,
+            intermediate_size=256,
+            num_attention_heads=8,
+            num_key_value_heads=2,
+            vocab_size=1000,
+            layer_norm_epsilon=1e-4,
+            rope_theta=10000,
+        )
+        model = exaone.Model(args)
+        self.model_test_runner(model, args.model_type, args.vocab_size, args.num_layers)
+
+    def test_cohere2(self):
+        from mlx_lm.models import cohere2
+
+        args = cohere2.ModelArgs(
+            model_type="cohere2",
+            hidden_size=4096,
+            head_dim=128,
+            num_hidden_layers=40,
+            sliding_window=4096,
+            sliding_window_pattern=4,
+        )
+        model = cohere2.Model(args)
         self.model_test_runner(
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
