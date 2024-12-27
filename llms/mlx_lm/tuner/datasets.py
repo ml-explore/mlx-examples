@@ -76,13 +76,27 @@ class CompletionsDataset(Dataset):
         return text
 
 
-def create_dataset(data, tokenizer: PreTrainedTokenizer = None):
-    sample = data[0]
+def create_dataset(
+    data,
+    tokenizer: PreTrainedTokenizer = None,
+    prompt_feature: str = None,
+    completion_feature: str = None,
+):
+    from mlx_lm.lora import CONFIG_DEFAULTS
 
+    sample = data[0]
+    prompt_feature = (
+        prompt_feature if prompt_feature else CONFIG_DEFAULTS["prompt_feature"]
+    )
+    completion_feature = (
+        completion_feature
+        if completion_feature
+        else CONFIG_DEFAULTS["completion_feature"]
+    )
     if "messages" in sample:
         return ChatDataset(data, tokenizer)
-    elif "prompt" in sample and "completion" in sample:
-        return CompletionsDataset(data, tokenizer)
+    elif prompt_feature in sample and completion_feature in sample:
+        return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature)
     elif "text" in sample:
         return Dataset(data)
     else:
@@ -92,20 +106,30 @@ def create_dataset(data, tokenizer: PreTrainedTokenizer = None):
         )
 
 
-def load_local_dataset(data_path: Path, tokenizer: PreTrainedTokenizer):
+def load_local_dataset(
+    data_path: Path,
+    tokenizer: PreTrainedTokenizer,
+    prompt_feature: str = None,
+    completion_feature: str = None,
+):
     def load_subset(path):
         if not path.exists():
             return []
         with open(path, "r") as fid:
             data = [json.loads(l) for l in fid]
-        return create_dataset(data, tokenizer)
+        return create_dataset(data, tokenizer, prompt_feature, completion_feature)
 
     names = ("train", "valid", "test")
     train, valid, test = [load_subset(data_path / f"{n}.jsonl") for n in names]
     return train, valid, test
 
 
-def load_hf_dataset(data_id: str, tokenizer: PreTrainedTokenizer):
+def load_hf_dataset(
+    data_id: str,
+    tokenizer: PreTrainedTokenizer,
+    prompt_feature: str = None,
+    completion_feature: str = None,
+):
     from datasets import exceptions, load_dataset
 
     try:
@@ -114,7 +138,13 @@ def load_hf_dataset(data_id: str, tokenizer: PreTrainedTokenizer):
         names = ("train", "valid", "test")
 
         train, valid, test = [
-            create_dataset(dataset[n], tokenizer) if n in dataset.keys() else []
+            (
+                create_dataset(
+                    dataset[n], tokenizer, prompt_feature, completion_feature
+                )
+                if n in dataset.keys()
+                else []
+            )
             for n in names
         ]
 
@@ -171,10 +201,14 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
     else:
         data_path = Path(args.data)
         if data_path.exists():
-            train, valid, test = load_local_dataset(data_path, tokenizer)
+            train, valid, test = load_local_dataset(
+                data_path, tokenizer, args.prompt_feature, args.completion_feature
+            )
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
-            train, valid, test = load_hf_dataset(args.data, tokenizer)
+            train, valid, test = load_hf_dataset(
+                args.data, tokenizer, args.prompt_feature, args.completion_feature
+            )
 
     if args.train and len(train) == 0:
         raise ValueError(
