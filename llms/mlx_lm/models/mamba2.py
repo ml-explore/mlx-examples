@@ -133,7 +133,7 @@ class Mamba2Block(nn.Module):
 
     def __call__(self, u: mx.array, cache=None):
         batch_size, seq_len, _ = u.shape
-        
+
         # Project input
         proj = self.in_proj(u)
         
@@ -141,32 +141,38 @@ class Mamba2Block(nn.Module):
         z = proj[..., :self.d_inner]
         x_conv = proj[..., self.d_inner:self.d_inner + (self.d_inner + 2 * self.n_groups * self.d_state)]
         dt = proj[..., -self.n_heads:]
-        
+
         # Process time steps - simplified to match PyTorch
-        dt = nn.softplus(dt + self.dt_bias)
+        dt = nn.softplus(dt + self.dt_bias)  # Time steps may need scaling
+        dt = dt * (self.args.time_step_max - self.args.time_step_min) + self.args.time_step_min
+        dt = mx.minimum(mx.maximum(dt, self.args.time_step_floor), self.args.time_step_max)
         
-        # Convolution and activation
         x_conv, conv_state = self.conv1d(x_conv, cache[0] if cache else None)
         if cache is not None:
             cache[0] = conv_state
         x_conv = silu(x_conv)
         
-        # Split conv output
+        # Split conv output and reshape
         x = x_conv[..., :self.d_inner]
-        B = x_conv[..., self.d_inner:self.d_inner + self.d_state]
-        C = x_conv[..., -self.d_state:]
+        # B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, -1, self.d_state))
+        # C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, -1, self.d_state))
+
+        B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
+        C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
         
         # Reshape for SSM processing
         x = mx.reshape(x, (batch_size, seq_len, self.n_heads, self.d_head))
         
         # Initialize state
         if cache and cache[1] is not None:
-            prev_state = cache[1]
+            # State initialization might need proper scaling
+            prev_state = cache[1] * self.args.initializer_range
         else:
             prev_state = mx.zeros((batch_size, self.n_heads, self.d_head, self.d_state))
-        
+                
         # Compute dA - simplified to match PyTorch
-        A = -mx.exp(self.A_log)
+        # A = -mx.exp(self.A_log)
+        A = -mx.exp(self.A_log) * self.args.initializer_range
         dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
         dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
         
@@ -182,7 +188,8 @@ class Mamba2Block(nn.Module):
             dAt = dA[:, t]  # [batch, n_heads]
             
             # Compute dBx using einsum to match PyTorch
-            dBx = mx.einsum('bh,bn,bhp->bhpn', dAt, Bt, xt)
+            # dBx = mx.einsum('bh,bhd,bhp->bhpd', dAt, Bt, xt)
+            dBx = mx.einsum('bh,bhn,bhp->bhpn', dAt, Bt, xt)
             
             # Update state - matches PyTorch implementation
             next_state = (
@@ -191,7 +198,8 @@ class Mamba2Block(nn.Module):
             )
             
             # Compute output
-            yt = mx.einsum('bhpn,bn->bhp', next_state, Ct)
+            # yt = mx.einsum('bhpd,bhd->bhp', next_state, Ct)
+            yt = mx.einsum('bhpg,bgh->bhp', next_state, Ct)
             yt = yt + xt * mx.expand_dims(self.D, -1)
             
             # Reshape and normalize
@@ -202,7 +210,7 @@ class Mamba2Block(nn.Module):
         # Update cache
         if cache is not None:
             cache[1] = next_state
-        
+
         return mx.concatenate(outputs, axis=1)
     
 
