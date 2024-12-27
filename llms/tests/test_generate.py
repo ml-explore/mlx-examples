@@ -61,7 +61,7 @@ class TestGenerate(unittest.TestCase):
             ],
             max_tokens=5,
             prefill_step_size=4,
-            sampler=make_sampler(temp=1.0, min_p=0.1),
+            sampler=make_sampler(temp=1., min_p=0.5),
             logits_processors=make_logits_processors(logit_bias, repetition_penalty=2.0),
             verbose=False,
         )

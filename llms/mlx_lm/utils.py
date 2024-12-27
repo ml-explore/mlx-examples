@@ -524,8 +524,15 @@ def batch_generate(
         tokenizer._tokenizer.pad_token_id = tokenizer.eos_token_id
     res = tokenizer._tokenizer(prompts, padding=True)
     input_ids, token_mask = mx.array(res["input_ids"]), mx.array(res["attention_mask"])
-    causal_mask = create_causal_mask(token_mask.shape[-1])
-    mask = mx.where(token_mask[:, None, None, :], causal_mask, -1e9)
+    dtype = None
+    for module in model.modules():
+        if isinstance(module, nn.QuantizedEmbedding) or isinstance(module, nn.Embedding):
+            dtype = module(mx.zeros(1, dtype=input_ids.dtype)).dtype
+            break
+    causal_mask = create_causal_mask(token_mask.shape[-1], dtype=dtype)
+    # HACK: sometimes see NaN logprobs if no divide by 2 here
+    # mask = mx.where(token_mask[:, None, None, :], causal_mask, mx.finfo(dtype).min / 2)
+    mask = mx.where(token_mask[:, None, None, :], causal_mask, -65504. / 2)
 
     output_toks = []
     prompt_time = None

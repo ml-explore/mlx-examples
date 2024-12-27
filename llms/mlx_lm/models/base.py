@@ -28,6 +28,7 @@ def create_causal_mask(
     offset: int = 0,
     window_size: Optional[int] = None,
     lengths: Optional[mx.array] = None,
+    dtype: mx.Dtype = mx.float32,
 ):
     rinds = mx.arange(offset + N)
     linds = mx.arange(offset, offset + N) if offset else rinds
@@ -39,7 +40,9 @@ def create_causal_mask(
     if lengths is not None:
         lengths = lengths[:, None, None, None]
         mask = mask | (rinds >= lengths)
-    return mask * -1e9
+    # HACK: sometimes see NaN logprobs if no divide by 2 here
+    # return mask * (mx.finfo(dtype).min / 2)
+    return mask.astype(dtype) * (-65504. / 2)
 
 
 def create_attention_mask(h: mx.array, cache: Optional[Any] = None):
