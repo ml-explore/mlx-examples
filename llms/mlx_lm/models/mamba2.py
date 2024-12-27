@@ -154,11 +154,13 @@ class Mamba2Block(nn.Module):
         
         # Split conv output and reshape
         x = x_conv[..., :self.d_inner]
-        # B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, -1, self.d_state))
-        # C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, -1, self.d_state))
+        # B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
+        # C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
 
-        B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
-        C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
+        # Reshape tensors for correct broadcasting
+        x = mx.reshape(x, (batch_size, seq_len, self.n_heads, self.d_head))
+        B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, self.n_heads, self.d_state // self.n_heads))
+        C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, self.n_heads, self.d_state // self.n_heads))
         
         # Reshape for SSM processing
         x = mx.reshape(x, (batch_size, seq_len, self.n_heads, self.d_head))
@@ -171,10 +173,15 @@ class Mamba2Block(nn.Module):
             prev_state = mx.zeros((batch_size, self.n_heads, self.d_head, self.d_state))
                 
         # Compute dA - simplified to match PyTorch
-        # A = -mx.exp(self.A_log)
+        # A = -mx.exp(self.A_log) * self.args.initializer_range
+        # dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
+        # dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
+
+        # SSM parameters calculation
         A = -mx.exp(self.A_log) * self.args.initializer_range
         dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
-        dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
+        A = mx.reshape(A, (1, 1, self.n_heads))  # [1, 1, n_heads]
+        dA = mx.exp(dt * A)
         
         # Process sequence
         next_state = prev_state
@@ -188,23 +195,26 @@ class Mamba2Block(nn.Module):
             dAt = dA[:, t]  # [batch, n_heads]
             
             # Compute dBx using einsum to match PyTorch
-            # dBx = mx.einsum('bh,bhd,bhp->bhpd', dAt, Bt, xt)
-            dBx = mx.einsum('bh,bhn,bhp->bhpn', dAt, Bt, xt)
+            dBx = mx.einsum('bh,bhd,bhp->bhpd', dAt, Bt, xt)
             
             # Update state - matches PyTorch implementation
-            next_state = (
-                next_state * mx.expand_dims(dAt, axis=(-1, -2)) + 
-                dBx
-            )
+            # next_state = (
+            #     next_state * mx.expand_dims(dAt, axis=(-1, -2)) + 
+            #     dBx
+            # )
+
+            # Update state
+            dAt = mx.reshape(dAt, (batch_size, self.n_heads, 1, 1))
+            next_state = next_state * dAt + dBx
             
             # Compute output
-            # yt = mx.einsum('bhpd,bhd->bhp', next_state, Ct)
-            yt = mx.einsum('bhpg,bgh->bhp', next_state, Ct)
+            yt = mx.einsum('bhpd,bhd->bhp', next_state, Ct)
             yt = yt + xt * mx.expand_dims(self.D, -1)
             
             # Reshape and normalize
             yt = mx.reshape(yt, (batch_size, 1, self.d_inner))
             yt = self.norm(yt, z[:, t:t+1])
+            yt = yt * (1.0 / math.sqrt(self.d_head))
             outputs.append(self.out_proj(yt))
         
         # Update cache
@@ -227,6 +237,7 @@ class ResidualBlock(nn.Module):
         normed = self.norm(x)
         output = self.mixer(normed, cache)
         return output + x
+
 
 class Mamba2(nn.Module):
     def __init__(self, args: ModelArgs):
