@@ -296,7 +296,7 @@ def generate_step(
 
     def _step(y):
         with mx.stream(generation_stream):
-            if y.ndims == 1:
+            if y.ndim == 1:
                 y = mx.expand_dims(y, axis=-1)
             logits = model(
                 y,
@@ -390,12 +390,16 @@ def stream_generate(
             prompt if isinstance(prompt, list) else tokenizer.encode(prompt)
         )
 
+    if prompt.ndim == 1:
+        prompt = prompt[None]
+
     detokenizer = tokenizer.detokenizer
 
     with wired_limit(model, [generation_stream]):
         detokenizer.reset()
         tic = time.perf_counter()
         for n, (token, logprobs) in enumerate(generate_step(prompt, model, **kwargs)):
+            token, logprobs = token.item(), logprobs.squeeze(0)
             if n == 0:
                 prompt_time = time.perf_counter() - tic
                 prompt_tps = prompt.size / prompt_time

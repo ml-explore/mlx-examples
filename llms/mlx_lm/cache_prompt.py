@@ -132,7 +132,7 @@ def main():
         prompt = args.prompt
 
     cache = make_prompt_cache(model, args.max_kv_size)
-    y = mx.array(tokenizer.encode(prompt))
+    y = mx.array(tokenizer.encode(prompt))[None]
 
     # Process the prompt
     start = time.time()
