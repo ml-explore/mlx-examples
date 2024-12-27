@@ -186,8 +186,7 @@ class Mamba2Block(nn.Module):
             
             # Update state - matches PyTorch implementation
             next_state = (
-                next_state * mx.expand_dims(dAt, axis=(-1, -2)) + 
-                dBx
+                next_state * mx.expand_dims(dAt, axis=(-1, -2)) + dBx
             )
             
             # Compute output
