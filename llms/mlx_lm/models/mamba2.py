@@ -154,10 +154,6 @@ class Mamba2Block(nn.Module):
         
         # Split conv output and reshape
         x = x_conv[..., :self.d_inner]
-        # B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
-        # C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, self.n_heads, -1))  # [1, 1, 128, 1]
-
-        # Reshape tensors for correct broadcasting
         x = mx.reshape(x, (batch_size, seq_len, self.n_heads, self.d_head))
         B = mx.reshape(x_conv[..., self.d_inner:self.d_inner + self.d_state], (batch_size, seq_len, self.n_heads, self.d_state // self.n_heads))
         C = mx.reshape(x_conv[..., -self.d_state:], (batch_size, seq_len, self.n_heads, self.d_state // self.n_heads))
@@ -173,15 +169,9 @@ class Mamba2Block(nn.Module):
             prev_state = mx.zeros((batch_size, self.n_heads, self.d_head, self.d_state))
                 
         # Compute dA - simplified to match PyTorch
-        # A = -mx.exp(self.A_log) * self.args.initializer_range
-        # dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
-        # dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
-
-        # SSM parameters calculation
         A = -mx.exp(self.A_log) * self.args.initializer_range
         dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
-        A = mx.reshape(A, (1, 1, self.n_heads))  # [1, 1, n_heads]
-        dA = mx.exp(dt * A)
+        dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
         
         # Process sequence
         next_state = prev_state
@@ -198,14 +188,10 @@ class Mamba2Block(nn.Module):
             dBx = mx.einsum('bh,bhd,bhp->bhpd', dAt, Bt, xt)
             
             # Update state - matches PyTorch implementation
-            # next_state = (
-            #     next_state * mx.expand_dims(dAt, axis=(-1, -2)) + 
-            #     dBx
-            # )
-
-            # Update state
-            dAt = mx.reshape(dAt, (batch_size, self.n_heads, 1, 1))
-            next_state = next_state * dAt + dBx
+            next_state = (
+                next_state * mx.expand_dims(dAt, axis=(-1, -2)) + 
+                dBx
+            )
             
             # Compute output
             yt = mx.einsum('bhpd,bhd->bhp', next_state, Ct)
