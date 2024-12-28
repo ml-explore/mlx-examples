@@ -42,7 +42,7 @@ def create_causal_mask(
         mask = mask | (rinds >= lengths)
     # HACK: sometimes see NaN logprobs if no divide by 2 here
     # return mask * (mx.finfo(dtype).min / 2)
-    return mask.astype(dtype) * (-65504. / 2)
+    return mask.astype(dtype) * (-65504.0 / 2)
 
 
 def create_attention_mask(h: mx.array, cache: Optional[Any] = None):

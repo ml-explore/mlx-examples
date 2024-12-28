@@ -329,9 +329,11 @@ def generate_step(
             model(
                 y[:, :prefill_step_size],
                 cache=prompt_cache,
-                mask=mask[:, :, :prefill_step_size, : offset + prefill_step_size]
-                if mask is not None
-                else None,
+                mask=(
+                    mask[:, :, :prefill_step_size, : offset + prefill_step_size]
+                    if mask is not None
+                    else None
+                ),
             )
             maybe_quantize_kv_cache(
                 prompt_cache, quantized_kv_start, kv_group_size, kv_bits
@@ -509,7 +511,7 @@ def batch_generate(
        kwargs: The remaining options get passed to :func:`generate_step`.
           See :func:`generate_step` for more details.
     """
-    if 'prompt_cache' in kwargs:
+    if "prompt_cache" in kwargs:
         # TODO: Handle `prompt_cache` and `prompt` both left-padded, so that
         # we have <pad>text<pad>text. Should involve taking `prompt_cache_lens`
         # to extend `mask` below, and handling position_ids (see TODO below)
@@ -527,13 +529,15 @@ def batch_generate(
     input_ids, token_mask = mx.array(res["input_ids"]), mx.array(res["attention_mask"])
     dtype = mx.float32
     for module in model.modules():
-        if isinstance(module, nn.QuantizedEmbedding) or isinstance(module, nn.Embedding):
+        if isinstance(module, nn.QuantizedEmbedding) or isinstance(
+            module, nn.Embedding
+        ):
             dtype = module(mx.zeros(1, dtype=input_ids.dtype)).dtype
             break
     causal_mask = create_causal_mask(token_mask.shape[-1], dtype=dtype)
     # HACK: sometimes see NaN logprobs if no divide by 2 here
     # mask = mx.where(token_mask[:, None, None, :], causal_mask, mx.finfo(dtype).min / 2)
-    mask = mx.where(token_mask[:, None, None, :], causal_mask, -65504. / 2)
+    mask = mx.where(token_mask[:, None, None, :], causal_mask, -65504.0 / 2)
 
     output_toks = []
     prompt_time = None

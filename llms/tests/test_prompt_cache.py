@@ -208,7 +208,9 @@ class TestPromptCache(unittest.TestCase):
         prompt_cache = make_prompt_cache(model)
 
         # Generate one token so we process the full prompt
-        last_tok, _ = next(generate_step(prompt[None], model, prompt_cache=prompt_cache))
+        last_tok, _ = next(
+            generate_step(prompt[None], model, prompt_cache=prompt_cache)
+        )
 
         # Generate two more tokens
         results = zip(
