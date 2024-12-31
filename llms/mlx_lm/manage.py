@@ -20,7 +20,7 @@ def ask_for_confirmation(message: str) -> bool:
             return True
         if answer in n:
             return False
-        print(f"Invalid input. Must be one of: yes/no/y/N or empty for no")
+        print(f"Invalid input. Must be one of: yes/no/y/n or empty for no")
 
 
 def main():
