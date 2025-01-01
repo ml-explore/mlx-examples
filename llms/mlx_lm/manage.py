@@ -9,13 +9,10 @@ def ask_for_confirmation(message: str) -> bool:
     """Ask user for confirmation with Y/N prompt.
     Returns True for Y/yes, False for N/no/empty."""
     y = ("y", "yes", "1")
-    n = ("n", "no", "0")
-    all_values = y + n + ("",)
-    full_message = f"{message} (y/N) "
+    n = ("n", "no", "0", "")
+    full_message = f"{message} (y/n) "
     while True:
         answer = input(full_message).lower()
-        if answer == "":
-            return False
         if answer in y:
             return True
         if answer in n:
@@ -45,9 +42,7 @@ def main():
     args = parser.parse_args()
 
     if args.scan:
-        print(
-            f'Scanning Hugging Face cache for models with pattern "{args.pattern}".'
-        )
+        print(f'Scanning Hugging Face cache for models with pattern "{args.pattern}".')
         hf_cache_info = scan_cache_dir()
         print(
             tabulate(
@@ -107,7 +102,9 @@ def main():
                 )
             )
 
-            confirmed = ask_for_confirmation("\nAre you sure you want to delete these models?")
+            confirmed = ask_for_confirmation(
+                "\nAre you sure you want to delete these models?"
+            )
             if confirmed:
                 for model_info in repos:
                     print(f"\nDeleting {model_info.repo_id}...")
