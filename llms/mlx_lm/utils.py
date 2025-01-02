@@ -21,6 +21,7 @@ from transformers import PreTrainedTokenizer
 
 # Local imports
 from .models import cache
+from .models.base import create_causal_mask
 from .sample_utils import make_logits_processors, make_sampler
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import dequantize as dequantize_model
@@ -202,6 +203,7 @@ def generate_step(
     logits_processors: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
     max_kv_size: Optional[int] = None,
     prompt_cache: Optional[Any] = None,
+    mask: Optional[mx.array] = None,
     prefill_step_size: int = 512,
     kv_bits: Optional[int] = None,
     kv_group_size: int = 64,
@@ -215,22 +217,27 @@ def generate_step(
     min_tokens_to_keep: Optional[int] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
-    A generator producing token ids based on the given prompt from the model.
+    A generator producing token ids based on the given prompt(s) from the model.
 
     Args:
-        prompt (mx.array): The input prompt.
+        prompt (mx.array): The input prompt(s), shaped (batch_size, prompt_len).
         model (nn.Module): The model to use for generation.
         max_tokens (int): The maximum number of tokens. Use``-1`` for an infinite
           generator. Default: ``256``.
-        sampler (Callable[mx.array, mx.array], optional): A sampler for sampling a
-          token from a vector of log probabilities. Default: ``None``.
+        sampler (Callable[mx.array, mx.array], optional): A sampler for sampling
+          tokens (shaped (batch_size,)) from a vector of log probabilities,
+          shaped (batch_size, vocab_size). Default: ``None``.
         logits_processors (List[Callable[[mx.array, mx.array], mx.array]], optional):
-          A list of functions that take tokens and logits and return the processed
-          logits. Default: ``None``.
+          A list of functions that take tokens (shaped (batch_size, gen_len)) and
+          logits and return the processed logits, shaped (batch_size, vocab_size).
+          Default: ``None``.
         max_kv_size (int, optional): Maximum size of the key-value cache. Old
           entries (except the first 4 tokens) will be overwritten.
         prompt_cache (List[Any], optional): A pre-computed prompt cache. Note, if
           provided, the cache will be updated in place.
+        mask (mx.array, optional): An attention mask to apply to the prompt.
+          Should be of shape (batch_size, 1, prompt_len, prompt_len + cache_len).
+          See: `create_causal_mask`.
         prefill_step_size (int): Step size for processing the prompt.
         kv_bits (int, optional): Number of bits to use for KV cache quantization.
           None implies no cache quantization. Default: ``None``.
@@ -241,11 +248,24 @@ def generate_step(
            prompt tokens processed so far and the total number of prompt tokens.
 
     Yields:
-        Tuple[mx.array, mx.array]: One token and a vector of log probabilities.
+        Tuple[mx.array, mx.array]: One token (shaped (batch_size,))
+            and a vector of log probabilities (shaped (batch_size, vocab_size)).
     """
+    if prompt.ndim == 1:
+        print(
+            "[Warning] Passing a (prompt_len,)-shaped ``prompt`` into ``generate_step`` "
+            "is deprecated. Pass in a (batch_size, prompt_len)-shaped ``prompt`` instead."
+        )
+        prompt = prompt[None]
 
     y = prompt
     tokens = None
+
+    if y.shape[0] != 1 and max_kv_size is not None:
+        # TODO: If we have left-padded sequences, we need to evict all the
+        # pad tokens from the `RotatingKVCache` before evicting from left plus 4.
+        # The indexing of `mask` below will also break if we evict from cache.
+        raise ValueError("max_kv_size is not supported for batched generation.")
 
     # Create the KV cache for generation
     if prompt_cache is None:
@@ -276,13 +296,19 @@ def generate_step(
     prompt_progress_callback = prompt_progress_callback or (lambda *_: None)
 
     def _step(y):
+        if y.ndim == 1:
+            y = mx.expand_dims(y, axis=-1)
         with mx.stream(generation_stream):
-            logits = model(y[None], cache=prompt_cache)
+            logits = model(
+                y,
+                cache=prompt_cache,
+                mask=mask if mask is not None and y.shape[-1] > 1 else None,
+            )
             logits = logits[:, -1, :]
 
             if logits_processors:
                 nonlocal tokens
-                tokens = mx.concat([tokens, y]) if tokens is not None else y
+                tokens = mx.concat([tokens, y], axis=-1) if tokens is not None else y
 
                 for processor in logits_processors:
                     logits = processor(tokens, logits)
@@ -293,20 +319,30 @@ def generate_step(
 
             logprobs = logits - mx.logsumexp(logits, keepdims=True)
             y = sampler(logprobs)
-            return y, logprobs.squeeze(0)
+            return y, logprobs
 
     with mx.stream(generation_stream):
         total_prompt_tokens = y.size
         prompt_processed_tokens = 0
-        while y.size > prefill_step_size:
-            model(y[:prefill_step_size][None], cache=prompt_cache)
+        while y.shape[-1] > prefill_step_size:
+            offset = prompt_cache[0].offset
+            model(
+                y[:, :prefill_step_size],
+                cache=prompt_cache,
+                mask=(
+                    mask[:, :, :prefill_step_size, : offset + prefill_step_size]
+                    if mask is not None
+                    else None
+                ),
+            )
             maybe_quantize_kv_cache(
                 prompt_cache, quantized_kv_start, kv_group_size, kv_bits
             )
             mx.eval([c.state for c in prompt_cache])
             prompt_progress_callback(prompt_processed_tokens, total_prompt_tokens)
-            prompt_processed_tokens += prefill_step_size
-            y = y[prefill_step_size:]
+            prompt_processed_tokens += y.shape[0] * prefill_step_size
+            y = y[:, prefill_step_size:]
+            mask = mask[:, :, prefill_step_size:, :] if mask is not None else None
             mx.metal.clear_cache()
 
         y, logprobs = _step(y)
@@ -322,7 +358,8 @@ def generate_step(
             prompt_progress_callback(total_prompt_tokens, total_prompt_tokens)
         if n == max_tokens:
             break
-        yield y.item(), logprobs
+        mx.eval(y)
+        yield y, logprobs
         if n % 256 == 0:
             mx.metal.clear_cache()
         y, logprobs = next_y, next_logprobs
@@ -357,12 +394,16 @@ def stream_generate(
             prompt if isinstance(prompt, list) else tokenizer.encode(prompt)
         )
 
+    if prompt.ndim == 1:
+        prompt = prompt[None]
+
     detokenizer = tokenizer.detokenizer
 
     with wired_limit(model, [generation_stream]):
         detokenizer.reset()
         tic = time.perf_counter()
         for n, (token, logprobs) in enumerate(generate_step(prompt, model, **kwargs)):
+            token, logprobs = token.item(), logprobs.squeeze(0)
             if n == 0:
                 prompt_time = time.perf_counter() - tic
                 prompt_tps = prompt.size / prompt_time
@@ -449,6 +490,97 @@ def generate(
         )
         print(f"Peak memory: {response.peak_memory:.3f} GB")
     return text
+
+
+def batch_generate(
+    model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
+    prompts: list[str],
+    verbose: bool = False,
+    **kwargs,
+) -> list[str]:
+    """
+    Generate complete responses from the model for a list of prompts.
+
+    Args:
+       model (nn.Module): The language model.
+       tokenizer (PreTrainedTokenizer): The tokenizer.
+       prompts (List[str]): The string prompts.
+       verbose (bool): If ``True``, print tokens and timing information.
+           Default: ``False``.
+       kwargs: The remaining options get passed to :func:`generate_step`.
+          See :func:`generate_step` for more details.
+    """
+    if "prompt_cache" in kwargs:
+        # TODO: Handle `prompt_cache` and `prompt` both left-padded, so that
+        # we have <pad>text<pad>text. Should involve taking `prompt_cache_lens`
+        # to extend `mask` below, and handling position_ids (see TODO below)
+        raise ValueError("Batch generation does not support prompt_cache yet.")
+    tokenizer = copy.deepcopy(tokenizer)
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
+    # TODO: left-shift position_ids for absolute/rotary positional encodings
+    # Example: https://github.com/huggingface/transformers/issues/26072#issuecomment-2101209470
+    tokenizer._tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer._tokenizer.pad_token = tokenizer.eos_token
+        tokenizer._tokenizer.pad_token_id = tokenizer.eos_token_id
+    res = tokenizer._tokenizer(prompts, padding=True)
+    input_ids, token_mask = mx.array(res["input_ids"]), mx.array(res["attention_mask"])
+    dtype = mx.float32
+    for module in model.modules():
+        if isinstance(module, nn.QuantizedEmbedding) or isinstance(
+            module, nn.Embedding
+        ):
+            dtype = module(mx.zeros(1, dtype=input_ids.dtype)).dtype
+            break
+    causal_mask = create_causal_mask(token_mask.shape[-1], dtype=dtype)
+    # HACK: sometimes see NaN logprobs if no divide by 2 here
+    # mask = mx.where(token_mask[:, None, None, :], causal_mask, mx.finfo(dtype).min / 2)
+    mask = mx.where(token_mask[:, None, None, :], causal_mask, -65504.0 / 2)
+
+    output_toks = []
+    prompt_time = None
+    ended = mx.zeros(len(prompts), dtype=mx.bool_)
+    tic = time.perf_counter()
+    # TODO: non-generator version of `generate_step` so that we can
+    # add or remove prompts from the batch as they start/finish
+    for tokens, _ in generate_step(input_ids, model, mask=mask, **kwargs):
+        if not prompt_time:
+            prompt_time = time.perf_counter() - tic
+            tic = time.perf_counter()
+        ended = ended | (tokens == tokenizer.eos_token_id)
+        if ended.all():
+            break
+        output_toks.append(tokens)
+        if verbose:
+            print(".", end="", flush=True)
+    output_toks = mx.stack(output_toks, axis=-1)
+    token_count = output_toks.size
+    response = [
+        response.split(tokenizer.eos_token)[0].split(tokenizer.pad_token)[0]
+        for response in tokenizer.batch_decode(output_toks.tolist())
+    ]
+    if verbose:
+        gen_time = time.perf_counter() - tic
+        if token_count <= 0:
+            print("No tokens generated for this prompt")
+        else:
+            print()
+            for p, resp in zip(prompts, response):
+                print("=" * 10)
+                print("Prompt:", p)
+                print(resp)
+        print("=" * 10)
+        if prompt_time:
+            prompt_tps = input_ids.size / prompt_time
+            print(f"Prompt: {input_ids.size} tokens, {prompt_tps:.3f} tokens-per-sec")
+        gen_tps = token_count / gen_time
+        print(f"Generation: {token_count} tokens, {gen_tps:.3f} tokens-per-sec")
+        peak_mem = mx.metal.get_peak_memory() / 2**30
+        print(f"Peak memory: {peak_mem:.3f} GB")
+
+    return response
 
 
 def load_config(model_path: Path) -> dict:
