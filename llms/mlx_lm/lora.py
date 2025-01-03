@@ -2,6 +2,7 @@
 
 import argparse
 import math
+import os
 import re
 import types
 from pathlib import Path
@@ -271,6 +272,7 @@ def run(args, training_callback: TrainingCallback = None):
 
 
 def main():
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
     parser = build_parser()
     args = parser.parse_args()
     config = args.config

@@ -14,7 +14,7 @@ conversation = [{"role": "user", "content": prompt}]
 
 # Transform the prompt into the chat template
 prompt = tokenizer.apply_chat_template(
-    conversation=conversation, tokenize=False, add_generation_prompt=True
+    conversation=conversation, add_generation_prompt=True
 )
 
 # Specify the maximum number of tokens

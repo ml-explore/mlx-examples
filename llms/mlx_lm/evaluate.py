@@ -1,4 +1,8 @@
-# Adapted from a PyTorch implementation by David Grangier
+# Copyright © 2024 Apple Inc.
+
+"""
+Adapted from a PyTorch implementation by David Grangier
+"""
 
 import argparse
 import json
@@ -6,7 +10,7 @@ import logging
 import os
 from importlib.metadata import version
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import lm_eval
 import mlx.core as mx
@@ -277,19 +281,19 @@ class MLXLM(LM):
         assert "until" in keys
         untils = [x["until"] for x in options]
         completions = []
+
         for context, until in tqdm(zip(contexts, untils), total=len(contexts)):
-            if (
-                hasattr(self._tokenizer, "apply_chat_template")
-                and self._tokenizer.chat_template is not None
-            ):
+            if self._tokenizer.chat_template is not None:
                 messages = [{"role": "user", "content": context}]
                 context = self._tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
+                    messages, add_generation_prompt=True
                 )
+            else:
+                context = self._tokenizer.encode(context)
 
             max_tokens = min(
                 self._max_tokens,
-                self._tokenizer.model_max_length - len(self._tokenizer.encode(context)),
+                self._tokenizer.model_max_length - len(context),
             )
             text = ""
             for response in stream_generate(
@@ -321,6 +325,12 @@ def main():
         type=int,
         help="Maximum nunber of tokens to generate. Defaults to the model's max context length.",
     )
+    parser.add_argument(
+        "--limit",
+        default=1.0,
+        help="Limit the number of examples per task.",
+        type=float,
+    )
     parser.add_argument("--seed", type=int, default=123, help="Random seed.")
     args = parser.parse_args()
 
@@ -338,10 +348,12 @@ def main():
         model=lm,
         tasks=args.tasks,
         num_fewshot=args.num_shots,
+        limit=args.limit,
         random_seed=args.seed,
         numpy_random_seed=args.seed,
         torch_random_seed=args.seed,
         fewshot_random_seed=args.seed,
+        apply_chat_template=True,
     )
 
     model_name = args.model.replace("/", "_")
