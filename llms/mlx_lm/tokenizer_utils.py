@@ -266,6 +266,18 @@ class TokenizerWrapper:
             else {tokenizer.eos_token_id}
         )
 
+    def add_eos_token(self, token: str):
+        token_id = None
+        try:
+            token_id = int(token)
+        except ValueError:
+            token_id = self._tokenizer.convert_tokens_to_ids(token)
+
+        if token_id is None:
+            raise ValueError(f"'{token}' is not a token for this tokenizer")
+
+        self._eos_token_ids.add(token_id)
+
     def __getattr__(self, attr):
         if attr == "detokenizer":
             return self._detokenizer
