@@ -190,10 +190,7 @@ def main():
 
     prompt = args.prompt.replace("\\n", "\n").replace("\\t", "\t")
     prompt = sys.stdin.read() if prompt == "-" else prompt
-    if not args.ignore_chat_template and (
-        hasattr(tokenizer, "apply_chat_template")
-        and tokenizer.chat_template is not None
-    ):
+    if not args.ignore_chat_template and tokenizer.chat_template is not None:
         if args.system_prompt is not None:
             messages = [{"role": "system", "content": args.system_prompt}]
         else:
@@ -213,6 +210,10 @@ def main():
                 add_generation_prompt=True,
             )
             prompt = prompt[test_prompt.index("<query>") :]
+
+        prompt = tokenizer.encode(prompt, add_special_tokens=False)
+    else:
+        prompt = tokenizer.encode(prompt)
 
     sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
     response = generate(

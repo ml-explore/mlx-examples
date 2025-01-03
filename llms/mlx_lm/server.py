@@ -590,14 +590,10 @@ class APIHandler(BaseHTTPRequestHandler):
         # Determine response type
         self.request_id = f"chatcmpl-{uuid.uuid4()}"
         self.object_type = "chat.completion.chunk" if self.stream else "chat.completion"
-        if (
-            hasattr(self.tokenizer, "apply_chat_template")
-            and self.tokenizer.chat_template
-        ):
+        if self.tokenizer.chat_template:
             prompt = self.tokenizer.apply_chat_template(
                 body["messages"],
                 body.get("tools", None),
-                tokenize=True,
                 add_generation_prompt=True,
             )
         else:
