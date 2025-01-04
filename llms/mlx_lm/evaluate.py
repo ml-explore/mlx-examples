@@ -83,6 +83,9 @@ class MLXLM(LM):
         self._model, self._tokenizer = load(path_or_hf_repo)
         self._max_tokens = max_tokens or self._tokenizer.model_max_length
 
+        # Needed by HF implementation methods (tokenizer_name, apply_chat_template, and, tok_encode)
+        self.tokenizer = self._tokenizer
+
     def _score_fn(self, inputs, tokenize=True, step_size=32):
         if tokenize:
             inputs = self._tokenizer.encode(inputs)
@@ -221,6 +224,10 @@ class MLXLM(LM):
         )
         return [(r[0], r[1] == r[2]) for r in results]
 
+    tokenizer_name = lm_eval.models.huggingface.HFLM.tokenizer_name
+    apply_chat_template = lm_eval.models.huggingface.HFLM.apply_chat_template
+    tok_encode = lm_eval.models.huggingface.HFLM.tok_encode
+
     def loglikelihood_rolling(self, requests) -> list[float]:
         """Compute full log-likelihood of a string, with no truncation, for perplexity computation
         - We will use the full max context length of the model.
@@ -332,6 +339,18 @@ def main():
         type=float,
     )
     parser.add_argument("--seed", type=int, default=123, help="Random seed.")
+    parser.add_argument(
+        "--fewshot-as-multiturn",
+        action="store_true",
+        help="Whether to provide the fewshot examples as a multiturn conversation or a single user turn.",
+        default=False,
+    )
+    parser.add_argument(
+        "--apply-chat-template",
+        action="store_true",
+        help="Specifies whether to apply a chat template to the prompt",
+        default=False,
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -347,6 +366,8 @@ def main():
     results = lm_eval.simple_evaluate(
         model=lm,
         tasks=args.tasks,
+        fewshot_as_multiturn=args.fewshot_as_multiturn,
+        apply_chat_template=args.apply_chat_template,
         num_fewshot=args.num_shots,
         limit=args.limit,
         random_seed=args.seed,
