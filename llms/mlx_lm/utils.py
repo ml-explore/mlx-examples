@@ -1,5 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import os
 import contextlib
 import copy
 import glob
@@ -15,7 +16,10 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, 
 
 import mlx.core as mx
 import mlx.nn as nn
-from huggingface_hub import snapshot_download
+if os.getenv('MLX_USE_MODELSCOPE', 'False').lower() == 'true':
+    from modelscope import snapshot_download
+else:
+    from huggingface_hub import snapshot_download
 from mlx.utils import tree_flatten, tree_reduce
 from transformers import PreTrainedTokenizer
 
