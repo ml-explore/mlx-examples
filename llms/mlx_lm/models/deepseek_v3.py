@@ -373,6 +373,19 @@ class DeepseekV3Model(nn.Module):
             for idx in range(config.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pipeline_rank = 0
+        self.pipeline_size = 1
+
+    def pipeline(self, group):
+        # Split layers in reverse so rank=0 gets the last layers and
+        # rank=pipeline_size-1 gets the first
+        self.pipeline_rank = group.rank()
+        self.pipeline_size = group.size()
+        layers_per_rank = (
+            len(self.layers) + self.pipeline_size - 1
+        ) // self.pipeline_size
+        start = (self.pipeline_size - self.pipeline_rank - 1) * layers_per_rank
+        self.layers = self.layers[start : start + layers_per_rank]
 
     def __call__(
         self,
@@ -380,16 +393,29 @@ class DeepseekV3Model(nn.Module):
         cache: Optional[Any] = None,
         mask: Optional[mx.array] = None,
     ) -> mx.array:
-
         h = self.embed_tokens(x)
+
+        pipeline_rank = self.pipeline_rank
+        pipeline_size = self.pipeline_size
         if mask is None:
             mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
 
+        # Receive from the previous process in the pipeline
+        if pipeline_rank < pipeline_size - 1:
+            h = mx.distributed.recv_like(h, (pipeline_rank + 1))
+
         for layer, c in zip(self.layers, cache):
             h = layer(h, mask, c)
+
+        # Send to the next process in the pipeline
+        if pipeline_rank != 0:
+            h = mx.distributed.send(h, (pipeline_rank - 1) % pipeline_size)
+
+        # Broadcast h while keeping it in the graph
+        h = mx.distributed.all_gather(h)[: h.shape[0]]
 
         return self.norm(h)
 
