@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, 
 import mlx.core as mx
 import mlx.nn as nn
 if os.getenv('MLX_USE_MODELSCOPE', 'False').lower() == 'true':
+    print(">> Using ModelScope")
     from modelscope import snapshot_download
 else:
     from huggingface_hub import snapshot_download
@@ -157,6 +158,10 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
         Path: The path to the model.
     """
     model_path = Path(path_or_hf_repo)
+    print(f'>>model_path: {model_path}')
+    revision = revision or 'master'
+    print(f'>>revision: {revision}')
+
     if not model_path.exists():
         try:
             model_path = Path(
