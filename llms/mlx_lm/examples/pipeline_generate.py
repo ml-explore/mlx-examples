@@ -25,19 +25,19 @@ parser = argparse.ArgumentParser(description="LLM pipelined inference example")
 parser.add_argument(
     "--prompt",
     "-p",
-    default="Hello world",
+    default="Write a quicksort in C++.",
     help="Message to be processed by the model ('-' reads from stdin)",
 )
 parser.add_argument(
     "--max-tokens",
     "-m",
     type=int,
-    default=128,
+    default=256,
     help="Maximum number of tokens to generate",
 )
 args = parser.parse_args()
 
-model_repo = "mlx-community/DeepSeek-V3-3bit-bf16"
+model_repo = "mlx-community/DeepSeek-V3-3bit"
 
 model, tokenizer = load(model_repo, lazy=True)
 
