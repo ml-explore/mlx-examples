@@ -45,7 +45,7 @@ def setup_arg_parser():
     parser.add_argument(
         "--extra-eos-token",
         type=str,
-        default=None,
+        default=(),
         nargs="+",
         help="Add tokens in the list of eos tokens that stop generation.",
     )
