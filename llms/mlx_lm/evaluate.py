@@ -77,18 +77,19 @@ class MLXLM(LM):
         path_or_hf_repo: str,
         batch_size: int = 16,
         max_tokens: Optional[int] = None,
+        use_chat_template: Optional[bool] = None,
     ) -> None:
         super().__init__()
         self._batch_size = batch_size
-        self._model, self._tokenizer = load(path_or_hf_repo)
-        self._max_tokens = max_tokens or self._tokenizer.model_max_length
-
-        # Needed by HF implementation methods (tokenizer_name, apply_chat_template, and, tok_encode)
-        self.tokenizer = self._tokenizer
+        self._model, self.tokenizer = load(path_or_hf_repo)
+        self._max_tokens = max_tokens or self.tokenizer.model_max_length
+        self.use_chat_template = use_chat_template or (
+            self.tokenizer.chat_template is not None
+        )
 
     def _score_fn(self, inputs, tokenize=True, step_size=32):
         if tokenize:
-            inputs = self._tokenizer.encode(inputs)
+            inputs = self._tokenize(inputs)
         inputs = _pad_inputs(inputs, self._max_tokens, truncate=False)
         inputs = mx.array(inputs)
         inputs, targets = inputs[..., :-1], inputs[..., 1:]
@@ -152,7 +153,12 @@ class MLXLM(LM):
         return results
 
     def _tokenize(self, texts):
-        return [tuple(self._tokenizer.encode(t)) for t in texts]
+        return [
+            tuple(
+                self.tokenizer.encode(t, add_special_tokens=not self.use_chat_template)
+            )
+            for t in texts
+        ]
 
     def loglikelihood(self, requests) -> list[tuple[float, bool]]:
         """Compute log-likelihood of generating a continuation from a context.
@@ -226,7 +232,6 @@ class MLXLM(LM):
 
     tokenizer_name = lm_eval.models.huggingface.HFLM.tokenizer_name
     apply_chat_template = lm_eval.models.huggingface.HFLM.apply_chat_template
-    tok_encode = lm_eval.models.huggingface.HFLM.tok_encode
 
     def loglikelihood_rolling(self, requests) -> list[float]:
         """Compute full log-likelihood of a string, with no truncation, for perplexity computation
@@ -290,21 +295,14 @@ class MLXLM(LM):
         completions = []
 
         for context, until in tqdm(zip(contexts, untils), total=len(contexts)):
-            if self._tokenizer.chat_template is not None:
-                messages = [{"role": "user", "content": context}]
-                context = self._tokenizer.apply_chat_template(
-                    messages, add_generation_prompt=True
-                )
-            else:
-                context = self._tokenizer.encode(context)
-
+            context = self._tokenize(context)
             max_tokens = min(
                 self._max_tokens,
-                self._tokenizer.model_max_length - len(context),
+                self.tokenizer.model_max_length - len(context),
             )
             text = ""
             for response in stream_generate(
-                self._model, self._tokenizer, prompt=context, max_tokens=max_tokens
+                self._model, self.tokenizer, prompt=context, max_tokens=max_tokens
             ):
                 text += response.text
                 if any(u in text for u in until):
@@ -342,14 +340,17 @@ def main():
     parser.add_argument(
         "--fewshot-as-multiturn",
         action="store_true",
-        help="Whether to provide the fewshot examples as a multiturn conversation or a single user turn.",
+        help="Whether to provide the fewshot examples as a multiturn "
+        "conversation or a single user turn.",
         default=False,
     )
     parser.add_argument(
         "--apply-chat-template",
-        action="store_true",
-        help="Specifies whether to apply a chat template to the prompt",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Specifies whether to apply a chat template to the prompt. If "
+        "the model has a chat template, this defaults to `True`, "
+        "otherwise `False`.",
+        default=None,
     )
     args = parser.parse_args()
 
@@ -361,20 +362,23 @@ def main():
 
     mx.random.seed(args.seed)
 
-    lm = MLXLM(args.model, batch_size=args.batch_size, max_tokens=args.max_tokens)
-
+    lm = MLXLM(
+        args.model,
+        batch_size=args.batch_size,
+        max_tokens=args.max_tokens,
+        use_chat_template=args.apply_chat_template,
+    )
     results = lm_eval.simple_evaluate(
         model=lm,
         tasks=args.tasks,
         fewshot_as_multiturn=args.fewshot_as_multiturn,
-        apply_chat_template=args.apply_chat_template,
+        apply_chat_template=lm.use_chat_template,
         num_fewshot=args.num_shots,
         limit=args.limit,
         random_seed=args.seed,
         numpy_random_seed=args.seed,
         torch_random_seed=args.seed,
         fewshot_random_seed=args.seed,
-        apply_chat_template=True,
     )
 
     model_name = args.model.replace("/", "_")
