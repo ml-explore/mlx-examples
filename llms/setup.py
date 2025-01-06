@@ -27,8 +27,8 @@ setup(
     packages=["mlx_lm", "mlx_lm.models", "mlx_lm.tuner"],
     python_requires=">=3.8",
     extras_require={
-        "testing": ["datasets"],
-        "evaluation": ["lm-eval"],
+        "test": ["datasets"],
+        "evaluate": ["lm-eval", "tqdm"],
     },
     entry_points={
         "console_scripts": [
