@@ -4,3 +4,4 @@ transformers[sentencepiece]>=4.39.3
 protobuf
 pyyaml
 jinja2
+modelscope
