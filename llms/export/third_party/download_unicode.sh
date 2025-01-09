@@ -5,7 +5,5 @@ url=https://raw.githubusercontent.com/ggerganov/llama.cpp/${commit}/src/
 
 for file in 'unicode.cpp' 'unicode.h' 'unicode-data.cpp' 'unicode-data.h'
 do
-  curl -OL ${url}/${file}
+  curl -OL ${url}/${file} --output-dir $1 2>/dev/null
 done
-
-touch unicode_downloaded

@@ -98,13 +98,17 @@ std::vector<int> BPETokenizer::encode(std::string text) const {
   auto one_step_merge = [this](std::string segment, std::vector<int> &splits) {
     int merge_idx;
     int rank = INT32_MAX;
+    std::string candidate;
     for (int i = 0; i < splits.size() - 2; ++i) {
       auto start = splits[i];
       auto mid = splits[i + 1];
       auto end = splits[i + 2];
-      std::string candidate = segment.substr(start, mid - start);
+      candidate.clear();
+      candidate.insert(candidate.end(), segment.begin() + start,
+                       segment.begin() + mid);
       candidate += " ";
-      candidate += segment.substr(mid, end - mid);
+      candidate.insert(candidate.end(), segment.begin() + mid,
+                       segment.begin() + end);
       if (auto it = merges_.find(candidate); it != merges_.end()) {
         if (it->second < rank) {
           merge_idx = i;
