@@ -29,8 +29,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mlx-model",
         type=str,
-        default="weights/bert-base-uncased.npz",
-        help="The path of the stored MLX BERT weights (npz file).",
+        default="bert-base-uncased.safetensors",
+        help="The path of the stored MLX BERT weights.",
     )
     parser.add_argument(
         "--text",

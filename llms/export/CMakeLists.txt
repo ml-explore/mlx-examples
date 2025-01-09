@@ -19,21 +19,12 @@ find_package(MLX CONFIG REQUIRED)
 add_library(mlxlm)
 target_link_libraries(mlxlm PUBLIC mlx)
 
-include(FetchContent)
-
-FetchContent_Declare(
-  json
-  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
-FetchContent_MakeAvailable(json)
-target_include_directories(
-  mlxlm PRIVATE $<BUILD_INTERFACE:${json_SOURCE_DIR}/single_include/nlohmann>)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/third_party)
 
 target_sources(mlxlm
   PRIVATE
   mlxlm.cpp
-  tokenizer.cpp
-  unicode.cpp
-  unicode_data.cpp)
+  tokenizer.cpp)
 
 add_executable(main main.cpp)
 target_link_libraries(main PRIVATE mlxlm)

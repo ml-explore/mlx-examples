@@ -6,7 +6,7 @@
 #include <json.hpp>
 
 #include "tokenizer.h"
-#include "unicode.h"
+#include "third_party/unicode.h"
 
 using json = nlohmann::json;
 

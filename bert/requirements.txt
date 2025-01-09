@@ -1,3 +1,2 @@
 mlx>=0.0.5
 transformers
-numpy
