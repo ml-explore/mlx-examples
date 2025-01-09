@@ -561,7 +561,7 @@ def load(
             Defaults to an empty dictionary.
         adapter_path (str, optional): Path to the LoRA adapters. If provided, applies LoRA layers
             to the model. Default: ``None``.
-        lazy (bool): If False eval the model parameters to make sure they are
+        lazy (bool): If ``False`` eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
     Returns:
@@ -655,7 +655,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
         model, tokenizer = load("{upload_repo}")
 
-        prompt="hello"
+        prompt = "hello"
 
         if tokenizer.chat_template is not None:
             messages = [{{"role": "user", "content": prompt}}]
