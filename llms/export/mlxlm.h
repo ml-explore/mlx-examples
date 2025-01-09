@@ -6,15 +6,12 @@
 
 namespace mx = mlx::core;
 
-std::function<mx::Args(mx::Args)> load_model(const std::string& path);
+std::function<mx::Args(mx::Args)> load_model(const std::string &path);
 
-BPETokenizer load_tokenizer(const std::string& path);
+BPETokenizer load_tokenizer(const std::string &path);
 
-struct GenerationResponse {
-};
+struct GenerationResponse {};
 
-void generate(
-    const std::function<mx::Args(mx::Args)>& model,
-    const BPETokenizer& tokenizer,
-    const std::string& prompt,
-    int max_tokens = 256);
+void generate(const std::function<mx::Args(mx::Args)> &model,
+              const BPETokenizer &tokenizer, const std::string &prompt,
+              int max_tokens = 256);

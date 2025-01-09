@@ -13,20 +13,18 @@ namespace mx = mlx::core;
 #define time_now() std::chrono::high_resolution_clock::now()
 
 // Maybe compile
-std::function<mx::Args(mx::Args)> load_model(const std::string& path) {
+std::function<mx::Args(mx::Args)> load_model(const std::string &path) {
   return mx::compile(mx::import_function(path), /* shapeless = */ true);
 }
 
 // Maybe make tokenizer virtual
-BPETokenizer load_tokenizer(const std::string& path) {
+BPETokenizer load_tokenizer(const std::string &path) {
   return BPETokenizer(path);
 }
 
-void generate(
-    const std::function<mx::Args(mx::Args)>& model,
-    const BPETokenizer& tokenizer,
-    const std::string& prompt,
-    int max_tokens /* = 256 */) {
+void generate(const std::function<mx::Args(mx::Args)> &model,
+              const BPETokenizer &tokenizer, const std::string &prompt,
+              int max_tokens /* = 256 */) {
 
   auto prompt_tokens = tokenizer.encode(prompt);
   int prompt_size = prompt_tokens.size();
@@ -38,19 +36,22 @@ void generate(
   };
 
   // Helper to expand the cache and mask
-  auto expand = [](auto& args, auto& mask) {
+  auto expand = [](auto &args, auto &mask) {
     constexpr int cache_step_size = 256;
     int cache_size = args[1].shape(-2);
-    int new_size = cache_step_size * ((cache_size + cache_step_size) / cache_step_size);
+    int new_size =
+        cache_step_size * ((cache_size + cache_step_size) / cache_step_size);
     for (auto it = args.begin() + 1; it != args.end(); ++it) {
-      auto& x = *it;
+      auto &x = *it;
       auto shape = x.shape();
       shape[2] = new_size;
       auto new_x = mx::zeros(shape, x.dtype());
       shape[2] = cache_size;
-      *it = mx::slice_update(new_x, x, mx::Shape(x.ndim(), 0), std::move(shape));
+      *it =
+          mx::slice_update(new_x, x, mx::Shape(x.ndim(), 0), std::move(shape));
     }
-    mask = mx::slice_update(mx::full({new_size}, false), mask, {0}, {cache_size});
+    mask =
+        mx::slice_update(mx::full({new_size}, false), mask, {0}, {cache_size});
   };
 
   auto tic = time_now();

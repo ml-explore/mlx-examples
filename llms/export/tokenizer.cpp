@@ -1,21 +1,22 @@
 
-#include <fstream>
-#include <filesystem>
-#include <locale>
 #include <codecvt>
+#include <filesystem>
+#include <fstream>
 #include <json.hpp>
+#include <locale>
 
-#include "tokenizer.h"
 #include "third_party/unicode.h"
+#include "tokenizer.h"
 
 using json = nlohmann::json;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-std::pair<std::wstring, int> utf8_to_utf16(const std::string& s) {
+std::pair<std::wstring, int> utf8_to_utf16(const std::string &s) {
   static std::string replace_str = std::string(1, 0xFF);
   static std::wstring replace_wstr = std::wstring(1, 0xFFFD);
-  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> cvt(replace_str, replace_wstr);
+  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> cvt(replace_str,
+                                                             replace_wstr);
   auto out = cvt.from_bytes(s);
   return {out, cvt.converted()};
 }
@@ -23,7 +24,8 @@ std::pair<std::wstring, int> utf8_to_utf16(const std::string& s) {
 
 auto make_byte_decoder() {
   std::unordered_map<uint16_t, char> byte_decoder;
-  std::vector<uint16_t> limits = {0, '!', '~' + 1, L'¡', L'¬' + 1, L'®', L'ÿ' + 1};
+  std::vector<uint16_t> limits = {0,        '!',  '~' + 1, L'¡',
+                                  L'¬' + 1, L'®', L'ÿ' + 1};
   char n = 0;
   for (int i = 0; i < limits.size() - 1; ++i) {
     auto start = limits[i];
@@ -43,14 +45,14 @@ auto make_byte_decoder() {
 
 auto BPETokenizer::byte_decoder_ = make_byte_decoder();
 
-BPETokenizer::BPETokenizer(const std::string& path_) {
+BPETokenizer::BPETokenizer(const std::string &path_) {
   auto path = std::filesystem::path(path_);
   std::ifstream ifs(path / "tokenizer.json");
   auto tokenizer = json::parse(ifs);
   auto model = tokenizer["model"];
   token_to_id_ = model["vocab"];
   id_to_token_.resize(token_to_id_.size());
-  for (auto& [s, id] : token_to_id_) {
+  for (auto &[s, id] : token_to_id_) {
     if (id >= id_to_token_.size()) {
       id_to_token_.resize(id + 1);
     }
@@ -58,7 +60,7 @@ BPETokenizer::BPETokenizer(const std::string& path_) {
   }
   std::string type = model["type"];
   auto merges = model["merges"];
-  for (auto& s : merges) {
+  for (auto &s : merges) {
     if (s.is_string()) {
       merges_.emplace(s, merges_.size());
     } else {
@@ -69,7 +71,7 @@ BPETokenizer::BPETokenizer(const std::string& path_) {
   }
 
   auto added_tokens = tokenizer["added_tokens"];
-  for (auto& added_token : added_tokens) {
+  for (auto &added_token : added_tokens) {
     int id = added_token["id"];
     if (id >= id_to_token_.size()) {
       id_to_token_.resize(id + 1);
@@ -83,14 +85,17 @@ BPETokenizer::BPETokenizer(const std::string& path_) {
   }
 
   // Currently hardcoded to Llama3 BPE regex
-  pre_tokenizer_regex_ = {"(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"};
+  pre_tokenizer_regex_ = {
+      "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}"
+      "\\p{N}]?\\p{L}+|\\p{N}{1,3}| "
+      "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"};
 }
 
 std::vector<int> BPETokenizer::encode(std::string text) const {
 
   auto segments = unicode_regex_split(text, pre_tokenizer_regex_);
 
-  auto one_step_merge = [this](std::string segment, std::vector<int>& splits) {
+  auto one_step_merge = [this](std::string segment, std::vector<int> &splits) {
     int merge_idx;
     int rank = INT32_MAX;
     for (int i = 0; i < splits.size() - 2; ++i) {
@@ -119,7 +124,8 @@ std::vector<int> BPETokenizer::encode(std::string text) const {
       auto start = splits[i];
       auto mid = splits[i + 1];
       auto end = splits[i + 2];
-      if (segment.substr(start, mid - start) == merge_l && segment.substr(mid, end - mid) == merge_r) {
+      if (segment.substr(start, mid - start) == merge_l &&
+          segment.substr(mid, end - mid) == merge_r) {
         splits.erase(splits.begin() + i + 1);
         i -= 1;
       }
@@ -131,18 +137,19 @@ std::vector<int> BPETokenizer::encode(std::string text) const {
   ids.push_back(bos_id_);
 
   // Initialize merges to integer list
-  auto merge_segment = [&ids, &one_step_merge, this](const std::string& segment) {
-
+  auto merge_segment = [&ids, &one_step_merge,
+                        this](const std::string &segment) {
     std::vector<int> splits;
     for (int i = 0; i < segment.size(); ++i) {
       splits.push_back(i);
-      if (static_cast<unsigned char>(segment[i]) > 128) {
+      if (static_cast<unsigned char>(segment[i]) >= 128) {
         i++;
       }
     }
     splits.push_back(segment.size());
 
-    while (one_step_merge(segment, splits)) { };
+    while (one_step_merge(segment, splits)) {
+    };
     for (int i = 0; i < splits.size() - 1; ++i) {
       auto start = splits[i];
       auto end = splits[i + 1];
@@ -155,7 +162,7 @@ std::vector<int> BPETokenizer::encode(std::string text) const {
     }
   };
 
-  for (auto& segment : segments) {
+  for (auto &segment : segments) {
     merge_segment(segment);
   }
   return ids;
@@ -171,7 +178,8 @@ std::string BPETokenizer::id_to_bytes(int id) const {
   return token;
 }
 
-std::pair<std::string, bool> BPETokenizer::try_decode(const std::vector<int>& ids) const {
+std::pair<std::string, bool>
+BPETokenizer::try_decode(const std::vector<int> &ids) const {
   std::string text;
   for (auto id : ids) {
     text += id_to_bytes(id);
@@ -182,7 +190,7 @@ std::pair<std::string, bool> BPETokenizer::try_decode(const std::vector<int>& id
   return {text, complete};
 }
 
-std::string BPETokenizer::decode(const std::vector<int>& ids) const {
+std::string BPETokenizer::decode(const std::vector<int> &ids) const {
   return try_decode(ids).first;
 }
 
