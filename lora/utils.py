@@ -13,9 +13,10 @@ import transformers
 from huggingface_hub import snapshot_download
 
 
-def fetch_from_hub(hf_path: str):
+def fetch_from_hub(hf_path: str, revision: str = "main"):
     model_path = snapshot_download(
         repo_id=hf_path,
+        revision=revision,
         allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
     )
     weight_files = glob.glob(f"{model_path}/*.safetensors")
@@ -122,7 +123,7 @@ def save_model(save_dir: str, weights, tokenizer, config):
         )
 
 
-def load(path_or_hf_repo: str, tokenizer_config={}):
+def load(path_or_hf_repo: str, revision: str = "main", tokenizer_config={}):
     # If the path exists, it will try to load model form it
     # otherwise download and cache from the hf_repo and cache
     model_path = Path(path_or_hf_repo)
@@ -130,6 +131,7 @@ def load(path_or_hf_repo: str, tokenizer_config={}):
         model_path = Path(
             snapshot_download(
                 repo_id=path_or_hf_repo,
+                revision=revision,
                 allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
             )
         )
