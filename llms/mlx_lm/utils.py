@@ -19,7 +19,12 @@ import mlx.nn as nn
 
 use_modelscope = os.getenv('MLX_USE_MODELSCOPE', 'False').lower() == 'true'
 if use_modelscope:
-    from modelscope import snapshot_download
+    try:
+        from modelscope import snapshot_download
+    except ImportError:
+        raise ImportError(
+            "Please run `pip install modelscope` to activate the ModelScope."
+        )
 else:
     from huggingface_hub import snapshot_download
 
@@ -160,14 +165,16 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
         Path: The path to the model.
     """
     model_path = Path(path_or_hf_repo)
+    os.environ['MLX_USE_MODELSCOPE'] = 'False'
 
     if not model_path.exists():
         try:
             if use_modelscope:
+                print(f"Downloading model from Modelscope: {path_or_hf_repo}")
                 model_path = Path(
                     snapshot_download(
                         model_id=path_or_hf_repo,
-                        revision=revision or 'master',
+                        revision=revision,
                         allow_patterns=[
                             "*.json",
                             "*.safetensors",
