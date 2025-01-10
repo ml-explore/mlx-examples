@@ -169,7 +169,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
         try:
             model_path = Path(
                 snapshot_download(
-                    model_id=path_or_hf_repo,
+                    path_or_hf_repo,
                     revision=revision,
                     allow_patterns=[
                         "*.json",
