@@ -165,7 +165,6 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
         Path: The path to the model.
     """
     model_path = Path(path_or_hf_repo)
-    os.environ['MLX_USE_MODELSCOPE'] = 'False'
 
     if not model_path.exists():
         try:
