@@ -17,7 +17,7 @@ class TestLoadModelCustomGetClasses(unittest.TestCase):
                 self.config = args
                 self.custom_attribute = "This is a custom model"
 
-            def load_weights(self, weights):
+            def load_weights(self, weights, **kwargs):
                 self.qwenWeights = weights
 
         class CustomQwenConfig:

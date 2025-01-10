@@ -682,6 +682,43 @@ class TestModels(unittest.TestCase):
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
 
+    def test_deepseek_v3(self):
+        from mlx_lm.models import deepseek_v3
+
+        args = deepseek_v3.ModelArgs(
+            model_type="deepseek_v3",
+            vocab_size=1024,
+            hidden_size=128,
+            intermediate_size=256,
+            moe_intermediate_size=256,
+            num_hidden_layers=4,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            n_routed_experts=4,
+            n_group=2,
+            topk_group=1,
+            num_experts_per_tok=2,
+            n_shared_experts=1,
+            kv_lora_rank=4,
+            q_lora_rank=4,
+            qk_rope_head_dim=32,
+            v_head_dim=16,
+            qk_nope_head_dim=32,
+            rope_scaling={
+                "beta_fast": 32,
+                "beta_slow": 1,
+                "factor": 40,
+                "mscale": 1.0,
+                "mscale_all_dim": 1.0,
+                "original_max_position_embeddings": 4096,
+                "type": "yarn",
+            },
+        )
+        model = deepseek_v3.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
     def test_gemma2(self):
         from mlx_lm.models import gemma2
 
