@@ -158,7 +158,7 @@ class CohereModel(nn.Module):
 
         if mask is None:
             j = self.args.sliding_window_pattern
-            mask = create_attention_mask(h, cache[j - 1: j])
+            mask = create_attention_mask(h, cache[j - 1 : j])
 
         if cache is None:
             cache = [None] * len(self.layers)
