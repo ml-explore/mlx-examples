@@ -156,11 +156,12 @@ class CohereModel(nn.Module):
     ):
         h = self.embed_tokens(inputs)
 
-        if mask is None:
-            mask = create_attention_mask(h, cache)
-
         if cache is None:
             cache = [None] * len(self.layers)
+
+        if mask is None:
+            j = self.args.sliding_window_pattern
+            mask = create_attention_mask(h, cache[j - 1 : j])
 
         for layer, c in zip(self.layers, cache):
             h = layer(h, mask, c)
