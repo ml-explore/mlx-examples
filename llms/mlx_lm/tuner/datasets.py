@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from transformers import PreTrainedTokenizer
 
@@ -61,8 +61,8 @@ class CompletionsDataset:
         self,
         data: List[Dict[str, str]],
         tokenizer: PreTrainedTokenizer,
-        prompt_key: str = "prompt",
-        completion_key: str = "completion",
+        prompt_key: str,
+        completion_key: str,
     ):
         self._data = [
             tokenizer.apply_chat_template(
@@ -81,17 +81,15 @@ class CompletionsDataset:
         return len(self._data)
 
 
-<<<<<<< HEAD
 def create_dataset(
     data,
     tokenizer: PreTrainedTokenizer,
     prompt_feature: Optional[str] = None,
     completion_feature: Optional[str] = None,
 ):
-    sample = data[0]
     prompt_feature = prompt_feature or "prompt"
     completion_feature = completion_feature or "completion"
-
+    sample = data[0]
     if "messages" in sample:
         return ChatDataset(data, tokenizer)
     elif prompt_feature in sample and completion_feature in sample:
@@ -108,8 +106,8 @@ def create_dataset(
 def load_local_dataset(
     data_path: Path,
     tokenizer: PreTrainedTokenizer,
-    prompt_feature: str = None,
-    completion_feature: str = None,
+    prompt_feature: Optional[str] = None,
+    completion_feature: Optional[str] = None,
 ):
     def load_subset(path):
         if not path.exists():
@@ -126,8 +124,8 @@ def load_local_dataset(
 def load_hf_dataset(
     data_id: str,
     tokenizer: PreTrainedTokenizer,
-    prompt_feature: str = None,
-    completion_feature: str = None,
+    prompt_feature: Optional[str] = None,
+    completion_feature: Optional[str] = None,
 ):
     from datasets import exceptions, load_dataset
 
@@ -199,14 +197,17 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
         train, valid, test = load_custom_hf_dataset(args, tokenizer)
     else:
         data_path = Path(args.data)
+
+        prompt_feature = getattr(args, "prompt_feature", None)
+        completion_feature = getattr(args, "completion_feature", None)
         if data_path.exists():
             train, valid, test = load_local_dataset(
-                data_path, tokenizer, args.prompt_feature, args.completion_feature
+                data_path, tokenizer, prompt_feature, completion_feature
             )
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
             train, valid, test = load_hf_dataset(
-                args.data, tokenizer, args.prompt_feature, args.completion_feature
+                args.data, tokenizer, prompt_feature, completion_feature
             )
 
     if args.train and len(train) == 0:
