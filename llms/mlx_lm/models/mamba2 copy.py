@@ -24,6 +24,9 @@ class ModelArgs(BaseModelArgs):
     use_conv_bias: bool
     initializer_range: float
     residual_in_fp32: bool
+    time_step_min: float
+    time_step_max: float
+    time_step_floor: float
     rescale_prenorm_residual: bool
     rms_norm: bool
     chunk_size: int
@@ -32,11 +35,6 @@ class ModelArgs(BaseModelArgs):
     intermediate_size: int = None
     time_step_limit: Tuple[float, float] = field(default_factory=lambda: (0.0, float("inf")))
     time_step_rank: Union[int, str] = "auto"
-    time_step_min: float = 0.001
-    time_step_max: float = 0.1
-    time_step_floor: float = 1e-4
-    A_init_min: float = 1.0
-    A_init_max: float = 16.0
 
     def __post_init__(self):
         if not hasattr(self, "intermediate_size"):
@@ -95,12 +93,12 @@ class Mamba2Block(nn.Module):
         super().__init__()
         self.args = args
         
-        # Same dimensions as before
+        # Calculate dimensions
         self.d_model = args.hidden_size
         self.d_state = args.state_size
         self.d_conv = args.conv_kernel
         self.expand = args.expand
-        self.d_inner = int(self.expand * self.d_model)
+        self.d_inner = args.intermediate_size or int(self.expand * self.d_model)
         self.n_groups = args.n_groups
         self.n_heads = args.num_heads
         self.d_head = self.d_inner // self.n_heads
@@ -109,40 +107,27 @@ class Mamba2Block(nn.Module):
         d_in_proj = 2 * self.d_inner + 2 * self.n_groups * self.d_state + self.n_heads
         self.in_proj = nn.Linear(self.d_model, d_in_proj, bias=args.use_bias)
         
-        # Improved initialization of dt
-        dt = mx.exp(
-            mx.random.uniform(
-                low=math.log(args.time_step_min),
-                high=math.log(args.time_step_max),
-                shape=(self.n_heads,)
-            )
-        )
-        dt = mx.clip(dt, args.time_step_floor, float('inf'))
-        inv_dt = dt + mx.log(-mx.exp(-dt) + 1)  # Inverse softplus
-        self.dt_bias = mx.array(inv_dt)
-
-        # Improved A initialization
-        A = mx.random.uniform(
-            low=args.A_init_min,
-            high=args.A_init_max,
-            shape=(self.n_heads,)
-        )
-        self.A_log = mx.log(A)
-        
-        # Same D initialization
-        self.D = mx.random.normal((self.n_heads,)) * args.initializer_range
-
-        # Convolution with proper initialization
+        # Convolution
+        conv_dim = self.d_inner + 2 * self.n_groups * self.d_state
         self.conv1d = DepthWiseConv1d(
-            channels=self.d_inner + 2 * self.n_groups * self.d_state,
+            channels=conv_dim,
             kernel_size=self.d_conv,
             bias=args.use_conv_bias,
-            padding=self.d_conv-1
+            padding=self.d_conv - 1
         )
         
-        # Output projections
+        # SSM parameters
+        self.dt_bias = mx.random.normal((self.n_heads,)) * args.initializer_range
+        self.A_log = mx.random.normal((self.n_heads,)) * args.initializer_range
+        self.D = mx.random.normal((self.n_heads,)) * args.initializer_range
+        
+        # Output projection
         self.norm = MambaRMSNormGated(self.d_inner, eps=args.layer_norm_epsilon)
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=args.use_bias)
+        
+        if args.rescale_prenorm_residual:
+            layer_scale = math.sqrt(1.0 / args.num_hidden_layers)
+            self.out_proj.weight = self.out_proj.weight * layer_scale
 
     def __call__(self, u: mx.array, cache=None):
         batch_size, seq_len, _ = u.shape
@@ -216,7 +201,7 @@ class Mamba2Block(nn.Module):
             cache[1] = next_state
 
         return mx.concatenate(outputs, axis=1)
-
+    
 
 class ResidualBlock(nn.Module):
     def __init__(self, args: ModelArgs):
