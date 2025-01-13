@@ -197,11 +197,13 @@ class DBRX(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         h = self.wte(inputs)
 
-        mask = create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.blocks)
@@ -223,9 +225,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.transformer(inputs, cache)
+        out = self.transformer(inputs, mask, cache)
         return self.lm_head(out)
 
     @property

@@ -1,7 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
-import codecs
 import json
 import sys
 
@@ -44,10 +43,11 @@ def setup_arg_parser():
         help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
-        "--eos-token",
+        "--extra-eos-token",
         type=str,
-        default=None,
-        help="End of sequence token for tokenizer",
+        default=(),
+        nargs="+",
+        help="Add tokens in the list of eos tokens that stop generation.",
     )
     parser.add_argument(
         "--system-prompt",
@@ -131,6 +131,18 @@ def setup_arg_parser():
         type=int,
         default=DEFAULT_QUANTIZED_KV_START,
     )
+    parser.add_argument(
+        "--draft-model",
+        type=str,
+        help="A model to be used for speculative decoding.",
+        default=None,
+    )
+    parser.add_argument(
+        "--num-draft-tokens",
+        type=int,
+        help="Number of tokens to draft when using speculative decoding.",
+        default=2,
+    )
     return parser
 
 
@@ -162,8 +174,6 @@ def main():
         {} if not using_cache else json.loads(metadata["tokenizer_config"])
     )
     tokenizer_config["trust_remote_code"] = True
-    if args.eos_token is not None:
-        tokenizer_config["eos_token"] = args.eos_token
 
     model_path = args.model
     if using_cache:
@@ -182,6 +192,8 @@ def main():
         adapter_path=args.adapter_path,
         tokenizer_config=tokenizer_config,
     )
+    for eos_token in args.extra_eos_token:
+        tokenizer.add_eos_token(eos_token)
 
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
@@ -189,22 +201,14 @@ def main():
     elif using_cache:
         tokenizer.chat_template = metadata["chat_template"]
 
-    prompt = codecs.decode(args.prompt, "unicode_escape")
-
-    if not args.ignore_chat_template and (
-        hasattr(tokenizer, "apply_chat_template")
-        and tokenizer.chat_template is not None
-    ):
+    prompt = args.prompt.replace("\\n", "\n").replace("\\t", "\t")
+    prompt = sys.stdin.read() if prompt == "-" else prompt
+    if not args.ignore_chat_template and tokenizer.chat_template is not None:
         if args.system_prompt is not None:
             messages = [{"role": "system", "content": args.system_prompt}]
         else:
             messages = []
-        messages.append(
-            {
-                "role": "user",
-                "content": sys.stdin.read() if prompt == "-" else prompt,
-            }
-        )
+        messages.append({"role": "user", "content": prompt})
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -219,7 +223,16 @@ def main():
                 add_generation_prompt=True,
             )
             prompt = prompt[test_prompt.index("<query>") :]
+        prompt = tokenizer.encode(prompt, add_special_tokens=False)
+    else:
+        prompt = tokenizer.encode(prompt)
 
+    if args.draft_model is not None:
+        draft_model, draft_tokenizer = load(args.draft_model)
+        if draft_tokenizer.vocab_size != tokenizer.vocab_size:
+            raise ValueError("Draft model tokenizer does not match model tokenizer.")
+    else:
+        draft_model = None
     sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
     response = generate(
         model,
@@ -233,6 +246,8 @@ def main():
         kv_bits=args.kv_bits,
         kv_group_size=args.kv_group_size,
         quantized_kv_start=args.quantized_kv_start,
+        draft_model=draft_model,
+        num_draft_tokens=args.num_draft_tokens,
     )
     if not args.verbose:
         print(response)

@@ -146,13 +146,15 @@ class GPTNeoXModel(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         _, L = inputs.shape
 
         hidden_states = self.embed_in(inputs)
 
-        mask = create_attention_mask(hidden_states, cache)
+        if mask is None:
+            mask = create_attention_mask(hidden_states, cache)
 
         if cache is None:
             cache = [None] * len(self.h)
@@ -176,9 +178,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, mask, cache)
         return out
 
     def sanitize(self, weights):

@@ -123,7 +123,8 @@ class QwenModel(nn.Module):
     def __call__(self, inputs, mask=None, cache=None):
         x = self.wte(inputs)
 
-        mask = create_attention_mask(x, cache)
+        if mask is None:
+            mask = create_attention_mask(x, cache)
 
         if cache is None:
             cache = [None] * len(self.h)

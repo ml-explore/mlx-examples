@@ -1,4 +1,4 @@
-# Copyright © 2023-2024 Apple Inc.
+# Copyright © 2024 Apple Inc.
 
 import math
 from dataclasses import dataclass
@@ -13,7 +13,7 @@ from .switch_layers import SwitchGLU
 
 @dataclass
 class ModelArgs(BaseModelArgs):
-    model_type: str = "deepseek_v2"
+    model_type: str = "deepseek_v3"
     vocab_size: int = 102400
     hidden_size: int = 4096
     intermediate_size: int = 11008
@@ -29,7 +29,9 @@ class ModelArgs(BaseModelArgs):
     qk_rope_head_dim: int = 64
     v_head_dim: int = 128
     qk_nope_head_dim: int = 128
-    topk_method: str = "gready"
+    topk_method: str = "noaux_tc"
+    scoring_func: str = "sigmoid"
+    norm_topk_prob: bool = True
     n_group: Optional[int] = None
     topk_group: Optional[int] = None
     num_experts_per_tok: Optional[int] = None
@@ -76,7 +78,7 @@ def yarn_linear_ramp_mask(min_val, max_val, dim):
     return mx.clip(linear_func, 0, 1)
 
 
-class DeepseekV2YarnRotaryEmbedding(nn.Module):
+class DeepseekV3YarnRotaryEmbedding(nn.Module):
     def __init__(
         self,
         dim,
@@ -123,7 +125,7 @@ class DeepseekV2YarnRotaryEmbedding(nn.Module):
         )
 
 
-class DeepseekV2Attention(nn.Module):
+class DeepseekV3Attention(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.config = config
@@ -189,7 +191,7 @@ class DeepseekV2Attention(nn.Module):
             ]
             if key in self.config.rope_scaling
         }
-        self.rope = DeepseekV2YarnRotaryEmbedding(
+        self.rope = DeepseekV3YarnRotaryEmbedding(
             dim=self.qk_rope_head_dim,
             max_position_embeddings=self.max_position_embeddings,
             scaling_factor=scaling_factor,
@@ -242,7 +244,7 @@ class DeepseekV2Attention(nn.Module):
         return self.o_proj(output)
 
 
-class DeepseekV2MLP(nn.Module):
+class DeepseekV3MLP(nn.Module):
     def __init__(
         self, config: ModelArgs, hidden_size: int = None, intermediate_size: int = None
     ):
@@ -267,38 +269,44 @@ class MoEGate(nn.Module):
         super().__init__()
         self.config = config
         self.top_k = config.num_experts_per_tok
+        self.norm_topk_prob = config.norm_topk_prob
         self.n_routed_experts = config.n_routed_experts
         self.routed_scaling_factor = config.routed_scaling_factor
         self.topk_method = config.topk_method
         self.n_group = config.n_group
         self.topk_group = config.topk_group
         self.weight = mx.zeros((self.n_routed_experts, config.hidden_size))
+        self.e_score_correction_bias = mx.zeros((self.n_routed_experts,))
 
     def __call__(self, x):
         gates = x @ self.weight.T
 
-        scores = mx.softmax(gates, axis=-1, precise=True)
+        scores = mx.sigmoid(gates.astype(mx.float32))
 
-        if self.topk_method == "group_limited_greedy":
-            bsz, seq_len = x.shape[:2]
-            scores = scores.reshape(bsz, seq_len, self.n_group, -1)
-            group_scores = scores.max(axis=-1)
-            k = self.n_group - self.topk_group
-            group_idx = mx.argpartition(group_scores, kth=k - 1, axis=-1)[..., :k]
-            batch_idx = mx.expand_dims(mx.arange(bsz), (1, 2))
-            seq_idx = mx.expand_dims(mx.arange(seq_len), (0, 2))
-            scores[batch_idx, seq_idx, group_idx] = 0.0
-            scores = scores.reshape(bsz, seq_len, -1)
+        assert self.topk_method == "noaux_tc", "Unsupported topk method."
+        bsz, seq_len = x.shape[:2]
+        scores = scores + self.e_score_correction_bias
+        scores = scores.reshape(bsz, seq_len, self.n_group, -1)
+        group_scores = mx.topk(scores, 2, axis=-1).sum(axis=-1)
+        k = self.n_group - self.topk_group
+        group_idx = mx.argpartition(group_scores, kth=k - 1, axis=-1)[..., :k]
+        batch_idx = mx.expand_dims(mx.arange(bsz), (1, 2))
+        seq_idx = mx.expand_dims(mx.arange(seq_len), (0, 2))
+        scores[batch_idx, seq_idx, group_idx] = 0.0
+        scores = scores.reshape(bsz, seq_len, -1)
 
         k = self.top_k
         inds = mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k]
         scores = mx.take_along_axis(scores, inds, axis=-1)
+        if self.top_k > 1 and self.norm_topk_prob:
+            denominator = scores.sum(axis=-1, keepdims=True) + 1e-20
+            scores = scores / denominator
         scores = scores * self.routed_scaling_factor
 
         return inds, scores
 
 
-class DeepseekV2MoE(nn.Module):
+class DeepseekV3MoE(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.config = config
@@ -310,32 +318,32 @@ class DeepseekV2MoE(nn.Module):
         self.gate = MoEGate(config)
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
-            self.shared_experts = DeepseekV2MLP(
+            self.shared_experts = DeepseekV3MLP(
                 config=config, intermediate_size=intermediate_size
             )
 
     def __call__(self, x):
         inds, scores = self.gate(x)
         y = self.switch_mlp(x, inds)
-        y = (y * scores[..., None]).sum(axis=-2)
+        y = (y * scores[..., None]).sum(axis=-2).astype(y.dtype)
         if self.config.n_shared_experts is not None:
             y = y + self.shared_experts(x)
 
         return y
 
 
-class DeepseekV2DecoderLayer(nn.Module):
+class DeepseekV3DecoderLayer(nn.Module):
     def __init__(self, config: ModelArgs, layer_idx: int):
         super().__init__()
-        self.self_attn = DeepseekV2Attention(config)
+        self.self_attn = DeepseekV3Attention(config)
         self.mlp = (
-            DeepseekV2MoE(config)
+            DeepseekV3MoE(config)
             if (
                 config.n_routed_experts is not None
                 and layer_idx >= config.first_k_dense_replace
                 and layer_idx % config.moe_layer_freq == 0
             )
-            else DeepseekV2MLP(config)
+            else DeepseekV3MLP(config)
         )
         self.input_layernorm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(
@@ -352,19 +360,35 @@ class DeepseekV2DecoderLayer(nn.Module):
         h = x + r
         r = self.mlp(self.post_attention_layernorm(h))
         out = h + r
+        # Protect against overflow for fp16
+        if out.dtype == mx.float16:
+            out = mx.clip(out, a_min=None, a_max=mx.finfo(mx.float16).max - 1000)
         return out
 
 
-class DeepseekV2Model(nn.Module):
+class DeepseekV3Model(nn.Module):
     def __init__(self, config: ModelArgs):
         super().__init__()
         self.vocab_size = config.vocab_size
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = [
-            DeepseekV2DecoderLayer(config, idx)
+            DeepseekV3DecoderLayer(config, idx)
             for idx in range(config.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pipeline_rank = 0
+        self.pipeline_size = 1
+
+    def pipeline(self, group):
+        # Split layers in reverse so rank=0 gets the last layers and
+        # rank=pipeline_size-1 gets the first
+        self.pipeline_rank = group.rank()
+        self.pipeline_size = group.size()
+        layers_per_rank = (
+            len(self.layers) + self.pipeline_size - 1
+        ) // self.pipeline_size
+        start = (self.pipeline_size - self.pipeline_rank - 1) * layers_per_rank
+        self.layers = self.layers[start : start + layers_per_rank]
 
     def __call__(
         self,
@@ -374,14 +398,27 @@ class DeepseekV2Model(nn.Module):
     ) -> mx.array:
         h = self.embed_tokens(x)
 
+        pipeline_rank = self.pipeline_rank
+        pipeline_size = self.pipeline_size
         if mask is None:
             mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
 
+        # Receive from the previous process in the pipeline
+        if pipeline_rank < pipeline_size - 1:
+            h = mx.distributed.recv_like(h, (pipeline_rank + 1))
+
         for layer, c in zip(self.layers, cache):
             h = layer(h, mask, c)
+
+        # Send to the next process in the pipeline
+        if pipeline_rank != 0:
+            h = mx.distributed.send(h, (pipeline_rank - 1) % pipeline_size)
+
+        # Broadcast h while keeping it in the graph
+        h = mx.distributed.all_gather(h)[: h.shape[0]]
 
         return self.norm(h)
 
@@ -391,7 +428,7 @@ class Model(nn.Module):
         super().__init__()
         self.args = config
         self.model_type = config.model_type
-        self.model = DeepseekV2Model(config)
+        self.model = DeepseekV3Model(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def __call__(
@@ -414,7 +451,9 @@ class Model(nn.Module):
                             for e in range(self.args.n_routed_experts)
                         ]
                         weights[f"{prefix}.mlp.switch_mlp.{m}.{k}"] = mx.stack(to_join)
-        return weights
+
+        # Remove multi-token prediction layer
+        return {k: v for k, v in weights.items() if not k.startswith("model.layers.61")}
 
     @property
     def layers(self):

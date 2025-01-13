@@ -72,9 +72,7 @@ def main():
         if query == "q":
             break
         messages = [{"role": "user", "content": query}]
-        prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
+        prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
         for response in stream_generate(
             model,
             tokenizer,
