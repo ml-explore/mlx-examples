@@ -749,7 +749,7 @@ def load(
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model, config = load_model(model_path, sequential_load, lazy)
+    model, config = load_model(model_path, lazy=lazy, sequential_load=sequential_load)
     if adapter_path is not None:
         model = load_adapters(model, adapter_path)
         model.eval()
@@ -763,7 +763,7 @@ def load(
 def fetch_from_hub(
     model_path: Path, lazy: bool = False
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
-    model, config = load_model(model_path, lazy)
+    model, config = load_model(model_path, lazy=lazy)
     tokenizer = load_tokenizer(
         model_path, eos_token_ids=config.get("eos_token_id", None)
     )

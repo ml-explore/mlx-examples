@@ -15,6 +15,7 @@ DEFAULT_SEED = 0
 DEFAULT_MAX_TOKENS = 256
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 
+
 def share_message(world, prompt):
     if world.size() == 1:
         return prompt
@@ -30,7 +31,7 @@ def share_message(world, prompt):
     if world.rank() == 0:
         prompt = mx.array(prompt)
     else:
-        prompt = mx.array([0]*len(prompt))
+        prompt = mx.array([0] * len(prompt))
     return mx.distributed.all_sum(size, stream=mx.cpu).tolist()
 
 
@@ -86,7 +87,10 @@ def main():
     )
 
     print(f"Node {world.rank()} of {world.size()}", flush=True)
-    print(f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.", flush=True)
+    print(
+        f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.",
+        flush=True,
+    )
     world.barrier()
     prompt_cache = make_prompt_cache(model, args.max_kv_size)
     while True:
@@ -119,4 +123,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
