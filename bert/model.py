@@ -136,10 +136,7 @@ def load_model(
 
 def run(bert_model: str, mlx_model: str, batch: List[str]):
     model, tokenizer = load_model(bert_model, mlx_model)
-
-    tokens = tokenizer(batch, return_tensors="np", padding=True)
-    tokens = {key: mx.array(v) for key, v in tokens.items()}
-
+    tokens = tokenizer(batch, return_tensors="mlx", padding=True)
     return model(**tokens)
 
 
@@ -149,13 +146,13 @@ if __name__ == "__main__":
         "--bert-model",
         type=str,
         default="bert-base-uncased",
-        help="The huggingface name of the BERT model to save.",
+        help="The huggingface name of the BERT model.",
     )
     parser.add_argument(
         "--mlx-model",
         type=str,
-        default="weights/bert-base-uncased.npz",
-        help="The path of the stored MLX BERT weights (npz file).",
+        default="bert-base-uncased.safetensors",
+        help="The path of the stored MLX BERT weights.",
     )
     parser.add_argument(
         "--text",
