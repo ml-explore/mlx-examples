@@ -7,7 +7,7 @@ from typing import List, Literal, Optional
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 from .cache import MambaCache, RotatingKVCache
 
 
@@ -263,8 +263,8 @@ class LocalAttentionBlock(nn.Module):
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
@@ -389,6 +389,7 @@ class Griffin(nn.Module):
     def __call__(
         self,
         tokens,
+        mask: mx.array = None,
         cache=None,
     ):
         x = self.embed_tokens(tokens)
@@ -402,7 +403,8 @@ class Griffin(nn.Module):
             if block.temporal_block_type != "recurrent":
                 mask_cache = [cache[i]]
 
-        mask = create_attention_mask(x, mask_cache)
+        if mask is None:
+            mask = create_attention_mask(x, mask_cache)
 
         for i, block in enumerate(self.layers):
             x = block(x, mask=mask, cache=cache[i])
@@ -418,12 +420,12 @@ class Model(nn.Module):
         self.model_type = config.model_type
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-    def __call__(self, tokens: mx.array, cache=None) -> mx.array:
+    def __call__(self, tokens: mx.array, mask: mx.array = None, cache=None) -> mx.array:
         """
         Args:
           tokens: Sequence of input tokens.
         """
-        logits = self.model(tokens, cache=cache)
+        logits = self.model(tokens, mask=mask, cache=cache)
         if "lm_head" in self:
             logits = self.lm_head(logits)
         else:
@@ -440,7 +442,7 @@ class Model(nn.Module):
 
     def sanitize(self, weights):
         for k, v in weights.items():
-            if "conv_1d.weight" in k and v.ndim == 3:
+            if "conv_1d.weight" in k and v.shape[-1] != 1:
                 weights[k] = v.moveaxis(2, 1)
         if "lm_head.weight" not in weights:
             self.pop("lm_head")

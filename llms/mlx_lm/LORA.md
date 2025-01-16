@@ -222,6 +222,17 @@ data formats. Here are examples of these formats:
 }
 ```
 
+
+The format for the `arguments` field in a function varies for different models.
+Common formats include JSON strings and dictionaries. The example provided
+follows the format used by
+[OpenAI](https://platform.openai.com/docs/guides/fine-tuning/fine-tuning-examples)
+and [Mistral
+AI](https://github.com/mistralai/mistral-finetune?tab=readme-ov-file#instruct).
+A dictionary format is used in Hugging Face's [chat
+templates](https://huggingface.co/docs/transformers/main/en/chat_templating#a-complete-tool-use-example).
+Refer to the documentation for the model you are fine-tuning for more details.
+
 </details>
 
 `completions`:
@@ -230,18 +241,29 @@ data formats. Here are examples of these formats:
 {"prompt": "What is the capital of France?", "completion": "Paris."}
 ```
 
+For the `completions` data format, a different key can be used for the prompt
+and completion by specifying the following in the YAML config:
+
+```yaml
+prompt_feature: "input"
+completion_feature: "output"
+```
+
+Here, `"input"` is the expected key instead of the default `"prompt"`, and
+`"output"` is the expected key instead of `"completion"`. 
+
 `text`:
 
 ```jsonl
 {"text": "This is an example for the model."}
 ```
 
-Note, the format is automatically determined by the dataset. Note also, keys in
-each line not expected by the loader will be ignored.
+Note, the format is automatically determined by the dataset. Note also, keys
+in each line not expected by the loader will be ignored.
 
 > [!NOTE]
 > Each example in the datasets must be on a single line. Do not put more than
-> one example per line and do not split an example accross multiple lines.
+> one example per line and do not split an example across multiple lines.
 
 ### Hugging Face Datasets
 
@@ -259,7 +281,7 @@ Otherwise, provide a mapping of keys in the dataset to the features MLX LM
 expects. Use a YAML config to specify the Hugging Face dataset arguments. For
 example:
 
-```
+```yaml
 hf_dataset:
   name: "billsum"
   prompt_feature: "text"

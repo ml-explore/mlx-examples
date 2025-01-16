@@ -1,5 +1,6 @@
 # Copyright © 2024 Apple Inc.
 
+import copy
 import os
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import (
     KVCache,
     MambaCache,
+    QuantizedKVCache,
     RotatingKVCache,
     load_prompt_cache,
     make_prompt_cache,
@@ -119,21 +121,20 @@ class TestPromptCache(unittest.TestCase):
     def test_cache_with_generate(self):
         model, tokenizer = load(HF_MODEL_PATH)
         prompt = tokenizer.encode("this is a prompt", return_tensors="mlx")[0]
-        results = zip(range(4), generate_step(prompt, model))
-        toks, all_logits = zip(*(r[1] for r in results))
+        results = list(generate_step(prompt, model, max_tokens=4))
+        toks, all_logits = zip(*results)
 
         prompt_cache = make_prompt_cache(model)
         i = 0
-        for _, (tok, logits) in zip(
-            range(2), generate_step(prompt, model, prompt_cache=prompt_cache)
+        for tok, logits in generate_step(
+            prompt, model, prompt_cache=prompt_cache, max_tokens=2
         ):
             self.assertEqual(tok, toks[i])
             self.assertTrue(mx.allclose(logits, all_logits[i]))
             i += 1
 
-        for _, (tok, logits) in zip(
-            range(1),
-            generate_step(mx.array([toks[i]]), model, prompt_cache=prompt_cache),
+        for tok, logits in generate_step(
+            mx.array([toks[i]]), model, prompt_cache=prompt_cache, max_tokens=1
         ):
             i += 1
             self.assertEqual(tok, toks[i])
@@ -185,6 +186,18 @@ class TestPromptCache(unittest.TestCase):
         num_trimmed = trim_prompt_cache(cache, 4)
         self.assertEqual(num_trimmed, 0)
 
+        cache = [QuantizedKVCache() for _ in range(2)]
+        for c in cache:
+            x = mx.random.uniform(shape=(1, 8, 10, 64))
+            c.update_and_fetch(x, x)
+
+        num_trimmed = trim_prompt_cache(cache, 7)
+        self.assertEqual(num_trimmed, 7)
+
+        # Trim more tokens than remain
+        num_trimmed = trim_prompt_cache(cache, 4)
+        self.assertEqual(num_trimmed, 3)
+
     def test_trim_cache_with_generate(self):
         model, tokenizer = load(HF_MODEL_PATH)
         prompt = tokenizer.encode("this is a prompt", return_tensors="mlx")[0]
@@ -214,6 +227,78 @@ class TestPromptCache(unittest.TestCase):
         self.assertTrue(
             all(mx.allclose(l, l2) for l, l2 in zip(all_logits, second_all_logits))
         )
+
+    def test_cache_copying(self):
+        cache = [KVCache()]
+
+        x = mx.random.uniform(shape=(1, 8, 10, 4))
+        cache[0].update_and_fetch(x, x)
+
+        y = mx.random.uniform(shape=(1, 8, 1, 4))
+        cache[0].update_and_fetch(y, y)
+
+        old_cache = copy.deepcopy(cache)
+
+        trim_prompt_cache(cache, 1)
+
+        self.assertTrue(old_cache[0].offset, 11)
+        self.assertTrue(cache[0].offset, 10)
+
+        z = mx.random.uniform(shape=(1, 8, 1, 4))
+        cache[0].update_and_fetch(z, z)
+
+        self.assertTrue(mx.allclose(old_cache[0].keys[..., 10:11, :], y))
+        self.assertTrue(mx.allclose(cache[0].keys[..., 10:11, :], z))
+
+    def test_save_load_quantized_cache(self):
+        cache = [QuantizedKVCache(bits=4, group_size=32) for _ in range(4)]
+        for c in cache:
+            x = mx.random.uniform(shape=(1, 8, 10, 32))
+            c.update_and_fetch(x, x)
+        cache_file = os.path.join(self.test_dir, "prompt_cache.safetensors")
+        save_prompt_cache(cache_file, cache)
+        loaded_cache = load_prompt_cache(cache_file)
+        self.assertTrue(loaded_cache[0].bits == cache[0].bits)
+        self.assertTrue(loaded_cache[0].group_size == cache[0].group_size)
+        self.assertTrue(len(cache), len(loaded_cache))
+        for c, lc in zip(cache, loaded_cache):
+            self.assertEqual(c.offset, lc.offset)
+            # Loop over quantized tuple
+            for i in range(3):
+                self.assertTrue(mx.array_equal(c.state[0][i], lc.state[0][i]))
+                self.assertTrue(mx.array_equal(c.state[1][i], lc.state[1][i]))
+
+        # Test with metadata
+        cache_file = os.path.join(self.test_dir, "prompt_cache.safetensors")
+        metadata = {"a": "b", "c": "d"}
+        save_prompt_cache(cache_file, cache, metadata)
+        _, loaded_metadata = load_prompt_cache(cache_file, return_metadata=True)
+        self.assertEqual(metadata, loaded_metadata)
+
+    def test_cache_to_quantized(self):
+        model, tokenizer = load(HF_MODEL_PATH)
+        prompt = tokenizer.encode("this is a prompt", return_tensors="mlx")[0]
+        results = zip(range(4), generate_step(prompt, model))
+        toks, all_logits = zip(*(r[1] for r in results))
+
+        prompt_cache = make_prompt_cache(model)
+        i = 0
+        for _, (tok, logits) in zip(
+            range(2), generate_step(prompt, model, prompt_cache=prompt_cache)
+        ):
+            self.assertEqual(tok, toks[i])
+            self.assertTrue(mx.allclose(logits, all_logits[i]))
+            i += 1
+
+        prompt_cache = [c.to_quantized(bits=8, group_size=32) for c in prompt_cache]
+
+        for _, (tok, logits) in zip(
+            range(1),
+            generate_step(mx.array([toks[i]]), model, prompt_cache=prompt_cache),
+        ):
+            i += 1
+            self.assertEqual(tok, toks[i])
+            self.assertTrue(mx.allclose(logits, all_logits[i], rtol=2e-2))
 
 
 if __name__ == "__main__":

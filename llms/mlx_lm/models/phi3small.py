@@ -8,7 +8,7 @@ from typing import Any, Optional
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -188,8 +188,8 @@ class Attention(nn.Module):
                 queries, keys, values, scale=self.scale, mask=mask
             )
         else:
-            output = mx.fast.scaled_dot_product_attention(
-                queries, keys, values, scale=self.scale, mask=mask
+            output = scaled_dot_product_attention(
+                queries, keys, values, cache=cache, scale=self.scale, mask=mask
             )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.dense(output)
@@ -258,13 +258,15 @@ class Phi3Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         h = self.embed_tokens(inputs)
         if self.mup_embedding_multiplier:
             h = self.mup_embedding_multiplier * h
 
-        mask = create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -290,9 +292,10 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, mask, cache)
         out = self.model.embed_tokens.as_linear(out)
         if self.mup_width_multiplier:
             out = out / self.mup_width_multiplier

@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 from .switch_layers import SwitchGLU
 
 
@@ -220,23 +220,23 @@ class DeepseekV2Attention(nn.Module):
 
         k_nope, values = mx.split(kv, [self.qk_nope_head_dim], axis=-1)
 
-        k_pe = mx.concatenate([k_pe] * self.num_heads, axis=1)
-
         if cache is not None:
             q_pe = self.rope(q_pe, cache.offset)
             k_pe = self.rope(k_pe, cache.offset)
+            k_pe = mx.repeat(k_pe, self.num_heads, axis=1)
             keys, values = cache.update_and_fetch(
                 mx.concatenate([k_nope, k_pe], axis=-1), values
             )
         else:
             q_pe = self.rope(q_pe)
             k_pe = self.rope(k_pe)
+            k_pe = mx.repeat(k_pe, self.num_heads, axis=1)
             keys = mx.concatenate([k_nope, k_pe], axis=-1)
 
         queries = mx.concatenate([q_nope, q_pe], axis=-1)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
@@ -291,7 +291,7 @@ class MoEGate(nn.Module):
             scores = scores.reshape(bsz, seq_len, -1)
 
         k = self.top_k
-        inds = mx.stop_gradient(mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k])
+        inds = mx.argpartition(-scores, kth=k - 1, axis=-1)[..., :k]
         scores = mx.take_along_axis(scores, inds, axis=-1)
         scores = scores * self.routed_scaling_factor
 
@@ -370,9 +370,12 @@ class DeepseekV2Model(nn.Module):
         self,
         x: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ) -> mx.array:
         h = self.embed_tokens(x)
-        mask = create_attention_mask(h, cache)
+
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.layers)
@@ -395,8 +398,9 @@ class Model(nn.Module):
         self,
         inputs: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ):
-        out = self.model(inputs, cache)
+        out = self.model(inputs, cache, mask)
         return self.lm_head(out)
 
     def sanitize(self, weights):

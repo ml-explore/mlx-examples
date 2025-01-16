@@ -21,12 +21,33 @@ The dependencies are minimal, namely:
 
 - `huggingface-hub` to download the checkpoints.
 - `regex` for the tokenization
-- `tqdm`, `PIL`, and `numpy` for the `txt2image.py` script
+- `tqdm`, `PIL`, and `numpy` for the scripts
 - `sentencepiece` for the T5 tokenizer
+- `datasets` for using an HF dataset directly
 
 You can install all of the above with the `requirements.txt` as follows:
 
     pip install -r requirements.txt
+
+
+Usage
+---------
+
+You can use the following command to generate an image, using `--output` to specify the storage location of the image, defaulting to `out.png`.
+
+```shell
+python txt2image.py --model schnell \
+    --n-images 1 \
+    --image-size 256x512 \
+    --verbose \
+    'A photo of an astronaut riding a horse on Mars.'
+```
+
+For more parameters, please use the `--help` command to view.
+
+```shell
+python txt2image.py --help
+```
 
 Inference
 ---------
@@ -78,7 +99,11 @@ except for some additional logic to quantize and/or load trained adapters. One
 can use the script as follows:
 
 ```shell
-python txt2image.py --n-images 4 --n-rows 2 --image-size 256x512 'A photo of an astronaut riding a horse on Mars.'
+python txt2image.py \
+    --n-images 4 \
+    --n-rows 2 \
+    --image-size 256x512 \
+    'A photo of an astronaut riding a horse on Mars.'
 ```
 
 ### Experimental Options
@@ -94,17 +119,12 @@ Finetuning
 
 The `dreambooth.py` script supports LoRA finetuning of FLUX-dev (and schnell
 but ymmv) on a provided image dataset. The dataset folder must have an
-`index.json` file with the following format:
+`train.jsonl` file with the following format:
 
-```json
-{
-    "data": [
-        {"image": "path-to-image-relative-to-dataset", "text": "Prompt to use with this image"},
-        {"image": "path-to-image-relative-to-dataset", "text": "Prompt to use with this image"},
-        {"image": "path-to-image-relative-to-dataset", "text": "Prompt to use with this image"},
-        ...
-    ]
-}
+```jsonl
+{"image": "path-to-image-relative-to-dataset", "prompt": "Prompt to use with this image"}
+{"image": "path-to-image-relative-to-dataset", "prompt": "Prompt to use with this image"}
+...
 ```
 
 The training script by default trains for 600 iterations with a batch size of
@@ -126,19 +146,15 @@ The training images are the following 5 images [^2]:
 
 ![dog6](static/dog6.png)
 
-We start by making the following `index.json` file and placing it in the same
+We start by making the following `train.jsonl` file and placing it in the same
 folder as the images.
 
-```json
-{
-    "data": [
-        {"image": "00.jpg", "text": "A photo of sks dog"},
-        {"image": "01.jpg", "text": "A photo of sks dog"},
-        {"image": "02.jpg", "text": "A photo of sks dog"},
-        {"image": "03.jpg", "text": "A photo of sks dog"},
-        {"image": "04.jpg", "text": "A photo of sks dog"}
-    ]
-}
+```jsonl
+{"image": "00.jpg", "prompt": "A photo of sks dog"}
+{"image": "01.jpg", "prompt": "A photo of sks dog"}
+{"image": "02.jpg", "prompt": "A photo of sks dog"}
+{"image": "03.jpg", "prompt": "A photo of sks dog"}
+{"image": "04.jpg", "prompt": "A photo of sks dog"}
 ```
 
 Subsequently we finetune FLUX using the following command:
@@ -151,6 +167,17 @@ python dreambooth.py \
     path/to/dreambooth/dataset/dog6
 ```
 
+
+Or you can directly use the pre-processed Hugging Face dataset [mlx-community/dreambooth-dog6](https://huggingface.co/datasets/mlx-community/dreambooth-dog6) for fine-tuning.
+
+```shell
+python dreambooth.py \
+    --progress-prompt 'A photo of an sks dog lying on the sand at a beach in Greece' \
+    --progress-every 600 --iterations 1200 --learning-rate 0.0001 \
+    --lora-rank 4 --grad-accumulate 8 \
+    mlx-community/dreambooth-dog6
+```
+
 The training requires approximately 50GB of RAM and on an M2 Ultra it takes a
 bit more than 1 hour.
 
@@ -161,7 +188,7 @@ The adapters are saved in `mlx_output` and can be used directly by the
 
 ```shell
 python txt2image.py --model dev --save-raw --image-size 512x512 --n-images 1 \
-    --adapter mlx_output/0001200_adapters.safetensors \
+    --adapter mlx_output/final_adapters.safetensors \
     --fuse-adapter \
     --no-t5-padding \
     'A photo of an sks dog lying on the sand at a beach in Greece'

@@ -1,7 +1,6 @@
 # Copyright © 2024 Apple Inc.
 
 import argparse
-import json
 import time
 from functools import partial
 from pathlib import Path
@@ -14,13 +13,11 @@ import numpy as np
 from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten, tree_map, tree_reduce
 from PIL import Image
-from tqdm import tqdm
 
 from huggingface_hub import HfApi, interpreter_login
 from huggingface_hub.utils import HfFolder
 
-from flux import FluxPipeline
-
+from flux import FluxPipeline, Trainer, load_dataset, save_config
 
 class FinetuningDataset:
     def __init__(self, flux, args):
@@ -145,10 +142,10 @@ def generate_progress_images(iteration, flux, args):
     im.save(out_file)
 
 
-def save_adapters(iteration, flux, args):
+def save_adapters(adapter_name, flux, args):
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{iteration:07d}_adapters.safetensors"
+    out_file = out_dir / adapter_name
     print(f"Saving {str(out_file)}")
 
     mx.save_safetensors(
@@ -263,7 +260,8 @@ For more details on using Flux, check the [Flux documentation](https://github.co
 """
     return readme_content
 
-if __name__ == "__main__":
+def setup_arg_parser():
+    """Set up and return the argument parser."""
     parser = argparse.ArgumentParser(
         description="Finetune Flux to generate images with a specific subject"
     )
@@ -374,8 +372,16 @@ if __name__ == "__main__":
         help="Make the Hugging Face repository private",
     )
     parser.add_argument("dataset")
+    return parser
 
+
+if __name__ == "__main__":
+    parser = setup_arg_parser()
     args = parser.parse_args()
+
+    output_path = Path(args.output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    save_config(vars(args), output_path / "adapter_config.json")
 
     # Load the model and set it up for LoRA training. We use the same random
     # state when creating the LoRA layers so all workers will have the same
@@ -394,7 +400,7 @@ if __name__ == "__main__":
     trainable_params = tree_reduce(
         lambda acc, x: acc + x.size, flux.flow.trainable_parameters(), 0
     )
-    print(f"Training {trainable_params / 1024**2:.3f}M parameters", flush=True)
+    print(f"Training {trainable_params / 1024 ** 2:.3f}M parameters", flush=True)
 
     # Set up the optimizer and training steps. The steps are a bit verbose to
     # support gradient accumulation together with compilation.
@@ -467,10 +473,10 @@ if __name__ == "__main__":
                     x, t5_feat, clip_feat, guidance, prev_grads
                 )
 
-    print("Create the training dataset.", flush=True)
-    dataset = FinetuningDataset(flux, args)
-    dataset.encode_images()
-    dataset.encode_prompts()
+    dataset = load_dataset(args.dataset)
+    trainer = Trainer(flux, dataset, args)
+    trainer.encode_dataset()
+
     guidance = mx.full((args.batch_size,), args.guidance, dtype=flux.dtype)
 
     # An initial generation to compare
@@ -479,7 +485,7 @@ if __name__ == "__main__":
     grads = None
     losses = []
     tic = time.time()
-    for i, batch in zip(range(args.iterations), dataset.iterate(args.batch_size)):
+    for i, batch in zip(range(args.iterations), trainer.iterate(args.batch_size)):
         loss, grads = step(*batch, guidance, grads, (i + 1) % args.grad_accumulate == 0)
         mx.eval(loss, grads, state)
         losses.append(loss.item())
@@ -488,7 +494,7 @@ if __name__ == "__main__":
             toc = time.time()
             peak_mem = mx.metal.get_peak_memory() / 1024**3
             print(
-                f"Iter: {i+1} Loss: {sum(losses) / 10:.3f} "
+                f"Iter: {i + 1} Loss: {sum(losses) / 10:.3f} "
                 f"It/s: {10 / (toc - tic):.3f} "
                 f"Peak mem: {peak_mem:.3f} GB",
                 flush=True,
@@ -498,7 +504,7 @@ if __name__ == "__main__":
             generate_progress_images(i + 1, flux, args)
 
         if (i + 1) % args.checkpoint_every == 0:
-            save_adapters(i + 1, flux, args)
+            save_adapters(f"{i + 1:07d}_adapters.safetensors", flux, args)
 
         if (i + 1) % 10 == 0:
             losses = []
@@ -506,3 +512,6 @@ if __name__ == "__main__":
     
     if args.push_to_hub:
         push_to_hub(args)
+
+    save_adapters("final_adapters.safetensors", flux, args)
+    print("Training successful.")

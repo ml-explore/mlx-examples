@@ -7,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs, create_attention_mask
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -92,10 +92,11 @@ class Attention(nn.Module):
         keys = mx.tile(keys, [1, self.config.n_shared_head, 1, 1])
         values = mx.tile(values, [1, self.config.n_shared_head, 1, 1])
 
-        output = mx.fast.scaled_dot_product_attention(
+        output = scaled_dot_product_attention(
             queries,
             keys,
             values,
+            cache=cache,
             scale=self.scale,
             mask=attention_mask,
         )
@@ -173,10 +174,12 @@ class PlamoModel(nn.Module):
         self,
         inputs: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ) -> mx.array:
         h = self.embed_tokens(inputs)
 
-        mask = create_attention_mask(h, cache)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None for _ in range(len(self.layers.layers))]
@@ -201,8 +204,9 @@ class Model(nn.Module):
         self,
         inputs: mx.array,
         cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
     ) -> mx.array:
-        out = self.model(inputs, cache)
+        out = self.model(inputs, cache, mask)
         return self.lm_head(out)
 
     @property
