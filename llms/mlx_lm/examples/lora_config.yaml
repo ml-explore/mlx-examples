@@ -7,6 +7,19 @@ train: true
 # The fine-tuning method: "lora", "dora", or "full".
 fine_tune_type: lora
 
+# The training-mode: "normal", or "dpo"
+training_mode: normal 
+
+# If you set training_mode to "dpo"
+# beta: 0.1
+# The dpo-lodd-type: "sigmoid", "hinge", "ipo", or "dpop"
+# dpo_loss_type: "sigmoid"
+# is_reference_free: False
+# delta: 50.0
+# If reference_model_path is not given it will just use the same model
+# reference_model_path: "mlx_model"
+# train_bias_only: False
+
 # Directory with {train, valid, test}.jsonl files
 data: "/path/to/training/data"
 
