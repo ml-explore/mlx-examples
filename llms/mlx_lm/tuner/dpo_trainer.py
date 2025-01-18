@@ -148,7 +148,7 @@ def dpo_loss(
         
         logits = model(inputs)
         logits = logits.astype(mx.float32)
-
+        
         return -nn.losses.cross_entropy(logits, targets) * mask[:, :-1]
 
     num_chosen_tokens = chosen_masks.sum(-1)

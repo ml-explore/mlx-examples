@@ -249,11 +249,11 @@ def train_model(
         if args.reference_model_path:
             reference_model, _ = load(args.reference_model_path)
         else:
-            reference_model = model
+            reference_model, _ = load(args.model)
             
         train_dpo(
             model=model,
-            reference_model=reference_model,
+            reference_model=reference_model.freeze(),
             tokenizer=tokenizer,
             optimizer=opt,
             train_dataset=train_set,
