@@ -78,6 +78,7 @@ def build_parser():
         "--train",
         action="store_true",
         help="Do training",
+        default=None,
     )
     parser.add_argument(
         "--data",
@@ -135,6 +136,7 @@ def build_parser():
         "--test",
         action="store_true",
         help="Evaluate on the test set after training",
+        default=None,
     )
     parser.add_argument(
         "--test-batches",
@@ -156,6 +158,7 @@ def build_parser():
         "--grad-checkpoint",
         action="store_true",
         help="Use gradient checkpointing to reduce memory use.",
+        default=None,
     )
     parser.add_argument("--seed", type=int, help="The PRNG seed")
     return parser
