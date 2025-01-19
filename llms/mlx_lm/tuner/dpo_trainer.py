@@ -12,7 +12,6 @@ import mlx.nn as nn
 import numpy as np
 from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten
-from ..generate import generate
 from .trainer import TrainingCallback, grad_checkpoint, TrainingArgs
 
 

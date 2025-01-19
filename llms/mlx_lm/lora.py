@@ -16,6 +16,7 @@ from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.dpo_trainer import DPOTrainingArgs, evaluate_dpo, train_dpo
+from .tuner.orpo_trainer import ORPOTrainingArgs, evaluate_orpo, train_orpo
 from .tuner.utils import (
     build_schedule,
     linear_to_lora_layers,
@@ -70,6 +71,7 @@ CONFIG_DEFAULTS = {
     "delta": 50.0,
     "reference_model_path": None,
     "train_bias_only": False,
+    "reward_scaling": 1.0,
 }
 
 
@@ -106,7 +108,7 @@ def build_parser():
         "--training-mode",
         type=str,
         choices=["normal", "dpo", "orpo"],
-        help="Training mode: normal, DPO or ORPO",
+        help="Training mode: normal, DPO or ORPO.",
     )
     parser.add_argument(
         "--num-layers",
@@ -149,7 +151,7 @@ def build_parser():
     parser.add_argument(
         "--test",
         action="store_true",
-        help="Evaluate on the test set after training",
+        help="Evaluate on the test set after training.",
         default=None,
     )
     parser.add_argument(
@@ -166,7 +168,7 @@ def build_parser():
         "-c",
         "--config",
         type=str,
-        help="A YAML configuration file with the training options",
+        help="A YAML configuration file with the training options.",
     )
     parser.add_argument(
         "--grad-checkpoint",
@@ -180,7 +182,8 @@ def build_parser():
     parser.add_argument("--delta", type=float)
     parser.add_argument("--reference-model-path", type=str)
     parser.add_argument("--train-bias-only", action="store_true")
-    parser.add_argument("--seed", type=int, help="The PRNG seed")
+    parser.add_argument("--reward-scaling", type=float, help="Scaling factor for offline rewards.")
+    parser.add_argument("--seed", type=int, help="The PRNG seed.")
     return parser
 
 
@@ -226,7 +229,8 @@ def train_model(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
     )
-    # Train model
+    
+    # Train model based on training mode
     if args.training_mode == "dpo":
         training_args = DPOTrainingArgs(
             batch_size=args.batch_size,
@@ -254,6 +258,32 @@ def train_model(
         train_dpo(
             model=model,
             reference_model=reference_model.freeze(),
+            tokenizer=tokenizer,
+            optimizer=opt,
+            train_dataset=train_set,
+            val_dataset=valid_set,
+            args=training_args,
+            training_callback=training_callback,
+        )
+    elif args.training_mode == "orpo":
+        training_args = ORPOTrainingArgs(
+            batch_size=args.batch_size,
+            iters=args.iters,
+            val_batches=args.val_batches,
+            steps_per_report=args.steps_per_report,
+            steps_per_eval=args.steps_per_eval,
+            steps_per_save=args.save_every,
+            adapter_file=adapter_file,
+            max_seq_length=args.max_seq_length,
+            grad_checkpoint=args.grad_checkpoint,
+            beta=args.beta,
+            reward_scaling=args.reward_scaling,
+            train_bias_only=args.train_bias_only,
+            seed=args.seed,
+        )
+            
+        train_orpo(
+            model=model,
             tokenizer=tokenizer,
             optimizer=opt,
             train_dataset=train_set,
@@ -304,7 +334,19 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta,
             delta=args.delta,
-            loss_type=args.loss_type,
+            loss_type=args.dpo_loss_type,
+        )
+        print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+    elif args.training_mode == "orpo":
+        test_loss, test_rewards = evaluate_orpo(
+            model=model,
+            dataset=test_set,
+            tokenizer=tokenizer,
+            batch_size=args.batch_size,
+            num_batches=args.test_batches,
+            max_seq_length=args.max_seq_length,
+            beta=args.beta,
+            reward_scaling=args.reward_scaling,
         )
         print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
     else:
@@ -318,7 +360,6 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
         )
 
         test_ppl = math.exp(test_loss)
-
         print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
 

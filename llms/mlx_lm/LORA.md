@@ -20,6 +20,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - [Run](#Run)
   - [Fine-tune](#Fine-tune)
   - [DPO Training](#DPO Training)
+  - [ORPO Training](#ORPO Training)
   - [Evaluate](#Evaluate)
   - [Generate](#Generate)
 - [Fuse](#Fuse)
@@ -103,6 +104,38 @@ For DPO training, the data should be in JSONL format with the following structur
 
 ```jsonl
 {"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+```
+
+Here's the equivalent ORPO documentation:
+
+### ORPO Training
+
+Offline Reward Policy Optimization (ORPO) training allows you to fine-tune models using human preference data with pre-computed rewards. To use ORPO training, set the training mode to 'orpo':
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --training-mode orpo \
+    --data <path_to_data> \
+    --beta 0.1 \
+    --reward-scaling 1.0
+```
+
+The ORPO training accepts the following additional parameters:
+- `--beta`: Controls the temperature parameter for the logistic function (default: 0.1)
+- `--reward-scaling`: Scaling factor for the offline rewards (default: 1.0)
+
+For ORPO training, the data should be in JSONL format with the following structure:
+
+```jsonl
+{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+```
+
+The training process will automatically assign binary rewards (1.0 for chosen and 0.0 for rejected responses) if no explicit rewards are provided. You can also provide custom rewards in your data:
+
+```jsonl
+{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response", "chosen_reward": 0.8, "rejected_reward": 0.3}
 ```
 
 ### Evaluate
