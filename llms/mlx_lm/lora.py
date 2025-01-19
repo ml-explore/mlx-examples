@@ -70,7 +70,6 @@ CONFIG_DEFAULTS = {
     "is_reference_free": False,
     "delta": 50.0,
     "reference_model_path": None,
-    "train_bias_only": False,
     "reward_scaling": 1.0,
 }
 
@@ -181,7 +180,6 @@ def build_parser():
     parser.add_argument("--is-reference-free", action="store_true")
     parser.add_argument("--delta", type=float)
     parser.add_argument("--reference-model-path", type=str)
-    parser.add_argument("--train-bias-only", action="store_true")
     parser.add_argument("--reward-scaling", type=float, help="Scaling factor for offline rewards.")
     parser.add_argument("--seed", type=int, help="The PRNG seed.")
     return parser
@@ -247,7 +245,6 @@ def train_model(
             is_reference_free=args.is_reference_free,
             delta=args.delta,
             reference_model_path=args.reference_model_path,
-            train_bias_only=args.train_bias_only,
         )
         
         if args.reference_model_path:
@@ -278,8 +275,6 @@ def train_model(
             grad_checkpoint=args.grad_checkpoint,
             beta=args.beta,
             reward_scaling=args.reward_scaling,
-            train_bias_only=args.train_bias_only,
-            seed=args.seed,
         )
             
         train_orpo(

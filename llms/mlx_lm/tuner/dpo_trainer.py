@@ -45,12 +45,6 @@ class DPOTrainingArgs(TrainingArgs):
             "help": "Path to reference model weights. If None, uses the same model."
         }
     )
-    train_bias_only: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to train only bias terms in the model."
-        }
-    )
     seed: int = field(
         default=42,
         metadata={

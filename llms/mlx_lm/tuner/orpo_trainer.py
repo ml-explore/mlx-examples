@@ -30,19 +30,19 @@ def orpo_loss(
     rejected_masks: mx.array,
     chosen_rewards: mx.array,
     rejected_rewards: mx.array,
-    beta: float,
+    beta: float = 0.1,
     reward_scaling: float = 1.0,
 ):
     """
-    Calculate ORPO loss using pre-computed rewards.
+    Calculate ORPO loss using pre-computed rewards that incorporate preference scores.
     Args:
         model: Policy model
         chosen: Chosen sequence tokens
         rejected: Rejected sequence tokens
         chosen_masks: Attention masks for chosen sequences
         rejected_masks: Attention masks for rejected sequences
-        chosen_rewards: Pre-computed rewards for chosen sequences
-        rejected_rewards: Pre-computed rewards for rejected sequences
+        chosen_rewards: Rewards for chosen sequences (derived from preference scores)
+        rejected_rewards: Rewards for rejected sequences (derived from preference scores)
         beta: Temperature parameter
         reward_scaling: Scaling factor for rewards
     Returns:
@@ -65,7 +65,7 @@ def orpo_loss(
     chosen_rewards = chosen_rewards * reward_scaling
     rejected_rewards = rejected_rewards * reward_scaling
     
-    # ORPO uses the reward difference directly
+    # Calculate reward difference
     reward_diff = chosen_rewards - rejected_rewards
     
     # Calculate ORPO loss using logistic function
@@ -140,7 +140,7 @@ def evaluate_orpo(
 
 def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
     """
-    Modified batch iterator for ORPO that includes pre-computed rewards.
+    Modified batch iterator for ORPO that includes preference scores.
     Works with pre-tokenized input data.
     """
     # Sort pairs by length of the chosen response
@@ -186,9 +186,14 @@ def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=F
             chosen_masks = np.zeros((batch_size // step, max_length_in_batch), np.float32)
             rejected_masks = np.zeros((batch_size // step, max_length_in_batch), np.float32)
             
-            # Always use binary rewards
-            chosen_rewards = np.ones((batch_size // step,), np.float32)
-            rejected_rewards = np.zeros((batch_size // step,), np.float32)
+            # Get preference scores and convert to rewards
+            preference_scores = np.array([x.get('preference_score', 1.0) for x in batch], np.float32)
+            # Convert preference scores to chosen/rejected rewards
+            # When preference_score is 1.0, chosen_reward=1.0, rejected_reward=0.0
+            # When preference_score is 0.0, chosen_reward=0.0, rejected_reward=1.0
+            # When preference_score is 0.5, both rewards are 0.5
+            chosen_rewards = preference_scores
+            rejected_rewards = 1.0 - preference_scores
 
             for j in range(batch_size // step):
                 # Use pre-tokenized sequences directly
@@ -200,9 +205,14 @@ def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=F
                 rejected_arr[j, :rejected_length] = batch[j]['rejected'][:rejected_length]
                 rejected_masks[j, :rejected_length] = 1.0
 
-            yield (mx.array(chosen_arr), mx.array(rejected_arr),
-                  mx.array(chosen_masks), mx.array(rejected_masks),
-                  mx.array(chosen_rewards), mx.array(rejected_rewards))
+            yield (
+                mx.array(chosen_arr),
+                mx.array(rejected_arr),
+                mx.array(chosen_masks),
+                mx.array(rejected_masks),
+                mx.array(chosen_rewards),
+                mx.array(rejected_rewards)
+            )
 
         if not train:
             break

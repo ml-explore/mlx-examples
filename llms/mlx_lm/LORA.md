@@ -110,7 +110,7 @@ Here's the equivalent ORPO documentation:
 
 ### ORPO Training
 
-Offline Reward Policy Optimization (ORPO) training allows you to fine-tune models using human preference data with pre-computed rewards. To use ORPO training, set the training mode to 'orpo':
+Odds Ratio Preference Optimization (ORPO) training allows you to fine-tune models using human preference data with pre-computed rewards. To use ORPO training, set the training mode to 'orpo':
 
 ```shell
 mlx_lm.lora \
