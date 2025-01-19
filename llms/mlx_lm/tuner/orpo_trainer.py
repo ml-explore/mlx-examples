@@ -7,7 +7,7 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten
 from mlx.nn.utils import average_gradients
-from .trainer import TrainingArgs, grad_checkpoint
+from .trainer import TrainingArgs, grad_checkpoint, TrainingCallback
 
 
 @dataclass
