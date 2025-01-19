@@ -105,8 +105,8 @@ def build_parser():
     parser.add_argument(
         "--training-mode",
         type=str,
-        choices=["normal", "dpo"],
-        help="Training mode: normal or DPO",
+        choices=["normal", "dpo", "orpo"],
+        help="Training mode: normal, DPO or ORPO",
     )
     parser.add_argument(
         "--num-layers",
