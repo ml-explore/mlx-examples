@@ -460,8 +460,9 @@ class EncodecResidualVectorQuantizer(nn.Module):
     def decode(self, codes: mx.array) -> mx.array:
         """Decode the given codes to the quantized representation."""
         quantized_out = None
+        total_layers = len(self.layers)
         for i, indices in enumerate(codes.split(codes.shape[1], axis=1)):
-            layer = self.layers[i]
+            layer = self.layers[i % total_layers]
             quantized = layer.decode(indices.squeeze(1))
             if quantized_out is None:
                 quantized_out = quantized
