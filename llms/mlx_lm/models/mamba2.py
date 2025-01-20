@@ -28,21 +28,18 @@ class ModelArgs(BaseModelArgs):
     rms_norm: bool
     chunk_size: int
     tie_word_embeddings: bool
-    dim: int = None
-    intermediate_size: int = None
-    time_step_limit: Tuple[float, float] = field(default_factory=lambda: (0.0, float("inf")))
-    time_step_rank: Union[int, str] = "auto"
-    time_step_min: float = 0.001
-    time_step_max: float = 0.1
-    time_step_floor: float = 1e-4
+    intermediate_size: int
+    time_step_limit: Tuple[float, float]
+    time_step_rank: Union[int, str]
+    time_step_min: float
+    time_step_max: float
+    time_step_floor: float
     A_init_min: float = 1.0
     A_init_max: float = 16.0
 
     def __post_init__(self):
         if not hasattr(self, "intermediate_size"):
             self.intermediate_size = int(self.expand * self.hidden_size)
-        if not hasattr(self, "hidden_size"):
-            self.hidden_size = self.dim
         if not hasattr(self, "head_dim"):
             self.head_dim = self.hidden_size // self.num_heads
         if self.time_step_rank == "auto":
@@ -104,6 +101,7 @@ class Mamba2Block(nn.Module):
         self.n_groups = args.n_groups
         self.n_heads = args.num_heads
         self.d_head = self.d_inner // self.n_heads
+        self.chunk_size = args.chunk_size
         
         # Input projection
         d_in_proj = 2 * self.d_inner + 2 * self.n_groups * self.d_state + self.n_heads
@@ -118,17 +116,9 @@ class Mamba2Block(nn.Module):
             )
         )
 
-        dt = mx.clip(dt, args.time_step_floor, float('inf'))
-        inv_dt = dt + mx.log(-mx.exp(-dt) + 1)  # Inverse softplus
-        self.dt_bias = mx.array(inv_dt)
-
-        # Improved A initialization
-        A = mx.random.uniform(
-            low=args.A_init_min,
-            high=args.A_init_max,
-            shape=(self.n_heads,)
-        )
-        self.A_log = mx.log(A)
+        self.dt_bias = mx.random.normal((self.n_heads,)) * args.initializer_range
+        self.A_log = mx.random.normal((self.n_heads,)) * args.initializer_range
+        self.D = mx.random.normal((self.n_heads,)) * args.initializer_range
         
         # Same D initialization
         self.D = mx.random.normal((self.n_heads,)) * args.initializer_range
@@ -147,31 +137,48 @@ class Mamba2Block(nn.Module):
 
     def __call__(self, u: mx.array, cache=None):
         batch_size, seq_len, _ = u.shape
+        if cache is None:
+            cache = [None, None]
         
         # Project input
-        zxbcdt = self.in_proj(u)
-        z = zxbcdt[..., :self.d_inner] 
-        xBC = zxbcdt[..., self.d_inner:self.d_inner + (self.d_inner + 2 * self.n_groups * self.d_state)]
-        dt = zxbcdt[..., -self.n_heads:]
+        zxbcdt = self.in_proj(u)  # (B, L, d_in_proj)
+        A = -mx.exp(self.A_log)  # (nheads) or (d_inner, d_state)
+
+        z, xBC, dt = mx.split(
+            zxbcdt, 
+            indices_or_sections=[
+                self.d_inner,
+                self.d_inner + (2 * self.n_groups * self.d_state + self.d_inner)
+            ],
+            axis=-1
+        )
         
         # Process dt
-        dt = nn.softplus(dt + self.dt_bias)
+        dt = nn.softplus(dt + self.dt_bias)  # (B, L, nheads)
         
         # Conv1d and activation
         xBC, conv_state = self.conv1d(xBC, cache[0] if cache else None)
+        xBC = silu(xBC)
+
         if cache is not None:
             cache[0] = conv_state
-        xBC = silu(xBC)
+
         xBC = xBC[:, :seq_len, :]
         
         # Split conv output and reshape
-        x = xBC[..., :self.d_inner]
-        B = mx.reshape(xBC[..., self.d_inner:self.d_inner + self.n_groups * self.d_state], 
-                    (batch_size, seq_len, self.n_groups, -1))
-        C = mx.reshape(xBC[..., -self.n_groups * self.d_state:],
-                    (batch_size, seq_len, self.n_groups, -1))
+        x, B, C = mx.split(
+            xBC,
+            indices_or_sections=[
+                self.d_inner,
+                self.d_inner + self.n_groups * self.d_state
+            ],
+            axis=-1
+        )
         
-        x = mx.reshape(x, (batch_size, seq_len, self.n_heads, self.d_head))
+        # Reshape tensors
+        B = mx.reshape(B, (batch_size, seq_len, self.n_groups, -1))
+        C = mx.reshape(C, (batch_size, seq_len, self.n_groups, -1))
+        x = mx.reshape(x, (batch_size, seq_len, self.n_heads, -1))
         
         # Initialize state
         if cache and cache[1] is not None:
@@ -180,37 +187,56 @@ class Mamba2Block(nn.Module):
             prev_state = mx.zeros((batch_size, self.n_heads, self.d_head, self.d_state))
         
         # Compute dA
-        A = -mx.exp(self.A_log)
         dt = mx.reshape(dt, (batch_size, seq_len, self.n_heads))
         dA = mx.exp(dt * mx.expand_dims(A, axis=(0, 1)))
         
-        # Process sequence 
-        next_state = prev_state
+        # Process sequence in chunks
+        chunk_size = self.chunk_size
         outputs = []
+        next_state = prev_state
         
-        for t in range(seq_len):
-            xt = x[:, t]
-            Bt = B[:, t] 
-            Ct = C[:, t]
-            dAt = dA[:, t]
+        # Process in chunks
+        for chunk_start in range(0, seq_len, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, seq_len)
             
-            # Update state
-            dBx = mx.einsum('bh,bgd,bhp->bhpd', dAt, Bt, xt)
-            next_state = next_state * mx.expand_dims(dAt, axis=(-1, -2)) + dBx
+            # Get current chunk
+            x_chunk = x[:, chunk_start:chunk_end]
+            B_chunk = B[:, chunk_start:chunk_end]
+            C_chunk = C[:, chunk_start:chunk_end]
+            dA_chunk = dA[:, chunk_start:chunk_end]
+            z_chunk = z[:, chunk_start:chunk_end]
             
-            # Compute output
-            yt = mx.einsum('bhpd,bgd->bhp', next_state, Ct)
-            yt = yt + xt * mx.expand_dims(self.D, -1)
+            # Process the chunk in batches
+            chunk_outputs = []
+            chunk_state = next_state
             
-            # Reshape and normalize
-            yt = mx.reshape(yt, (batch_size, 1, self.d_inner))
-            yt = self.norm(yt, z[:, t:t+1])
-            outputs.append(self.out_proj(yt))
+            for t in range(chunk_end - chunk_start):
+                xt = x_chunk[:, t]
+                Bt = B_chunk[:, t]
+                Ct = C_chunk[:, t]
+                dAt = dA_chunk[:, t]
+                
+                # Update state
+                dBx = mx.einsum('bh,bgd,bhp->bhpd', dAt, Bt, xt)
+                chunk_state = chunk_state * mx.expand_dims(dAt, axis=(-1, -2)) + dBx
+                
+                # Compute output
+                yt = mx.einsum('bhpd,bgd->bhp', chunk_state, Ct)
+                yt = yt + xt * mx.expand_dims(self.D, -1)
+                
+                # Reshape and normalize
+                yt = mx.reshape(yt, (batch_size, 1, self.d_inner))
+                yt = self.norm(yt, z_chunk[:, t:t+1])
+                chunk_outputs.append(self.out_proj(yt))
+            
+            # Update state for next chunk
+            next_state = chunk_state
+            outputs.extend(chunk_outputs)
         
-        # Update cache
+        # Update cache with final state
         if cache is not None:
             cache[1] = next_state
-            
+        
         return mx.concatenate(outputs, axis=1)
 
 
