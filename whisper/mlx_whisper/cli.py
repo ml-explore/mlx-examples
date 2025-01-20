@@ -274,7 +274,7 @@ def main():
                         writer(result, file_path.stem, **writer_args)
                     except Exception as e:
                         traceback.print_exc()
-                        warnings.warn(f"Failed to process {file_path}: {str(e)}")
+                        print(f"Skipping {file_path} due to {type(e).__name__}: {str(e)}")
                 continue
             output_name = output_name or path.stem
 
@@ -287,7 +287,7 @@ def main():
             writer(result, output_name, **writer_args)
         except Exception as e:
             traceback.print_exc()
-            warnings.warn(f"Failed to process {audio_obj}: {str(e)}")
+            print(f"Skipping {audio_obj} due to {type(e).__name__}: {str(e)}")
 
 
 if __name__ == "__main__":
