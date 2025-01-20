@@ -167,13 +167,13 @@ def build_parser():
     parser.add_argument(
         "--prepend-punctuations",
         type=str,
-        default="\"'“¿([{-",
+        default="\"'""¿([{-",
         help="If word-timestamps is True, merge these punctuation symbols with the next word",
     )
     parser.add_argument(
         "--append-punctuations",
         type=str,
-        default="\"'.。,，!！?？:：”)]}、",
+        default="\"'.。,，!！?？:："")]}、",
         help="If word_timestamps is True, merge these punctuation symbols with the previous word",
     )
     parser.add_argument(
@@ -273,9 +273,8 @@ def main():
                         )
                         writer(result, file_path.stem, **writer_args)
                     except Exception as e:
+                        traceback.print_exc()
                         warnings.warn(f"Failed to process {file_path}: {str(e)}")
-                        if args.get("verbose"):
-                            traceback.print_exc()
                 continue
             output_name = output_name or path.stem
 
@@ -287,9 +286,8 @@ def main():
             )
             writer(result, output_name, **writer_args)
         except Exception as e:
+            traceback.print_exc()
             warnings.warn(f"Failed to process {audio_obj}: {str(e)}")
-            if args.get("verbose"):
-                traceback.print_exc()
 
 
 if __name__ == "__main__":
