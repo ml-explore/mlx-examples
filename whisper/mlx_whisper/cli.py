@@ -255,16 +255,14 @@ def main():
             if path.is_dir():
                 media_files = get_media_files(path)
                 if not media_files:
-                    print(f"No media files found in directory: {path}")
-                    continue
-                
-                print(f"Found {len(media_files)} files in directory{path}")
-                response = input("Continue processing all files in target directory? [Y/n] ").strip()
-                if response.lower() in ['n', 'no']:
+                    warnings.warn(f"No files found in directory: {path}")
                     continue
                 
                 if args.get("verbose"):
-                    print(f"Processing {len(media_files)} files in {path}...")
+                    print(f"Found {len(media_files)} files in {path}")
+                response = input("Process all files? [Y/n] ").strip()
+                if response.lower() in ['n', 'no']:
+                    continue
                 
                 for file_path in media_files:
                     try:
@@ -275,8 +273,9 @@ def main():
                         )
                         writer(result, file_path.stem, **writer_args)
                     except Exception as e:
-                        traceback.print_exc()
-                        print(f"Skipping {file_path} due to {type(e).__name__}: {str(e)}")
+                        warnings.warn(f"Failed to process {file_path}: {str(e)}")
+                        if args.get("verbose"):
+                            traceback.print_exc()
                 continue
             output_name = output_name or path.stem
 
@@ -288,8 +287,9 @@ def main():
             )
             writer(result, output_name, **writer_args)
         except Exception as e:
-            traceback.print_exc()
-            print(f"Skipping {audio_obj} due to {type(e).__name__}: {str(e)}")
+            warnings.warn(f"Failed to process {audio_obj}: {str(e)}")
+            if args.get("verbose"):
+                traceback.print_exc()
 
 
 if __name__ == "__main__":
