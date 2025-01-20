@@ -42,7 +42,7 @@ def build_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    parser.add_argument("audio", nargs="+", type=str, help="Path(s) to audio file(s) or directories to transcribe")
+    parser.add_argument("audio", nargs="+", help="Path(s) to audio file(s) or directories to transcribe")
 
     parser.add_argument(
         "--model",
