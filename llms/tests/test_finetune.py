@@ -21,7 +21,7 @@ from mlx_lm.tuner.utils import build_schedule
 @contextmanager
 def swapped_with_identity(obj, func):
     old_func = getattr(obj, func)
-    setattr(obj, func, lambda x: x)
+    setattr(obj, func, lambda x, **kwargs: x)
     yield
     setattr(obj, func, old_func)
 
