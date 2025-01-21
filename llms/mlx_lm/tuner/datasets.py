@@ -170,7 +170,7 @@ def load_custom_hf_dataset(args, tokenizer: PreTrainedTokenizer):
         if prompt_feature and completion_feature:
             return CompletionsDataset(ds, tokenizer, prompt_feature, completion_feature)
         elif text_feature:
-            return Dataset(train_ds, tokenizer, text_key=text_feature)
+            return Dataset(ds, tokenizer, text_key=text_feature)
         else:
             raise ValueError(
                 "Specify either a prompt and completion feature or a text "
