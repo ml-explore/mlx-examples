@@ -22,6 +22,13 @@ def build_parser():
         default="mlx_model",
         help="The path to the local model directory or Hugging Face repo.",
     )
+
+    parser.add_argument(
+        "--revision",
+        default="main",
+        help="Specify the version of the model to use. This can be a branch name, tag, or commit hash. Defaults to 'main'.",
+    )
+
     # Generation args
     parser.add_argument(
         "--max-tokens",
@@ -333,7 +340,7 @@ if __name__ == "__main__":
         tokenizer_config["add_eos_token"] = bool(args.add_eos_token)
 
     print("Loading pretrained model")
-    model, tokenizer, _ = lora_utils.load(args.model, tokenizer_config)
+    model, tokenizer, _ = lora_utils.load(args.model, args.revision, tokenizer_config)
     # Freeze all layers other than LORA linears
     model.freeze()
     for l in model.model.layers[len(model.model.layers) - args.lora_layers :]:
