@@ -306,7 +306,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             delta=args.delta,
             loss_type=args.dpo_loss_type,
         )
-        print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+        print(f"Test loss {test_loss:.8f}, Rewards: {test_rewards[0]:.8f}, {test_rewards[1]:.8f}")
     else:
         test_loss = evaluate(
             model=model,
