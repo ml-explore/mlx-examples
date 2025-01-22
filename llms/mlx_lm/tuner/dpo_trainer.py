@@ -371,7 +371,7 @@ def train_dpo(
             if rank == 0:
                 print(
                     f"Iter {it}: "
-                    f"Val loss {val_loss:.3f}, "
+                    f"Val loss {val_loss:.8f}, "
                     f"Val chosen reward {val_rewards[0]:.3f}, "
                     f"Val rejected reward {val_rewards[1]:.3f}, "
                     f"Val took {val_time:.3f}s",
@@ -414,7 +414,7 @@ def train_dpo(
             
             if rank == 0:
                 print(
-                    f"Iter {it}: Train loss {train_loss:.3f}, "
+                    f"Iter {it}: Train loss {train_loss:.8f}, "
                     f"Chosen reward {train_rewards[0]:.3f}, "
                     f"Rejected reward {train_rewards[1]:.3f}, "
                     f"Learning Rate {learning_rate:.3e}, "
