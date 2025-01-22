@@ -23,6 +23,11 @@ from mlx_lm import load, stream_generate
 
 parser = argparse.ArgumentParser(description="LLM pipelined inference example")
 parser.add_argument(
+    "--model",
+    default="mlx-community/DeepSeek-R1-3bit",
+    help="HF repo or path to local model.",
+)
+parser.add_argument(
     "--prompt",
     "-p",
     default="Write a quicksort in C++.",
@@ -37,9 +42,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-model_repo = "mlx-community/DeepSeek-V3-3bit"
-
-model, tokenizer = load(model_repo, lazy=True)
+model, tokenizer = load(args.model, lazy=True)
 
 messages = [{"role": "user", "content": args.prompt}]
 prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
