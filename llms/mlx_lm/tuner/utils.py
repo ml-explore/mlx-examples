@@ -94,6 +94,7 @@ def linear_to_lora_layers(
         "phimoe",
         "gemma",
         "gemma2",
+        "helium",
         "starcoder2",
         "cohere",
         "cohere2",
