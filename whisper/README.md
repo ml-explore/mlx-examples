@@ -31,6 +31,11 @@ mlx_whisper audio_file.mp3
 
 This will make a text file `audio_file.txt` with the results.
 
+You can also transcribe a directory of audio files:
+```sh
+mlx_whisper path/to/directory/
+```
+
 Use `-f` to specify the output format and `--model` to specify the model. There
 are many other supported command line options. To see them all, run
 `mlx_whisper -h`.
