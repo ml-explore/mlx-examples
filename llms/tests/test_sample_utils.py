@@ -28,6 +28,12 @@ class TestSampleUtils(unittest.TestCase):
         token = top_p_sampling(logits, 0.95, temperature).item()
         self.assertTrue(token in (1, 2, 3))
 
+        # Batch mode works
+        probs = mx.array([[0.9, 0.0, 0.0, 0.1], [0.0, 0.8, 0.0, 0.1]])
+        logits = mx.log(probs)
+        tokens = top_p_sampling(logits, 0.5, temperature)
+        self.assertEqual(tokens.tolist(), [0, 1])
+
     def test_min_p_sampling(self):
         probs = mx.array([0.9, 0.0, 0.0, 0.1])[None]
         logits = mx.log(probs)
@@ -41,6 +47,12 @@ class TestSampleUtils(unittest.TestCase):
         for _ in range(5):
             token = min_p_sampling(logits, 0.05)
             self.assertTrue(token in (0, 3))
+
+        # Batch mode works
+        probs = mx.array([[0.9, 0.0, 0.0, 0.1], [0.0, 0.8, 0.0, 0.1]])
+        logits = mx.log(probs)
+        tokens = min_p_sampling(logits, 0.7)
+        self.assertEqual(tokens.tolist(), [0, 1])
 
     def test_top_k_sampling(self):
         probs = mx.array([0.9, 0.0, 0.0, 0.1])[None]

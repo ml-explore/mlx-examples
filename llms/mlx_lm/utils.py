@@ -398,8 +398,9 @@ def speculative_generate_step(
             quantize_cache_fn(cache)
 
             logprobs = logits - mx.logsumexp(logits, keepdims=True)
-            y = sampler(logprobs).squeeze(0)
-            return y, logprobs.squeeze(0)
+            logprobs = logprobs.squeeze(0)
+            y = sampler(logprobs)
+            return y, logprobs
 
     def _prefill(model, cache, y):
         while y.size > prefill_step_size:
