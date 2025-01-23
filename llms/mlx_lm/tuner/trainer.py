@@ -76,6 +76,23 @@ def default_loss(model, inputs, targets, lengths):
     return ce, ntoks
 
 
+def instruct_loss(model, inputs, targets, lengths, mask_input=True):
+    logits = model(inputs)
+    logits = logits.astype(mx.float32)
+
+    length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
+
+    if mask_input:
+        input_mask = mx.arange(inputs.shape[1])[None, :] < (lengths[:, None] // 2)
+        length_mask = length_mask & ~input_mask
+
+    ce = nn.losses.cross_entropy(logits, targets) * length_mask
+    ntoks = length_mask.sum()
+    ce = ce.sum() / ntoks
+
+    return ce, ntoks
+
+
 def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
     # Sort by length:
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))

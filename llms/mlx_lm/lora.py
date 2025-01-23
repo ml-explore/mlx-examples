@@ -13,7 +13,7 @@ import numpy as np
 import yaml
 
 from .tokenizer_utils import TokenizerWrapper
-from .tuner.datasets import load_dataset
+from .tuner.datasets import load_dataset, CompletionsDataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import (
     build_schedule,
