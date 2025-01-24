@@ -15,6 +15,7 @@ import yaml
 from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
+from .tuner.orpo_trainer import ORPOTrainingArgs, evaluate_orpo, train_orpo
 from .tuner.utils import (
     build_schedule,
     linear_to_lora_layers,
@@ -43,6 +44,7 @@ CONFIG_DEFAULTS = {
     "model": "mlx_model",
     "train": False,
     "fine_tune_type": "lora",
+    "training_mode": "normal",
     "data": "data/",
     "seed": 0,
     "num_layers": 16,
@@ -62,6 +64,12 @@ CONFIG_DEFAULTS = {
     "grad_checkpoint": False,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
+    "beta": 0.1,
+    "dpo_loss_type": "sigmoid",
+    "is_reference_free": False,
+    "delta": 50.0,
+    "reference_model_path": None,
+    "reward_scaling": 1.0,
 }
 
 
@@ -93,6 +101,12 @@ def build_parser():
         type=str,
         choices=["lora", "dora", "full"],
         help="Type of fine-tuning to perform: lora, dora, or full.",
+    )
+    parser.add_argument(
+        "--training-mode",
+        type=str,
+        choices=["normal", "dpo", "orpo"],
+        help="Training mode: normal, DPO or ORPO.",
     )
     parser.add_argument(
         "--num-layers",
@@ -135,7 +149,7 @@ def build_parser():
     parser.add_argument(
         "--test",
         action="store_true",
-        help="Evaluate on the test set after training",
+        help="Evaluate on the test set after training.",
         default=None,
     )
     parser.add_argument(
@@ -152,7 +166,7 @@ def build_parser():
         "-c",
         "--config",
         type=str,
-        help="A YAML configuration file with the training options",
+        help="A YAML configuration file with the training options.",
     )
     parser.add_argument(
         "--grad-checkpoint",
@@ -160,7 +174,13 @@ def build_parser():
         help="Use gradient checkpointing to reduce memory use.",
         default=None,
     )
-    parser.add_argument("--seed", type=int, help="The PRNG seed")
+    parser.add_argument("--beta", type=float)
+    parser.add_argument("--dpo-loss-type", type=str, choices=["sigmoid", "hinge", "ipo", "dpo"])
+    parser.add_argument("--is-reference-free", action="store_true")
+    parser.add_argument("--delta", type=float)
+    parser.add_argument("--reference-model-path", type=str)
+    parser.add_argument("--reward-scaling", type=float, help="Scaling factor for offline rewards.")
+    parser.add_argument("--seed", type=int, help="The PRNG seed.")
     return parser
 
 
@@ -200,52 +220,87 @@ def train_model(
     adapter_file = adapter_path / "adapters.safetensors"
     save_config(vars(args), adapter_path / "adapter_config.json")
 
-    # init training args
-    training_args = TrainingArgs(
-        batch_size=args.batch_size,
-        iters=args.iters,
-        val_batches=args.val_batches,
-        steps_per_report=args.steps_per_report,
-        steps_per_eval=args.steps_per_eval,
-        steps_per_save=args.save_every,
-        adapter_file=adapter_file,
-        max_seq_length=args.max_seq_length,
-        grad_checkpoint=args.grad_checkpoint,
-    )
-
     model.train()
     opt = optim.Adam(
         learning_rate=(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
     )
-    # Train model
-    train(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        optimizer=opt,
-        train_dataset=train_set,
-        val_dataset=valid_set,
-        training_callback=training_callback,
-    )
+    
+    # Train model based on training mode
+    if args.training_mode == "orpo":
+        training_args = ORPOTrainingArgs(
+            batch_size=args.batch_size,
+            iters=args.iters,
+            val_batches=args.val_batches,
+            steps_per_report=args.steps_per_report,
+            steps_per_eval=args.steps_per_eval,
+            steps_per_save=args.save_every,
+            adapter_file=adapter_file,
+            max_seq_length=args.max_seq_length,
+            grad_checkpoint=args.grad_checkpoint,
+            beta=args.beta
+        )
+            
+        train_orpo(
+            model=model,
+            tokenizer=tokenizer,
+            optimizer=opt,
+            train_dataset=train_set,
+            val_dataset=valid_set,
+            args=training_args,
+            training_callback=training_callback
+        )
+    else:
+        training_args = TrainingArgs(
+            batch_size=args.batch_size,
+            iters=args.iters,
+            val_batches=args.val_batches,
+            steps_per_report=args.steps_per_report,
+            steps_per_eval=args.steps_per_eval,
+            steps_per_save=args.save_every,
+            adapter_file=adapter_file,
+            max_seq_length=args.max_seq_length,
+            grad_checkpoint=args.grad_checkpoint
+        )
+
+        train(
+            model=model,
+            tokenizer=tokenizer,
+            optimizer=opt,
+            train_dataset=train_set,
+            val_dataset=valid_set,
+            args=training_args,
+            training_callback=training_callback,
+        )
 
 
 def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set):
     model.eval()
 
-    test_loss = evaluate(
-        model=model,
-        dataset=test_set,
-        tokenizer=tokenizer,
-        batch_size=args.batch_size,
-        num_batches=args.test_batches,
-        max_seq_length=args.max_seq_length,
-    )
+    if args.training_mode == "orpo":
+        test_loss, test_rewards = evaluate_orpo(
+            model=model,
+            dataset=test_set,
+            tokenizer=tokenizer,
+            batch_size=args.batch_size,
+            num_batches=args.test_batches,
+            max_seq_length=args.max_seq_length,
+            beta=args.beta
+        )
+        print(f"Test loss {test_loss:.8f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+    else:
+        test_loss = evaluate(
+            model=model,
+            dataset=test_set,
+            tokenizer=tokenizer,
+            batch_size=args.batch_size,
+            num_batches=args.test_batches,
+            max_seq_length=args.max_seq_length,
+        )
 
-    test_ppl = math.exp(test_loss)
-
-    print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
+        test_ppl = math.exp(test_loss)
+        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}.")
 
 
 def run(args, training_callback: TrainingCallback = None):
@@ -263,7 +318,7 @@ def run(args, training_callback: TrainingCallback = None):
             load_adapters(model, args.adapter_path)
 
     elif args.train:
-        print("Training")
+        print(f"Training in {args.training_mode} mode")
         train_model(args, model, tokenizer, train_set, valid_set, training_callback)
     else:
         raise ValueError("Must provide at least one of --train or --test")
