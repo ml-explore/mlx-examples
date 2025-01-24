@@ -242,8 +242,7 @@ def train_model(
             loss_type=args.dpo_loss_type,
             is_reference_free=args.is_reference_free,
             delta=args.delta,
-            reference_model_path=args.reference_model_path,
-            train_bias_only=args.train_bias_only,
+            reference_model_path=args.reference_model_path
         )
         
         if args.reference_model_path:

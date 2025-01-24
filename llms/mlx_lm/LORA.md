@@ -19,7 +19,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 - [Run](#Run)
   - [Fine-tune](#Fine-tune)
-  - [DPO Training](#DPO Training)
+  - [DPO-Training](#DPOTraining)
   - [Evaluate](#Evaluate)
   - [Generate](#Generate)
 - [Fuse](#Fuse)
@@ -103,6 +103,12 @@ For DPO training, the data should be in JSONL format with the following structur
 
 ```jsonl
 {"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+```
+
+if the Prompt template accept a system message, you can extend the Dataset with a additional "system" field.
+
+```jsonl
+{"system": "You are a helpfull assistant", "prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
 ```
 
 ### Evaluate

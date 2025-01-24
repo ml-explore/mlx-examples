@@ -46,18 +46,6 @@ class DPOTrainingArgs(TrainingArgs):
             "help": "Path to reference model weights. If None, uses the same model."
         }
     )
-    train_bias_only: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to train only bias terms in the model."
-        }
-    )
-    seed: int = field(
-        default=42,
-        metadata={
-            "help": "Random seed for reproducibility."
-        }
-    )
 
 
 def dpo_loss(
@@ -72,22 +60,13 @@ def dpo_loss(
     loss_type: str = "sigmoid",
     is_reference_free: bool = False
 ):
-    """
-    Calculate loss for inputs.
-    Args:
-        inputs: Input tokens.
-        targets: Target tokens.
-        lengths: Lengths of inputs.
-    Returns:
-        Loss value.
-    """
     def make_predictions(model, x, mask):
         inputs = x[:, :-1]
         targets = x[:, 1:]
         
         logits = model(inputs)
         logits = logits.astype(mx.float32)
-        
+
         return -nn.losses.cross_entropy(logits, targets) * mask[:, :-1]
 
     num_chosen_tokens = chosen_masks.sum(-1)
@@ -121,7 +100,7 @@ def dpo_loss(
     
     logits = (policy_chosen_score - policy_rejected_score) - (reference_chosen_score - reference_rejected_score)
 
-    if loss_type == "sigmoid":
+    if loss_type == "sigmoid": # From the og paper
         losses = -nn.log_sigmoid(beta * logits)
     elif loss_type == "hinge":
         losses = nn.relu(1 - beta * logits)
@@ -144,70 +123,46 @@ def dpo_loss(
     return loss, reward, num_tokens
 
 
-def iterate_dpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
-    """
-    Modified iterate_batches for DPO training that handles chosen and rejected samples.
-    """
-    # Sort pairs by length of the chosen response
+def iterate_dpo_batches(dataset, batch_size, max_seq_length, train=False):
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]['chosen']))
-    if len(dataset) < batch_size:
-        raise ValueError(
-            f"Dataset must have at least batch_size={batch_size}"
-            f" examples but only has {len(dataset)}."
-        )
-
+    
     step = mx.distributed.init().size()
     if batch_size % step != 0:
-        raise ValueError("The batch size must be divisible by the number of workers")
-
-    batch_idx = [
-        idx[i : i + batch_size : step]
-        for i in range(0, len(idx) - batch_size + 1, batch_size)
-    ]
-
+        raise ValueError("Batch size must be divisible by workers")
+        
+    batch_idx = [idx[i:i+batch_size:step] for i in range(0, len(idx)-batch_size+1, batch_size)]
+    
     while True:
         indices = np.random.permutation(len(batch_idx)) if train else range(len(batch_idx))
         for i in indices:
             batch = [dataset[j] for j in batch_idx[i]]
             
-            # Get lengths for chosen and rejected sequences
+            # Get and process lengths
             chosen_lengths = [len(x['chosen']) for x in batch]
             rejected_lengths = [len(x['rejected']) for x in batch]
-            max_length = max(max(chosen_lengths), max(rejected_lengths))
+            max_length = min(max(max(chosen_lengths), max(rejected_lengths)), max_seq_length)
             
-            if max_length > max_seq_length:
-                print(
-                    f"[WARNING] Some sequences are longer than {max_seq_length} tokens. "
-                    f"The longest sequence {max_length} will be truncated to {max_seq_length}."
-                )
-
-            # Pad to nearest multiple of 8
-            pad_to = 8
-            max_length_in_batch = pad_to * ((max_length + pad_to - 1) // pad_to)
-            max_length_in_batch = min(max_length_in_batch, max_seq_length)
-
-            # Create arrays for chosen and rejected sequences
+            # Dynamic padding based on batch content
+            max_length_in_batch = max_length
+            
             chosen_arr = np.zeros((batch_size // step, max_length_in_batch), np.int32)
             rejected_arr = np.zeros((batch_size // step, max_length_in_batch), np.int32)
             
-            # Create attention masks
             chosen_masks = np.zeros((batch_size // step, max_length_in_batch), np.float32)
             rejected_masks = np.zeros((batch_size // step, max_length_in_batch), np.float32)
-
+                    
             for j in range(batch_size // step):
-                # Process chosen sequence
                 chosen_length = min(chosen_lengths[j], max_seq_length)
-                chosen_arr[j, :chosen_length] = batch[j]['chosen'][:chosen_length]
-                chosen_masks[j, :chosen_length] = 1.0
-
-                # Process rejected sequence
                 rejected_length = min(rejected_lengths[j], max_seq_length)
+                        
+                chosen_arr[j, :chosen_length] = batch[j]['chosen'][:chosen_length]
                 rejected_arr[j, :rejected_length] = batch[j]['rejected'][:rejected_length]
+                
+                chosen_masks[j, :chosen_length] = 1.0
                 rejected_masks[j, :rejected_length] = 1.0
-
-            yield (mx.array(chosen_arr), mx.array(rejected_arr), 
-                  mx.array(chosen_masks), mx.array(rejected_masks))
-
+                    
+            yield mx.array(chosen_arr), mx.array(rejected_arr), mx.array(chosen_masks), mx.array(rejected_masks)
+            
         if not train:
             break
 
@@ -225,9 +180,6 @@ def evaluate_dpo(
     loss_fn: callable = dpo_loss,
     loss_type="sigmoid",
 ):
-    """
-    Modified evaluate function for DPO training.
-    """
     all_losses = 0
     all_rewards = mx.zeros((2,))  # [chosen_reward, rejected_reward]
     ntokens = 0
@@ -238,7 +190,6 @@ def evaluate_dpo(
         index_iterator,
         iterate_dpo_batches(
             dataset=dataset,
-            tokenizer=tokenizer,
             batch_size=batch_size,
             max_seq_length=max_seq_length,
         ),
@@ -279,9 +230,6 @@ def train_dpo(
     training_callback: TrainingCallback = None,
     loss_type="sigmoid",
 ):
-    """
-    Modified training function for DPO.
-    """
     print(f"Starting DPO training..., iters: {args.iters}")
     world = mx.distributed.init()
     world_size = world.size()
@@ -345,7 +293,6 @@ def train_dpo(
         range(1, args.iters + 1),
         iterate_dpo_batches(
             dataset=train_dataset,
-            tokenizer=tokenizer,
             batch_size=args.batch_size,
             max_seq_length=args.max_seq_length,
             train=True,
