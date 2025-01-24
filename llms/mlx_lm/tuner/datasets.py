@@ -19,7 +19,7 @@ class DPODataset:
         prompt_key: str = "prompt",
         chosen_key: str = "chosen",
         rejected_key: str = "rejected",
-        system_key: str = None
+        system_key: str = "system",
     ):
 
         self._chosen_data = []
