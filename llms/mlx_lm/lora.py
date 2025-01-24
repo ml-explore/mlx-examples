@@ -15,7 +15,6 @@ import yaml
 from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
-from .tuner.dpo_trainer import DPOTrainingArgs, evaluate_dpo, train_dpo
 from .tuner.orpo_trainer import ORPOTrainingArgs, evaluate_orpo, train_orpo
 from .tuner.utils import (
     build_schedule,
@@ -176,7 +175,7 @@ def build_parser():
         default=None,
     )
     parser.add_argument("--beta", type=float)
-    parser.add_argument("--dpo-loss-type", type=str, choices=["sigmoid", "hinge", "ipo", "dpop"])
+    parser.add_argument("--dpo-loss-type", type=str, choices=["sigmoid", "hinge", "ipo", "dpo"])
     parser.add_argument("--is-reference-free", action="store_true")
     parser.add_argument("--delta", type=float)
     parser.add_argument("--reference-model-path", type=str)
@@ -229,40 +228,7 @@ def train_model(
     )
     
     # Train model based on training mode
-    if args.training_mode == "dpo":
-        training_args = DPOTrainingArgs(
-            batch_size=args.batch_size,
-            iters=args.iters,
-            val_batches=args.val_batches,
-            steps_per_report=args.steps_per_report,
-            steps_per_eval=args.steps_per_eval,
-            steps_per_save=args.save_every,
-            adapter_file=adapter_file,
-            max_seq_length=args.max_seq_length,
-            grad_checkpoint=args.grad_checkpoint,
-            beta=args.beta,
-            loss_type=args.dpo_loss_type,
-            is_reference_free=args.is_reference_free,
-            delta=args.delta,
-            reference_model_path=args.reference_model_path,
-        )
-        
-        if args.reference_model_path:
-            reference_model, _ = load(args.reference_model_path)
-        else:
-            reference_model, _ = load(args.model)
-            
-        train_dpo(
-            model=model,
-            reference_model=reference_model.freeze(),
-            tokenizer=tokenizer,
-            optimizer=opt,
-            train_dataset=train_set,
-            val_dataset=valid_set,
-            args=training_args,
-            training_callback=training_callback,
-        )
-    elif args.training_mode == "orpo":
+    if args.training_mode == "orpo":
         training_args = ORPOTrainingArgs(
             batch_size=args.batch_size,
             iters=args.iters,
@@ -273,8 +239,7 @@ def train_model(
             adapter_file=adapter_file,
             max_seq_length=args.max_seq_length,
             grad_checkpoint=args.grad_checkpoint,
-            beta=args.beta,
-            reward_scaling=args.reward_scaling,
+            beta=args.beta
         )
             
         train_orpo(
@@ -284,7 +249,7 @@ def train_model(
             train_dataset=train_set,
             val_dataset=valid_set,
             args=training_args,
-            training_callback=training_callback,
+            training_callback=training_callback
         )
     else:
         training_args = TrainingArgs(
@@ -313,26 +278,7 @@ def train_model(
 def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set):
     model.eval()
 
-    if args.training_mode == "dpo":
-        if args.reference_model_path:
-            reference_model, _ = load(args.reference_model_path)
-        else:
-            reference_model = model
-
-        test_loss, test_rewards = evaluate_dpo(
-            model=model,
-            reference_model=reference_model,
-            dataset=test_set,
-            tokenizer=tokenizer,
-            batch_size=args.batch_size,
-            num_batches=args.test_batches,
-            max_seq_length=args.max_seq_length,
-            beta=args.beta,
-            delta=args.delta,
-            loss_type=args.dpo_loss_type,
-        )
-        print(f"Test loss {test_loss:.8f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
-    elif args.training_mode == "orpo":
+    if args.training_mode == "orpo":
         test_loss, test_rewards = evaluate_orpo(
             model=model,
             dataset=test_set,
@@ -340,8 +286,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             batch_size=args.batch_size,
             num_batches=args.test_batches,
             max_seq_length=args.max_seq_length,
-            beta=args.beta,
-            reward_scaling=args.reward_scaling,
+            beta=args.beta
         )
         print(f"Test loss {test_loss:.8f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
     else:

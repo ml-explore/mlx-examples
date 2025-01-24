@@ -14,128 +14,48 @@ from .trainer import TrainingArgs, grad_checkpoint, TrainingCallback
 class ORPOTrainingArgs(TrainingArgs):
     beta: float = field(
         default=0.1,
-        metadata={"help": "Temperature parameter for DPO training."}
-    )
-    reward_scaling: float = field(
-        default=1.0,
-        metadata={"help": "Scaling factor for offline rewards."}
+        metadata={"help": "Temperature parameter for ORPO training."}
     )
 
 
-def orpo_loss(
-    model,
-    chosen: mx.array,
-    rejected: mx.array,
-    chosen_masks: mx.array,
-    rejected_masks: mx.array,
-    chosen_rewards: mx.array,
-    rejected_rewards: mx.array,
-    beta: float = 0.1,
-    reward_scaling: float = 1.0,
-):
-    """
-    Calculate ORPO loss using pre-computed rewards that incorporate preference scores.
-    Args:
-        model: Policy model
-        chosen: Chosen sequence tokens
-        rejected: Rejected sequence tokens
-        chosen_masks: Attention masks for chosen sequences
-        rejected_masks: Attention masks for rejected sequences
-        chosen_rewards: Rewards for chosen sequences (derived from preference scores)
-        rejected_rewards: Rewards for rejected sequences (derived from preference scores)
-        beta: Temperature parameter
-        reward_scaling: Scaling factor for rewards
-    Returns:
-        Loss value, rewards, and number of tokens.
-    """
-    def make_predictions(model, x, mask):
-        inputs = x[:, :-1]
-        targets = x[:, 1:]
-        
-        logits = model(inputs)
-        logits = logits.astype(mx.float32)
-        
-        return -nn.losses.cross_entropy(logits, targets) * mask[:, :-1]
+def orpo_loss(model, chosen, rejected, chosen_masks, rejected_masks, chosen_rewards, rejected_rewards, beta=0.1):
+   def get_logps(model, x, mask):
+       inputs = x[:, :-1]
+       targets = x[:, 1:]
+       logits = model(inputs)
+       logp = -nn.losses.cross_entropy(logits, targets, reduction='none')
+       seq_lengths = mask[:, :-1].sum(-1)
+       logp_sum = (logp * mask[:, :-1]).sum(-1) / seq_lengths
+       logits_mean = (logits * mask[:, :-1, None]).sum() / mask[:, :-1].sum()
+       return logp_sum, logits_mean
 
-    # Calculate log probabilities for policy model
-    policy_chosen_scores = make_predictions(model, chosen, chosen_masks)
-    policy_rejected_scores = make_predictions(model, rejected, rejected_masks)
-    
-    # Scale the pre-computed rewards
-    chosen_rewards = chosen_rewards * reward_scaling
-    rejected_rewards = rejected_rewards * reward_scaling
-    
-    # Calculate reward difference
-    reward_diff = chosen_rewards - rejected_rewards
-    
-    # Calculate ORPO loss using logistic function
-    policy_diff = policy_chosen_scores.sum(-1) - policy_rejected_scores.sum(-1)
-    loss = -nn.log_sigmoid(beta * (policy_diff * reward_diff))
-    
-    loss = mx.mean(loss)
-    
-    # Calculate number of tokens for logging
-    num_tokens = (chosen_masks.sum() + rejected_masks.sum())
-    
-    # Calculate rewards for logging
-    avg_chosen_reward = mx.mean(chosen_rewards)
-    avg_rejected_reward = mx.mean(rejected_rewards)
-    reward = mx.stack([avg_chosen_reward, avg_rejected_reward])
-
-    return loss, reward, num_tokens
-
-
-def evaluate_orpo(
-    model,
-    dataset,
-    tokenizer,
-    batch_size,
-    num_batches,
-    beta: float,
-    reward_scaling: float = 1.0,
-    max_seq_length=2048,
-):
-    """
-    Evaluation function for ORPO.
-    """
-    all_losses = 0
-    all_rewards = mx.zeros((2,))
-    ntokens = 0
-
-    index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
-
-    for _, batch in zip(
-        index_iterator,
-        iterate_orpo_batches(
-            dataset=dataset,
-            tokenizer=tokenizer,
-            batch_size=batch_size,
-            max_seq_length=max_seq_length,
-        ),
-    ):
-        chosen, rejected, chosen_masks, rejected_masks, chosen_rewards, rejected_rewards = batch
-        loss, reward, toks = orpo_loss(
-            model=model,
-            chosen=chosen,
-            rejected=rejected,
-            chosen_masks=chosen_masks,
-            rejected_masks=rejected_masks,
-            chosen_rewards=chosen_rewards,
-            rejected_rewards=rejected_rewards,
-            beta=beta,
-            reward_scaling=reward_scaling,
-        )
-        
-        all_losses += loss * toks
-        all_rewards += reward
-        ntokens += toks
-        mx.eval(all_losses, all_rewards, ntokens)
-
-    all_losses = mx.distributed.all_sum(all_losses)
-    all_rewards = mx.distributed.all_sum(all_rewards)
-    ntokens = mx.distributed.all_sum(ntokens)
-
-    return (all_losses / ntokens).item(), all_rewards.tolist()
+   policy_chosen_logps, chosen_logits_mean = get_logps(model, chosen, chosen_masks)
+   policy_rejected_logps, rejected_logits_mean = get_logps(model, rejected, rejected_masks)
+   
+   log_odds = (policy_chosen_logps - policy_rejected_logps) - (
+       mx.log1p(-mx.exp(policy_chosen_logps)) - mx.log1p(-mx.exp(policy_rejected_logps))
+   )
+   
+   ratio = nn.log_sigmoid(log_odds)
+   loss = -beta * ratio
+   
+   accuracies = (log_odds > 0).astype(mx.float32)
+   margins = mx.mean(ratio)
+   metrics = {
+       'accuracies': mx.mean(accuracies),
+       'margins': margins,
+       'policy_rejected_logps': mx.mean(policy_rejected_logps),
+       'policy_chosen_logps': mx.mean(policy_chosen_logps),
+       'rejected_logits_mean': mx.mean(rejected_logits_mean),
+       'chosen_logits_mean': mx.mean(chosen_logits_mean)
+   }
+   
+   chosen_reward = beta * policy_chosen_logps
+   rejected_reward = beta * policy_rejected_logps
+   reward = mx.stack([mx.mean(chosen_reward), mx.mean(rejected_reward)])
+   num_tokens = chosen_masks.sum() + rejected_masks.sum()
+   
+   return mx.mean(loss), reward, num_tokens, metrics
 
 
 def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
@@ -188,10 +108,6 @@ def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=F
             
             # Get preference scores and convert to rewards
             preference_scores = np.array([x.get('preference_score', 1.0) for x in batch], np.float32)
-            # Convert preference scores to chosen/rejected rewards
-            # When preference_score is 1.0, chosen_reward=1.0, rejected_reward=0.0
-            # When preference_score is 0.0, chosen_reward=0.0, rejected_reward=1.0
-            # When preference_score is 0.5, both rewards are 0.5
             chosen_rewards = preference_scores
             rejected_rewards = 1.0 - preference_scores
 
@@ -218,6 +134,56 @@ def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=F
             break
 
 
+def evaluate_orpo(model, dataset, tokenizer, batch_size, num_batches, beta: float, max_seq_length=2048):
+    all_losses = 0
+    all_rewards = mx.zeros((2,))
+    all_metrics = None
+    ntokens = 0
+    
+    index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
+    for _, batch in zip(
+        index_iterator,
+        iterate_orpo_batches(
+            dataset=dataset,
+            tokenizer=tokenizer,
+            batch_size=batch_size,
+            max_seq_length=max_seq_length,
+        ),
+    ):
+        chosen, rejected, chosen_masks, rejected_masks, chosen_rewards, rejected_rewards = batch
+        loss, reward, toks, metrics = orpo_loss(
+            model=model,
+            chosen=chosen,
+            rejected=rejected,
+            chosen_masks=chosen_masks,
+            rejected_masks=rejected_masks,
+            chosen_rewards=chosen_rewards,
+            rejected_rewards=rejected_rewards,
+            beta=beta
+        )
+        all_losses += loss * toks
+        all_rewards += reward * toks
+        ntokens += toks
+        
+        if all_metrics is None:
+            all_metrics = {k: v * toks for k, v in metrics.items()}
+        else:
+            for k, v in metrics.items():
+                all_metrics[k] += v * toks
+
+    mx.eval(all_losses, all_rewards, ntokens)
+    all_losses = mx.distributed.all_sum(all_losses)
+    all_rewards = mx.distributed.all_sum(all_rewards)
+    ntokens = mx.distributed.all_sum(ntokens)
+    all_metrics = {k: mx.distributed.all_sum(v) for k, v in all_metrics.items()}
+    
+    avg_metrics = {k: (v / ntokens).item() for k, v in all_metrics.items()}
+    avg_rewards = (all_rewards / ntokens).tolist()
+    avg_loss = (all_losses / ntokens).item()
+    
+    return avg_loss, avg_rewards, ntokens, avg_metrics
+
+
 def train_orpo(
     model,
     tokenizer,
@@ -227,9 +193,6 @@ def train_orpo(
     args: ORPOTrainingArgs = ORPOTrainingArgs(),
     training_callback: TrainingCallback = None,
 ):
-    """
-    Training function for ORPO.
-    """
     print(f"Starting ORPO training..., iters: {args.iters}")
     world = mx.distributed.init()
     world_size = world.size()
@@ -246,7 +209,7 @@ def train_orpo(
     def step(batch):
         chosen, rejected, chosen_masks, rejected_masks, chosen_rewards, rejected_rewards = batch
         
-        (loss, reward, toks), grad = loss_value_and_grad(
+        (loss, reward, toks, metrics), grad = loss_value_and_grad(
             model, 
             chosen, 
             rejected, 
@@ -259,7 +222,7 @@ def train_orpo(
         grad = average_gradients(grad)
         optimizer.update(model, grad)
 
-        return loss, reward, toks
+        return loss, reward, toks, metrics
 
     def loss_wrapper(model, chosen, rejected, chosen_masks, rejected_masks, 
                     chosen_rewards, rejected_rewards):
@@ -271,8 +234,7 @@ def train_orpo(
             rejected_masks=rejected_masks,
             chosen_rewards=chosen_rewards,
             rejected_rewards=rejected_rewards,
-            beta=args.beta,
-            reward_scaling=args.reward_scaling
+            beta=args.beta
         )
     
     loss_value_and_grad = nn.value_and_grad(model, loss_wrapper)
@@ -283,11 +245,19 @@ def train_orpo(
     n_tokens = 0
     steps = 0
     trained_tokens = 0
+    accumulated_metrics = {
+        'accuracies': 0,
+        'margins': 0,
+        'policy_rejected_logps': 0,
+        'policy_chosen_logps': 0,
+        'rejected_logits_mean': 0,
+        'chosen_logits_mean': 0
+    }
     
     start = time.perf_counter()
     for it, batch in zip(
         range(1, args.iters + 1),
-        iterate_orpo_batches(  # reuse DPO batch iterator
+        iterate_orpo_batches(
             dataset=train_dataset,
             tokenizer=tokenizer,
             batch_size=args.batch_size,
@@ -295,18 +265,16 @@ def train_orpo(
             train=True,
         ),
     ):
-        # Evaluate if needed
         if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
             stop = time.perf_counter()
-            val_loss, val_rewards = evaluate_orpo(
+            val_loss, val_rewards, val_ntokens, val_metrics = evaluate_orpo(
                 model=model,
                 dataset=val_dataset,
                 tokenizer=tokenizer,
                 batch_size=args.batch_size,
                 num_batches=args.val_batches,
                 max_seq_length=args.max_seq_length,
-                beta=args.beta,
-                reward_scaling=args.reward_scaling,
+                beta=args.beta
             )
             val_time = time.perf_counter() - stop
             if rank == 0:
@@ -315,6 +283,8 @@ def train_orpo(
                     f"Val loss {val_loss:.8f}, "
                     f"Val chosen reward {val_rewards[0]:.3f}, "
                     f"Val rejected reward {val_rewards[1]:.3f}, "
+                    f"Val accuracy {val_metrics['accuracies']:.3f}, "
+                    f"Val margin {val_metrics['margins']:.3f}, "
                     f"Val took {val_time:.3f}s",
                     flush=True,
                 )
@@ -325,25 +295,28 @@ def train_orpo(
                     "val_loss": val_loss,
                     "val_chosen_reward": val_rewards[0],
                     "val_rejected_reward": val_rewards[1],
+                    **{f"val_{k}": v for k, v in val_metrics.items()},
                     "val_time": val_time,
                 })
 
             start = time.perf_counter()
 
         # Training step
-        loss, reward, toks = step(batch)
+        loss, reward, toks, metrics = step(batch)
         losses += loss
         rewards += reward
         n_tokens += toks
         steps += 1
+        for k, v in metrics.items():
+            accumulated_metrics[k] += v
         mx.eval(state, losses, rewards, n_tokens)
 
-        # Report training metrics if needed
         if it % args.steps_per_report == 0 or it == args.iters:
             stop = time.perf_counter()
 
             train_loss = mx.distributed.all_sum(losses).item() / (steps * world_size)
             train_rewards = [r / (steps * world_size) for r in mx.distributed.all_sum(rewards).tolist()]
+            avg_metrics = {k: v / (steps * world_size) for k, v in accumulated_metrics.items()}
             n_tokens = mx.distributed.all_sum(n_tokens).item()
             learning_rate = optimizer.learning_rate.item()
             it_sec = args.steps_per_report / (stop - start)
@@ -356,10 +329,11 @@ def train_orpo(
                     f"Iter {it}: Train loss {train_loss:.8f}, "
                     f"Chosen reward {train_rewards[0]:.3f}, "
                     f"Rejected reward {train_rewards[1]:.3f}, "
+                    f"Accuracy {avg_metrics['accuracies']:.3f}, "
+                    f"Margin {avg_metrics['margins']:.3f}, "
                     f"Learning Rate {learning_rate:.3e}, "
                     f"It/sec {it_sec:.3f}, "
                     f"Tokens/sec {tokens_sec:.3f}, "
-                    f"Trained Tokens {trained_tokens}, "
                     f"Peak mem {peak_mem:.3f} GB",
                     flush=True,
                 )
@@ -370,6 +344,7 @@ def train_orpo(
                     "train_loss": train_loss,
                     "train_chosen_reward": train_rewards[0],
                     "train_rejected_reward": train_rewards[1],
+                    **{f"train_{k}": v for k, v in avg_metrics.items()},
                     "learning_rate": learning_rate,
                     "iterations_per_second": it_sec,
                     "tokens_per_second": tokens_sec,
@@ -381,9 +356,9 @@ def train_orpo(
             rewards = mx.zeros((2,))
             n_tokens = 0
             steps = 0
+            accumulated_metrics = {k: 0 for k in accumulated_metrics}
             start = time.perf_counter()
 
-        # Save model weights if needed
         if it % args.steps_per_save == 0:
             adapter_weights = dict(tree_flatten(model.trainable_parameters()))
             mx.save_safetensors(str(args.adapter_file), adapter_weights)
@@ -396,7 +371,6 @@ def train_orpo(
                 f"{args.adapter_file} and {checkpoint}."
             )
 
-    # Save final weights
     adapter_weights = dict(tree_flatten(model.trainable_parameters()))
     mx.save_safetensors(str(args.adapter_file), adapter_weights)
     print(f"Saved final weights to {args.adapter_file}.")
