@@ -12,12 +12,14 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Gemma
 - OLMo
 - MiniCPM
+- Mamba
 - InternLM2
 
 ## Contents
 
 - [Run](#Run)
   - [Fine-tune](#Fine-tune)
+  - [DPO Training](#DPO Training)
   - [Evaluate](#Evaluate)
   - [Generate](#Generate)
 - [Fuse](#Fuse)
@@ -75,6 +77,33 @@ You can specify the output location with `--adapter-path`.
 
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
+
+### DPO Training
+
+Direct Preference Optimization (DPO) training allows you to fine-tune models using human preference data. To use DPO training, set the training mode to 'dpo':
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --training-mode dpo \
+    --data <path_to_data> \
+    --beta 0.1
+```
+
+The DPO training accepts the following additional parameters:
+
+- `--beta`: Controls the strength of the DPO loss (default: 0.1)
+- `--dpo-loss-type`: Choose between "sigmoid" (default), "hinge", "ipo", or "dpop" loss functions
+- `--is-reference-free`: Enable reference-free DPO training
+- `--delta`: Margin parameter for hinge loss (default: 50.0)
+- `--reference-model-path`: Path to a reference model for DPO training
+
+For DPO training, the data should be in JSONL format with the following structure:
+
+```jsonl
+{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+```
 
 ### Evaluate
 
