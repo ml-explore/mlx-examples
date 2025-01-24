@@ -1,50 +1,66 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer
 
 class ORPODataset:
-   def __init__(
-       self,
-       data: List[Dict[str, str]],
-       tokenizer: PreTrainedTokenizer,
-       prompt_key: str = "prompt",
-       chosen_key: str = "chosen", 
-       rejected_key: str = "rejected",
-       preference_score_key: str = "preference_score"
-   ):
+    def __init__(
+        self,
+        data: List[Dict[str, Union[str, Dict]]],
+        tokenizer: PreTrainedTokenizer,
+        prompt_key: str = "prompt",
+        chosen_key: str = "chosen",
+        rejected_key: str = "rejected",
+        preference_score_key: str = "preference_score",
+        system_key: str = None
+    ):
         self._chosen_data = []
         self._rejected_data = []
         self._scores = []
-
+        
         for d in data:
-            chosen_text = tokenizer.apply_chat_template([
-                {"role": "user", "content": d[prompt_key]},
-                {"role": "assistant", "content": d[chosen_key]},
-            ])
-            rejected_text = tokenizer.apply_chat_template([
-                {"role": "user", "content": d[prompt_key]},
-                {"role": "assistant", "content": d[rejected_key]},
-            ])
-
+            if system_key and system_key in d:
+                base_messages = [{"role": "system", "content": d[system_key]}]
+                chosen_messages = base_messages + [{"role": "user", "content": d[prompt_key]}]
+                if isinstance(d[chosen_key], str):
+                    chosen_messages.append({"role": "assistant", "content": d[chosen_key]})
+                else:
+                    chosen_messages.extend(d[chosen_key]["messages"])
+                rejected_messages = base_messages + [{"role": "user", "content": d[prompt_key]}]
+                if isinstance(d[rejected_key], str):
+                    rejected_messages.append({"role": "assistant", "content": d[rejected_key]})
+                else:
+                    rejected_messages.extend(d[rejected_key]["messages"])
+                chosen_text = tokenizer.apply_chat_template(chosen_messages)
+                rejected_text = tokenizer.apply_chat_template(rejected_messages)
+            else:
+                chosen_text = tokenizer.apply_chat_template([
+                    {"role": "user", "content": d[prompt_key]},
+                    {"role": "assistant", "content": d[chosen_key] if isinstance(d[chosen_key], str) else d[chosen_key]["messages"][-1]["content"]},
+                ])
+                rejected_text = tokenizer.apply_chat_template([
+                    {"role": "user", "content": d[prompt_key]},
+                    {"role": "assistant", "content": d[rejected_key] if isinstance(d[rejected_key], str) else d[rejected_key]["messages"][-1]["content"]},
+                ])
+            
             self._chosen_data.append(chosen_text)
             self._rejected_data.append(rejected_text)
-
+            
             if preference_score_key in d:
                 self._scores.append(float(d[preference_score_key]))
             else:
                 self._scores.append(1.0)
-           
-   def __getitem__(self, idx: int):
-       return {
-           "chosen": self._chosen_data[idx],
-           "rejected": self._rejected_data[idx],
-           "preference_score": self._scores[idx]
-       }
-       
-   def __len__(self):
-       return len(self._chosen_data)
+
+    def __len__(self):
+        return len(self._chosen_data)
+
+    def __getitem__(self, idx: int):
+        return {
+            "chosen": self._chosen_data[idx],
+            "rejected": self._rejected_data[idx],
+            "preference_score": self._scores[idx]
+        }
 
 
 class Dataset:

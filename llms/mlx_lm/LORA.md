@@ -19,7 +19,6 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 - [Run](#Run)
   - [Fine-tune](#Fine-tune)
-  - [DPO Training](#DPO Training)
   - [ORPO Training](#ORPO Training)
   - [Evaluate](#Evaluate)
   - [Generate](#Generate)
@@ -79,64 +78,56 @@ You can specify the output location with `--adapter-path`.
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
 
-### DPO Training
-
-Direct Preference Optimization (DPO) training allows you to fine-tune models using human preference data. To use DPO training, set the training mode to 'dpo':
-
-```shell
-mlx_lm.lora \
-    --model <path_to_model> \
-    --train \
-    --training-mode dpo \
-    --data <path_to_data> \
-    --beta 0.1
-```
-
-The DPO training accepts the following additional parameters:
-
-- `--beta`: Controls the strength of the DPO loss (default: 0.1)
-- `--dpo-loss-type`: Choose between "sigmoid" (default), "hinge", "ipo", or "dpop" loss functions
-- `--is-reference-free`: Enable reference-free DPO training
-- `--delta`: Margin parameter for hinge loss (default: 50.0)
-- `--reference-model-path`: Path to a reference model for DPO training
-
-For DPO training, the data should be in JSONL format with the following structure:
-
-```jsonl
-{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
-```
-
-Here's the equivalent ORPO documentation:
-
 ### ORPO Training
 
-Odds Ratio Preference Optimization (ORPO) training allows you to fine-tune models using human preference data with pre-computed rewards. To use ORPO training, set the training mode to 'orpo':
+Odds Ratio Preference Optimization (ORPO) training fine-tunes models using human preference data. Usage:
 
 ```shell
 mlx_lm.lora \
-    --model <path_to_model> \
-    --train \
-    --training-mode orpo \
-    --data <path_to_data> \
-    --beta 0.1 \
-    --reward-scaling 1.0
+ --model <path_to_model> \
+ --train \
+ --training-mode orpo \
+ --data <path_to_data> \
+ --beta 0.1
 ```
 
-The ORPO training accepts the following additional parameters:
-- `--beta`: Controls the temperature parameter for the logistic function (default: 0.1)
-- `--reward-scaling`: Scaling factor for the offline rewards (default: 1.0)
+Parameters:
 
-For ORPO training, the data should be in JSONL format with the following structure:
+- `--beta`: Temperature for logistic function (default: 0.1)
+
+Data format (JSONL):
 
 ```jsonl
+# Basic format with string responses
 {"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+
+# With custom preference score
+{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response", "preference_score": 8.0}
+
+# With system message
+{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response", "system": "System instruction"}
+
+# With full conversation objects
+{
+  "prompt": "User prompt",
+  "chosen": {
+    "messages": [
+      {"role": "system", "content": "System instruction"},
+      {"role": "user", "content": "User message"},
+      {"role": "assistant", "content": "Assistant response"}
+    ]
+  },
+  "rejected": {
+    "messages": [
+      {"role": "system", "content": "System instruction"},
+      {"role": "user", "content": "User message"},
+      {"role": "assistant", "content": "Assistant response"}
+    ]
+  }
+}
 ```
 
-The training process will automatically assign binary rewards (1.0 for chosen and 0.0 for rejected responses) if no explicit rewards are provided. You can also provide custom rewards in your data:
-
-```jsonl
-{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response", "chosen_reward": 0.8, "rejected_reward": 0.3}
-```
+The trainer assigns binary rewards (1.0 chosen, 0.0 rejected) if no explicit rewards provided via `preference_score`.
 
 ### Evaluate
 

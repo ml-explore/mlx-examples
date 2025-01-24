@@ -40,7 +40,7 @@ def orpo_loss(model, chosen, rejected, chosen_masks, rejected_masks, chosen_rewa
    loss = -beta * ratio
    
    accuracies = (log_odds > 0).astype(mx.float32)
-   margins = mx.mean(ratio)
+   margins = mx.mean(ratio - 1)
    metrics = {
        'accuracies': mx.mean(accuracies),
        'margins': margins,
@@ -107,9 +107,9 @@ def iterate_orpo_batches(dataset, tokenizer, batch_size, max_seq_length, train=F
             rejected_masks = np.zeros((batch_size // step, max_length_in_batch), np.float32)
             
             # Get preference scores and convert to rewards
-            preference_scores = np.array([x.get('preference_score', 1.0) for x in batch], np.float32)
-            chosen_rewards = preference_scores
-            rejected_rewards = 1.0 - preference_scores
+            preference_scores = [x.get('preference_score', 1.0) for x in batch]
+            chosen_rewards = np.array(preference_scores, np.float32)
+            rejected_rewards = np.array([1.0 - score for score in preference_scores], np.float32)
 
             for j in range(batch_size // step):
                 # Use pre-tokenized sequences directly
