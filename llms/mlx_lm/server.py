@@ -113,6 +113,37 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     prompt += role_mapping.get("assistant", "")
     return prompt.rstrip()
 
+def process_message_content(messages):
+    """
+    The mlx-lm server currently only supports text content. OpenAI content may
+    support different types of content.
+
+    Args:
+        message_list (list): A list of dictionaries, where each dictionary may have a
+            'content' key containing a list of dictionaries with 'type' and 'text' keys.
+
+    Returns:
+        list: A list of dictionaries similar to the input, but with the 'content'
+        field being a string instead of a list of text fragments.
+
+    Raises:
+        ValueError: If the 'content' type is not supported or if 'text' is missing.
+
+    """
+    processed_messages = []
+    for message in messages:
+        message_copy = message.copy()
+        if "content" in message_copy:
+            flattened_text = ""
+            if isinstance(message_copy["content"], list):
+                for content_fragment in message_copy["content"]:
+                    if content_fragment["type"] == "text" and "text" in content_fragment:
+                        flattened_text += content_fragment["text"]
+                    else:
+                        raise ValueError("Only 'text' content type is supported.")
+            message_copy["content"] = flattened_text
+        processed_messages.append(message_copy)
+    return processed_messages
 
 @dataclass
 class PromptCache:
@@ -591,6 +622,10 @@ class APIHandler(BaseHTTPRequestHandler):
         self.request_id = f"chatcmpl-{uuid.uuid4()}"
         self.object_type = "chat.completion.chunk" if self.stream else "chat.completion"
         if self.tokenizer.chat_template:
+            messages = body["messages"]
+            if isinstance(messages,list) and messages and isinstance(messages[0], dict) and "content" in messages[0] and isinstance(messages[0]["content"],list):
+               messages = process_message_content(messages)
+               body["messages"] = messages
             prompt = self.tokenizer.apply_chat_template(
                 body["messages"],
                 body.get("tools", None),
