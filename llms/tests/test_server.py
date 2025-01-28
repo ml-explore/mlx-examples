@@ -79,11 +79,11 @@ class TestServer(unittest.TestCase):
         response_body = response.text
         self.assertIn("id", response_body)
         self.assertIn("choices", response_body)
-        
+
     def test_handle_chat_completions_with_content_fragments(self):
         url = f"http://localhost:{self.port}/v1/chat/completions"
         chat_post_data = {
-            "model": "chat_model", 
+            "model": "chat_model",
             "max_tokens": 10,
             "temperature": 0.7,
             "top_p": 0.85,
@@ -91,19 +91,18 @@ class TestServer(unittest.TestCase):
             "messages": [
                 {
                     "role": "system",
-                    "content": [{"type": "text", "text": "You are a helpful assistant."}]
+                    "content": [
+                        {"type": "text", "text": "You are a helpful assistant."}
+                    ],
                 },
-                {
-                    "role": "user", 
-                    "content": [{"type": "text", "text": "Hello!"}]
-                }
-            ]
+                {"role": "user", "content": [{"type": "text", "text": "Hello!"}]},
+            ],
         }
         response = requests.post(url, json=chat_post_data)
         response_body = response.text
         self.assertIn("id", response_body)
         self.assertIn("choices", response_body)
-        
+
     def test_handle_models(self):
         url = f"http://localhost:{self.port}/v1/models"
         response = requests.get(url)
