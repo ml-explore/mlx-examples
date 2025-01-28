@@ -1,4 +1,4 @@
-# Copyright © 2024 Apple Inc.
+# Copyright © 2024-2025 Apple Inc.
 
 import math
 from dataclasses import dataclass
