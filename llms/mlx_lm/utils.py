@@ -709,7 +709,7 @@ def load(
     model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
-    commit_hash: Optional[str] = "main",
+    revision: Optional[str] = "main",
 ) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
