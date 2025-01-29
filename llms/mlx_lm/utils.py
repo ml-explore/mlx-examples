@@ -152,7 +152,7 @@ def compute_bits_per_weight(model):
     return model_bytes * 8 / model_params
 
 
-def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path:
+def get_model_path(path_or_hf_repo: str, revision: Optional[str] = "main") -> Path:
     """
     Ensures the model is available locally. If the path does not exist locally,
     it is downloaded from the Hugging Face Hub.
@@ -184,7 +184,7 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
             )
         except:
             raise ModelNotFoundError(
-                f"Model not found for path or HF repo: {path_or_hf_repo}.\n"
+                f"Model not found for path or HF repo: {path_or_hf_repo}:{revision}.\n"
                 "Please make sure you specified the local path or Hugging Face"
                 " repo id correctly.\nIf you are trying to access a private or"
                 " gated Hugging Face repo, make sure you are authenticated:\n"
@@ -709,6 +709,7 @@ def load(
     model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
+    revision: Optional[str] = "main",
 ) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
