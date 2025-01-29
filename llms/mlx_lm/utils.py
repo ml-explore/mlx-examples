@@ -43,6 +43,7 @@ MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
     "phi-msft": "phixtral",
     "falcon_mamba": "mamba",
+    "qwen2": "qwen2"
 }
 
 MAX_FILE_SIZE_GB = 5
