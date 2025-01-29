@@ -114,6 +114,33 @@ def convert_chat(messages: List[dict], role_mapping: Optional[dict] = None):
     return prompt.rstrip()
 
 
+def process_message_content(messages):
+    """
+    Convert message content to a format suitable for `apply_chat_template`.
+
+    The function operates on messages in place. It converts the 'content' field
+    to a string instead of a list of text fragments.
+
+    Args:
+        message_list (list): A list of dictionaries, where each dictionary may
+          have a 'content' key containing a list of dictionaries with 'type' and
+          'text' keys.
+
+    Raises:
+        ValueError: If the 'content' type is not supported or if 'text' is missing.
+
+    """
+    for message in messages:
+        content = message["content"]
+        if isinstance(content, list):
+            text_fragments = [
+                fragment["text"] for fragment in content if fragment["type"] == "text"
+            ]
+            if len(text_fragments) != len(content):
+                raise ValueError("Only 'text' content type is supported.")
+            message["content"] = "".join(text_fragments)
+
+
 @dataclass
 class PromptCache:
     cache: List[Any] = field(default_factory=list)
@@ -591,8 +618,10 @@ class APIHandler(BaseHTTPRequestHandler):
         self.request_id = f"chatcmpl-{uuid.uuid4()}"
         self.object_type = "chat.completion.chunk" if self.stream else "chat.completion"
         if self.tokenizer.chat_template:
+            messages = body["messages"]
+            process_message_content(messages)
             prompt = self.tokenizer.apply_chat_template(
-                body["messages"],
+                messages,
                 body.get("tools", None),
                 add_generation_prompt=True,
             )
