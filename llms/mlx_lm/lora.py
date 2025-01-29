@@ -73,6 +73,13 @@ def build_parser():
         help="The path to the local model directory or Hugging Face repo.",
     )
 
+    parser.add_argument(
+        "--revision",
+        default="main",
+        type=str,
+        help="Hash value of the commit to checkout from the Hugging Face repo.",
+    )
+
     # Training args
     parser.add_argument(
         "--train",
@@ -252,7 +259,7 @@ def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
 
     print("Loading pretrained model")
-    model, tokenizer = load(args.model)
+    model, tokenizer = load(args.model, args.revision)
 
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
