@@ -66,7 +66,6 @@ CONFIG_DEFAULTS = {
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
     "beta": 0.1,
     "dpo_loss_type": "sigmoid",
-    "is_reference_free": False,
     "delta": 50.0,
     "reference_model_path": None,
     "train_bias_only": False,
@@ -176,7 +175,6 @@ def build_parser():
     )
     parser.add_argument("--beta", type=float)
     parser.add_argument("--dpo-loss-type", type=str, choices=["sigmoid", "hinge", "ipo", "dpop"])
-    parser.add_argument("--is-reference-free", action="store_true")
     parser.add_argument("--delta", type=float)
     parser.add_argument("--reference-model-path", type=str)
     parser.add_argument("--train-bias-only", action="store_true")
@@ -240,7 +238,6 @@ def train_model(
             grad_checkpoint=args.grad_checkpoint,
             beta=args.beta,
             loss_type=args.dpo_loss_type,
-            is_reference_free=args.is_reference_free,
             delta=args.delta,
             reference_model_path=args.reference_model_path
         )

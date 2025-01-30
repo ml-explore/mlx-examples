@@ -95,7 +95,6 @@ The DPO training accepts the following additional parameters:
 
 - `--beta`: Controls the strength of the DPO loss (default: 0.1)
 - `--dpo-loss-type`: Choose between "sigmoid" (default), "hinge", "ipo", or "dpop" loss functions
-- `--is-reference-free`: Enable reference-free DPO training
 - `--delta`: Margin parameter for hinge loss (default: 50.0)
 - `--reference-model-path`: Path to a reference model for DPO training
 
