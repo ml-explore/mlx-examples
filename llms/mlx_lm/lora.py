@@ -15,6 +15,7 @@ import yaml
 from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
+from .tuner.grpo_trainer import GRPOTrainingArgs, evaluate_grpo, train_grpo
 from .tuner.utils import (
     build_schedule,
     linear_to_lora_layers,
