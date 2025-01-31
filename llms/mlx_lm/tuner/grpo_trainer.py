@@ -22,13 +22,7 @@ generate()
 class GRPOTrainingArgs(TrainingArgs):
     group_size: int = field(
         default=4,
-        metadata={"help": "Number of response sper prompt."},
-    )
-    is_reference_free: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use reference-free DPO training."
-        }
+        metadata={"help": "Number of responses per prompt."},
     )
     beta: float = field(
         default=0.1, metadata={"help": "KL penalty coefficient."}
