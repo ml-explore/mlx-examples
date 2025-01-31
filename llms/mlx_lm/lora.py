@@ -66,7 +66,6 @@ CONFIG_DEFAULTS = {
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
     "beta": 0.1,
     "dpo_loss_type": "sigmoid",
-    "is_reference_free": False,
     "delta": 50.0,
     "reference_model_path": None,
     "reward_scaling": 1.0,
@@ -174,13 +173,21 @@ def build_parser():
         help="Use gradient checkpointing to reduce memory use.",
         default=None,
     )
-    parser.add_argument("--beta", type=float)
-    parser.add_argument("--dpo-loss-type", type=str, choices=["sigmoid", "hinge", "ipo", "dpo"])
-    parser.add_argument("--is-reference-free", action="store_true")
-    parser.add_argument("--delta", type=float)
-    parser.add_argument("--reference-model-path", type=str)
-    parser.add_argument("--reward-scaling", type=float, help="Scaling factor for offline rewards.")
     parser.add_argument("--seed", type=int, help="The PRNG seed.")
+
+    # ORPO args
+    parser.add_argument(
+        "--beta",
+        type=float,
+        help="Temperature parameter for ORPO training.",
+        default=0.1
+    )
+    parser.add_argument(
+        "--reward-scaling",
+        type=float,
+        help="Reward scaling factor for ORPO training, not implemented.",
+        default=1.0
+    )
     return parser
 
 
@@ -239,7 +246,8 @@ def train_model(
             adapter_file=adapter_file,
             max_seq_length=args.max_seq_length,
             grad_checkpoint=args.grad_checkpoint,
-            beta=args.beta
+            beta=args.beta,
+            reward_scaling=args.reward_scaling
         )
             
         train_orpo(
@@ -288,7 +296,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta
         )
-        print(f"Test loss {test_loss:.8f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+        print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
     else:
         test_loss = evaluate(
             model=model,
