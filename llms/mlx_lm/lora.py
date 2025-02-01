@@ -271,7 +271,7 @@ def train_model(
             
         train_dpo(
             model=model,
-            reference_model=reference_model.freeze(),
+            ref_model=reference_model.freeze(),
             tokenizer=tokenizer,
             optimizer=opt,
             train_dataset=train_set,
@@ -314,7 +314,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
 
         test_loss, test_rewards = evaluate_dpo(
             model=model,
-            reference_model=reference_model,
+            ref_model=reference_model,
             dataset=test_set,
             tokenizer=tokenizer,
             batch_size=args.batch_size,
