@@ -307,17 +307,47 @@ the final text in the `chat` example above with Hugging Face's default template
 becomes:
 
 ```text
-<|im_start|>system
+<|im_end|>system
 You are a helpful assistant.<|im_end|>
-<|im_start|>user
+<|im_end|>user
 Hello.<|im_end|>
-<|im_start|>assistant
+<|im_end|>assistant
 How can I assistant you today.<|im_end|>
 ```
 
 If you are unsure of the format to use, the `chat` or `completions` are good to
 start with. For custom requirements on the format of the dataset, use the
 `text` format to assemble the content yourself.
+
+## Instruct Tuning
+
+Instruct tuning allows you to fine-tune a model with input/output pairs and alternative loss functions. This is useful for tasks where the input is an input prompt, and the loss function targets the input/output pair.
+
+### Dataset Format
+
+For instruct tuning, the dataset should be in the following format:
+
+```jsonl
+{"prompt": "[INST] Your input prompt here[/INST]", "completion": "The expected output result here"}
+```
+
+### Fine-tune with Instruct Tuning
+
+To fine-tune a model with instruct tuning, use the following command:
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --data <path_to_data> \
+    --iters 600 \
+    --prompt-feature "prompt" \
+    --completion-feature "completion"
+```
+
+### Alternative Loss Functions
+
+You can specify alternative loss functions for instruct tuning. For example, to use a custom loss function, modify the `default_loss` function in `llms/mlx_lm/tuner/trainer.py` to support alternative loss functions.
 
 ## Memory Issues
 
