@@ -140,8 +140,8 @@ def evaluate(
     loss: callable = default_loss,
     iterate_batches: callable = iterate_batches,
 ):
-    all_losses = 0
-    ntokens = 0
+    all_losses = mx.array(0.0)
+    ntokens = mx.array(0)
 
     index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
 
