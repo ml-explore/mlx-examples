@@ -130,13 +130,7 @@ def grpo_loss(
         model,
         tokenizer,
         prompts,
-        reward_funcs=[
-            r1_accuracy_reward_func,
-            r1_int_reward_func,
-            r1_strict_format_reward_func,
-            r1_soft_format_reward_func,
-            r1_count_xml
-        ],
+        reward_funcs=None,
         beta=0.1,
         group_size=4,
         epsilon=1e-4,
@@ -386,10 +380,18 @@ def evaluate_grpo(
 
 def train_grpo(
     model,
+    ref_model,
     tokenizer,
     optimizer,
     train_dataset,
     val_dataset,
+    reward_funcs = [
+        r1_accuracy_reward_func,
+        r1_int_reward_func,
+        r1_strict_format_reward_func,
+        r1_soft_format_reward_func,
+        r1_count_xml
+    ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss: callable = grpo_loss,
     iterate_batches: callable = iterate_batches,
@@ -452,6 +454,10 @@ def train_grpo(
                 model=model,
                 dataset=val_dataset,
                 loss=loss,
+
+                ref_model=model,
+                reward_funcs=reward_funcs,
+
                 tokenizer=tokenizer,
                 batch_size=args.batch_size,
                 num_batches=args.val_batches,

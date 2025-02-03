@@ -5,6 +5,43 @@ from typing import Dict, List, Optional
 from transformers import PreTrainedTokenizer
 
 
+class GRPODataset:
+    """
+    Dataset wrapper for GRPO training data.
+    Each example should have a 'prompt' and 'answer' field.
+    """
+    def __init__(
+        self,
+        data: List[Dict[str, str]],
+        tokenizer: PreTrainedTokenizer,
+        prompt_key: str = "prompt", 
+        answer_key: str = "answer"
+    ):
+        self._data = []
+        
+        for item in data:
+            # Tokenize prompt and answer
+            prompt_tokens = tokenizer.encode(item[prompt_key])
+            answer_tokens = tokenizer.encode(item[answer_key])
+            
+            # Add EOS tokens if needed
+            if prompt_tokens[-1] != tokenizer.eos_token_id:
+                prompt_tokens.append(tokenizer.eos_token_id)
+            if answer_tokens[-1] != tokenizer.eos_token_id:
+                answer_tokens.append(tokenizer.eos_token_id)
+                
+            self._data.append({
+                'prompt': prompt_tokens,
+                'answer': answer_tokens
+            })
+
+    def __getitem__(self, idx: int) -> Dict[str, List[int]]:
+        return self._data[idx]
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 class Dataset:
     """
     Light-weight wrapper to hold a dataset.
