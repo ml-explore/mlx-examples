@@ -174,6 +174,7 @@ def build_parser():
     )
     parser.add_argument("--seed", type=int, help="The PRNG seed")
 
+    # GRPO args
     parser.add_argument(
         "--group-size",
         type=int,
@@ -270,12 +271,13 @@ def train_model(
 
         if args.reference_model_path:
             reference_model, _ = load(args.reference_model_path)
+            reference_model = reference_model.freeze()
         else:
-            reference_model, _ = load(args.model)
+            reference_model, _ = None, None
         
         train_grpo(
             model=model,
-            reference_model=reference_model.freeze(),
+            ref_model=reference_model,
             tokenizer=tokenizer,
             optimizer=opt,
             train_dataset=train_set,
@@ -318,7 +320,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
 
         test_loss, test_rewards = evaluate_grpo(
             model=model,
-            reference_model=reference_model,
+            ref_model=reference_model,
             dataset=test_set,
             tokenizer=tokenizer,
             batch_size=args.batch_size,
@@ -326,8 +328,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon=args.epsilon,
-            reference_model_path=args.reference_model_path
+            epsilon=args.epsilon
         )
         print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
     else:
