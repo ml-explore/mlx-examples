@@ -287,16 +287,16 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
     model.eval()
 
     if args.training_mode == "orpo":
-        test_loss, test_rewards = evaluate_orpo(
+        test_loss, test_rewards, _, _ = evaluate_orpo(
             model=model,
             dataset=test_set,
-            tokenizer=tokenizer,
             batch_size=args.batch_size,
             num_batches=args.test_batches,
             max_seq_length=args.max_seq_length,
             beta=args.beta
         )
-        print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+        test_ppl = math.exp(test_loss)
+        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
     else:
         test_loss = evaluate(
             model=model,
