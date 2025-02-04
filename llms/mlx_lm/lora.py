@@ -64,6 +64,8 @@ CONFIG_DEFAULTS = {
     "grad_checkpoint": False,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
+
+    # DPO args
     "beta": 0.1,
     "dpo_loss_type": "sigmoid",
     "delta": 50.0,
