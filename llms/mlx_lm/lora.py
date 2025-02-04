@@ -312,11 +312,10 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
         else:
             reference_model = model
 
-        test_loss, test_rewards = evaluate_dpo(
+        test_loss, _, _, _ = evaluate_dpo(
             model=model,
             ref_model=reference_model,
             dataset=test_set,
-            tokenizer=tokenizer,
             batch_size=args.batch_size,
             num_batches=args.test_batches,
             max_seq_length=args.max_seq_length,
@@ -324,7 +323,8 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             delta=args.delta,
             loss_type=args.dpo_loss_type,
         )
-        print(f"Test loss {test_loss:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+        print(f"Test loss {test_loss:.3f}")
+
     else:
         test_loss = evaluate(
             model=model,
