@@ -141,9 +141,19 @@ def create_dataset(
     completion_feature = completion_feature or "completion"
     sample = data[0]
 
-    if "messages" in sample:
-        return ChatDataset(data, tokenizer)
-    elif "prompt" in sample and "answer" in sample:
+    if args.training_mode == "normal":
+        if "messages" in sample:
+            return ChatDataset(data, tokenizer)
+        elif prompt_feature in sample and completion_feature in sample:
+            return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature)
+        elif "text" in sample:
+            return Dataset(data, tokenizer)
+        else:
+            raise ValueError(
+                "Unsupported data format, check the supported formats here:\n"
+                "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+            )
+    else:
         return GRPODataset(
             data=data,
             tokenizer=tokenizer,
@@ -151,15 +161,6 @@ def create_dataset(
             answer_key="answer",
             use_chat_template=args.use_chat_template,
             use_prompt=args.use_prompt
-        )
-    elif prompt_feature in sample and completion_feature in sample:
-        return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature)
-    elif "text" in sample:
-        return Dataset(data, tokenizer)
-    else:
-        raise ValueError(
-            "Unsupported data format, check the supported formats here:\n"
-            "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
         )
 
 
