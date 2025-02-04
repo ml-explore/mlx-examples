@@ -16,14 +16,33 @@ class GRPODataset:
         data: List[Dict[str, str]],
         tokenizer: PreTrainedTokenizer,
         prompt_key: str = "prompt",
-        answer_key: str = "answer"
+        answer_key: str = "answer",
+        use_chat_template: bool = False,
+        use_prompt: bool = False
     ):
         self._data = []
         for item in data:
             prompt_str = str(item[prompt_key])
             answer_str = str(item[answer_key])
-            prompt_tokens = tokenizer.encode(prompt_str)
-            answer_tokens = tokenizer.encode(answer_str)
+            if use_chat_template:
+                prompt_tokens = tokenizer.apply_chat_template(
+                    [
+                        {'role': 'system', 'content': """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
+                The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+                The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
+                    {'role': 'user', 'content': prompt_str}
+                    ],
+                )
+                answer_tokens = tokenizer.encode(answer_str)
+            else:
+                if use_prompt:
+                    prompt_tokens = tokenizer.encode(f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
+            The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+            The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>.
+            User: {prompt_str}. Assistant: """)
+                else:
+                    prompt_tokens = tokenizer.encode(prompt_str)
+                answer_tokens = tokenizer.encode(answer_str)
             self._data.append((prompt_tokens, answer_tokens, prompt_str, answer_str))
 
     def __getitem__(self, idx: int) -> Tuple[List[int], List[int], str, str]:
