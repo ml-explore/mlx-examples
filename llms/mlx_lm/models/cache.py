@@ -213,34 +213,34 @@ class QuantizedKVCache(_BaseCache):
 
 class KVCache(_BaseCache):
     def __init__(self):
-        self.keys = None
-        self.values = None
+        self.cache = None
         self.offset = 0
         self.step = 256
 
-    def update_and_fetch(self, keys, values):
-        prev = self.offset
-        if self.keys is None or (prev + keys.shape[2]) > self.keys.shape[2]:
-            B, n_kv_heads, _, k_head_dim = keys.shape
-            v_head_dim = values.shape[3]
-            n_steps = (self.step + keys.shape[2] - 1) // self.step
-            k_shape = (B, n_kv_heads, n_steps * self.step, k_head_dim)
-            v_shape = (B, n_kv_heads, n_steps * self.step, v_head_dim)
-            new_k = mx.zeros(k_shape, keys.dtype)
-            new_v = mx.zeros(v_shape, values.dtype)
-            if self.keys is not None:
-                if prev % self.step != 0:
-                    self.keys = self.keys[..., :prev, :]
-                    self.values = self.values[..., :prev, :]
-                self.keys = mx.concatenate([self.keys, new_k], axis=2)
-                self.values = mx.concatenate([self.values, new_v], axis=2)
-            else:
-                self.keys, self.values = new_k, new_v
+    def _expand(self, x, i):
+        B, n_heads, _, head_dim = x.shape
+        n_steps = (self.step + x.shape[2] - 1) // self.step
+        shape = (B, n_heads, n_steps * self.step, head_dim)
+        new_v = mx.zeros(shape, x.dtype)
+        if self.cache[i] is not None:
+            if self.offset % self.step != 0:
+                self.cache[i] = self.cache[i][..., :prev, :]
+            self.cache[i] = mx.concatenate([self.cache[i], new_v], axis=2)
+        else:
+            self.cache[i] = new_v
 
-        self.offset += keys.shape[2]
-        self.keys[..., prev : self.offset, :] = keys
-        self.values[..., prev : self.offset, :] = values
-        return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
+    def update_and_fetch(self, *args):
+        prev = self.offset
+        if self.cache is None or (prev + args[0].shape[2]) > self.cache[0].shape[2]:
+            if self.cache is None:
+                self.cache = [None] * len(args)
+            for i, x in enumerate(args):
+                self._expand(x, i)
+
+        self.offset += args[0].shape[2]
+        for i, x in enumerate(args):
+            self.cache[i][..., prev : self.offset, :] = x
+        return tuple(c[..., : self.offset, :] for c in self.cache)
 
     @property
     def state(self):

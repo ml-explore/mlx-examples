@@ -227,26 +227,27 @@ class DeepseekV3Attention(nn.Module):
         kv = self.kv_b_proj(self.kv_a_layernorm(compressed_kv))
         kv = kv.reshape(B, L, self.num_heads, -1).transpose(0, 2, 1, 3)
 
-        k_nope, values = mx.split(kv, [self.qk_nope_head_dim], axis=-1)
+        k_nope, v = mx.split(kv, [self.qk_nope_head_dim], axis=-1)
 
         if cache is not None:
             q_pe = self.rope(q_pe, cache.offset)
             k_pe = self.rope(k_pe, cache.offset)
-            k_pe = mx.repeat(k_pe, self.num_heads, axis=1)
-            keys, values = cache.update_and_fetch(
-                mx.concatenate([k_nope, k_pe], axis=-1), values
-            )
+            k_nope, k_pe, v = cache.update_and_fetch(k_nope, k_pe, v)
         else:
             q_pe = self.rope(q_pe)
             k_pe = self.rope(k_pe)
-            k_pe = mx.repeat(k_pe, self.num_heads, axis=1)
-            keys = mx.concatenate([k_nope, k_pe], axis=-1)
 
-        queries = mx.concatenate([q_nope, q_pe], axis=-1)
+        k_pe = mx.expand_dims(k_pe, 2).swapaxes(-1, -2)
+        q_pe = mx.unflatten(q_pe, 1, (1, self.num_heads))
+        qk_pe = (q_pe * self.scale) @ k_pe
+        qk_pe = mx.flatten(qk_pe, 1, 2)
 
-        output = scaled_dot_product_attention(
-            queries, keys, values, cache=cache, scale=self.scale, mask=mask
-        )
+        qk_nope = (q_nope * self.scale) @ k_nope.transpose(0, 1, 3, 2)
+        qk = qk_pe + qk_nope
+        if mask is not None:
+            qk += mask
+        scores = mx.softmax(qk, axis=-1, precise=True)
+        output = scores @ v
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
 
