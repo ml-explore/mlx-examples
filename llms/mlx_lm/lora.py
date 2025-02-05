@@ -206,15 +206,15 @@ def build_parser():
     )
     parser.add_argument(
         "--use-chat-template",
-        type=bool,
+        action="store_true",
         help="If the model is a Chat model, use the Chat template.",
-        default=False,
+        default=None,
     )
     parser.add_argument(
         "--use-prompt",
-        type=bool,
-        help="Rather to use the prompt from teh R1 paper.",
-        default=False,
+        action="store_true",
+        help="Rather to use the prompt from the R1 paper.",
+        default=None,
     )
     return parser
 
