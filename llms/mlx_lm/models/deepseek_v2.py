@@ -386,6 +386,7 @@ class DeepseekV2Model(nn.Module):
         self.num_layers = layers_per_rank
         self.layers = self.layers[: self.end_idx]
         self.layers[: self.start_idx] = [None] * self.start_idx
+        self.num_layers = len(self.layers) - self.start_idx
 
     def __call__(
         self,

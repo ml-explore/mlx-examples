@@ -397,12 +397,11 @@ class DeepseekV3Model(nn.Module):
         layers_per_rank = (
             len(self.layers) + self.pipeline_size - 1
         ) // self.pipeline_size
-        start = (self.pipeline_size - self.pipeline_rank - 1) * layers_per_rank
         self.start_idx = (self.pipeline_size - self.pipeline_rank - 1) * layers_per_rank
         self.end_idx = self.start_idx + layers_per_rank
-        self.num_layers = layers_per_rank
         self.layers = self.layers[: self.end_idx]
         self.layers[: self.start_idx] = [None] * self.start_idx
+        self.num_layers = len(self.layers) - self.start_idx
 
     def __call__(
         self,
