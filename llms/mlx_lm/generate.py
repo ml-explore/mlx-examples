@@ -199,7 +199,7 @@ def main():
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
     elif using_cache:
-        tokenizer.chat_template = metadata["chat_template"]
+        tokenizer.chat_template = json.loads(metadata["chat_template"])
 
     prompt = args.prompt.replace("\\n", "\n").replace("\\t", "\t")
     prompt = sys.stdin.read() if prompt == "-" else prompt
