@@ -1,8 +1,57 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from transformers import PreTrainedTokenizer
+
+
+class GRPODataset:
+    """
+    Dataset wrapper for GRPO training data.
+    Each example should have a 'prompt' and 'answer' field.
+    Returns data in (prompt_tokens, answer_tokens, prompt_str, answer_str) tuple format.
+    """
+    def __init__(
+        self,
+        data: List[Dict[str, str]],
+        tokenizer: PreTrainedTokenizer,
+        prompt_key: str = "prompt",
+        answer_key: str = "answer",
+        use_chat_template: bool = False,
+        use_prompt: bool = False
+    ):
+        self._data = []
+        for item in data:
+            prompt_str = str(item[prompt_key])
+            answer_str = str(item[answer_key])
+            if use_chat_template:
+                prompt_tokens = tokenizer.apply_chat_template(
+                    [
+                        {'role': 'system', 'content': """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
+                The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+                The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
+                    {'role': 'user', 'content': prompt_str}
+                    ],
+                )
+                answer_tokens = tokenizer.encode(answer_str)
+            else:
+                if use_prompt:
+                    prompt_tokens = tokenizer.encode(f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
+            The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+            The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>.
+            User: {prompt_str}. Assistant: """)
+                else:
+                    prompt_tokens = tokenizer.encode(prompt_str)
+                answer_tokens = tokenizer.encode(answer_str)
+            self._data.append((prompt_tokens, answer_tokens, prompt_str, answer_str))
+
+    def __getitem__(self, idx: int) -> Tuple[List[int], List[int], str, str]:
+        """Returns a (prompt_tokens, answer_tokens, prompt_str, answer_str) tuple."""
+        return self._data[idx]
+
+    def __len__(self) -> int:
+        """Returns the number of examples in the dataset."""
+        return len(self._data)
 
 
 class Dataset:
@@ -82,6 +131,7 @@ class CompletionsDataset:
 
 
 def create_dataset(
+    args,
     data,
     tokenizer: PreTrainedTokenizer,
     prompt_feature: Optional[str] = None,
@@ -90,31 +140,44 @@ def create_dataset(
     prompt_feature = prompt_feature or "prompt"
     completion_feature = completion_feature or "completion"
     sample = data[0]
-    if "messages" in sample:
-        return ChatDataset(data, tokenizer)
-    elif prompt_feature in sample and completion_feature in sample:
-        return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature)
-    elif "text" in sample:
-        return Dataset(data, tokenizer)
+    
+    if args.training_mode == "normal":
+        if "messages" in sample:
+            return ChatDataset(data, tokenizer)
+        elif prompt_feature in sample and completion_feature in sample:
+            return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature)
+        elif "text" in sample:
+            return Dataset(data, tokenizer)
+        else:
+            raise ValueError(
+                "Unsupported data format, check the supported formats here:\n"
+                "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+            )
     else:
-        raise ValueError(
-            "Unsupported data format, check the supported formats here:\n"
-            "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+        return GRPODataset(
+            data=data,
+            tokenizer=tokenizer,
+            prompt_key="prompt",
+            answer_key="answer",
+            use_chat_template=args.use_chat_template,
+            use_prompt=args.use_prompt
         )
 
 
 def load_local_dataset(
+    args,
     data_path: Path,
     tokenizer: PreTrainedTokenizer,
     prompt_feature: Optional[str] = None,
     completion_feature: Optional[str] = None,
 ):
     def load_subset(path):
+        print(path)
         if not path.exists():
             return []
         with open(path, "r") as fid:
             data = [json.loads(l) for l in fid]
-        return create_dataset(data, tokenizer, prompt_feature, completion_feature)
+        return create_dataset(args, data, tokenizer, prompt_feature, completion_feature)
 
     names = ("train", "valid", "test")
     train, valid, test = [load_subset(data_path / f"{n}.jsonl") for n in names]
@@ -122,6 +185,7 @@ def load_local_dataset(
 
 
 def load_hf_dataset(
+    args,
     data_id: str,
     tokenizer: PreTrainedTokenizer,
     prompt_feature: Optional[str] = None,
@@ -137,7 +201,7 @@ def load_hf_dataset(
         train, valid, test = [
             (
                 create_dataset(
-                    dataset[n], tokenizer, prompt_feature, completion_feature
+                    args, dataset[n], tokenizer, prompt_feature, completion_feature
                 )
                 if n in dataset.keys()
                 else []
@@ -202,12 +266,12 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
         completion_feature = getattr(args, "completion_feature", None)
         if data_path.exists():
             train, valid, test = load_local_dataset(
-                data_path, tokenizer, prompt_feature, completion_feature
+                args, data_path, tokenizer, prompt_feature, completion_feature
             )
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
             train, valid, test = load_hf_dataset(
-                args.data, tokenizer, prompt_feature, completion_feature
+                args, args.data, tokenizer, prompt_feature, completion_feature
             )
 
     if args.train and len(train) == 0:
