@@ -1,7 +1,11 @@
 # The path to the local model directory or Hugging Face repo.
 model: "mlx_model"
+
 # Whether or not to train (boolean)
 train: true
+
+# The fine-tuning method: "lora", "dora", or "full".
+fine_tune_type: lora
 
 # Directory with {train, valid, test}.jsonl files
 data: "/path/to/training/data"
@@ -10,7 +14,7 @@ data: "/path/to/training/data"
 seed: 0
 
 # Number of layers to fine-tune
-lora_layers: 16
+num_layers: 16
 
 # Minibatch size.
 batch_size: 4
@@ -34,7 +38,7 @@ steps_per_eval: 200
 resume_adapter_file: null
 
 # Save/load path for the trained adapter weights.
-adapter_file: "adapters.npz"
+adapter_path: "adapters"
 
 # Save the model every N iterations.
 save_every: 100
@@ -57,8 +61,7 @@ lora_parameters:
   # These will be applied for the last lora_layers
   keys: ["self_attn.q_proj", "self_attn.v_proj"]
   rank: 8
-  alpha: 16.0
-  scale: 10.0
+  scale: 20.0
   dropout: 0.0
 
 # Schedule can only be specified in a config file, uncomment to use.
@@ -67,3 +70,11 @@ lora_parameters:
 #  warmup: 100 # 0 for no warmup
 #  warmup_init: 1e-7 # 0 if not specified
 #  arguments: [1e-5, 1000, 1e-7] # passed to scheduler
+
+#hf_dataset:
+#  name: "billsum"
+#  train_split: "train[:1000]"
+#  valid_split: "train[-100:]"
+#  prompt_feature: "text"
+#  completion_feature: "summary"
+

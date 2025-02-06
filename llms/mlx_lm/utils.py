@@ -1,41 +1,122 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import contextlib
 import copy
+import functools
 import glob
 import importlib
 import json
 import logging
+import os
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten
-from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizer
+
+if os.getenv("MLXLM_USE_MODELSCOPE", "False").lower() == "true":
+    try:
+        from modelscope import snapshot_download
+    except ImportError:
+        raise ImportError(
+            "Please run `pip install modelscope` to activate the ModelScope."
+        )
+else:
+    from huggingface_hub import snapshot_download
+
+from mlx.utils import tree_flatten, tree_reduce
+from transformers import PreTrainedTokenizer
 
 # Local imports
-from .sample_utils import top_p_sampling
+from .models import cache
+from .sample_utils import make_logits_processors, make_sampler
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
-from .tuner.utils import apply_lora_layers
 from .tuner.utils import dequantize as dequantize_model
+from .tuner.utils import load_adapters, nparams
 
 # Constants
 MODEL_REMAPPING = {
     "mistral": "llama",  # mistral is compatible with llama
     "phi-msft": "phixtral",
+    "falcon_mamba": "mamba",
 }
 
 MAX_FILE_SIZE_GB = 5
 
-linear_class_predicate = (
-    lambda m: isinstance(m, nn.Linear)
-    and m.weight.shape[0]
-    != 8  # avoid quantizing gate layers, otherwise we have to re-quant and upload all the mixtral models
-)
+# A stream on the default device just for generation
+generation_stream = mx.new_stream(mx.default_device())
+
+
+class ModelNotFoundError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+
+@dataclass
+class GenerationResponse:
+    """
+    The output of :func:`stream_generate`.
+
+    Args:
+        text (str): The next segment of decoded text. This can be an empty string.
+        token (int): The next token.
+        logprobs (mx.array): A vector of log probabilities.
+        prompt_tokens (int): The number of tokens in the prompt.
+        prompt_tps (float): The prompt processing tokens-per-second.
+        generation_tokens (int): The number of generated tokens.
+        generation_tps (float): The tokens-per-second for generation.
+        peak_memory (float): The peak memory used so far in GB.
+        finish_reason (str): The reason the response is being sent: "length", "stop" or `None`
+    """
+
+    text: str
+    token: int
+    logprobs: mx.array
+    prompt_tokens: int
+    prompt_tps: float
+    generation_tokens: int
+    generation_tps: float
+    peak_memory: float
+    finish_reason: Optional[str] = None
+
+
+@contextlib.contextmanager
+def wired_limit(model: nn.Module, streams: Optional[List[mx.Stream]] = None):
+    """
+    A context manager to temporarily change the wired limit.
+
+    Note, the wired limit should not be changed during an async eval.  If an
+    async eval could be running pass in the streams to synchronize with prior
+    to exiting the context manager.
+    """
+    model_bytes = tree_reduce(
+        lambda acc, x: acc + x.nbytes if isinstance(x, mx.array) else acc, model, 0
+    )
+    max_rec_size = mx.metal.device_info()["max_recommended_working_set_size"]
+    if model_bytes > 0.9 * max_rec_size:
+        model_mb = model_bytes // 2**20
+        max_rec_mb = max_rec_size // 2**20
+        print(
+            f"[WARNING] Generating with a model that requires {model_mb} MB "
+            f"which is close to the maximum recommended size of {max_rec_mb} "
+            "MB. This can be slow. See the documentation for possible work-arounds: "
+            "https://github.com/ml-explore/mlx-examples/tree/main/llms#large-models"
+        )
+    old_limit = mx.metal.set_wired_limit(max_rec_size)
+    try:
+        yield None
+    finally:
+        if streams is not None:
+            for s in streams:
+                mx.synchronize(s)
+        else:
+            mx.synchronize()
+        mx.metal.set_wired_limit(old_limit)
 
 
 def _get_classes(config: dict):
@@ -60,6 +141,17 @@ def _get_classes(config: dict):
     return arch.Model, arch.ModelArgs
 
 
+def compute_bits_per_weight(model):
+    model_bytes = tree_reduce(
+        lambda acc, x: acc + x.nbytes if isinstance(x, mx.array) else acc, model, 0
+    )
+    leaf_modules = tree_flatten(
+        model.leaf_modules(), is_leaf=lambda m: isinstance(m, nn.Module)
+    )
+    model_params = sum(nparams(m) for _, m in leaf_modules)
+    return model_bytes * 8 / model_params
+
+
 def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path:
     """
     Ensures the model is available locally. If the path does not exist locally,
@@ -73,207 +165,472 @@ def get_model_path(path_or_hf_repo: str, revision: Optional[str] = None) -> Path
         Path: The path to the model.
     """
     model_path = Path(path_or_hf_repo)
+
     if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
-                repo_id=path_or_hf_repo,
-                revision=revision,
-                allow_patterns=[
-                    "*.json",
-                    "*.safetensors",
-                    "*.py",
-                    "tokenizer.model",
-                    "*.tiktoken",
-                    "*.txt",
-                ],
+        try:
+            model_path = Path(
+                snapshot_download(
+                    path_or_hf_repo,
+                    revision=revision,
+                    allow_patterns=[
+                        "*.json",
+                        "*.safetensors",
+                        "*.py",
+                        "tokenizer.model",
+                        "*.tiktoken",
+                        "*.txt",
+                    ],
+                )
             )
-        )
+        except:
+            raise ModelNotFoundError(
+                f"Model not found for path or HF repo: {path_or_hf_repo}.\n"
+                "Please make sure you specified the local path or Hugging Face"
+                " repo id correctly.\nIf you are trying to access a private or"
+                " gated Hugging Face repo, make sure you are authenticated:\n"
+                "https://huggingface.co/docs/huggingface_hub/en/guides/cli#huggingface-cli-login"
+            ) from None
     return model_path
 
 
-def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: float):
-    """
-    Apply repetition penalty to specific logits based on the given context.
-
-    Paper: https://arxiv.org/abs/1909.05858
-
-    Args:
-        logits (mx.array): The logits produced by the language model.
-        generated_tokens (any): A list of N previous tokens.
-        penalty (float): The repetition penalty factor to be applied.
-
-    Returns:
-        logits (mx.array): Logits with repetition penalty applied to generated tokens.
-    """
-    if len(generated_tokens) > 0:
-        indices = mx.array([token for token in generated_tokens])
-        selected_logits = logits[:, indices]
-        selected_logits = mx.where(
-            selected_logits < 0, selected_logits * penalty, selected_logits / penalty
-        )
-        logits[:, indices] = selected_logits
-    return logits
+def maybe_quantize_kv_cache(prompt_cache, quantized_kv_start, kv_group_size, kv_bits):
+    if (
+        kv_bits is not None
+        and not isinstance(prompt_cache[0], cache.QuantizedKVCache)
+        and prompt_cache[0].offset > quantized_kv_start
+    ):
+        for i in range(len(prompt_cache)):
+            if isinstance(prompt_cache[i], cache.KVCache):
+                prompt_cache[i] = prompt_cache[i].to_quantized(
+                    group_size=kv_group_size, bits=kv_bits
+                )
 
 
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
-    temp: float = 0.0,
-    repetition_penalty: Optional[float] = None,
-    repetition_context_size: Optional[int] = 20,
-    top_p: float = 1.0,
+    *,
+    max_tokens: int = 256,
+    sampler: Optional[Callable[mx.array, mx.array]] = None,
+    logits_processors: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
+    max_kv_size: Optional[int] = None,
+    prompt_cache: Optional[Any] = None,
+    prefill_step_size: int = 512,
+    kv_bits: Optional[int] = None,
+    kv_group_size: int = 64,
+    quantized_kv_start: int = 0,
+    prompt_progress_callback: Optional[Callable[int, int]] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
-    A generator producing text based on the given prompt from the model.
+    A generator producing token ids based on the given prompt from the model.
 
     Args:
         prompt (mx.array): The input prompt.
         model (nn.Module): The model to use for generation.
-        temp (float): The temperature for sampling, if 0 the argmax is used.
-        repetition_penalty (float, optional): The penalty factor for repeating tokens.
-        repetition_context_size (int, optional): The number of tokens to consider for repetition penalty (default 20).
-        top_p (float, optional): Nulceus sampling, higher means model considers more less likely words
+        max_tokens (int): The maximum number of tokens. Use``-1`` for an infinite
+          generator. Default: ``256``.
+        sampler (Callable[mx.array, mx.array], optional): A sampler for sampling a
+          token from a vector of log probabilities. Default: ``None``.
+        logits_processors (List[Callable[[mx.array, mx.array], mx.array]], optional):
+          A list of functions that take tokens and logits and return the processed
+          logits. Default: ``None``.
+        max_kv_size (int, optional): Maximum size of the key-value cache. Old
+          entries (except the first 4 tokens) will be overwritten.
+        prompt_cache (List[Any], optional): A pre-computed prompt cache. Note, if
+          provided, the cache will be updated in place.
+        prefill_step_size (int): Step size for processing the prompt.
+        kv_bits (int, optional): Number of bits to use for KV cache quantization.
+          None implies no cache quantization. Default: ``None``.
+        kv_group_size (int): Group size for KV cache quantization. Default: ``64``.
+        quantized_kv_start (int): Step to begin using a quantized KV cache.
+           when ``kv_bits`` is non-None. Default: ``0``.
+        prompt_prorgress_callback (Callable[int, int]): A call-back which takes the
+           prompt tokens processed so far and the total number of prompt tokens.
 
     Yields:
-        Generator[Tuple[mx.array, mx.array]]: A generator producing
-        one token and probability per call.
+        Tuple[mx.array, mx.array]: One token and a vector of log probabilities.
     """
 
-    def sample(logits: mx.array) -> Tuple[mx.array, float]:
-        softmax_logits = mx.softmax(logits)
+    y = prompt
+    tokens = None
 
-        if temp == 0:
-            token = mx.argmax(logits, axis=-1)
-        else:
-            if top_p > 0 and top_p < 1.0:
-                token = top_p_sampling(logits, top_p, temp)
-            else:
-                token = mx.random.categorical(logits * (1 / temp))
-
-        prob = softmax_logits[0, token]
-        return token, prob
-
-    if repetition_penalty and (
-        repetition_penalty < 0 or not isinstance(repetition_penalty, float)
-    ):
-        raise ValueError(
-            f"repetition_penalty must be a non-negative float, got {repetition_penalty}"
+    # Create the KV cache for generation
+    if prompt_cache is None:
+        prompt_cache = cache.make_prompt_cache(
+            model,
+            max_kv_size=max_kv_size,
         )
+    elif len(prompt_cache) != len(model.layers):
+        raise ValueError("Wrong number of layers in the prompt cache.")
+
+    prompt_progress_callback = prompt_progress_callback or (lambda *_: None)
+
+    quantize_cache_fn = functools.partial(
+        maybe_quantize_kv_cache,
+        quantized_kv_start=quantized_kv_start,
+        kv_group_size=kv_group_size,
+        kv_bits=kv_bits,
+    )
+
+    sampler = sampler or (lambda x: mx.argmax(x, axis=-1))
+
+    def _step(y):
+        with mx.stream(generation_stream):
+            logits = model(y[None], cache=prompt_cache)
+            logits = logits[:, -1, :]
+
+            if logits_processors:
+                nonlocal tokens
+                tokens = mx.concat([tokens, y]) if tokens is not None else y
+
+                for processor in logits_processors:
+                    logits = processor(tokens, logits)
+
+            quantize_cache_fn(prompt_cache)
+
+            logprobs = logits - mx.logsumexp(logits, keepdims=True)
+            y = sampler(logprobs)
+            return y, logprobs.squeeze(0)
+
+    with mx.stream(generation_stream):
+        total_prompt_tokens = y.size
+        prompt_processed_tokens = 0
+        while y.size > prefill_step_size:
+            model(y[:prefill_step_size][None], cache=prompt_cache)
+            quantize_cache_fn(prompt_cache)
+            mx.eval([c.state for c in prompt_cache])
+            prompt_progress_callback(prompt_processed_tokens, total_prompt_tokens)
+            prompt_processed_tokens += prefill_step_size
+            y = y[prefill_step_size:]
+            mx.metal.clear_cache()
+
+        y, logprobs = _step(y)
+
+    mx.async_eval(y, logprobs)
+    n = 0
+    while True:
+        if n != max_tokens:
+            next_y, next_logprobs = _step(y)
+            mx.async_eval(next_y, next_logprobs)
+        if n == 0:
+            mx.eval(y)
+            prompt_progress_callback(total_prompt_tokens, total_prompt_tokens)
+        if n == max_tokens:
+            break
+        yield y.item(), logprobs
+        if n % 256 == 0:
+            mx.metal.clear_cache()
+        y, logprobs = next_y, next_logprobs
+        n += 1
+
+
+def speculative_generate_step(
+    prompt: mx.array,
+    model: nn.Module,
+    draft_model: nn.Module,
+    *,
+    num_draft_tokens=2,
+    max_tokens: int = 256,
+    sampler: Optional[Callable[mx.array, mx.array]] = None,
+    logits_processors: Optional[List[Callable[[mx.array, mx.array], mx.array]]] = None,
+    prompt_cache: Optional[Any] = None,
+    prefill_step_size: int = 512,
+    kv_bits: Optional[int] = None,
+    kv_group_size: int = 64,
+    quantized_kv_start: int = 0,
+) -> Generator[Tuple[mx.array, mx.array], None, None]:
+    """
+    A generator producing token ids based on the given prompt from the model.
+
+    Args:
+        prompt (mx.array): The input prompt.
+        model (nn.Module): The model to use for generation.
+        draft_model (nn.Module): The draft model for speculative decoding.
+        num_draft_tokens (int, optional): The number of draft tokens for
+          speculative decoding. Default: ``2``.
+        max_tokens (int): The maximum number of tokens. Use``-1`` for an infinite
+          generator. Default: ``256``.
+        sampler (Callable[mx.array, mx.array], optional): A sampler for sampling a
+          token from a vector of log probabilities. Default: ``None``.
+        logits_processors (List[Callable[[mx.array, mx.array], mx.array]], optional):
+          A list of functions that take tokens and logits and return the processed
+          logits. Default: ``None``.
+        prompt_cache (List[Any], optional): A pre-computed prompt cache. Note, if
+          provided, the cache will be updated in place. The cache must be trimmable.
+        prefill_step_size (int): Step size for processing the prompt.
+        kv_bits (int, optional): Number of bits to use for KV cache quantization.
+          None implies no cache quantization. Default: ``None``.
+        kv_group_size (int): Group size for KV cache quantization. Default: ``64``.
+        quantized_kv_start (int): Step to begin using a quantized KV cache.
+           when ``kv_bits`` is non-None. Default: ``0``.
+
+    Yields:
+        Tuple[mx.array, mx.array]: One token and a vector of log probabilities.
+    """
 
     y = prompt
-    cache = None
+    tokens = None
 
-    repetition_context = prompt.tolist()
+    # Create the KV cache for generation
+    if prompt_cache is None:
+        model_cache = cache.make_prompt_cache(model)
+        draft_cache = cache.make_prompt_cache(draft_model)
+    elif len(prompt_cache) != (len(model.layers) + len(draft_model.layers)):
+        raise ValueError("Wrong number of layers in the prompt cache.")
+    else:
+        model_cache = prompt_cache[: len(model.layers)]
+        draft_cache = prompt_cache[len(model.layers) :]
 
-    if repetition_context_size:
-        repetition_context = repetition_context[-repetition_context_size:]
+    sampler = sampler or (lambda x: mx.argmax(x, axis=-1))
 
-    while True:
-        logits, cache = model(y[None], cache=cache)
-        logits = logits[:, -1, :]
+    quantize_cache_fn = functools.partial(
+        maybe_quantize_kv_cache,
+        quantized_kv_start=quantized_kv_start,
+        kv_group_size=kv_group_size,
+        kv_bits=kv_bits,
+    )
 
-        if repetition_penalty:
-            logits = apply_repetition_penalty(
-                logits, repetition_context, repetition_penalty
+    def _step(model, cache, y, n_predict=1):
+        with mx.stream(generation_stream):
+            logits = model(y[None], cache=cache)
+            logits = logits[:, -n_predict:, :]
+
+            quantize_cache_fn(cache)
+
+            logprobs = logits - mx.logsumexp(logits, keepdims=True)
+            logprobs = logprobs.squeeze(0)
+            y = sampler(logprobs)
+            return y, logprobs
+
+    def _prefill(model, cache, y):
+        while y.size > prefill_step_size:
+            model(y[:prefill_step_size][None], cache=cache)
+            quantize_cache_fn(cache)
+            mx.eval([c.state for c in cache])
+            y = y[prefill_step_size:]
+            mx.metal.clear_cache()
+        return y
+
+    def _rewind_cache(num_draft, num_accept):
+        cache.trim_prompt_cache(model_cache, num_draft - num_accept)
+        cache.trim_prompt_cache(draft_cache, max(num_draft - num_accept - 1, 0))
+
+    def _draft_generate(y, num_draft):
+        if num_draft == 0:
+            return mx.array([], mx.uint32)
+        ys = []
+        for _ in range(num_draft):
+            y, _ = _step(draft_model, draft_cache, y)
+            mx.async_eval(y)
+            ys.append(y)
+        return mx.concatenate(ys)
+
+    with mx.stream(generation_stream):
+        draft_y = _prefill(draft_model, draft_cache, y)
+        y = _prefill(model, model_cache, y)
+
+    ntoks = 0
+    # Set these so the finally block doesn't raise
+    num_draft = 0
+    n = 0
+    try:
+        while True:
+            num_draft = min(max_tokens - ntoks, num_draft_tokens)
+            draft_tokens = _draft_generate(draft_y, num_draft)
+            y = mx.concatenate([y, draft_tokens])
+
+            tokens, logprobs = _step(model, model_cache, y, num_draft + 1)
+            mx.eval(tokens, draft_tokens)
+            draft_tokens = draft_tokens.tolist()
+            tokens = tokens.tolist()
+            n = 0
+            while n < num_draft:
+                tn, dtn, lpn = tokens[n], draft_tokens[n], logprobs[n]
+                if tn != dtn:
+                    break
+                n += 1
+                ntoks += 1
+                yield tn, lpn
+                if ntoks == max_tokens:
+                    break
+            if ntoks < max_tokens:
+                ntoks += 1
+                yield tokens[n], logprobs[n]
+
+            if ntoks == max_tokens:
+                break
+
+            y = mx.array([tokens[n]], mx.uint32)
+            draft_y = y
+
+            # If we accpeted all the draft tokens, include the last
+            # draft token in the next draft step since it hasn't been
+            # processed yet by the draft model
+            if n == num_draft:
+                draft_y = mx.concatenate(
+                    [mx.array(draft_tokens[-1:], mx.uint32), draft_y]
+                )
+
+            _rewind_cache(num_draft, n)
+    finally:
+        _rewind_cache(num_draft, n)
+
+
+def stream_generate(
+    model: nn.Module,
+    tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
+    prompt: Union[str, mx.array, List[int]],
+    draft_model: Optional[nn.Module] = None,
+    **kwargs,
+) -> Generator[GenerationResponse, None, None]:
+    """
+    A generator producing text based on the given prompt from the model.
+
+    Args:
+        model (nn.Module): The model to use for generation.
+        tokenizer (PreTrainedTokenizer): The tokenizer.
+        prompt (Union[str, mx.array, List[int]]): The input prompt string or
+          integer tokens.
+        draft_model (Optional[nn.Module]): An optional draft model. If provided
+          then speculative decoding is used. The draft model must use the same
+          tokenizer as the main model. Default: ``None``.
+        kwargs: The remaining options get passed to :func:`generate_step`.
+          See :func:`generate_step` for more details.
+
+    Yields:
+        GenerationResponse: An instance containing the generated text segment and
+            associated metadata. See :class:`GenerationResponse` for details.
+    """
+    if not isinstance(tokenizer, TokenizerWrapper):
+        tokenizer = TokenizerWrapper(tokenizer)
+
+    if not isinstance(prompt, mx.array):
+        if isinstance(prompt, str):
+            # Try to infer if special tokens are needed
+            add_special_tokens = tokenizer.bos_token is None or not prompt.startswith(
+                tokenizer.bos_token
             )
-            y, prob = sample(logits)
-            repetition_context.append(y.item())
-        else:
-            y, prob = sample(logits)
+            prompt = tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
+        prompt = mx.array(prompt)
 
-        if repetition_context_size:
-            if len(repetition_context) > repetition_context_size:
-                repetition_context = repetition_context[-repetition_context_size:]
-        yield y, prob
+    detokenizer = tokenizer.detokenizer
+
+    if draft_model is None:
+        kwargs.pop("num_draft_tokens", None)
+        token_generator = generate_step(prompt, model, **kwargs)
+    else:
+        kwargs.pop("max_kv_size", None)
+        token_generator = speculative_generate_step(
+            prompt, model, draft_model, **kwargs
+        )
+    with wired_limit(model, [generation_stream]):
+        detokenizer.reset()
+        tic = time.perf_counter()
+        for n, (token, logprobs) in enumerate(token_generator):
+            if n == 0:
+                prompt_time = time.perf_counter() - tic
+                prompt_tps = prompt.size / prompt_time
+                tic = time.perf_counter()
+            if token in tokenizer.eos_token_ids:
+                break
+
+            detokenizer.add_token(token)
+
+            yield GenerationResponse(
+                text=detokenizer.last_segment,
+                token=token,
+                logprobs=logprobs,
+                prompt_tokens=prompt.size,
+                prompt_tps=prompt_tps,
+                generation_tokens=n + 1,
+                generation_tps=(n + 1) / (time.perf_counter() - tic),
+                peak_memory=mx.metal.get_peak_memory() / 1e9,
+                finish_reason=None,
+            )
+
+        detokenizer.finalize()
+        yield GenerationResponse(
+            text=detokenizer.last_segment,
+            token=token,
+            logprobs=logprobs,
+            prompt_tokens=prompt.size,
+            prompt_tps=prompt_tps,
+            generation_tokens=n + 1,
+            generation_tps=(n + 1) / (time.perf_counter() - tic),
+            peak_memory=mx.metal.get_peak_memory() / 1e9,
+            finish_reason="stop" if token in tokenizer.eos_token_ids else "length",
+        )
 
 
 def generate(
     model: nn.Module,
     tokenizer: Union[PreTrainedTokenizer, TokenizerWrapper],
-    prompt: str,
-    temp: float = 0.0,
-    max_tokens: int = 100,
+    prompt: Union[str, List[int]],
     verbose: bool = False,
     formatter: Optional[Callable] = None,
-    repetition_penalty: Optional[float] = None,
-    repetition_context_size: Optional[int] = None,
-    top_p: float = 1.0,
+    **kwargs,
 ) -> str:
     """
-    Generate text from the model.
+    Generate a complete response from the model.
 
     Args:
        model (nn.Module): The language model.
        tokenizer (PreTrainedTokenizer): The tokenizer.
-       prompt (str): The string prompt.
-       temp (float): The temperature for sampling (default 0).
-       max_tokens (int): The maximum number of tokens (default 100).
-       verbose (bool): If ``True``, print tokens and timing information
-           (default ``False``).
-       formatter (Optional[Callable]): A function which takes a token and a
-           probability and displays it.
-       repetition_penalty (float, optional): The penalty factor for repeating tokens.
-       repetition_context_size (int, optional): The number of tokens to consider for repetition penalty.
+       prompt (Union[str, List[int]]): The input prompt string or integer tokens.
+       verbose (bool): If ``True``, print tokens and timing information.
+           Default: ``False``.
+       kwargs: The remaining options get passed to :func:`stream_generate`.
+          See :func:`stream_generate` for more details.
     """
-    if not isinstance(tokenizer, TokenizerWrapper):
-        tokenizer = TokenizerWrapper(tokenizer)
-
+    if formatter is not None:
+        print(
+            "[Warning] Text formatting is deprecated and no longer used. "
+            "The argument will be removed in a future version."
+        )
     if verbose:
         print("=" * 10)
-        print("Prompt:", prompt)
 
-    prompt_tokens = mx.array(tokenizer.encode(prompt))
-    detokenizer = tokenizer.detokenizer
-
-    tic = time.perf_counter()
-    detokenizer.reset()
-
-    for (token, prob), n in zip(
-        generate_step(
-            prompt_tokens,
-            model,
-            temp,
-            repetition_penalty,
-            repetition_context_size,
-            top_p,
-        ),
-        range(max_tokens),
-    ):
-        token = token.item()
-        if n == 0:
-            prompt_time = time.perf_counter() - tic
-            tic = time.perf_counter()
-        if token == tokenizer.eos_token_id:
-            break
-        detokenizer.add_token(token)
-
+    text = ""
+    for response in stream_generate(model, tokenizer, prompt, **kwargs):
         if verbose:
-            if formatter:
-                # We have to finalize so that the prob corresponds to the last segment
-                detokenizer.finalize()
-                formatter(detokenizer.last_segment, prob.item())
-            else:
-                print(detokenizer.last_segment, end="", flush=True)
-
-    token_count = n + 1
-    detokenizer.finalize()
+            print(response.text, end="", flush=True)
+        text += response.text
 
     if verbose:
-        print(detokenizer.last_segment, flush=True)
-        gen_time = time.perf_counter() - tic
+        print()
         print("=" * 10)
-        if token_count == 0:
-            print("No tokens generated for this prompt")
+        if len(text) == 0:
+            print("No text generated for this prompt")
             return
-        prompt_tps = prompt_tokens.size / prompt_time
-        gen_tps = (token_count - 1) / gen_time
-        print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
-        print(f"Generation: {gen_tps:.3f} tokens-per-sec")
+        print(
+            f"Prompt: {response.prompt_tokens} tokens, "
+            f"{response.prompt_tps:.3f} tokens-per-sec"
+        )
+        print(
+            f"Generation: {response.generation_tokens} tokens, "
+            f"{response.generation_tps:.3f} tokens-per-sec"
+        )
+        print(f"Peak memory: {response.peak_memory:.3f} GB")
+    return text
 
-    return detokenizer.text
+
+def load_config(model_path: Path) -> dict:
+    try:
+        with open(model_path / "config.json", "r") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        logging.error(f"Config file not found in {model_path}")
+        raise
+    return config
 
 
-def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
+def load_model(
+    model_path: Path,
+    lazy: bool = False,
+    strict: bool = True,
+    model_config: dict = {},
+    get_model_classes: Callable[[dict], Tuple[Type[nn.Module], Type]] = _get_classes,
+) -> nn.Module:
     """
     Load and initialize the model from a given path.
 
@@ -282,6 +639,13 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         lazy (bool): If False eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
+        strict (bool): Whether or not to raise an exception if weights don't
+            match. Default: ``True``
+        model_config (dict, optional): Optional configuration parameters for the
+            model. Defaults to an empty dictionary.
+        get_model_classes (Callable[[dict], Tuple[Type[nn.Module], Type]], optional):
+            A function that returns the model class and model args class given a config.
+            Defaults to the ``_get_classes`` function.
 
     Returns:
         nn.Module: The loaded and initialized model.
@@ -290,16 +654,16 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
         FileNotFoundError: If the weight files (.safetensors) are not found.
         ValueError: If the model class or args class are not found or cannot be instantiated.
     """
-    try:
-        with open(model_path / "config.json", "r") as f:
-            config = json.load(f)
-            quantization = config.get("quantization", None)
-    except FileNotFoundError:
-        logging.error(f"Config file not found in {model_path}")
-        raise
+    config = load_config(model_path)
+    config.update(model_config)
 
-    weight_files = glob.glob(str(model_path / "*.safetensors"))
+    weight_files = glob.glob(str(model_path / "model*.safetensors"))
+
     if not weight_files:
+        # Try weight for back-compat
+        weight_files = glob.glob(str(model_path / "weight*.safetensors"))
+
+    if not weight_files and strict:
         logging.error(f"No safetensors found in {model_path}")
         raise FileNotFoundError(f"No safetensors found in {model_path}")
 
@@ -307,7 +671,7 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     for wf in weight_files:
         weights.update(mx.load(wf))
 
-    model_class, model_args_class = _get_classes(config=config)
+    model_class, model_args_class = get_model_classes(config=config)
 
     model_args = model_args_class.from_dict(config)
     model = model_class(model_args)
@@ -315,42 +679,40 @@ def load_model(model_path: Path, lazy: bool = False) -> nn.Module:
     if hasattr(model, "sanitize"):
         weights = model.sanitize(weights)
 
-    if quantization is not None:
-        # for legacy models that don't have lm_head quant due to non-32 dims
-        if "lm_head.scales" not in weights.keys():
-            vocab_size = config["vocab_size"]
-            extended_linear_class_predicate = (
-                lambda layer: linear_class_predicate(layer)
-                and layer.weight.shape[0] != vocab_size
-            )
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=extended_linear_class_predicate,
-            )
-        # for models that have lm_head quant
-        else:
-            nn.QuantizedLinear.quantize_module(
-                model,
-                **quantization,
-                linear_class_predicate=linear_class_predicate,
-            )
+    if (quantization := config.get("quantization", None)) is not None:
 
-    model.load_weights(list(weights.items()))
+        def class_predicate(p, m):
+            # Handle custom per layer quantizations
+            if p in config["quantization"]:
+                return config["quantization"][p]
+            if not hasattr(m, "to_quantized"):
+                return False
+            # Handle legacy models which may not have everything quantized
+            return f"{p}.scales" in weights
+
+        nn.quantize(
+            model,
+            group_size=quantization["group_size"],
+            bits=quantization["bits"],
+            class_predicate=class_predicate,
+        )
+
+    model.load_weights(list(weights.items()), strict=strict)
 
     if not lazy:
         mx.eval(model.parameters())
 
     model.eval()
-    return model
+    return model, config
 
 
 def load(
     path_or_hf_repo: str,
     tokenizer_config={},
+    model_config={},
     adapter_path: Optional[str] = None,
     lazy: bool = False,
-) -> Tuple[nn.Module, PreTrainedTokenizer]:
+) -> Tuple[nn.Module, TokenizerWrapper]:
     """
     Load the model and tokenizer from a given path or a huggingface repository.
 
@@ -358,13 +720,15 @@ def load(
         path_or_hf_repo (Path): The path or the huggingface repository to load the model from.
         tokenizer_config (dict, optional): Configuration parameters specifically for the tokenizer.
             Defaults to an empty dictionary.
+        model_config(dict, optional): Configuration parameters specifically for the model.
+            Defaults to an empty dictionary.
         adapter_path (str, optional): Path to the LoRA adapters. If provided, applies LoRA layers
             to the model. Default: ``None``.
-        lazy (bool): If False eval the model parameters to make sure they are
+        lazy (bool): If ``False`` eval the model parameters to make sure they are
             loaded in memory before returning, otherwise they will be loaded
             when needed. Default: ``False``
     Returns:
-        Tuple[nn.Module, PreTrainedTokenizer]: A tuple containing the loaded model and tokenizer.
+        Tuple[nn.Module, TokenizerWrapper]: A tuple containing the loaded model and tokenizer.
 
     Raises:
         FileNotFoundError: If config file or safetensors are not found.
@@ -372,11 +736,13 @@ def load(
     """
     model_path = get_model_path(path_or_hf_repo)
 
-    model = load_model(model_path, lazy)
+    model, config = load_model(model_path, lazy)
     if adapter_path is not None:
-        model = apply_lora_layers(model, adapter_path)
+        model = load_adapters(model, adapter_path)
         model.eval()
-    tokenizer = load_tokenizer(model_path, tokenizer_config)
+    tokenizer = load_tokenizer(
+        model_path, tokenizer_config, eos_token_ids=config.get("eos_token_id", None)
+    )
 
     return model, tokenizer
 
@@ -384,11 +750,11 @@ def load(
 def fetch_from_hub(
     model_path: Path, lazy: bool = False
 ) -> Tuple[nn.Module, dict, PreTrainedTokenizer]:
-    model = load_model(model_path, lazy)
-    config = AutoConfig.from_pretrained(model_path)
-    tokenizer = load_tokenizer(model_path)
-
-    return model, config.to_dict(), tokenizer
+    model, config = load_model(model_path, lazy)
+    tokenizer = load_tokenizer(
+        model_path, eos_token_ids=config.get("eos_token_id", None)
+    )
+    return model, config, tokenizer
 
 
 def make_shards(weights: dict, max_file_size_gb: int = MAX_FILE_SIZE_GB) -> list:
@@ -432,11 +798,15 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     card = ModelCard.load(hf_path)
     card.data.tags = ["mlx"] if card.data.tags is None else card.data.tags + ["mlx"]
+    card.data.base_model = hf_path
     card.text = dedent(
         f"""
         # {upload_repo}
-        This model was converted to MLX format from [`{hf_path}`]() using mlx-lm version **{__version__}**.
-        Refer to the [original model card](https://huggingface.co/{hf_path}) for more details on the model.
+
+        The Model [{upload_repo}](https://huggingface.co/{upload_repo}) was
+        converted to MLX format from [{hf_path}](https://huggingface.co/{hf_path})
+        using mlx-lm version **{__version__}**.
+
         ## Use with mlx
 
         ```bash
@@ -447,7 +817,16 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
         from mlx_lm import load, generate
 
         model, tokenizer = load("{upload_repo}")
-        response = generate(model, tokenizer, prompt="hello", verbose=True)
+
+        prompt = "hello"
+
+        if tokenizer.chat_template is not None:
+            messages = [{{"role": "user", "content": prompt}}]
+            prompt = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True
+            )
+
+        response = generate(model, tokenizer, prompt=prompt, verbose=True)
         ```
         """
     )
@@ -457,7 +836,7 @@ def upload_to_hub(path: str, upload_repo: str, hf_path: str):
 
     api = HfApi()
     api.create_repo(repo_id=upload_repo, exist_ok=True)
-    api.upload_folder(
+    api.upload_large_folder(
         folder_path=path,
         repo_id=upload_repo,
         repo_type="model",
@@ -518,7 +897,13 @@ def save_weights(
 
 
 def quantize_model(
-    model: nn.Module, config: dict, q_group_size: int, q_bits: int
+    model: nn.Module,
+    config: dict,
+    q_group_size: int,
+    q_bits: int,
+    quant_predicate: Optional[
+        Callable[[str, nn.Module, dict], Union[bool, dict]]
+    ] = None,
 ) -> Tuple:
     """
     Applies quantization to the model weights.
@@ -528,17 +913,36 @@ def quantize_model(
         config (dict): Model configuration.
         q_group_size (int): Group size for quantization.
         q_bits (int): Bits per weight for quantization.
+        quant_predicate (Callable): A callable that decides how
+            to quantize each layer based on the path.
+            Accepts the layer `path`, the `module` and the model `config`.
+            Returns either a bool to signify quantize/no quantize or
+            a dict of quantization parameters to pass to `to_quantized`.
 
     Returns:
         Tuple: Tuple containing quantized weights and config.
     """
     quantized_config = copy.deepcopy(config)
-
-    nn.QuantizedLinear.quantize_module(
-        model, q_group_size, q_bits, linear_class_predicate=linear_class_predicate
-    )
     quantized_config["quantization"] = {"group_size": q_group_size, "bits": q_bits}
+
+    # Add any custom quantization parameters to the config as we go
+    def _class_predicate(p, m):
+        bool_or_params = quant_predicate(p, m, config)
+        quantized_config["quantization"][p] = bool_or_params
+        return bool_or_params
+
+    nn.quantize(
+        model,
+        q_group_size,
+        q_bits,
+        class_predicate=_class_predicate if quant_predicate else None,
+    )
+    # support hf model tree #957
+    quantized_config["quantization_config"] = quantized_config["quantization"]
     quantized_weights = dict(tree_flatten(model.parameters()))
+
+    bpw = compute_bits_per_weight(model)
+    print(f"[INFO] Quantized model with {bpw:.3f} bits per weight.")
 
     return quantized_weights, quantized_config
 
@@ -576,13 +980,26 @@ def convert(
     upload_repo: str = None,
     revision: Optional[str] = None,
     dequantize: bool = False,
+    quant_predicate: Optional[
+        Callable[[str, nn.Module, dict], Union[bool, dict]]
+    ] = None,
 ):
+    # Check the save path is empty
+    if isinstance(mlx_path, str):
+        mlx_path = Path(mlx_path)
+
+    if mlx_path.exists():
+        raise ValueError(
+            f"Cannot save to the path {mlx_path} as it already exists."
+            " Please delete the file/directory or specify a new path to save to."
+        )
+
     print("[INFO] Loading")
     model_path = get_model_path(hf_path, revision=revision)
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))
-    dtype = mx.float16 if quantize else getattr(mx, dtype)
+    dtype = getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
 
     if quantize and dequantize:
@@ -591,15 +1008,14 @@ def convert(
     if quantize:
         print("[INFO] Quantizing")
         model.load_weights(list(weights.items()))
-        weights, config = quantize_model(model, config, q_group_size, q_bits)
+        weights, config = quantize_model(
+            model, config, q_group_size, q_bits, quant_predicate=quant_predicate
+        )
 
     if dequantize:
         print("[INFO] Dequantizing")
         model = dequantize_model(model)
         weights = dict(tree_flatten(model.parameters()))
-
-    if isinstance(mlx_path, str):
-        mlx_path = Path(mlx_path)
 
     del model
     save_weights(mlx_path, weights, donate_weights=True)

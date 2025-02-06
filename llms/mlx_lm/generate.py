@@ -1,17 +1,28 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
+import json
+import sys
 
 import mlx.core as mx
 
+from .models.cache import QuantizedKVCache, load_prompt_cache
+from .sample_utils import make_sampler
 from .utils import generate, load
 
-DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
 DEFAULT_MAX_TOKENS = 100
-DEFAULT_TEMP = 0.6
+DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
+DEFAULT_MIN_P = 0.0
+DEFAULT_MIN_TOKENS_TO_KEEP = 1
 DEFAULT_SEED = 0
+DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
+DEFAULT_QUANTIZED_KV_START = 5000
+
+
+def str2bool(string):
+    return string.lower() not in ["false", "f"]
 
 
 def setup_arg_parser():
@@ -20,8 +31,11 @@ def setup_arg_parser():
     parser.add_argument(
         "--model",
         type=str,
-        default="mlx_model",
-        help="The path to the local model directory or Hugging Face repo.",
+        help=(
+            "The path to the local model directory or Hugging Face repo. "
+            f"If no model is specified, then {DEFAULT_MODEL} is used."
+        ),
+        default=None,
     )
     parser.add_argument(
         "--adapter-path",
@@ -29,18 +43,22 @@ def setup_arg_parser():
         help="Optional path for the trained adapter weights and config.",
     )
     parser.add_argument(
-        "--trust-remote-code",
-        action="store_true",
-        help="Enable trusting remote code for tokenizer",
-    )
-    parser.add_argument(
-        "--eos-token",
+        "--extra-eos-token",
         type=str,
-        default=None,
-        help="End of sequence token for tokenizer",
+        default=(),
+        nargs="+",
+        help="Add tokens in the list of eos tokens that stop generation.",
     )
     parser.add_argument(
-        "--prompt", default=DEFAULT_PROMPT, help="Message to be processed by the model"
+        "--system-prompt",
+        default=None,
+        help="System prompt to be used for the chat template",
+    )
+    parser.add_argument(
+        "--prompt",
+        "-p",
+        default=DEFAULT_PROMPT,
+        help="Message to be processed by the model ('-' reads from stdin)",
     )
     parser.add_argument(
         "--max-tokens",
@@ -55,6 +73,15 @@ def setup_arg_parser():
     parser.add_argument(
         "--top-p", type=float, default=DEFAULT_TOP_P, help="Sampling top-p"
     )
+    parser.add_argument(
+        "--min-p", type=float, default=DEFAULT_MIN_P, help="Sampling min-p"
+    )
+    parser.add_argument(
+        "--min-tokens-to-keep",
+        type=int,
+        default=DEFAULT_MIN_TOKENS_TO_KEEP,
+        help="Minimum tokens to keep for min-p sampling.",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
     parser.add_argument(
         "--ignore-chat-template",
@@ -67,82 +94,164 @@ def setup_arg_parser():
         help="Use the default chat template",
     )
     parser.add_argument(
-        "--colorize",
-        action="store_true",
-        help="Colorize output based on T[0] probability",
+        "--verbose",
+        type=str2bool,
+        default=True,
+        help="Log verbose output when 'True' or 'T' or only print the response when 'False' or 'F'",
+    )
+    parser.add_argument(
+        "--max-kv-size",
+        type=int,
+        help="Set the maximum key-value cache size",
+        default=None,
+    )
+    parser.add_argument(
+        "--prompt-cache-file",
+        type=str,
+        default=None,
+        help="A file containing saved KV caches to avoid recomputing them",
+    )
+    parser.add_argument(
+        "--kv-bits",
+        type=int,
+        help="Number of bits for KV cache quantization. "
+        "Defaults to no quantization.",
+        default=None,
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        help="Group size for KV cache quantization.",
+        default=64,
+    )
+    parser.add_argument(
+        "--quantized-kv-start",
+        help="When --kv-bits is set, start quantizing the KV cache "
+        "from this step onwards.",
+        type=int,
+        default=DEFAULT_QUANTIZED_KV_START,
+    )
+    parser.add_argument(
+        "--draft-model",
+        type=str,
+        help="A model to be used for speculative decoding.",
+        default=None,
+    )
+    parser.add_argument(
+        "--num-draft-tokens",
+        type=int,
+        help="Number of tokens to draft when using speculative decoding.",
+        default=2,
     )
     return parser
 
 
-def colorprint(color, s):
-    color_codes = {
-        "black": 30,
-        "red": 31,
-        "green": 32,
-        "yellow": 33,
-        "blue": 34,
-        "magenta": 35,
-        "cyan": 36,
-        "white": 39,
-    }
-    ccode = color_codes.get(color, 30)
-    print(f"\033[1m\033[{ccode}m{s}\033[0m", end="", flush=True)
+def main():
+    parser = setup_arg_parser()
+    args = parser.parse_args()
 
-
-def colorprint_by_t0(s, t0):
-    if t0 > 0.95:
-        color = "white"
-    elif t0 > 0.70:
-        color = "green"
-    elif t0 > 0.30:
-        color = "yellow"
-    else:
-        color = "red"
-    colorprint(color, s)
-
-
-def main(args):
     mx.random.seed(args.seed)
 
+    # Load the prompt cache and metadata if a cache file is provided
+    using_cache = args.prompt_cache_file is not None
+    if using_cache:
+        prompt_cache, metadata = load_prompt_cache(
+            args.prompt_cache_file,
+            return_metadata=True,
+        )
+        if isinstance(prompt_cache[0], QuantizedKVCache):
+            if args.kv_bits is not None and args.kv_bits != prompt_cache[0].bits:
+                raise ValueError(
+                    "--kv-bits does not match the kv cache loaded from --prompt-cache-file."
+                )
+            if args.kv_group_size != prompt_cache[0].group_size:
+                raise ValueError(
+                    "--kv-group-size does not match the kv cache loaded from --prompt-cache-file."
+                )
+
     # Building tokenizer_config
-    tokenizer_config = {"trust_remote_code": True if args.trust_remote_code else None}
-    if args.eos_token is not None:
-        tokenizer_config["eos_token"] = args.eos_token
+    tokenizer_config = (
+        {} if not using_cache else json.loads(metadata["tokenizer_config"])
+    )
+    tokenizer_config["trust_remote_code"] = True
+
+    model_path = args.model
+    if using_cache:
+        if model_path is None:
+            model_path = metadata["model"]
+        elif model_path != metadata["model"]:
+            raise ValueError(
+                f"Providing a different model ({model_path}) than that "
+                f"used to create the prompt cache ({metadata['model']}) "
+                "is an error."
+            )
+    model_path = model_path or DEFAULT_MODEL
 
     model, tokenizer = load(
-        args.model, adapter_path=args.adapter_path, tokenizer_config=tokenizer_config
+        model_path,
+        adapter_path=args.adapter_path,
+        tokenizer_config=tokenizer_config,
     )
+    for eos_token in args.extra_eos_token:
+        tokenizer.add_eos_token(eos_token)
 
     if args.use_default_chat_template:
         if tokenizer.chat_template is None:
             tokenizer.chat_template = tokenizer.default_chat_template
+    elif using_cache:
+        tokenizer.chat_template = metadata["chat_template"]
 
-    if not args.ignore_chat_template and (
-        hasattr(tokenizer, "apply_chat_template")
-        and tokenizer.chat_template is not None
-    ):
-        messages = [{"role": "user", "content": args.prompt}]
+    prompt = args.prompt.replace("\\n", "\n").replace("\\t", "\t")
+    prompt = sys.stdin.read() if prompt == "-" else prompt
+    if not args.ignore_chat_template and tokenizer.chat_template is not None:
+        if args.system_prompt is not None:
+            messages = [{"role": "system", "content": args.system_prompt}]
+        else:
+            messages = []
+        messages.append({"role": "user", "content": prompt})
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+
+        # Treat the prompt as a suffix assuming that the prefix is in the
+        # stored kv cache.
+        if using_cache:
+            messages[-1]["content"] = "<query>"
+            test_prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            prompt = prompt[test_prompt.index("<query>") :]
+        prompt = tokenizer.encode(prompt, add_special_tokens=False)
     else:
-        prompt = args.prompt
+        prompt = tokenizer.encode(prompt)
 
-    formatter = colorprint_by_t0 if args.colorize else None
-
-    generate(
+    if args.draft_model is not None:
+        draft_model, draft_tokenizer = load(args.draft_model)
+        if draft_tokenizer.vocab_size != tokenizer.vocab_size:
+            raise ValueError("Draft model tokenizer does not match model tokenizer.")
+    else:
+        draft_model = None
+    sampler = make_sampler(args.temp, args.top_p, args.min_p, args.min_tokens_to_keep)
+    response = generate(
         model,
         tokenizer,
         prompt,
-        args.temp,
-        args.max_tokens,
-        True,
-        formatter=formatter,
-        top_p=args.top_p,
+        max_tokens=args.max_tokens,
+        verbose=args.verbose,
+        sampler=sampler,
+        max_kv_size=args.max_kv_size,
+        prompt_cache=prompt_cache if using_cache else None,
+        kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
+        draft_model=draft_model,
+        num_draft_tokens=args.num_draft_tokens,
     )
+    if not args.verbose:
+        print(response)
 
 
 if __name__ == "__main__":
-    parser = setup_arg_parser()
-    args = parser.parse_args()
-    main(args)
+    main()

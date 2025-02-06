@@ -6,8 +6,9 @@ from pathlib import Path
 from mlx.utils import tree_flatten, tree_unflatten
 
 from .gguf import convert_to_gguf
-from .tuner.lora import LoRALinear
-from .tuner.utils import apply_lora_layers, dequantize
+from .tuner.dora import DoRAEmbedding, DoRALinear
+from .tuner.lora import LoRAEmbedding, LoRALinear, LoRASwitchLinear
+from .tuner.utils import dequantize, load_adapters
 from .utils import (
     fetch_from_hub,
     get_model_path,
@@ -18,7 +19,9 @@ from .utils import (
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
+    parser = argparse.ArgumentParser(
+        description="Fuse fine-tuned adapters into the base model."
+    )
     parser.add_argument(
         "--model",
         default="mlx_model",
@@ -26,7 +29,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--save-path",
-        default="lora_fused_model",
+        default="fused_model",
         help="The path to save the fused model.",
     )
     parser.add_argument(
@@ -74,15 +77,14 @@ def main() -> None:
     model, config, tokenizer = fetch_from_hub(model_path)
 
     model.freeze()
-    model = apply_lora_layers(model, args.adapter_path)
+    model = load_adapters(model, args.adapter_path)
 
     fused_linears = [
-        (n, m.to_linear())
-        for n, m in model.named_modules()
-        if isinstance(m, LoRALinear)
+        (n, m.fuse()) for n, m in model.named_modules() if hasattr(m, "fuse")
     ]
 
-    model.update_modules(tree_unflatten(fused_linears))
+    if fused_linears:
+        model.update_modules(tree_unflatten(fused_linears))
 
     if args.de_quantize:
         print("De-quantizing model")

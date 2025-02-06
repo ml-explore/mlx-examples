@@ -9,10 +9,10 @@ Some more useful examples are listed below.
 
 ### Text Models 
 
+- [MLX LM](llms/README.md) a package for LLM text generation, fine-tuning, and more.
 - [Transformer language model](transformer_lm) training.
-- Large scale text generation with [LLaMA](llms/llama),
-  [Mistral](llms/mistral), [Phi-2](llms/phi2), and more in the [LLMs](llms)
-  directory.
+- Minimal examples of large scale text generation with [LLaMA](llms/llama),
+  [Mistral](llms/mistral), and more in the [LLMs](llms) directory.
 - A mixture-of-experts (MoE) language model with [Mixtral 8x7B](llms/mixtral).
 - Parameter efficient fine-tuning with [LoRA or QLoRA](lora).
 - Text-to-text multi-task Transformers with [T5](t5).
@@ -20,18 +20,22 @@ Some more useful examples are listed below.
 
 ### Image Models 
 
+- Generating images
+  - [FLUX](flux)
+  - [Stable Diffusion or SDXL](stable_diffusion)
 - Image classification using [ResNets on CIFAR-10](cifar).
-- Generating images with [Stable Diffusion](stable_diffusion).
 - Convolutional variational autoencoder [(CVAE) on MNIST](cvae).
 
 ### Audio Models
 
 - Speech recognition with [OpenAI's Whisper](whisper).
+- Audio compression and generation with [Meta's EnCodec](encodec).
 
 ### Multimodal models
 
 - Joint text and image embeddings with [CLIP](clip).
 - Text generation from image and text inputs with [LLaVA](llava).
+- Image segmentation with [Segment Anything (SAM)](segment_anything).
 
 ### Other Models 
 
@@ -41,7 +45,7 @@ Some more useful examples are listed below.
 
 ### Hugging Face
 
-Note: You can now directly download a few converted checkpoints from the [MLX
+You can directly use or download converted checkpoints from the [MLX
 Community](https://huggingface.co/mlx-community) organization on Hugging Face.
 We encourage you to join the community and [contribute new
 models](https://github.com/ml-explore/mlx-examples/issues/155).

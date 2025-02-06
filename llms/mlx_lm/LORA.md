@@ -11,23 +11,25 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Qwen2
 - Gemma
 - OLMo
+- MiniCPM
+- InternLM2
 
 ## Contents
 
-* [Run](#Run)
-  * [Fine-tune](#Fine-tune)
-  * [Evaluate](#Evaluate)
-  * [Generate](#Generate)
-* [Fuse](#Fuse)
-* [Data](#Data)
-* [Memory Issues](#Memory-Issues)
+- [Run](#Run)
+  - [Fine-tune](#Fine-tune)
+  - [Evaluate](#Evaluate)
+  - [Generate](#Generate)
+- [Fuse](#Fuse)
+- [Data](#Data)
+- [Memory Issues](#Memory-Issues)
 
 ## Run
 
 The main command is `mlx_lm.lora`. To see a full list of command-line options run:
 
 ```shell
-python -m mlx_lm.lora --help
+mlx_lm.lora --help
 ```
 
 Note, in the following the `--model` argument can be any compatible Hugging
@@ -37,7 +39,7 @@ You can also specify a YAML config with `-c`/`--config`. For more on the format 
 [example YAML](examples/lora_config.yaml). For example:
 
 ```shell
-python -m mlx_lm.lora --config /path/to/config.yaml
+mlx_lm.lora --config /path/to/config.yaml
 ```
 
 If command-line flags are also used, they will override the corresponding
@@ -48,12 +50,15 @@ values in the config.
 To fine-tune a model use:
 
 ```shell
-python -m mlx_lm.lora \
+mlx_lm.lora \
     --model <path_to_model> \
     --train \
     --data <path_to_data> \
     --iters 600
 ```
+
+To fine-tune the full model weights, add the `--fine-tune-type full` flag.
+Currently supported fine-tuning types are `lora` (default), `dora`, and `full`.
 
 The `--data` argument must specify a path to a `train.jsonl`, `valid.jsonl`
 when using `--train` and a path to a `test.jsonl` when using `--test`. For more
@@ -65,8 +70,8 @@ mistralai/Mistral-7B-v0.1`.
 If `--model` points to a quantized model, then the training will use QLoRA,
 otherwise it will use regular LoRA.
 
-By default, the adapter config and weights are saved in `adapters/`. You can
-specify the output location with `--adapter-path`.
+By default, the adapter config and learned weights are saved in `adapters/`.
+You can specify the output location with `--adapter-path`.
 
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
@@ -76,7 +81,7 @@ You can resume fine-tuning with an existing adapter with
 To compute test set perplexity use:
 
 ```shell
-python -m mlx_lm.lora \
+mlx_lm.lora \
     --model <path_to_model> \
     --adapter-path <path_to_adapters> \
     --data <path_to_data> \
@@ -88,7 +93,7 @@ python -m mlx_lm.lora \
 For generation use `mlx_lm.generate`:
 
 ```shell
-python -m mlx_lm.generate \
+mlx_lm.generate \
     --model <path_to_model> \
     --adapter-path <path_to_adapters> \
     --prompt "<your_model_prompt>"
@@ -106,71 +111,146 @@ You can generate a model fused with the low-rank adapters using the
 To see supported options run:
 
 ```shell
-python -m mlx_lm.fuse --help
+mlx_lm.fuse --help
 ```
 
 To generate the fused model run:
 
 ```shell
-python -m mlx_lm.fuse --model <path_to_model>
+mlx_lm.fuse --model <path_to_model>
 ```
 
 This will by default load the adapters from `adapters/`, and save the fused
-model in the path `lora_fused_model/`. All of these are configurable.
+model in the path `fused_model/`. All of these are configurable.
 
 To upload a fused model, supply the `--upload-repo` and `--hf-path` arguments
 to `mlx_lm.fuse`. The latter is the repo name of the original model, which is
 useful for the sake of attribution and model versioning.
 
-For example, to fuse and upload a model derived from Mistral-7B-v0.1, run: 
+For example, to fuse and upload a model derived from Mistral-7B-v0.1, run:
 
 ```shell
-python -m mlx_lm.fuse \
+mlx_lm.fuse \
     --model mistralai/Mistral-7B-v0.1 \
-    --upload-repo mlx-community/my-4bit-lora-mistral \
+    --upload-repo mlx-community/my-lora-mistral-7b \
     --hf-path mistralai/Mistral-7B-v0.1
 ```
 
 To export a fused model to GGUF, run:
 
 ```shell
-python -m mlx_lm.fuse \
+mlx_lm.fuse \
     --model mistralai/Mistral-7B-v0.1 \
     --export-gguf
 ```
 
-This will save the GGUF model in `lora_fused_model/ggml-model-f16.gguf`. You
+This will save the GGUF model in `fused_model/ggml-model-f16.gguf`. You
 can specify the file name with `--gguf-path`.
 
 ## Data
 
-The LoRA command expects you to provide a dataset with `--data`.  The MLX
+The LoRA command expects you to provide a dataset with `--data`. The MLX
 Examples GitHub repo has an [example of the WikiSQL
 data](https://github.com/ml-explore/mlx-examples/tree/main/lora/data) in the
 correct format.
+
+Datasets can be specified in `*.jsonl` files locally or loaded from Hugging
+Face. 
+
+### Local Datasets
 
 For fine-tuning (`--train`), the data loader expects a `train.jsonl` and a
 `valid.jsonl` to be in the data directory. For evaluation (`--test`), the data
 loader expects a `test.jsonl` in the data directory. 
 
-Currently, `*.jsonl` files support three data formats: `chat`,
-`completions`, and `text`. Here are three examples of these formats:
+Currently, `*.jsonl` files support `chat`, `tools`, `completions`, and `text`
+data formats. Here are examples of these formats:
 
 `chat`:
-  
+
 ```jsonl
-{"messages": [
-  {"role": "system", "content": "You are a helpful assistant." },
-  {"role": "user", "content": "Hello."},
-  {"role": "assistant", "content": "How can I assistant you today."},
-]}
+{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Hello."}, {"role": "assistant", "content": "How can I assistant you today."}]}
 ```
 
+`tools`:
+
+```jsonl
+{"messages":[{"role":"user","content":"What is the weather in San Francisco?"},{"role":"assistant","tool_calls":[{"id":"call_id","type":"function","function":{"name":"get_current_weather","arguments":"{\"location\": \"San Francisco, USA\", \"format\": \"celsius\"}"}}]}],"tools":[{"type":"function","function":{"name":"get_current_weather","description":"Get the current weather","parameters":{"type":"object","properties":{"location":{"type":"string","description":"The city and country, eg. San Francisco, USA"},"format":{"type":"string","enum":["celsius","fahrenheit"]}},"required":["location","format"]}}}]}
+```
+
+<details>
+<summary>View the expanded single data tool format</summary>
+
+```jsonl
+{
+    "messages": [
+        { "role": "user", "content": "What is the weather in San Francisco?" },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call_id",
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_weather",
+                        "arguments": "{\"location\": \"San Francisco, USA\", \"format\": \"celsius\"}"
+                    }
+                }
+            ]
+        }
+    ],
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and country, eg. San Francisco, USA"
+                        },
+                        "format": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+                    },
+                    "required": ["location", "format"]
+                }
+            }
+        }
+    ]
+}
+```
+
+
+The format for the `arguments` field in a function varies for different models.
+Common formats include JSON strings and dictionaries. The example provided
+follows the format used by
+[OpenAI](https://platform.openai.com/docs/guides/fine-tuning/fine-tuning-examples)
+and [Mistral
+AI](https://github.com/mistralai/mistral-finetune?tab=readme-ov-file#instruct).
+A dictionary format is used in Hugging Face's [chat
+templates](https://huggingface.co/docs/transformers/main/en/chat_templating#a-complete-tool-use-example).
+Refer to the documentation for the model you are fine-tuning for more details.
+
+</details>
+
 `completions`:
-  
+
 ```jsonl
 {"prompt": "What is the capital of France?", "completion": "Paris."}
 ```
+
+For the `completions` data format, a different key can be used for the prompt
+and completion by specifying the following in the YAML config:
+
+```yaml
+prompt_feature: "input"
+completion_feature: "output"
+```
+
+Here, `"input"` is the expected key instead of the default `"prompt"`, and
+`"output"` is the expected key instead of `"completion"`. 
 
 `text`:
 
@@ -178,14 +258,53 @@ Currently, `*.jsonl` files support three data formats: `chat`,
 {"text": "This is an example for the model."}
 ```
 
-Note, the format is automatically determined by the dataset. Note also, keys in
-each line not expected by the loader will be ignored.
+Note, the format is automatically determined by the dataset. Note also, keys
+in each line not expected by the loader will be ignored.
 
-For the `chat` and `completions` formats, Hugging Face [chat
-templates](https://huggingface.co/blog/chat-templates) are used. This applies
-the model's chat template by default. If the model does not have a chat
-template, then Hugging Face will use a default. For example, the final text in
-the `chat` example above with Hugging Face's default template becomes:
+> [!NOTE]
+> Each example in the datasets must be on a single line. Do not put more than
+> one example per line and do not split an example across multiple lines.
+
+### Hugging Face Datasets
+
+To use Hugging Face datasets, first install the `datasets` package:
+
+```
+pip install datasets
+```
+
+If the Hugging Face dataset is already in a supported format, you can specify
+it on the command line. For example, pass `--data mlx-community/wikisql` to
+train on the pre-formatted WikiwSQL data.
+
+Otherwise, provide a mapping of keys in the dataset to the features MLX LM
+expects. Use a YAML config to specify the Hugging Face dataset arguments. For
+example:
+
+```yaml
+hf_dataset:
+  name: "billsum"
+  prompt_feature: "text"
+  completion_feature: "summary"
+```
+
+- Use `prompt_feature` and `completion_feature` to specify keys for a
+  `completions` dataset. Use `text_feature` to specify the key for a `text`
+  dataset. 
+
+- To specify the train, valid, or test splits, set the corresponding
+  `{train,valid,test}_split` argument. 
+
+- Arguments specified in `config` will be passed as keyword arguments to
+  [`datasets.load_dataset`](https://huggingface.co/docs/datasets/v2.20.0/en/package_reference/loading_methods#datasets.load_dataset).
+
+In general, for the `chat`, `tools` and `completions` formats, Hugging Face
+[chat
+templates](https://huggingface.co/docs/transformers/main/en/chat_templating)
+are used. This applies the model's chat template by default. If the model does
+not have a chat template, then Hugging Face will use a default. For example,
+the final text in the `chat` example above with Hugging Face's default template
+becomes:
 
 ```text
 <|im_start|>system
@@ -207,13 +326,13 @@ of memory. Here are some tips to reduce memory use should you need to do so:
 
 1. Try quantization (QLoRA). You can use QLoRA by generating a quantized model
    with `convert.py` and the `-q` flag. See the [Setup](#setup) section for
-   more details. 
+   more details.
 
 2. Try using a smaller batch size with `--batch-size`. The default is `4` so
    setting this to `2` or `1` will reduce memory consumption. This may slow
    things down a little, but will also reduce the memory use.
 
-3. Reduce the number of layers to fine-tune with `--lora-layers`. The default
+3. Reduce the number of layers to fine-tune with `--num-layers`. The default
    is `16`, so you can try `8` or `4`. This reduces the amount of memory
    needed for back propagation. It may also reduce the quality of the
    fine-tuned model if you are fine-tuning with a lot of data.
@@ -231,11 +350,11 @@ of memory. Here are some tips to reduce memory use should you need to do so:
 For example, for a machine with 32 GB the following should run reasonably fast:
 
 ```
-python lora.py \
+mlx_lm.lora \
     --model mistralai/Mistral-7B-v0.1 \
     --train \
     --batch-size 1 \
-    --lora-layers 4 \
+    --num-layers 4 \
     --data wikisql
 ```
 
@@ -244,6 +363,6 @@ tokens-per-second, using the MLX Example
 [`wikisql`](https://github.com/ml-explore/mlx-examples/tree/main/lora/data)
 data set.
 
-
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
+
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)

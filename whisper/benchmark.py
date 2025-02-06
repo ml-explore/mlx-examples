@@ -1,15 +1,12 @@
-# Copyright © 2023 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 import argparse
 import os
-import subprocess
-import sys
 import time
 
 import mlx.core as mx
+from mlx_whisper import audio, decoding, load_models, transcribe
 
-from whisper import audio, decoding, load_models, transcribe
-
-audio_file = "whisper/assets/ls_test.flac"
+audio_file = "mlx_whisper/assets/ls_test.flac"
 
 
 def parse_arguments():
@@ -84,16 +81,7 @@ if __name__ == "__main__":
     print(f"\nFeature time {feat_time:.3f}")
 
     for model_name in models:
-        model_path = f"{args.mlx_dir}/{model_name}"
-        if not os.path.exists(model_path):
-            print(
-                f"\nDidn't find the MLX-format {model_name} model in the folder {args.mlx_dir}. Lauching conversion"
-            )
-            subprocess.run(
-                f"python convert.py --torch-name-or-path {model_name} --mlx-path {model_path}",
-                shell=True,
-            )
-
+        model_path = f"mlx-community/whisper-{model_name}-mlx"
         print(f"\nModel: {model_name.upper()}")
         tokens = mx.array(
             [

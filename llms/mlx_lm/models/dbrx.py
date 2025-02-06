@@ -1,11 +1,13 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -47,7 +49,7 @@ class Attention(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
 
         qkv = self.Wqkv(x)
@@ -65,20 +67,18 @@ class Attention(nn.Module):
         )
 
         if cache is not None:
-            key_cache, value_cache = cache
-            queries = self.rope(queries, offset=key_cache.shape[2])
-            keys = self.rope(keys, offset=key_cache.shape[2])
-            keys = mx.concatenate([key_cache, keys], axis=2)
-            values = mx.concatenate([value_cache, values], axis=2)
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
-            queries, keys, values, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.out_proj(output), (keys, values)
+        return self.out_proj(output)
 
 
 class NormAttnNorm(nn.Module):
@@ -92,11 +92,11 @@ class NormAttnNorm(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
-        h, cache = self.attn(self.norm_1(x), mask=mask, cache=cache)
+        h = self.attn(self.norm_1(x), mask=mask, cache=cache)
         x = h + x
-        return x, self.norm_2(x), cache
+        return x, self.norm_2(x)
 
 
 class MLP(nn.Module):
@@ -143,7 +143,7 @@ class SparseMoeBlock(nn.Module):
         gates = self.router(x)
         gates = mx.softmax(gates.astype(mx.float32), axis=-1)
 
-        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne, axis=-1)[:, :ne])
+        inds = mx.stop_gradient(mx.argpartition(-gates, kth=ne - 1, axis=-1)[:, :ne])
         scores = mx.take_along_axis(gates, inds, axis=-1)
         scores = scores / mx.linalg.norm(scores, ord=1, axis=-1, keepdims=True)
         scores = scores.astype(x.dtype)
@@ -179,11 +179,11 @@ class DecoderLayer(nn.Module):
         self,
         x: mx.array,
         mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
-        r, h, cache = self.norm_attn_norm(x, mask, cache)
+        r, h = self.norm_attn_norm(x, mask, cache)
         out = self.ffn(h) + r
-        return out, cache
+        return out
 
 
 class DBRX(nn.Module):
@@ -197,23 +197,21 @@ class DBRX(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
         h = self.wte(inputs)
 
-        mask = None
-        T = h.shape[1]
-        if T > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-            mask = mask.astype(h.dtype)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None] * len(self.blocks)
 
-        for e, layer in enumerate(self.blocks):
-            h, cache[e] = layer(h, mask, cache[e])
+        for layer, c in zip(self.blocks, cache):
+            h = layer(h, mask, c)
 
-        return self.norm_f(h), cache
+        return self.norm_f(h)
 
 
 class Model(nn.Module):
@@ -227,10 +225,11 @@ class Model(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
+        mask: mx.array = None,
         cache=None,
     ):
-        out, cache = self.transformer(inputs, cache)
-        return self.lm_head(out), cache
+        out = self.transformer(inputs, mask, cache)
+        return self.lm_head(out)
 
     @property
     def layers(self):

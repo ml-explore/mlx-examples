@@ -43,6 +43,12 @@ def parse_arguments():
     parser.add_argument(
         "--temp", type=float, default=0.3, help="Temperature for sampling."
     )
+    parser.add_argument(
+        "--eos-token",
+        type=str,
+        default=None,
+        help="End of sequence token for tokenizer",
+    )
     return parser.parse_args()
 
 
@@ -73,14 +79,14 @@ def load_image(image_source):
 def prepare_inputs(processor, image, prompt):
     if isinstance(image, str):
         image = load_image(image)
-    inputs = processor(prompt, image, return_tensors="np")
+    inputs = processor(image, prompt, return_tensors="np")
     pixel_values = mx.array(inputs["pixel_values"])
     input_ids = mx.array(inputs["input_ids"])
-    return input_ids, pixel_values
+    return pixel_values, input_ids
 
 
-def load_model(model_path):
-    processor = AutoProcessor.from_pretrained(model_path)
+def load_model(model_path, tokenizer_config={}):
+    processor = AutoProcessor.from_pretrained(model_path, **tokenizer_config)
     model = LlavaModel.from_pretrained(model_path)
     return processor, model
 
@@ -93,7 +99,6 @@ def sample(logits, temperature=0.0):
 
 
 def generate_text(input_ids, pixel_values, model, processor, max_tokens, temperature):
-
     logits, cache = model(input_ids, pixel_values)
     logits = logits[:, -1, :]
     y = sample(logits, temperature=temperature)
@@ -113,11 +118,15 @@ def generate_text(input_ids, pixel_values, model, processor, max_tokens, tempera
 
 def main():
     args = parse_arguments()
-    processor, model = load_model(args.model)
+
+    tokenizer_config = {}
+    if args.eos_token is not None:
+        tokenizer_config["eos_token"] = args.eos_token
+
+    processor, model = load_model(args.model, tokenizer_config)
 
     prompt = codecs.decode(args.prompt, "unicode_escape")
-
-    input_ids, pixel_values = prepare_inputs(processor, args.image, prompt)
+    pixel_values, input_ids = prepare_inputs(processor, args.image, prompt)
 
     print(prompt)
     generated_text = generate_text(

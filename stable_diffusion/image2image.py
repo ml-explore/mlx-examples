@@ -4,6 +4,7 @@ import argparse
 import math
 
 import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
@@ -29,15 +30,24 @@ if __name__ == "__main__":
     parser.add_argument("--preload-models", action="store_true")
     parser.add_argument("--output", default="out.png")
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args()
 
     # Load the models
     if args.model == "sdxl":
         sd = StableDiffusionXL("stabilityai/sdxl-turbo", float16=args.float16)
+
         if args.quantize:
-            QuantizedLinear.quantize_module(sd.text_encoder_1)
-            QuantizedLinear.quantize_module(sd.text_encoder_2)
-            QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
+            nn.quantize(
+                sd.text_encoder_1, class_predicate=lambda _, m: isinstance(m, nn.Linear)
+            )
+            nn.quantize(
+                sd.text_encoder_2, class_predicate=lambda _, m: isinstance(m, nn.Linear)
+            )
+
+            nn.quantize(sd.text_encoder_1)
+            nn.quantize(sd.text_encoder_2)
+            nn.quantize(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 0.0
         args.steps = args.steps or 2
     else:
@@ -45,8 +55,10 @@ if __name__ == "__main__":
             "stabilityai/stable-diffusion-2-1-base", float16=args.float16
         )
         if args.quantize:
-            QuantizedLinear.quantize_module(sd.text_encoder)
-            QuantizedLinear.quantize_module(sd.unet, group_size=32, bits=8)
+            nn.quantize(
+                sd.text_encoder, class_predicate=lambda _, m: isinstance(m, nn.Linear)
+            )
+            nn.quantize(sd.unet, group_size=32, bits=8)
         args.cfg = args.cfg or 7.5
         args.steps = args.steps or 50
 
@@ -83,6 +95,7 @@ if __name__ == "__main__":
         cfg_weight=args.cfg,
         num_steps=args.steps,
         negative_text=args.negative_prompt,
+        seed=args.seed,
     )
     for x_t in tqdm(latents, total=int(args.steps * args.strength)):
         mx.eval(x_t)

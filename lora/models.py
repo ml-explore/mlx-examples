@@ -1,6 +1,5 @@
 # Copyright © 2023 Apple Inc.
 
-import glob
 import inspect
 import math
 from dataclasses import dataclass
@@ -8,7 +7,6 @@ from typing import Dict, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
 
 @dataclass

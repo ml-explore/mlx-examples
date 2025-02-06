@@ -6,10 +6,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 import utils
 from huggingface_hub import snapshot_download
-from mlx.utils import tree_flatten, tree_unflatten
 
 
 @dataclass
@@ -20,6 +18,7 @@ class ModelArgs:
     num_attention_heads: int
     rms_norm_eps: float
     vocab_size: int
+    context_length: int
     num_key_value_heads: int = None
     rope_theta: float = 10000
     rope_traditional: bool = False
@@ -159,6 +158,16 @@ class LlamaModel(nn.Module):
             TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        # model info
+        print(
+            f"Model info\n"
+            f"==========\n"
+            f"Context length: {args.context_length}\n"
+            f"Vocab size: {args.vocab_size}\n"
+            f"Hidden size: {args.hidden_size}\n"
+            f"Num layers: {args.num_hidden_layers}\n"
+            f"Num attention heads: {args.num_attention_heads}\n"
+        )
 
     def __call__(
         self,
@@ -198,6 +207,7 @@ class Model(nn.Module):
 
 def get_config(metadata: dict):
     output = {
+        "context_length": metadata["llama.context_length"],
         "hidden_size": metadata["llama.embedding_length"],
         "num_hidden_layers": metadata["llama.block_count"],
         "num_attention_heads": metadata["llama.attention.head_count"],
@@ -271,9 +281,12 @@ def load(gguf_file: str, repo: str = None):
     elif gguf_ft == 2 or gguf_ft == 3:
         # MOSTLY_Q4_0 or MOSTLY_Q4_1
         quantization = {"group_size": 32, "bits": 4}
+        # print bits value
+        print(f"{quantization['bits']} bits quantized model")
     elif gguf_ft == 7:
         # MOSTLY_Q8_0 = 7
         quantization = {"group_size": 32, "bits": 8}
+        print(f"{quantization['bits']} bits quantized model")
     else:
         quantization = None
         print("[WARNING] Using unsupported GGUF quantization. Casting to float16.")
@@ -282,23 +295,15 @@ def load(gguf_file: str, repo: str = None):
     config = get_config(metadata)
     model = Model(ModelArgs(**config))
     if quantization is not None:
-        # quantized the LM head?
-        qm = model if "lm_head.scales" in weights else model.model
-        nn.QuantizedLinear.quantize_module(
-            qm,
+        class_predicate = (
+            lambda p, m: isinstance(m, (nn.Linear, nn.Embedding))
+            and f"{p}.scales" in weights
+        )
+        nn.quantize(
+            model,
             **quantization,
+            class_predicate=class_predicate,
         )
-
-    def dequantize(k):
-        weight = weights.pop(f"{k}.weight")
-        scales = weights.pop(f"{k}.scales")
-        biases = weights.pop(f"{k}.biases")
-        weights[f"{k}.weight"] = mx.dequantize(
-            weight, scales=scales, biases=biases, **quantization
-        )
-
-    # Dequantize embeddings
-    dequantize("model.embed_tokens")
 
     tokenizer = GGUFTokenizer(metadata)
     model.load_weights(list(weights.items()))

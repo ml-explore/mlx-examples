@@ -1,11 +1,13 @@
+# Copyright © 2023-2024 Apple Inc.
+
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .base import BaseModelArgs
+from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
 
 
 @dataclass
@@ -60,48 +62,46 @@ class Attention(nn.Module):
         self,
         hidden_states: mx.array,
         attention_mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[mx.array, Tuple[mx.array, mx.array]]:
+        cache: Optional[Any] = None,
+    ) -> mx.array:
         bsz, q_len, _ = hidden_states.shape
 
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        queries = self.q_proj(hidden_states)
+        keys = self.k_proj(hidden_states)
+        values = self.v_proj(hidden_states)
 
         # Prepare the queries, keys and values for the attention computation
-        query_states = query_states.reshape(
-            bsz, q_len, self.q_num_heads, self.qk_dim
-        ).transpose(0, 2, 1, 3)
-        key_states = key_states.reshape(
-            bsz, q_len, self.k_num_heads, self.qk_dim
-        ).transpose(0, 2, 1, 3)
-        value_states = value_states.reshape(
-            bsz, q_len, self.v_num_heads, self.v_dim
-        ).transpose(0, 2, 1, 3)
-
-        # expand shared kv
-        assert self.k_num_heads == self.v_num_heads
-
-        kv_seq_len = 0
-        if cache is not None:
-            kv_seq_len += cache[0].shape[-2]
-        query_states = self.rotary_emb(query_states, offset=kv_seq_len)
-        key_states = self.rotary_emb(key_states, offset=kv_seq_len)
+        queries = queries.reshape(bsz, q_len, self.q_num_heads, self.qk_dim).transpose(
+            0, 2, 1, 3
+        )
+        keys = keys.reshape(bsz, q_len, self.k_num_heads, self.qk_dim).transpose(
+            0, 2, 1, 3
+        )
+        values = values.reshape(bsz, q_len, self.v_num_heads, self.v_dim).transpose(
+            0, 2, 1, 3
+        )
 
         if cache is not None:
-            # reuse k, v, self_attention
-            key_states = mx.concatenate([cache[0], key_states], axis=2)
-            value_states = mx.concatenate([cache[1], value_states], axis=2)
+            queries = self.rotary_emb(queries, offset=cache.offset)
+            keys = self.rotary_emb(keys, offset=cache.offset)
+            keys, values = cache.update_and_fetch(keys, values)
+        else:
+            queries = self.rotary_emb(queries)
+            keys = self.rotary_emb(keys)
 
-        output = mx.fast.scaled_dot_product_attention(
-            query_states,
-            key_states,
-            value_states,
+        keys = mx.tile(keys, [1, self.config.n_shared_head, 1, 1])
+        values = mx.tile(values, [1, self.config.n_shared_head, 1, 1])
+
+        output = scaled_dot_product_attention(
+            queries,
+            keys,
+            values,
+            cache=cache,
             scale=self.scale,
             mask=attention_mask,
         )
         output = output.transpose(0, 2, 1, 3).reshape(bsz, q_len, -1)
-        return self.o_proj(output), (key_states, value_states)
+        return self.o_proj(output)
 
 
 class MLP(nn.Module):
@@ -131,15 +131,15 @@ class PlamoDecoderLayer(nn.Module):
         self,
         hidden_states: mx.array,
         attention_mask: Optional[mx.array] = None,
-        cache: Optional[Tuple[mx.array, mx.array]] = None,
-    ) -> Tuple[Any, ...]:
+        cache: Optional[Any] = None,
+    ):
         # from LlamaDecoder
         residual = hidden_states
 
         hidden_states = self.norm(hidden_states)
 
         # Self Attention
-        hidden_states_sa, cache = self.self_attn(
+        hidden_states_sa = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             cache=cache,
@@ -149,7 +149,7 @@ class PlamoDecoderLayer(nn.Module):
         hidden_states_mlp = self.mlp(hidden_states)
 
         hidden_states = residual + hidden_states_sa + hidden_states_mlp
-        return hidden_states, cache
+        return hidden_states
 
 
 class PlamoDecoder(nn.Module):
@@ -173,26 +173,21 @@ class PlamoModel(nn.Module):
     def __call__(
         self,
         inputs: mx.array,
-        cache: Optional[List[Union[Tuple[mx.array, mx.array], None]]] = None,
-    ) -> Tuple[mx.array, Optional[List[Union[Tuple[mx.array, mx.array], None]]]]:
+        cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
+    ) -> mx.array:
         h = self.embed_tokens(inputs)
 
-        mask = None
-        if h.shape[1] > 1:
-            mask = nn.MultiHeadAttention.create_additive_causal_mask(h.shape[1])
-            mask = mask.astype(self.embed_tokens.weight.dtype)
+        if mask is None:
+            mask = create_attention_mask(h, cache)
 
         if cache is None:
             cache = [None for _ in range(len(self.layers.layers))]
 
-        for e, layer in enumerate(self.layers.layers):
-            h, c = layer(h, mask, cache[e])
-            if cache is not None:
-                cache[e] = c
-            else:
-                cache.append(c)
+        for layer, c in zip(self.layers.layers, cache):
+            h = layer(h, mask, cache=c)
 
-        return self.norm(h), cache
+        return self.norm(h)
 
 
 class Model(nn.Module):
@@ -203,14 +198,16 @@ class Model(nn.Module):
         self.lm_head: nn.Module = nn.Linear(
             args.hidden_size, args.vocab_size, bias=False
         )
+        self.args = args
 
     def __call__(
         self,
         inputs: mx.array,
-        cache: Optional[List[Tuple[mx.array, mx.array]]] = None,
-    ) -> Tuple[mx.array, mx.array]:
-        out, cache = self.model(inputs, cache)
-        return self.lm_head(out), cache
+        cache: Optional[Any] = None,
+        mask: Optional[mx.array] = None,
+    ) -> mx.array:
+        out = self.model(inputs, cache, mask)
+        return self.lm_head(out)
 
     @property
     def layers(self):

@@ -4,7 +4,6 @@ from functools import partial
 
 import kwt
 import mlx.core as mx
-import mlx.data as dx
 import mlx.nn as nn
 import mlx.optimizers as optim
 from mlx.data.datasets import load_speechcommands
@@ -77,6 +76,7 @@ def train_epoch(model, train_iter, optimizer, epoch):
     samples_per_sec = []
 
     model.train(True)
+    train_iter.reset()
     for batch_counter, batch in enumerate(train_iter):
         x = mx.array(batch["audio"])
         y = mx.array(batch["label"])
@@ -112,6 +112,7 @@ def test_epoch(model, test_iter):
     model.train(False)
     accs = []
     throughput = []
+    test_iter.reset()
     for batch_counter, batch in enumerate(test_iter):
         x = mx.array(batch["audio"])
         y = mx.array(batch["label"])

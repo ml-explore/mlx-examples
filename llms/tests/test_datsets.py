@@ -36,7 +36,8 @@ class TestDatasets(unittest.TestCase):
         data = {"text": "This is an example for the model."}
         self.save_data(4 * [data])
         args = types.SimpleNamespace(train=True, test=False, data=self.test_dir)
-        train, valid, test = datasets.load_dataset(args, None)
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_PATH)
+        train, valid, test = datasets.load_dataset(args, tokenizer)
         self.assertEqual(len(train), 4)
         self.assertEqual(len(valid), 4)
         self.assertEqual(len(test), 0)
@@ -75,6 +76,26 @@ class TestDatasets(unittest.TestCase):
         self.assertTrue(len(train[0]) > 0)
         self.assertTrue(len(valid[0]) > 0)
         self.assertTrue(isinstance(train, datasets.ChatDataset))
+
+    def test_hf(self):
+        args = types.SimpleNamespace(
+            hf_dataset={
+                "name": "billsum",
+                "prompt_feature": "text",
+                "completion_feature": "summary",
+                "train_split": "train[:2%]",
+                "valid_split": "train[-2%:]",
+            },
+            test=False,
+            train=True,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_PATH)
+        train, valid, test = datasets.load_dataset(args, tokenizer)
+        self.assertTrue(len(train) > 0)
+        self.assertTrue(len(train[0]) > 0)
+        self.assertTrue(len(valid) > 0)
+        self.assertTrue(len(valid[0]) > 0)
+        self.assertEqual(len(test), 0)
 
 
 if __name__ == "__main__":

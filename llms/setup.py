@@ -1,3 +1,5 @@
+# Copyright © 2024 Apple Inc.
+
 import sys
 from pathlib import Path
 
@@ -8,7 +10,7 @@ with open(package_dir / "requirements.txt") as fid:
     requirements = [l.strip() for l in fid.readlines()]
 
 sys.path.append(str(package_dir))
-from version import __version__
+from _version import __version__
 
 setup(
     name="mlx-lm",
@@ -24,4 +26,22 @@ setup(
     install_requires=requirements,
     packages=["mlx_lm", "mlx_lm.models", "mlx_lm.tuner"],
     python_requires=">=3.8",
+    extras_require={
+        "test": ["datasets"],
+        "evaluate": ["lm-eval", "tqdm"],
+    },
+    entry_points={
+        "console_scripts": [
+            "mlx_lm.cache_prompt = mlx_lm.cache_prompt:main",
+            "mlx_lm.chat = mlx_lm.chat:main",
+            "mlx_lm.convert = mlx_lm.convert:main",
+            "mlx_lm.evaluate = mlx_lm.evaluate:main",
+            "mlx_lm.fuse = mlx_lm.fuse:main",
+            "mlx_lm.generate = mlx_lm.generate:main",
+            "mlx_lm.lora = mlx_lm.lora:main",
+            "mlx_lm.merge = mlx_lm.merge:main",
+            "mlx_lm.server = mlx_lm.server:main",
+            "mlx_lm.manage = mlx_lm.manage:main",
+        ]
+    },
 )
