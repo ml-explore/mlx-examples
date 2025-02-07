@@ -134,9 +134,7 @@ def find_alignment(
     logits, cross_qk = model.forward_with_cross_qk(mel[None, :], tokens[None, :])
     # consider only the logits associated with predicting text
     sampled_logits = logits[0][len(tokenizer.sot_sequence) : -2, : tokenizer.eot]
-    token_probs = mx.softmax(sampled_logits.astype(mx.float32), axis=-1).astype(
-        sampled_logits.dtype
-    )
+    token_probs = mx.softmax(sampled_logits, precise=True, axis=-1)
     text_token_probs = mx.take_along_axis(
         token_probs, mx.array(text_tokens)[:, None], axis=1
     ).squeeze(1)
@@ -147,7 +145,8 @@ def find_alignment(
         [cross_qk[_l.item()][0, _h.item()] for _l, _h in model.alignment_heads]
     )
     weights = weights[:, :, : num_frames // 2]
-    weights = mx.softmax(weights * qk_scale, axis=-1)
+    weights = mx.softmax(weights * qk_scale, axis=-1, precise=True)
+    weights = weights.astype(mx.float32)
     mean = mx.mean(weights, axis=-2, keepdims=True)
     std = mx.var(weights, axis=-2, keepdims=True, ddof=0).sqrt()
     weights = (weights - mean) / std

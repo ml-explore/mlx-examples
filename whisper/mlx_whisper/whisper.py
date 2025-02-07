@@ -84,7 +84,7 @@ class MultiHeadAttention(nn.Module):
         w = mx.softmax(qk, axis=-1, precise=True)
         out = (w @ v).transpose(0, 2, 1, 3)
         out = out.reshape(n_batch, n_ctx, n_state)
-        return out, qk.astype(mx.float32)
+        return out, qk
 
 
 class ResidualAttentionBlock(nn.Module):
@@ -228,13 +228,13 @@ class Whisper(nn.Module):
 
     def set_alignment_heads(self, dump: Union[bytes, np.ndarray]):
         if isinstance(dump, np.ndarray):
-            self.alignment_heads = mx.array(dump)
+            self.alignment_heads = dump
         elif isinstance(dump, bytes):
             array = np.frombuffer(
                 gzip.decompress(base64.b85decode(dump)), dtype=bool
             ).copy()
             mask = array.reshape(self.dims.n_text_layer, self.dims.n_text_head)
-            self.alignment_heads = mx.array(np.asarray(mask.nonzero()).T)
+            self.alignment_heads = np.asarray(mask.nonzero()).T
         else:
             raise ValueError(
                 f"Invalid type for `dump`: {type(dump)}. Expected a np.ndarray or base85-encoded bytes containing"
