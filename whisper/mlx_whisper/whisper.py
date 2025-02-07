@@ -228,13 +228,13 @@ class Whisper(nn.Module):
 
     def set_alignment_heads(self, dump: Union[bytes, np.ndarray]):
         if isinstance(dump, np.ndarray):
-            self.alignment_heads = dump
+            self.alignment_heads = mx.array(dump)
         elif isinstance(dump, bytes):
             array = np.frombuffer(
                 gzip.decompress(base64.b85decode(dump)), dtype=bool
             ).copy()
             mask = array.reshape(self.dims.n_text_layer, self.dims.n_text_head)
-            self.alignment_heads = np.asarray(mask.nonzero()).T
+            self.alignment_heads = mx.array(np.asarray(mask.nonzero()).T)
         else:
             raise ValueError(
                 f"Invalid type for `dump`: {type(dump)}. Expected a np.ndarray or base85-encoded bytes containing"

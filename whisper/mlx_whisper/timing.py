@@ -142,7 +142,7 @@ def find_alignment(
 
     # heads * tokens * frames
     weights = mx.stack(
-        [cross_qk[_l.item()][0, _h.item()] for _l, _h in model.alignment_heads]
+        [cross_qk[_l][0, _h] for _l, _h in model.alignment_heads.tolist()]
     )
     weights = weights[:, :, : num_frames // 2]
     weights = mx.softmax(weights * qk_scale, axis=-1, precise=True)
