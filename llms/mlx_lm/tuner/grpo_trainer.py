@@ -189,7 +189,7 @@ def compute_kl(logprobs1, logprobs2):
 
 
 def compute_policy_ratio(current_logprobs, ref_logprobs):
-    return mx.exp(mx.array(current_logprobs - ref_logprobs, dtype=mx.float32))
+    return mx.exp(mx.array(current_logprobs - mx.stop_gradient(ref_logprobs), dtype=mx.float32))
 
 
 def grpo_loss(
