@@ -1,6 +1,7 @@
+import itertools
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from transformers import PreTrainedTokenizer
 
@@ -34,7 +35,12 @@ class ChatDataset:
     https://platform.openai.com/docs/guides/fine-tuning/example-format
     """
 
-    def __init__(self, data: List[Dict[str, str]], tokenizer: PreTrainedTokenizer, chat_key: str = "messages"):
+    def __init__(
+        self,
+        data: List[Dict[str, str]],
+        tokenizer: PreTrainedTokenizer,
+        chat_key: str = "messages",
+    ):
         self._data = [
             tokenizer.apply_chat_template(
                 d[chat_key],
@@ -42,7 +48,6 @@ class ChatDataset:
             )
             for d in data
         ]
-        self._chat_key = chat_key
 
     def __getitem__(self, idx: int):
         return self._data[idx]
@@ -82,48 +87,15 @@ class CompletionsDataset:
         return len(self._data)
 
 
-class CompletionsDatasetCollection:
-    def __init__(self, data: List[Union[ChatDataset, CompletionsDataset]]):
-        self.collection = data
-
-    def __fetch_and_process_item__(self, idx: int, handler_fn: Callable):
-        iteration = iter(self.collection)
-        item = next(iteration)
-
-        curr_idx = idx
-
-        while True:
-            try:
-                if (curr_idx + 1) <= len(item):
-                    return handler_fn(item, curr_idx)
-                else:
-                    curr_idx -= len(item)
-                    item = next(iteration)
-            except StopIteration:
-                raise IndexError(idx)
+class ConcatenatedDataset:
+    def __init__(self, data: List[Any]):
+        self._data = list(itertools.chain(*data))
 
     def __getitem__(self, idx: int):
-        def getitem(dataset: CompletionsDataset, index: int):
-            return dataset[index]
-
-        return self.__fetch_and_process_item__(idx, getitem)
-
-    def get_item(
-        self, idx: int, tokenize: bool = False, add_generation_prompt: bool = True
-    ) -> str:
-        def getitem(dataset: CompletionsDataset, index: int):
-            return dataset.get_item(index, tokenize, add_generation_prompt)
-
-        return self.__fetch_and_process_item__(idx, getitem)
-
-    def get_prompt_and_completion(self, idx: int):
-        def getitem(dataset: CompletionsDataset, index: int):
-            return dataset.get_prompt_and_completion(index)
-
-        return self.__fetch_and_process_item__(idx, getitem)
+        return self._data[idx]
 
     def __len__(self):
-        return sum(map(len, self.collection))
+        return len(self._data)
 
 
 def create_dataset(
@@ -206,11 +178,12 @@ def load_custom_hf_dataset(args, tokenizer: PreTrainedTokenizer):
         completion_feature,
         chat_feature,
         split,
+        config,
     ):
         ds = datasets.load_dataset(
             dataset_name,
             split=split,
-            **hf_args.get("config", {}),
+            **config,
         )
         if prompt_feature and completion_feature:
             return CompletionsDataset(ds, tokenizer, prompt_feature, completion_feature)
@@ -224,54 +197,68 @@ def load_custom_hf_dataset(args, tokenizer: PreTrainedTokenizer):
                 " or a text feature for the Hugging Face dataset."
             )
 
-    def get_train_and_valid_splits(hf_args, ds_name):
-        text_f = hf_args.get("text_feature", None)
-        prompt_f = hf_args.get("prompt_feature", None)
-        completion_f = hf_args.get("completion_feature", None)
-        chat_f = hf_args.get("chat_feature", None)
+    dataset_collection = args.hf_dataset
+    if isinstance(dataset_collection, dict):
+        dataset_collection = [dataset_collection]
+
+    collection = []
+    for ds in dataset_collection:
+        ds_name = ds["name"]
+        print(f"Loading Hugging Face dataset {ds_name}.")
+        text_f = ds.get("text_feature", None)
+        prompt_f = ds.get("prompt_feature", None)
+        completion_f = ds.get("completion_feature", None)
+        chat_f = ds.get("chat_feature", None)
+        ds_config = ds.get("config", {})
         if args.train:
-            train_split = hf_args.get("train_split", "train[:80%]")
-            valid_split = hf_args.get("valid_split", "train[-10%:]")
+            train_split = ds.get("train_split", "train[:80%]")
+            valid_split = ds.get("valid_split", "train[-10%:]")
             train = create_hf_dataset(
-                ds_name, text_f, prompt_f, completion_f, chat_f, split=train_split
+                ds_name,
+                text_f,
+                prompt_f,
+                completion_f,
+                chat_f,
+                train_split,
+                ds_config,
             )
             valid = create_hf_dataset(
-                ds_name, text_f, prompt_f, completion_f, chat_f, split=valid_split
+                ds_name,
+                text_f,
+                prompt_f,
+                completion_f,
+                chat_f,
+                valid_split,
+                ds_config,
             )
         else:
             train, valid = [], []
 
         if args.test:
-            test_split = hf_args.get("test_split")
+            test_split = ds.get("test_split")
             test = create_hf_dataset(
-                ds_name, text_f, prompt_f, completion_f, chat_f, split=test_split,
+                ds_name,
+                text_f,
+                prompt_f,
+                completion_f,
+                chat_f,
+                test_split,
+                ds_config,
             )
         else:
             test = []
 
-        return train, valid, test
+        collection.append((train, valid, test))
 
-    if args.datasets:
-        dataset_collection = args.hf_datasets
-    else:
-        dataset_collection = {"hf_dataset": args.hf_dataset}
-
-    datasets = []
-    for ds in dataset_collection:
-        hf_args = ds["hf_dataset"]
-        dataset_name = hf_args["name"]
-        print(f"Loading Hugging Face dataset {dataset_name}.")
-        datasets.append(get_splits(hf_args, dataset_name))
-    if len(datsets) == 1:
-        return *datasets
+    if len(collection) == 1:
+        return collection[0]
 
     # Otherwise concatenate them
-    train, valid, test = zip(*datasets)
-    return tuple(map, Concatenate, zip(*datasets))
+    return tuple(map(ConcatenatedDataset, zip(*collection)))
 
 
 def load_dataset(args, tokenizer: PreTrainedTokenizer):
-    if getattr(args, "hf_dataset", False) or getattr(args, "hf_datasets", False):
+    if getattr(args, "hf_dataset", False):
         train, valid, test = load_custom_hf_dataset(args, tokenizer)
     else:
         data_path = Path(args.data)
