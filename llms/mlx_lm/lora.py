@@ -12,7 +12,7 @@ import mlx.optimizers as optim
 import numpy as np
 import yaml
 
-from .tokenizer_utils import TokenizerWrapper, no_bos_or_eos
+from .tokenizer_utils import TokenizerWrapper
 from .tuner.datasets import load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import (
@@ -62,7 +62,6 @@ CONFIG_DEFAULTS = {
     "grad_checkpoint": False,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
-    "response_template": None,
 }
 
 
@@ -97,10 +96,9 @@ def build_parser():
     )
 
     parser.add_argument(
-        "--mask-inputs",
-        dest="mask_inputs",
+        "--mask-prompt",
         action="store_true",
-        help="Whether to mask the inputs when training. Default is False.",
+        help="Mask the prompt in the loss when training",
         default=False,
     )
 
@@ -182,13 +180,6 @@ def train_model(
     valid_set,
     training_callback: TrainingCallback = None,
 ):
-    from .tuner.trainer import (
-        default_loss,
-        input_masked_loss,
-        iterate_batches,
-        iterate_completion_batches,
-    )
-
     model.freeze()
     if args.fine_tune_type == "full":
         for l in model.layers[-min(args.num_layers, 0) :]:
@@ -217,17 +208,6 @@ def train_model(
     adapter_file = adapter_path / "adapters.safetensors"
     save_config(vars(args), adapter_path / "adapter_config.json")
 
-    if isinstance(args.response_template, str):
-        response_generation_tokens = tokenizer.encode(
-            args.response_template, add_special_tokens=False
-        )
-    else:
-        if not all([item.isinstance(int) for item in args.response_template]):
-            raise ValueError(
-                "Response template must be a list of integers if it is not a string."
-            )
-        response_generation_tokens = args.response_template
-
     # init training args
     training_args = TrainingArgs(
         batch_size=args.batch_size,
@@ -239,9 +219,6 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
-        response_generation_tokens=no_bos_or_eos(
-            response_generation_tokens, tokenizer.bos_token_id, tokenizer.eos_token_id
-        ),
     )
 
     model.train()
@@ -250,9 +227,6 @@ def train_model(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
     )
-
-    if args.mask_inputs:
-        print("Masking inputs..")
 
     # Train model
     train(
@@ -263,10 +237,6 @@ def train_model(
         train_dataset=train_set,
         val_dataset=valid_set,
         training_callback=training_callback,
-        iterate_batches=(
-            iterate_completion_batches if args.mask_inputs else iterate_batches
-        ),
-        loss=input_masked_loss if args.mask_inputs else default_loss,
     )
 
 
