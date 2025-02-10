@@ -101,6 +101,14 @@ def build_parser():
         choices=["lora", "dora", "full"],
         help="Type of fine-tuning to perform: lora, dora, or full.",
     )
+
+    parser.add_argument(
+        "--mask-prompt",
+        action="store_true",
+        help="Mask the prompt in the loss when training",
+        default=False,
+    )
+
     parser.add_argument(
         "--training-mode",
         type=str,

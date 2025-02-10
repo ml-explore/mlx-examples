@@ -5,13 +5,16 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten
+from transformers import PreTrainedTokenizer
+
+from .datasets import CompletionsDataset
 
 
 def grad_checkpoint(layer):
@@ -63,20 +66,30 @@ class TrainingArgs:
     )
 
 
-def default_loss(model, inputs, targets, lengths):
+def default_loss(model, batch, lengths):
+    inputs = batch[:, :-1]
+    targets = batch[:, 1:]
+
     logits = model(inputs)
     logits = logits.astype(mx.float32)
 
-    length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
+    steps = mx.arange(1, targets.shape[1] + 1)
+    mask = mx.logical_and(steps >= lengths[:, 0:1], steps <= lengths[:, 1:])
 
-    ce = nn.losses.cross_entropy(logits, targets) * length_mask
-    ntoks = length_mask.sum()
+    ce = nn.losses.cross_entropy(logits, targets) * mask
+    ntoks = mask.sum()
     ce = ce.sum() / ntoks
 
     return ce, ntoks
 
 
-def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
+def iterate_batches(
+    dataset,
+    tokenizer,
+    batch_size,
+    max_seq_length,
+    train=False,
+):
     # Sort by length:
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))
     if len(dataset) < batch_size:
@@ -101,6 +114,10 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
         indices = np.random.permutation(len(batch_idx))
         for i in indices:
             batch = [dataset[j] for j in batch_idx[i]]
+            if len(batch[0]) == 2:
+                batch, offsets = zip(*batch)
+            else:
+                offsets = [0] * len(batch)
             lengths = [len(x) for x in batch]
             if max(lengths) > max_seq_length:
                 print(
@@ -123,8 +140,7 @@ def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False)
                     truncated_length  # Update lengths to match truncated lengths
                 )
             batch = mx.array(batch_arr)
-
-            yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
+            yield batch, mx.array(list(zip(offsets, lengths)))
 
         if not train:
             break
