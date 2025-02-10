@@ -152,7 +152,7 @@ def main():
     print("Saving...")
     metadata = {}
     metadata["model"] = args.model
-    metadata["chat_template"] = tokenizer.chat_template
+    metadata["chat_template"] = json.dumps(tokenizer.chat_template)
     metadata["tokenizer_config"] = json.dumps(tokenizer_config)
     save_prompt_cache(args.prompt_cache_file, cache, metadata)
 

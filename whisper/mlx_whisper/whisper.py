@@ -84,7 +84,7 @@ class MultiHeadAttention(nn.Module):
         w = mx.softmax(qk, axis=-1, precise=True)
         out = (w @ v).transpose(0, 2, 1, 3)
         out = out.reshape(n_batch, n_ctx, n_state)
-        return out, qk.astype(mx.float32)
+        return out, qk
 
 
 class ResidualAttentionBlock(nn.Module):
