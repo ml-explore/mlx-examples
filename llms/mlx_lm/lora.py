@@ -94,6 +94,14 @@ def build_parser():
         choices=["lora", "dora", "full"],
         help="Type of fine-tuning to perform: lora, dora, or full.",
     )
+
+    parser.add_argument(
+        "--mask-prompt",
+        action="store_true",
+        help="Mask the prompt in the loss when training",
+        default=False,
+    )
+
     parser.add_argument(
         "--num-layers",
         type=int,
@@ -219,6 +227,7 @@ def train_model(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
     )
+
     # Train model
     train(
         model=model,

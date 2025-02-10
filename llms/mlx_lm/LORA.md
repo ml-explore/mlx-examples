@@ -76,6 +76,14 @@ You can specify the output location with `--adapter-path`.
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
 
+#### Prompt Masking
+
+The default training computes a loss for every token in the sample. You can
+ignore the prompt and compute loss for just the completion by passing
+`--mask-prompt`. Note this is only supported for `chat` and `completion`
+datasets. For `chat` datasets the final message in the message list is
+considered the completion. See the [dataset section](#Data) for more details. 
+
 ### Evaluate
 
 To compute test set perplexity use:
@@ -290,10 +298,26 @@ hf_dataset:
 
 - Use `prompt_feature` and `completion_feature` to specify keys for a
   `completions` dataset. Use `text_feature` to specify the key for a `text`
-  dataset. 
+  dataset. Use `chat_feature` to specify the key for a chat dataset.
 
 - To specify the train, valid, or test splits, set the corresponding
   `{train,valid,test}_split` argument. 
+
+You can specify a list of Hugging Face datasets with a list of records each
+with the same structure as above. For example:
+
+```yaml
+hf_dataset:
+  - name: "Open-Orca/OpenOrca"
+    train_split: "train[:90%]"
+    valid_split: "train[-10%:]"
+    prompt_feature: "question"
+    completion_feature: "response"
+  - name: "trl-lib/ultrafeedback_binarized"
+    train_split: "train[:90%]"
+    valid_split: "train[-10%:]"
+    chat_feature: "chosen"
+```
 
 - Arguments specified in `config` will be passed as keyword arguments to
   [`datasets.load_dataset`](https://huggingface.co/docs/datasets/v2.20.0/en/package_reference/loading_methods#datasets.load_dataset).
