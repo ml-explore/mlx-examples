@@ -83,16 +83,6 @@ def default_loss(model, batch, lengths):
     return ce, ntoks
 
 
-def contains(small_list: List, big_list: List) -> Tuple[int, int]:
-    """
-    Returns the beginning and end index of the first occurrence of small_list in big_list.
-    """
-    small_list_length = len(small_list)
-    for ind in (i for i, e in enumerate(big_list) if e == small_list[0]):
-        if big_list[ind : ind + small_list_length] == small_list:
-            return ind, ind + small_list_length - 1
-
-
 def iterate_batches(
     dataset,
     tokenizer,

@@ -185,6 +185,8 @@ def load_hf_dataset(
 def load_custom_hf_dataset(args, tokenizer: PreTrainedTokenizer):
     import datasets
 
+    mask_prompt = getattr(args, "mask_prompt", False)
+
     def create_hf_dataset(
         dataset_name,
         text_feature,
@@ -201,7 +203,7 @@ def load_custom_hf_dataset(args, tokenizer: PreTrainedTokenizer):
         )
         if prompt_feature and completion_feature:
             return CompletionsDataset(
-                data, tokenizer, prompt_feature, completion_feature, mask_prompt
+                ds, tokenizer, prompt_feature, completion_feature, mask_prompt
             )
         elif chat_feature:
             return ChatDataset(

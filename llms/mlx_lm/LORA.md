@@ -76,26 +76,13 @@ You can specify the output location with `--adapter-path`.
 You can resume fine-tuning with an existing adapter with
 `--resume-adapter-file <path_to_adapters.safetensors>`.
 
-### Input Masking
-There are custom functions for masking the sequence of tokens associated with the `prompt` in a completion dataset
-during the loss calculation to ensure the model is not being penalized for not recreating the prompt.  To fine-tune 
-with masked input sequences, use the `--mask-inputs` argument.
+#### Prompt Masking
 
-This functionality expects a ```response_template``` parameter in the configuration that is either a string representing
-a [string that indicate the start of the model's response](https://huggingface.co/docs/transformers/en/chat_templating#what-are-generation-prompts) 
-or its corresopnding tokens.  This is used to create the mask that excludes the tokens associated from the rest of
-the sequence from loss calculations.  For example (ChatML):
-
-```yaml
-response_template: "<|im_start|>assistant"
-```
-
-or (for the corresponding tokens of Gemma's response template)
-
-```yaml
-response_template: [106, 2516]
-```
-
+The default training computes a loss for every token in the sample. You can
+ignore the prompt and compute loss for just the completion by passing
+`--mask-prompt`. Note this is only supported for `chat` and `completion`
+datasets. For `chat` datasets the final message in the message list is
+considered the completion. See the [dataset section](#Data) for more details. 
 
 ### Evaluate
 
