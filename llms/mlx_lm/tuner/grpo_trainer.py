@@ -142,9 +142,6 @@ def generate_grpo(model, prompt, max_tokens, tokenizer, temperature):
                 
             if current_length >= end_sequence_length:
                 last_tokens = output[current_length - end_sequence_length:current_length].tolist()
-                # print(f"Last tokens: {last_tokens}")
-                # print(f"Decoded text: {tokenizer.decode(last_tokens)}")
-                # print(f"Target sequence: {end_sequence}")
                 if last_tokens == end_sequence:
                     break
         
