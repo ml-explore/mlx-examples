@@ -447,8 +447,8 @@ def evaluate_grpo(
         mx.eval(all_losses, ntokens)
     
     # Aggregate across distributed workers
-    all_losses = mx.distributed.all_sum(all_losses, stream=mx.cpu)
-    ntokens = mx.distributed.all_sum(ntokens, stream=mx.cpu)
+    all_losses = mx.distributed.all_sum(all_losses, stream=mx.gpu)
+    ntokens = mx.distributed.all_sum(ntokens, stream=mx.gpu)
     all_metrics = {k: mx.distributed.all_sum(v) for k, v in all_metrics.items()}
     
     # Calculate averages
