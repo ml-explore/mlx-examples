@@ -7,6 +7,43 @@ from typing import Any, Dict, List, Optional
 from transformers import PreTrainedTokenizer
 
 
+class DPODataset:
+    """
+    A dataset for DPO (Direct Preference Optimization) training that handles
+    prompt-chosen-rejected triplets in the format:
+    {"system": ..., "prompt": ..., "chosen": ..., "rejected": ...}
+    """
+
+    def __init__(self, data: List[Dict[str, str]], tokenizer: PreTrainedTokenizer,
+             prompt_key: str = "prompt", chosen_key: str = "chosen",
+             rejected_key: str = "rejected", system_key: str = "system"):
+        self._chosen_data = []
+        self._rejected_data = []
+        
+        for d in data:
+            messages = (
+                [{"role": "system", "content": d[system_key]}] if system_key and system_key in d else []
+            )
+            messages.append({"role": "user", "content": d[prompt_key]})
+            
+            # Apply template once for each response type
+            base_messages = messages.copy()
+            chosen_messages = base_messages + [{"role": "assistant", "content": d[chosen_key]}]
+            rejected_messages = base_messages + [{"role": "assistant", "content": d[rejected_key]}]
+            
+            self._chosen_data.append(tokenizer.apply_chat_template(chosen_messages))
+            self._rejected_data.append(tokenizer.apply_chat_template(rejected_messages))
+
+    def __getitem__(self, idx: int):
+        return {
+            "chosen": self._chosen_data[idx],
+            "rejected": self._rejected_data[idx]
+        }
+
+    def __len__(self):
+        return len(self._chosen_data)
+
+
 class Dataset:
     """
     Light-weight wrapper to hold a dataset.
@@ -114,6 +151,7 @@ class ConcatenatedDataset:
 
 
 def create_dataset(
+    args,
     data,
     tokenizer: PreTrainedTokenizer,
     config,
@@ -124,26 +162,29 @@ def create_dataset(
     completion_feature = getattr(config, "completion_feature", "completion")
     chat_feature = getattr(config, "chat_feature", "messages")
     sample = data[0]
-    if prompt_feature in sample and completion_feature in sample:
-        return CompletionsDataset(
-            data, tokenizer, prompt_feature, completion_feature, mask_prompt
-        )
-    elif chat_feature in sample:
-        return ChatDataset(
-            data, tokenizer, chat_key=chat_feature, mask_prompt=mask_prompt
-        )
-    elif text_feature in sample:
-        if mask_prompt:
-            raise ValueError("Prompt masking not supported for text dataset.")
-        return Dataset(data, tokenizer, text_key=text_feature)
+    
+    if args.training_mode == "normal":
+        if chat_feature in sample:
+            return ChatDataset(data, tokenizer, chat_key=chat_feature, mask_prompt=mask_prompt)
+        elif prompt_feature in sample and completion_feature in sample:
+            return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature, mask_prompt)
+        elif text_feature in sample:
+            if mask_prompt:
+                raise ValueError("Prompt masking not supported for text dataset.")
+            return Dataset(data, tokenizer, text_key=text_feature)
+        else:
+            raise ValueError(
+                "Unsupported data format, check the supported formats here:\n"
+                "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+            )
     else:
-        raise ValueError(
-            "Unsupported data format, check the supported formats here:\n"
-            "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+        return DPODataset(
+            data=data,
+            tokenizer=tokenizer
         )
-
 
 def load_local_dataset(
+    args,
     data_path: Path,
     tokenizer: PreTrainedTokenizer,
     config,
@@ -153,7 +194,7 @@ def load_local_dataset(
             return []
         with open(path, "r") as fid:
             data = [json.loads(l) for l in fid]
-        return create_dataset(data, tokenizer, config)
+        return create_dataset(args, data, tokenizer, config)
 
     names = ("train", "valid", "test")
     train, valid, test = [load_subset(data_path / f"{n}.jsonl") for n in names]
@@ -161,29 +202,25 @@ def load_local_dataset(
 
 
 def load_hf_dataset(
+    args,
     data_id: str,
     tokenizer: PreTrainedTokenizer,
     config,
 ):
     from datasets import exceptions, load_dataset
-
     try:
         dataset = load_dataset(data_id)
-
         names = ("train", "valid", "test")
-
         train, valid, test = [
             (
-                create_dataset(dataset[n], tokenizer, config)
+                create_dataset(args, dataset[n], tokenizer, config)
                 if n in dataset.keys()
                 else []
             )
             for n in names
         ]
-
     except exceptions.DatasetNotFoundError:
         raise ValueError(f"Not found Hugging Face dataset: {data_id} .")
-
     return train, valid, test
 
 
@@ -253,7 +290,7 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
     else:
         data_path = Path(args.data)
         if data_path.exists():
-            train, valid, test = load_local_dataset(data_path, tokenizer, args)
+            train, valid, test = load_local_dataset(args, data_path, tokenizer, args)
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
             train, valid, test = load_hf_dataset(args.data, tokenizer, args)
