@@ -89,6 +89,7 @@ def linear_to_lora_layers(
         "mixtral",
         "nemotron",
         "stablelm",
+        "hunyuan",
         "qwen2",
         "qwen2_moe",
         "phimoe",
