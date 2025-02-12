@@ -295,7 +295,9 @@ class MLXLM(LM):
         completions = []
 
         for context, until in tqdm(zip(contexts, untils), total=len(contexts)):
-            context = self._tokenize(context)
+            context = self.tokenizer.encode(
+                context, add_special_tokens=not self.use_chat_template
+            )
             max_tokens = min(
                 self._max_tokens,
                 self.tokenizer.model_max_length - len(context),

@@ -195,6 +195,8 @@ def transcribe(
         seek_points.append(0)
     if len(seek_points) % 2 == 1:
         seek_points.append(content_frames)
+    else:
+        seek_points[-1] = min(content_frames, seek_points[-1])
     seek_clips: List[Tuple[int, int]] = list(zip(seek_points[::2], seek_points[1::2]))
 
     punctuation = "\"'“¿([{-\"'.。,，!！?？:：”)]}、"
