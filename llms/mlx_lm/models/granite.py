@@ -1,49 +1,61 @@
-# Copyright © 2025 Apple Inc.
+# Copyright © 2023-2024 Apple Inc.
 
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs, create_attention_mask, scaled_dot_product_attention
+from .rope_utils import initialize_rope
 
 
 @dataclass
 class ModelArgs(BaseModelArgs):
+    model_type: str
     hidden_size: int
     num_hidden_layers: int
     intermediate_size: int
     num_attention_heads: int
-    num_key_value_heads: int
     rms_norm_eps: float
     vocab_size: int
-    attention_bias: bool
-    head_dim: int
+    logits_scaling: float
+    attention_multiplier: float
+    embedding_multiplier: float
+    residual_multiplier: float
     max_position_embeddings: int
+    num_key_value_heads: int
+    attention_bias: bool
     mlp_bias: bool
-    model_type: str
     rope_theta: float
-    tie_word_embeddings: bool
+    rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+    tie_word_embeddings: bool = True
 
 
-class HeliumAttention(nn.Module):
+class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
 
         dim = args.hidden_size
         self.n_heads = n_heads = args.num_attention_heads
-        assert args.num_key_value_heads is not None
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        head_dim = args.hidden_size // n_heads
-        self.scale = head_dim**-0.5
+        self.head_dim = head_dim = args.hidden_size // n_heads
 
-        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=args.attention_bias)
-        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=args.attention_bias)
-        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=args.attention_bias)
-        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
-        self.rope = nn.RoPE(head_dim, traditional=True, base=args.rope_theta)
+        self.scale = args.attention_multiplier
+        attention_bias = args.attention_bias
+        self.q_proj = nn.Linear(dim, n_heads * head_dim, bias=attention_bias)
+        self.k_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
+        self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=attention_bias)
+        self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=attention_bias)
+
+        self.rope = initialize_rope(
+            self.head_dim,
+            args.rope_theta,
+            False,
+            args.rope_scaling,
+            args.max_position_embeddings,
+        )
 
     def __call__(
         self,
@@ -71,41 +83,42 @@ class HeliumAttention(nn.Module):
         output = scaled_dot_product_attention(
             queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
+
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
 
 
-class HeliumMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.hidden_size = args.hidden_size
-        self.intermediate_size = args.intermediate_size
 
-        self.gate_proj = nn.Linear(
-            self.hidden_size, self.intermediate_size, bias=args.mlp_bias
-        )
-        self.up_proj = nn.Linear(
-            self.hidden_size, self.intermediate_size, bias=args.mlp_bias
-        )
-        self.down_proj = nn.Linear(
-            self.intermediate_size, self.hidden_size, bias=args.mlp_bias
-        )
+        dim = args.hidden_size
+        hidden_dim = args.intermediate_size
+        if hasattr(args, "mlp_bias"):
+            mlp_bias = args.mlp_bias
+        else:
+            mlp_bias = False
 
-    def __call__(self, x: mx.array) -> mx.array:
+        self.gate_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=mlp_bias)
+        self.up_proj = nn.Linear(dim, hidden_dim, bias=mlp_bias)
+
+    def __call__(self, x) -> mx.array:
         return self.down_proj(nn.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-class HeliumDecoderLayer(nn.Module):
+class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.num_attention_heads = args.num_attention_heads
         self.hidden_size = args.hidden_size
-
-        self.self_attn = HeliumAttention(args)
-        self.mlp = HeliumMLP(args)
+        self.self_attn = Attention(args)
+        self.mlp = MLP(args)
         self.input_layernorm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(
             args.hidden_size, eps=args.rms_norm_eps
         )
+        self.residual_multiplier = args.residual_multiplier
 
     def __call__(
         self,
@@ -114,32 +127,33 @@ class HeliumDecoderLayer(nn.Module):
         cache: Optional[Any] = None,
     ) -> mx.array:
         r = self.self_attn(self.input_layernorm(x), mask, cache)
-        h = x + r
+        h = x + r * self.residual_multiplier
         r = self.mlp(self.post_attention_layernorm(h))
-        out = h + r
+        out = h + r * self.residual_multiplier
         return out
 
 
-class HeliumModel(nn.Module):
+class GraniteModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.num_hidden_layers = args.num_hidden_layers
+        self.args = args
         self.vocab_size = args.vocab_size
-
+        self.num_hidden_layers = args.num_hidden_layers
         assert self.vocab_size > 0
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
-
-        self.layers = [HeliumDecoderLayer(args) for _ in range(args.num_hidden_layers)]
-
+        self.layers = [
+            TransformerBlock(args=args) for _ in range(args.num_hidden_layers)
+        ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.embedding_multiplier = args.embedding_multiplier
 
     def __call__(
         self,
         inputs: mx.array,
         mask: mx.array = None,
         cache=None,
-    ) -> mx.array:
-        h = self.embed_tokens(inputs)
+    ):
+        h = self.embed_tokens(inputs) * self.embedding_multiplier
 
         if mask is None:
             mask = create_attention_mask(h, cache)
@@ -148,7 +162,7 @@ class HeliumModel(nn.Module):
             cache = [None] * len(self.layers)
 
         for layer, c in zip(self.layers, cache):
-            h = layer(h, mask, c)
+            h = layer(h, mask, cache=c)
 
         return self.norm(h)
 
@@ -158,27 +172,23 @@ class Model(nn.Module):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
-
-        self.model = HeliumModel(args)
-
-        self.vocab_size = args.vocab_size
-        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
-
+        self.model = GraniteModel(args)
         if not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.logits_scaling = args.logits_scaling
 
     def __call__(
         self,
         inputs: mx.array,
         mask: mx.array = None,
         cache=None,
-    ) -> mx.array:
+    ):
         out = self.model(inputs, mask, cache)
         if self.args.tie_word_embeddings:
             out = self.model.embed_tokens.as_linear(out)
         else:
             out = self.lm_head(out)
-        return out
+        return out / self.logits_scaling
 
     @property
     def layers(self):
