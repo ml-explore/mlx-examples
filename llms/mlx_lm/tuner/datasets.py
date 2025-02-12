@@ -4,6 +4,7 @@ import types
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .utils import GRPOExample
 from transformers import PreTrainedTokenizer
 
 
@@ -11,7 +12,7 @@ class GRPODataset:
     """
     Dataset wrapper for GRPO training data.
     Each example should have a 'prompt' and 'answer' field.
-    Returns data in (prompt_tokens, answer_tokens, prompt_str, answer_str) tuple format.
+    Returns data as GRPOExample instances.
     """
     def __init__(
         self,
@@ -22,33 +23,40 @@ class GRPODataset:
         use_chat_template: bool = False,
         use_prompt: bool = False
     ):
-        self._data = []
+        self._data: List[GRPOExample] = []
         for item in data:
             prompt_str = str(item[prompt_key])
             answer_str = str(item[answer_key])
+            
             if use_chat_template:
                 prompt_tokens = tokenizer.apply_chat_template(
                     [
                         {'role': 'system', 'content': """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
-                The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
-                The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
-                    {'role': 'user', 'content': prompt_str}
+                        The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+                        The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
+                        {'role': 'user', 'content': prompt_str}
                     ],
                 )
                 answer_tokens = tokenizer.encode(answer_str)
             else:
                 if use_prompt:
                     prompt_tokens = tokenizer.encode(f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
-            The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
-            The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>.
-            User: {prompt_str} Assistant: """)
+                    The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+                    The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>.
+                    User: {prompt_str} Assistant: """)
                 else:
                     prompt_tokens = tokenizer.encode(prompt_str)
                 answer_tokens = tokenizer.encode(answer_str)
-            self._data.append((prompt_tokens, answer_tokens, prompt_str, answer_str))
+            
+            self._data.append(GRPOExample(
+                prompt_tokens=prompt_tokens,
+                answer_tokens=answer_tokens,
+                prompt_text=prompt_str,
+                answer_text=answer_str
+            ))
 
-    def __getitem__(self, idx: int) -> Tuple[List[int], List[int], str, str]:
-        """Returns a (prompt_tokens, answer_tokens, prompt_str, answer_str) tuple."""
+    def __getitem__(self, idx: int) -> GRPOExample:
+        """Returns a GRPOExample instance."""
         return self._data[idx]
 
     def __len__(self) -> int:
