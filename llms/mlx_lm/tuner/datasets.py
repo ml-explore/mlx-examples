@@ -30,7 +30,7 @@ class GRPODataset:
                 prompt_tokens = tokenizer.apply_chat_template(
                     [
                         {'role': 'system', 'content': """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
-                The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+                The assistant first thinks about the reasoning process in the mind and then provides the user with the answer.
                 The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
                     {'role': 'user', 'content': prompt_str}
                     ],
@@ -39,7 +39,7 @@ class GRPODataset:
             else:
                 if use_prompt:
                     prompt_tokens = tokenizer.encode(f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
-            The assistantfirst thinks about the reasoning process in the mind and then provides the user with the answer.
+            The assistant first thinks about the reasoning process in the mind and then provides the user with the answer.
             The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>.
             User: {prompt_str} Assistant: """)
                 else:
