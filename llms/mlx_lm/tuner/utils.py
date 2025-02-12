@@ -2,8 +2,7 @@
 import json
 import types
 from pathlib import Path
-from typing import Dict, List
-from dataclasses import dataclass
+from typing import Dict
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -276,19 +275,3 @@ def print_trainable_parameters(model):
         f"Trainable parameters: {(trainable_p * 100 / total_p):.3f}% "
         f"({trainable_p:.3f}M/{total_p:.3f}M)"
     )
-
-@dataclass
-class GRPOExample:
-    """Single example for GRPO training/inference."""
-    prompt_tokens: List[int]
-    answer_tokens: List[int]
-    prompt_text: str
-    answer_text: str
-
-@dataclass
-class GRPOBatch:
-    """A batch of GRPO examples."""
-    prompt_tokens: List[List[int]]
-    answer_tokens: List[List[int]]
-    prompt_texts: List[str]
-    answer_texts: List[str]
