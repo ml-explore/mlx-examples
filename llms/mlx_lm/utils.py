@@ -1050,3 +1050,39 @@ def convert(
 
     if upload_repo is not None:
         upload_to_hub(mlx_path, upload_repo, hf_path)
+
+
+def get_batched_logps(model, inputs, targets):
+    logits, _ = model(inputs)
+    logits = logits.astype(mx.float32)
+
+    loss_mask = targets != 0
+    per_token_logps = mx.take_along_axis(nn.log_softmax(logits), targets[..., None], axis=2).squeeze(2)
+
+    return tuple((per_token_logps * loss_mask).sum(-1).split(2))
+
+
+def dpo_loss(model, beta, label_smoothing, reference_chosen_logps, reference_rejected_logps, inputs, targets):
+    chosen_logps, rejected_logps = get_batched_logps(model, inputs, targets)
+
+    pi_logratios = chosen_logps - rejected_logps
+    reference_logratios = reference_chosen_logps - reference_rejected_logps
+
+    logits = pi_logratios - reference_logratios
+    losses = -nn.log_sigmoid(beta * logits) * (1.0 - label_smoothing) - nn.log_sigmoid(-beta * logits) * label_smoothing
+
+    chosen_rewards = beta * (chosen_logps - reference_chosen_logps)
+    rejected_rewards = beta * (rejected_logps - reference_rejected_logps)
+    reward_accuracies = (chosen_rewards > rejected_rewards).astype(mx.float32)
+    reward_margins = chosen_rewards - rejected_rewards
+
+    ntoks = (inputs != 0).sum()
+
+    return (
+        losses.mean(),
+        chosen_rewards.mean(),
+        rejected_rewards.mean(),
+        reward_accuracies.mean(),
+        reward_margins.mean(),
+        ntoks,
+    )
