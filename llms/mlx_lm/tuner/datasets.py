@@ -318,7 +318,7 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
             train, valid, test = load_local_dataset(args, data_path, tokenizer, args)
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
-            train, valid, test = load_hf_dataset(args.data, tokenizer, args)
+            train, valid, test = load_hf_dataset(args, args.data, tokenizer, args)
 
     if args.train and len(train) == 0:
         raise ValueError(
