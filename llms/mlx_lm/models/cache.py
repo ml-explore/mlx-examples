@@ -26,7 +26,10 @@ def make_prompt_cache(
     if hasattr(model, "make_cache"):
         return model.make_cache()
 
-    num_layers = len(model.layers)
+    if hasattr(model, "layers"):
+        num_layers = len(model.layers)
+    else:
+        num_layers = len(model.model.layers)
     if max_kv_size is not None:
         return [
             RotatingKVCache(max_size=max_kv_size, keep=4) for _ in range(num_layers)
