@@ -19,6 +19,7 @@ from typing import (
     Dict,
     Generator,
     List,
+    NamedTuple,
     Optional,
     Tuple,
     Type,
@@ -43,6 +44,7 @@ from transformers import PreTrainedTokenizer
 
 # Local imports
 from .models import cache
+from .sample_utils import make_logits_processors, make_sampler
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import dequantize as dequantize_model
 from .tuner.utils import load_adapters, nparams
@@ -1048,7 +1050,6 @@ def convert(
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))
-
     dtype = getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
 
