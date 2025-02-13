@@ -19,7 +19,6 @@ from typing import (
     Dict,
     Generator,
     List,
-    NamedTuple,
     Optional,
     Tuple,
     Type,
@@ -44,7 +43,6 @@ from transformers import PreTrainedTokenizer
 
 # Local imports
 from .models import cache
-from .sample_utils import make_logits_processors, make_sampler
 from .tokenizer_utils import TokenizerWrapper, load_tokenizer
 from .tuner.utils import dequantize as dequantize_model
 from .tuner.utils import load_adapters, nparams
@@ -721,6 +719,11 @@ def load_model(
     weights = {}
     for wf in weight_files:
         weights.update(mx.load(wf))
+    if "lm_head.weight" not in weights:
+        weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
+    for k in weights.keys():
+        if "conv1d.weight" in k:
+            weights[k] = weights[k].transpose(0, 2, 1)
 
     model_class, model_args_class = get_model_classes(config=config)
 
@@ -1050,6 +1053,12 @@ def convert(
     model, config, tokenizer = fetch_from_hub(model_path, lazy=True)
 
     weights = dict(tree_flatten(model.parameters()))
+    if "lm_head.weight" not in weights:
+        weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
+    for k in weights.keys():
+        if "conv1d.weight" in k:
+            weights[k] = weights[k].transpose(0, 2, 1)
+
     dtype = getattr(mx, dtype)
     weights = {k: v.astype(dtype) for k, v in weights.items()}
 
