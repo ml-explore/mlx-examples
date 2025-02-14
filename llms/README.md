@@ -123,6 +123,18 @@ for response in stream_generate(model, tokenizer, prompt, max_tokens=512):
 print()
 ```
 
+#### Sampling
+
+The `generate` and `stream_generate` functions accept `sampler` and
+`logits_processors` keyword arguments. A sampler is any callable which accepts
+a possibly batched logits array and returns an array of sampled tokens.  The
+`logits_processors` must be a list of callables which take the token history
+and current logits as input and return the processed logits. The logits
+processors are applied in order.
+
+Some standard sampling functions and logits processors are provided in
+`mlx_lm.sample_utils`.
+
 ### Command Line
 
 You can also use `mlx-lm` from the command line with:
