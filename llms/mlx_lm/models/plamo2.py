@@ -1648,9 +1648,6 @@ class Model(PlamoPreTrainedModel):
             raise ValueError(
                 f"Unexpected output type for causal language model: {type(output)} != CausalLMOutputWithPast"
             )
-        if output.past_key_values is not None:
-            # output.past_key_values is actually a PlamoCache object
-            self._cache = output.past_key_values  # type: ignore
         if output.logits is not None:
             return output.logits
         else:
