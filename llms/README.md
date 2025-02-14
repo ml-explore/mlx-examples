@@ -64,29 +64,6 @@ prompt = tokenizer.apply_chat_template(
 text = generate(model, tokenizer, prompt=prompt, verbose=True)
 ```
 
-To use temperature or other sampler arguments pass it like this
-
-```
-from mlx_lm import load, generate
-
-model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.3-4bit")
-
-temp: 0.7
-top_p: 0.9
-top_k: 25
-sampler = make_sampler(temp, top_p,top_k)
-
-prompt = "Write a story about Ada Lovelace"
-
-messages = [{"role": "user", "content": prompt}]
-prompt = tokenizer.apply_chat_template(
-    messages, add_generation_prompt=True
-)
-
-text = generate(model, tokenizer, prompt=prompt, sampler, verbose=True)
-
-```
-
 To see a description of all the arguments you can do:
 
 ```
@@ -145,6 +122,18 @@ for response in stream_generate(model, tokenizer, prompt, max_tokens=512):
     print(response.text, end="", flush=True)
 print()
 ```
+
+#### Sampling
+
+The `generate` and `stream_generate` functions accept `sampler` and
+`logits_processors` keyword arguments. A sampler is any callable which accepts
+a possibly batched logits array and returns an array of sampled tokens.  The
+`logits_processors` must be a list of callables which take the token history
+and current logits as input and return the processed logits. The logits
+processors are applied in order.
+
+Some standard sampling functions and logits processors are provided in
+`mlx_lm.sample_utils`.
 
 ### Command Line
 
