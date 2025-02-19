@@ -12,12 +12,14 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 - Gemma
 - OLMo
 - MiniCPM
+- Mamba
 - InternLM2
 
 ## Contents
 
 - [Run](#Run)
   - [Fine-tune](#Fine-tune)
+  - [DPO-Training](#DPOTraining)
   - [Evaluate](#Evaluate)
   - [Generate](#Generate)
 - [Fuse](#Fuse)
@@ -82,7 +84,39 @@ The default training computes a loss for every token in the sample. You can
 ignore the prompt and compute loss for just the completion by passing
 `--mask-prompt`. Note this is only supported for `chat` and `completion`
 datasets. For `chat` datasets the final message in the message list is
-considered the completion. See the [dataset section](#Data) for more details. 
+considered the completion. See the [dataset section](#Data) for more details.
+
+### DPO Training
+
+Direct Preference Optimization (DPO) training allows you to fine-tune models using human preference data. To use DPO training, set the training mode to 'dpo':
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --training-mode dpo \
+    --data <path_to_data> \
+    --beta 0.1
+```
+
+The DPO training accepts the following additional parameters:
+
+- `--beta`: Controls the strength of the DPO loss (default: 0.1)
+- `--dpo-loss-type`: Choose between "sigmoid" (default), "hinge", "ipo", or "dpop" loss functions
+- `--delta`: Margin parameter for hinge loss (default: 50.0)
+- `--reference-model-path`: Path to a reference model for DPO training
+
+For DPO training, the data should be in JSONL format with the following structure:
+
+```jsonl
+{"prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+```
+
+if the Prompt template accept a system message, you can extend the Dataset with a additional "system" field.
+
+```jsonl
+{"system": "You are a helpfull assistant", "prompt": "User prompt", "chosen": "Preferred response", "rejected": "Less preferred response"}
+```
 
 ### Evaluate
 
