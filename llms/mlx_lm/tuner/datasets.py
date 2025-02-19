@@ -2,9 +2,67 @@ import itertools
 import json
 import types
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer
+
+class ORPODataset:
+    def __init__(
+        self,
+        data: List[Dict[str, Union[str, Dict]]],
+        tokenizer: PreTrainedTokenizer,
+        prompt_key: str = "prompt",
+        chosen_key: str = "chosen",
+        rejected_key: str = "rejected",
+        preference_score_key: str = "preference_score",
+        system_key: str = None
+    ):
+        self._chosen_data = []
+        self._rejected_data = []
+        self._scores = []
+        
+        for d in data:
+            if system_key and system_key in d:
+                base_messages = [{"role": "system", "content": d[system_key]}]
+                chosen_messages = base_messages + [{"role": "user", "content": d[prompt_key]}]
+                if isinstance(d[chosen_key], str):
+                    chosen_messages.append({"role": "assistant", "content": d[chosen_key]})
+                else:
+                    chosen_messages.extend(d[chosen_key]["messages"])
+                rejected_messages = base_messages + [{"role": "user", "content": d[prompt_key]}]
+                if isinstance(d[rejected_key], str):
+                    rejected_messages.append({"role": "assistant", "content": d[rejected_key]})
+                else:
+                    rejected_messages.extend(d[rejected_key]["messages"])
+                chosen_text = tokenizer.apply_chat_template(chosen_messages)
+                rejected_text = tokenizer.apply_chat_template(rejected_messages)
+            else:
+                chosen_text = tokenizer.apply_chat_template([
+                    {"role": "user", "content": d[prompt_key]},
+                    {"role": "assistant", "content": d[chosen_key] if isinstance(d[chosen_key], str) else d[chosen_key]["messages"][-1]["content"]},
+                ])
+                rejected_text = tokenizer.apply_chat_template([
+                    {"role": "user", "content": d[prompt_key]},
+                    {"role": "assistant", "content": d[rejected_key] if isinstance(d[rejected_key], str) else d[rejected_key]["messages"][-1]["content"]},
+                ])
+            
+            self._chosen_data.append(chosen_text)
+            self._rejected_data.append(rejected_text)
+            
+            if preference_score_key in d:
+                self._scores.append(float(d[preference_score_key]))
+            else:
+                self._scores.append(1.0)
+
+    def __len__(self):
+        return len(self._chosen_data)
+
+    def __getitem__(self, idx: int):
+        return {
+            "chosen": self._chosen_data[idx],
+            "rejected": self._rejected_data[idx],
+            "preference_score": self._scores[idx]
+        }
 
 
 class Dataset:
@@ -112,8 +170,8 @@ class ConcatenatedDataset:
     def __len__(self):
         return len(self._data)
 
-
 def create_dataset(
+    args,
     data,
     tokenizer: PreTrainedTokenizer,
     config,
@@ -124,26 +182,27 @@ def create_dataset(
     completion_feature = getattr(config, "completion_feature", "completion")
     chat_feature = getattr(config, "chat_feature", "messages")
     sample = data[0]
-    if prompt_feature in sample and completion_feature in sample:
-        return CompletionsDataset(
-            data, tokenizer, prompt_feature, completion_feature, mask_prompt
-        )
-    elif chat_feature in sample:
-        return ChatDataset(
-            data, tokenizer, chat_key=chat_feature, mask_prompt=mask_prompt
-        )
-    elif text_feature in sample:
-        if mask_prompt:
-            raise ValueError("Prompt masking not supported for text dataset.")
-        return Dataset(data, tokenizer, text_key=text_feature)
+    
+    if args.training_mode == "normal":
+        if chat_feature in sample:
+            return ChatDataset(data, tokenizer, chat_key=chat_feature, mask_prompt=mask_prompt)
+        elif prompt_feature in sample and completion_feature in sample:
+            return CompletionsDataset(data, tokenizer, prompt_feature, completion_feature, mask_prompt)
+        elif text_feature in sample:
+            if mask_prompt:
+                raise ValueError("Prompt masking not supported for text dataset.")
+            return Dataset(data, tokenizer, text_key=text_feature)
+        else:
+            raise ValueError(
+                "Unsupported data format, check the supported formats here:\n"
+                "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
+            )
     else:
-        raise ValueError(
-            "Unsupported data format, check the supported formats here:\n"
-            "https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/LORA.md#data."
-        )
-
+        if "chosen" in sample and "rejected" in sample:
+            return ORPODataset(data, tokenizer)
 
 def load_local_dataset(
+    args,
     data_path: Path,
     tokenizer: PreTrainedTokenizer,
     config,
@@ -153,6 +212,7 @@ def load_local_dataset(
             return []
         with open(path, "r") as fid:
             data = [json.loads(l) for l in fid]
+
         return create_dataset(data, tokenizer, config)
 
     names = ("train", "valid", "test")
@@ -161,6 +221,7 @@ def load_local_dataset(
 
 
 def load_hf_dataset(
+    args,
     data_id: str,
     tokenizer: PreTrainedTokenizer,
     config,
@@ -174,7 +235,7 @@ def load_hf_dataset(
 
         train, valid, test = [
             (
-                create_dataset(dataset[n], tokenizer, config)
+                create_dataset(args, dataset[n], tokenizer, config)
                 if n in dataset.keys()
                 else []
             )
@@ -253,7 +314,7 @@ def load_dataset(args, tokenizer: PreTrainedTokenizer):
     else:
         data_path = Path(args.data)
         if data_path.exists():
-            train, valid, test = load_local_dataset(data_path, tokenizer, args)
+            train, valid, test = load_local_dataset(args, data_path, tokenizer, args)
         else:
             print(f"Loading Hugging Face dataset {args.data}.")
             train, valid, test = load_hf_dataset(args.data, tokenizer, args)
