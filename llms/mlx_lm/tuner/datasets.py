@@ -30,7 +30,7 @@ class GRPODataset:
                 prompt_tokens = tokenizer.apply_chat_template(
                     [
                         {'role': 'system', 'content': """A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
-                    {'role': 'user', 'content': prompt_str}
+                        {'role': 'user', 'content': prompt_str}
                     ],
                     add_generation_prompt=True
                 )
@@ -44,11 +44,9 @@ class GRPODataset:
             self._data.append((prompt_tokens, answer_tokens, prompt_str, answer_str))
 
     def __getitem__(self, idx: int) -> Tuple[List[int], List[int], str, str]:
-        """Returns a (prompt_tokens, answer_tokens, prompt_str, answer_str) tuple."""
         return self._data[idx]
 
     def __len__(self) -> int:
-        """Returns the number of examples in the dataset."""
         return len(self._data)
 
 
