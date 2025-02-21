@@ -374,7 +374,9 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon=args.epsilon
+            epsilon=args.epsilon,
+            temperature=args.temperature,
+            max_tokens=args.max_seq_length
         )
 
         test_ppl = math.exp(test_loss)
