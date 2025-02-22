@@ -18,6 +18,7 @@ LoRA (QLoRA).[^qlora] LoRA fine-tuning works with the following model families:
 
 - [Run](#Run)
   - [Fine-tune](#Fine-tune)
+  - [GRPO](#GRPO)
   - [Evaluate](#Evaluate)
   - [Generate](#Generate)
 - [Fuse](#Fuse)
@@ -83,6 +84,33 @@ ignore the prompt and compute loss for just the completion by passing
 `--mask-prompt`. Note this is only supported for `chat` and `completion`
 datasets. For `chat` datasets the final message in the message list is
 considered the completion. See the [dataset section](#Data) for more details. 
+
+### Group Relative Policy Optimization (GRPO)
+
+To fine-tune a model using GRPO, which optimizes policy using multiple responses per prompt, use:
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --data <path_to_data> \
+    --fine-tune-type grpo \
+    --group-size 4
+```
+
+GRPO specific arguments:
+
+- `--group-size`: Number of responses generated per prompt (default: 4)
+- `--beta`: KL penalty coefficient for policy optimization (default: 0.1)
+- `--epsilon`: Small constant for numerical stability (default: 1e-4)
+- `--max-completion-length`: Maximum length of generated completions (default: 512)
+- `--reference-model-path`: Path to reference model weights. If not specified, uses the same model
+- `--temperature`: Sampling temperature for generations. Higher values increase randomness (default: 1.0)
+- `--reward-weights`: Optional list of weights for multiple reward functions. Must match number of reward functions. If not specified, all rewards weighted equally with 1.0
+
+The GRPO training method generates multiple responses for each prompt and optimizes the policy using relative rewards between responses. This approach helps improve response quality by learning from comparisons between different completions.
+
+Note that GRPO requires more compute resources than standard LoRA training since it generates multiple responses per prompt. Consider reducing batch size or using gradient checkpointing if running into memory issues.
 
 ### Evaluate
 
