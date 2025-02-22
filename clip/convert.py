@@ -121,7 +121,7 @@ if __name__ == "__main__":
     mlx_path.mkdir(parents=True, exist_ok=True)
 
     print("[INFO] Loading")
-    torch_weights = torch.load(torch_path / "pytorch_model.bin")
+    torch_weights = torch.load(torch_path / "pytorch_model.bin", weights_only=True)
     print("[INFO] Converting")
     mlx_weights = {
         k: torch_to_mx(v, dtype=args.dtype) for k, v in torch_weights.items()
