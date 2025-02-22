@@ -8,7 +8,7 @@ import time
 import uuid
 import warnings
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, _get_best_family
 from pathlib import Path
 from typing import (
     Any,
@@ -694,6 +694,7 @@ def run(
 ):
     server_address = (host, port)
     prompt_cache = PromptCache()
+    server_class.address_family, server_address = _get_best_family(*server_address)
     httpd = server_class(
         server_address,
         lambda *args, **kwargs: handler_class(
