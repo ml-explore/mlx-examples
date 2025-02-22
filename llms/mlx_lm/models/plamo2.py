@@ -1798,4 +1798,4 @@ class Model(PlamoPreTrainedModel):
 
     @property
     def layers(self):
-        return self.model.layers
+        return self.model.layers.layers
