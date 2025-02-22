@@ -52,11 +52,6 @@ def linear_to_lora_layers(
         use_dora (bool): If True, uses DoRA instead of LoRA.
           Default: ``False``
     """
-    if num_layers > len(model.layers):
-        raise ValueError(
-            f"Requested {num_layers} LoRA layers "
-            f"but the model only has {len(model.layers)} layers."
-        )
 
     def to_lora(layer):
         if isinstance(layer, (nn.Linear, nn.QuantizedLinear)):
@@ -154,7 +149,7 @@ def linear_to_lora_layers(
     else:
         raise ValueError(f"Lora does not support {model.model_type}")
 
-    for l in model.layers[-min(num_layers, 0) :]:
+    for l in model.layers[-max(num_layers, 0) :]:
         lora_layers = [(k, to_lora(m)) for k, m in l.named_modules() if k in keys]
         if lora_layers:
             l.update_modules(tree_unflatten(lora_layers))
