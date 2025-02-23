@@ -177,7 +177,7 @@ def train_model(
 ):
     model.freeze()
     if args.fine_tune_type == "full":
-        for l in model.layers[-min(args.num_layers, 0) :]:
+        for l in model.layers[-max(args.num_layers, 0) :]:
             l.unfreeze()
     elif args.fine_tune_type in ["lora", "dora"]:
         # Convert linear layers to lora/dora layers and unfreeze in the process
