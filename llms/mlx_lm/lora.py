@@ -62,6 +62,7 @@ CONFIG_DEFAULTS = {
     "grad_checkpoint": False,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
+    "cot": False,
 }
 
 
@@ -78,7 +79,6 @@ def build_parser():
         "--train",
         action="store_true",
         help="Do training",
-        default=None,
     )
     parser.add_argument(
         "--data",
@@ -94,14 +94,6 @@ def build_parser():
         choices=["lora", "dora", "full"],
         help="Type of fine-tuning to perform: lora, dora, or full.",
     )
-
-    parser.add_argument(
-        "--mask-prompt",
-        action="store_true",
-        help="Mask the prompt in the loss when training",
-        default=False,
-    )
-
     parser.add_argument(
         "--num-layers",
         type=int,
@@ -144,7 +136,6 @@ def build_parser():
         "--test",
         action="store_true",
         help="Evaluate on the test set after training",
-        default=None,
     )
     parser.add_argument(
         "--test-batches",
@@ -166,9 +157,13 @@ def build_parser():
         "--grad-checkpoint",
         action="store_true",
         help="Use gradient checkpointing to reduce memory use.",
-        default=None,
     )
     parser.add_argument("--seed", type=int, help="The PRNG seed")
+    parser.add_argument(
+        "--cot",
+        type=bool,
+        help="Use CoT loss masking",
+    )
     return parser
 
 
@@ -181,14 +176,8 @@ def train_model(
     training_callback: TrainingCallback = None,
 ):
     model.freeze()
-    if args.num_layers > len(model.layers):
-        raise ValueError(
-            f"Requested to train {args.num_layers} layers "
-            f"but the model only has {len(model.layers)} layers."
-        )
-
     if args.fine_tune_type == "full":
-        for l in model.layers[-max(args.num_layers, 0) :]:
+        for l in model.layers[-min(args.num_layers, 0) :]:
             l.unfreeze()
     elif args.fine_tune_type in ["lora", "dora"]:
         # Convert linear layers to lora/dora layers and unfreeze in the process
@@ -225,10 +214,13 @@ def train_model(
         adapter_file=adapter_file,
         max_seq_length=args.max_seq_length,
         grad_checkpoint=args.grad_checkpoint,
+        cot=(cot := args.cot),
     )
 
     model.train()
-    opt = optim.Adam(
+    # todo optimizer from args
+
+    opt = optim.AdamW(
         learning_rate=(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
@@ -269,6 +261,21 @@ def run(args, training_callback: TrainingCallback = None):
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
 
+    if cot := args.cot:
+        print("Using CoT loss masking")
+        if tokens := cot.get("additional_tokens"):
+            from .tuner.new_tokens import implement_new_tokens
+
+            special = False
+            if (special_arg := cot.get("special")) and isinstance(special_arg, bool):
+                print("Updating model and tokenizer with new special tokens")
+                special = special_arg
+            else:
+                print("Updating model and tokenizer with new tokens")
+            model, tokenizer = implement_new_tokens(
+                model=model, tokenizer=tokenizer, tokens=tokens, special=special
+            )
+
     print("Loading datasets")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
@@ -293,6 +300,7 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     config = args.config
+
     args = vars(args)
     if config:
         print("Loading configuration file", config)

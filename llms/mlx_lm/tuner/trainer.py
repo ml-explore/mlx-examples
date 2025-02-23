@@ -1,20 +1,20 @@
 # Copyright © 2024 Apple Inc.
 
+from functools import partial
 import glob
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Union
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten
-from transformers import PreTrainedTokenizer
 
-from .datasets import CompletionsDataset
+from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 
 def grad_checkpoint(layer):
@@ -64,32 +64,80 @@ class TrainingArgs:
         default=False,
         metadata={"help": "Use gradient checkpointing to reduce memory use."},
     )
+    cot: bool = field(
+        default=False,
+        metadata={"help": "Use CoT loss masking with positioning penalty"},
+    )
 
 
-def default_loss(model, batch, lengths):
-    inputs = batch[:, :-1]
-    targets = batch[:, 1:]
-
+def default_loss(model, inputs, targets, lengths):
     logits = model(inputs)
     logits = logits.astype(mx.float32)
 
-    steps = mx.arange(1, targets.shape[1] + 1)
-    mask = mx.logical_and(steps >= lengths[:, 0:1], steps <= lengths[:, 1:])
+    length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
 
-    ce = nn.losses.cross_entropy(logits, targets) * mask
-    ntoks = mask.sum()
+    ce = nn.losses.cross_entropy(logits, targets) * length_mask
+    ntoks = length_mask.sum()
     ce = ce.sum() / ntoks
 
     return ce, ntoks
 
 
-def iterate_batches(
-    dataset,
-    tokenizer,
-    batch_size,
-    max_seq_length,
-    train=False,
-):
+@dataclass
+class CotTrainingArgs:
+    cot: bool = False
+    reasoning_token: str = "[REASONING]"
+    data_token: str = "[DATA]"
+
+
+def cot_loss(
+    model: nn.Module,
+    inputs: mx.array,
+    targets: mx.array,
+    lengths: int,
+    tokenizer: TokenizerWrapper,
+    penalty: mx.float32 = 10.0,
+) -> tuple[mx.array, mx.array]:
+    logits = model(inputs).astype(mx.float32)
+
+    reasoning_token_id = tokenizer.encode(CotTrainingArgs.reasoning_token)[0]
+    data_token_id = tokenizer.encode(CotTrainingArgs.data_token)[0]
+
+    reasoning_positions = mx.argmax(targets == reasoning_token_id, axis=1)
+    data_positions = mx.argmax(targets == data_token_id, axis=1)
+
+    seq_indices = mx.arange(targets.shape[1])[None, :]
+
+    # base CoT mask: starts at [DATA]
+    cot_mask = (seq_indices >= data_positions[:, None]).astype(mx.float32)
+
+    # length mask: limits to non-padded regions
+    length_mask = (seq_indices < lengths[:, None]).astype(mx.float32)
+
+    # combine masks: only include tokens after [DATA] AND within sequence length
+    loss_mask = cot_mask * length_mask
+
+    # validate sequence structure
+    valid_seq = (
+        (reasoning_positions < data_positions)
+        & mx.any(targets == reasoning_token_id, axis=1)
+        & mx.any(targets == data_token_id, axis=1)
+    )
+
+    # compute base cross-entropy loss
+    ce = nn.losses.cross_entropy(logits, targets)
+
+    # masking loss before [DATA]; applying penalty for invalid seq
+    valid_loss = (ce * loss_mask).sum(axis=1) / (mx.sum(loss_mask, axis=1) + 1e-8)
+    final_loss = mx.where(valid_seq, valid_loss, penalty)  # 10.0 as invalid penalty
+    loss = mx.mean(final_loss)
+
+    valid_tokens = mx.sum(loss_mask) + 1e-8
+
+    return loss, valid_tokens
+
+
+def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
     # Sort by length:
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))
     if len(dataset) < batch_size:
@@ -114,10 +162,6 @@ def iterate_batches(
         indices = np.random.permutation(len(batch_idx))
         for i in indices:
             batch = [dataset[j] for j in batch_idx[i]]
-            if len(batch[0]) == 2:
-                batch, offsets = zip(*batch)
-            else:
-                offsets = [0] * len(batch)
             lengths = [len(x) for x in batch]
             if max(lengths) > max_seq_length:
                 print(
@@ -140,7 +184,8 @@ def iterate_batches(
                     truncated_length  # Update lengths to match truncated lengths
                 )
             batch = mx.array(batch_arr)
-            yield batch, mx.array(list(zip(offsets, lengths)))
+
+            yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
 
         if not train:
             break
@@ -156,8 +201,8 @@ def evaluate(
     loss: callable = default_loss,
     iterate_batches: callable = iterate_batches,
 ):
-    all_losses = mx.array(0.0)
-    ntokens = mx.array(0)
+    all_losses = 0
+    ntokens = 0
 
     index_iterator = iter(range(num_batches)) if num_batches != -1 else iter(int, 1)
 
@@ -213,6 +258,11 @@ def train(
     if args.grad_checkpoint:
         grad_checkpoint(model.layers[0])
 
+    if args.cot:
+        loss = partial(cot_loss, tokenizer=tokenizer, penalty=10.0)
+    else:
+        loss = default_loss
+
     state = [model.state, optimizer.state]
 
     def step(batch):
@@ -233,8 +283,8 @@ def train(
     n_tokens = 0
     steps = 0
     trained_tokens = 0
-    train_time = 0
     # Main training loop
+    start = time.perf_counter()
     for it, batch in zip(
         range(1, args.iters + 1),
         iterate_batches(
@@ -245,11 +295,10 @@ def train(
             train=True,
         ),
     ):
-        tic = time.perf_counter()
         # Report validation loss if needed, the first validation loss
         # is always measured before any training.
         if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
-            tic = time.perf_counter()
+            stop = time.perf_counter()
             val_loss = evaluate(
                 model=model,
                 dataset=val_dataset,
@@ -260,7 +309,7 @@ def train(
                 max_seq_length=args.max_seq_length,
                 iterate_batches=iterate_batches,
             )
-            val_time = time.perf_counter() - tic
+            val_time = time.perf_counter() - stop
             if rank == 0:
                 print(
                     f"Iter {it}: "
@@ -277,23 +326,24 @@ def train(
                 }
                 training_callback.on_val_loss_report(val_info)
 
-            tic = time.perf_counter()
+            start = time.perf_counter()
 
         lvalue, toks = step(batch)
         losses += lvalue
         n_tokens += toks
         steps += 1
         mx.eval(state, losses, n_tokens)
-        train_time += time.perf_counter() - tic
 
         # Report training loss if needed
         if it % args.steps_per_report == 0 or it == args.iters:
+            stop = time.perf_counter()
+
             train_loss = mx.distributed.all_sum(losses, stream=mx.cpu).item()
             train_loss /= steps * mx.distributed.init().size()
             n_tokens = mx.distributed.all_sum(n_tokens, stream=mx.cpu).item()
             learning_rate = optimizer.learning_rate.item()
-            it_sec = args.steps_per_report / train_time
-            tokens_sec = float(n_tokens) / train_time
+            it_sec = args.steps_per_report / (stop - start)
+            tokens_sec = float(n_tokens) / (stop - start)
             trained_tokens += n_tokens
             peak_mem = mx.metal.get_peak_memory() / 1e9
             if rank == 0:
@@ -322,7 +372,7 @@ def train(
             losses = 0
             n_tokens = 0
             steps = 0
-            train_time = 0
+            start = time.perf_counter()
 
         # Save adapter weights
         if it % args.steps_per_save == 0:
