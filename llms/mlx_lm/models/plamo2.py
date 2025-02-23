@@ -1624,7 +1624,6 @@ class Model(PlamoPreTrainedModel):
     def __call__(self, inputs: mx.array, cache: PlamoCache | None = None) -> mx.array:
         model_inputs = self.prepare_inputs_for_generation(
             input_ids=inputs,
-            attention_mask=mask,
             past_key_values=cache,
             use_cache=self.config.use_cache,
         )
