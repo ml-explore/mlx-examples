@@ -79,6 +79,7 @@ def build_parser():
         "--train",
         action="store_true",
         help="Do training",
+        default=None,
     )
     parser.add_argument(
         "--data",
@@ -93,6 +94,12 @@ def build_parser():
         type=str,
         choices=["lora", "dora", "full"],
         help="Type of fine-tuning to perform: lora, dora, or full.",
+    )
+    parser.add_argument(
+        "--mask-prompt",
+        action="store_true",
+        help="Mask the prompt in the loss when training",
+        default=False,
     )
     parser.add_argument(
         "--num-layers",
@@ -136,6 +143,7 @@ def build_parser():
         "--test",
         action="store_true",
         help="Evaluate on the test set after training",
+        default=None,
     )
     parser.add_argument(
         "--test-batches",
@@ -157,6 +165,7 @@ def build_parser():
         "--grad-checkpoint",
         action="store_true",
         help="Use gradient checkpointing to reduce memory use.",
+        default=None,
     )
     parser.add_argument("--seed", type=int, help="The PRNG seed")
     parser.add_argument(
@@ -176,6 +185,11 @@ def train_model(
     training_callback: TrainingCallback = None,
 ):
     model.freeze()
+    if args.num_layers > len(model.layers):
+        raise ValueError(
+            f"Requested to train {args.num_layers} layers "
+            f"but the model only has {len(model.layers)} layers."
+        )
     if args.fine_tune_type == "full":
         for l in model.layers[-max(args.num_layers, 0) :]:
             l.unfreeze()
