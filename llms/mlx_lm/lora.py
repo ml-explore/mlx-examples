@@ -387,7 +387,8 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
 
         test_ppl = math.exp(test_loss)
 
-        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}, Rewards: {test_rewards[0]:.3f}, {test_rewards[1]:.3f}")
+        rewards_str = ", ".join([f"{k}: {v:.3f}" for k, v in test_rewards.items()])
+        print(f"Test loss {test_loss:.3f}, Test ppl {test_ppl:.3f}, Rewards: {rewards_str}")
     else:
         test_loss = evaluate(
             model=model,

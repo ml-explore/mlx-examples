@@ -55,7 +55,7 @@ def r1_soft_format_reward_func(prompts: list, completions: list, answer: list, *
 def r1_strict_format_reward_func(prompts: list, completions: list, answer: list, **kwargs) -> list[float]:
     if not completions:
         return [0.0] * len(prompts)
-    pattern = r"<think>\n.*?\n</think>\n<answer>*?</answer>"
+    pattern = r"<think> .*? </think><answer> .*? </answer>"
     matches = [bool(re.search(pattern, r)) if r else False for r in completions]
     return [0.5 if match else 0.0 for match in matches]
 
