@@ -215,7 +215,7 @@ def train_model(
     adapter_path.mkdir(parents=True, exist_ok=True)
 
     adapter_file = adapter_path / "adapters.safetensors"
-    save_config(vars(args), adapter_path / "adapter_config.json")
+    save_config(vars(args), tokenizer, adapter_path / "adapter_config.json")
 
     # init training args
     training_args = TrainingArgs(
