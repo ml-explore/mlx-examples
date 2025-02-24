@@ -19,6 +19,7 @@ class GRPODataset:
         tokenizer: PreTrainedTokenizer,
         prompt_key: str = "prompt",
         answer_key: str = "answer",
+        system_key: str = "system",
         use_chat_template: bool = False,
         use_prompt: bool = False
     ):
@@ -27,9 +28,11 @@ class GRPODataset:
             prompt_str = str(item[prompt_key])
             answer_str = str(item[answer_key])
             if use_chat_template:
+                default_system_str = "A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."
+                system_str = item.get(system_key, default_system_str)
                 prompt_tokens = tokenizer.apply_chat_template(
                     [
-                        {'role': 'system', 'content': """A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."""},
+                        {'role': 'system', 'content': system_str},
                         {'role': 'user', 'content': prompt_str}
                     ],
                     add_generation_prompt=True
