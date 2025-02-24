@@ -993,6 +993,7 @@ def quantize_model(
 
 def save_config(
     config: dict,
+    tokenizer: TokenizerWrapper,
     config_path: Union[str, Path],
 ) -> None:
     """Save the model configuration to the ``config_path``.
@@ -1009,6 +1010,9 @@ def save_config(
     # sort the config for better readability
     config = dict(sorted(config.items()))
 
+    if config["vocab_size"] != (cur := len(tokenizer._tokenizer)):
+        config["vocab_size"] = cur
+        print("Updated model`s config.json to match new tokenizer")
     # write the updated config to the config_path (if provided)
     with open(config_path, "w") as fid:
         json.dump(config, fid, indent=4)
