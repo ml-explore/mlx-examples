@@ -1,11 +1,13 @@
 # Copyright © 2024 Apple Inc.
 
+from functools import partial
 import glob
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
+from typing import Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -13,8 +15,7 @@ import numpy as np
 from mlx.nn.utils import average_gradients
 from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
-
-from .datasets import CompletionsDataset
+from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 
 def grad_checkpoint(layer):
@@ -64,6 +65,18 @@ class TrainingArgs:
         default=False,
         metadata={"help": "Use gradient checkpointing to reduce memory use."},
     )
+    cot: bool = field(
+        default=False,
+        metadata={"help": "Use CoT loss masking with positioning penalty"},
+    )
+    reasoning_token: str = field(
+        default="[REASONING]",
+        metadata={"help": "Reasoning token"},
+    )
+    data_token: str = field(
+        default="[DATA]",
+        metadata={"help": "Final answer token"},
+    )
 
 
 def default_loss(model, batch, lengths):
@@ -83,13 +96,57 @@ def default_loss(model, batch, lengths):
     return ce, ntoks
 
 
-def iterate_batches(
-    dataset,
-    tokenizer,
-    batch_size,
-    max_seq_length,
-    train=False,
-):
+def cot_loss(
+    model: nn.Module,
+    inputs: mx.array,
+    targets: mx.array,
+    lengths: int,
+    tokenizer: TokenizerWrapper,
+    args: TrainingArgs,
+    penalty: mx.float32 = 10.0,
+) -> tuple[mx.array, mx.array]:
+    logits = model(inputs).astype(mx.float32)
+
+    reasoning_token_id = tokenizer.encode(args.reasoning_token)[0]
+    data_token_id = tokenizer.encode(args.data_token)[0]
+
+    reasoning_positions = mx.argmax(targets == reasoning_token_id, axis=1)
+    # find the LAST occurrence of data_token_id using slicing (in case generated dataset has multiple occurrences of [DATA])
+    data_positions = mx.argmax(targets[:, ::-1] == data_token_id, axis=1)
+    data_positions = targets.shape[1] - 1 - data_positions
+
+    seq_indices = mx.arange(targets.shape[1])[None, :]
+
+    # base CoT mask: starts at [DATA]
+    cot_mask = (seq_indices >= data_positions[:, None]).astype(mx.float32)
+
+    # length mask: limits to non-padded regions
+    length_mask = (seq_indices < lengths[:, None]).astype(mx.float32)
+
+    # combine masks: only include tokens after [DATA] AND within sequence length
+    loss_mask = cot_mask * length_mask
+
+    # validate sequence structure
+    valid_seq = (
+        (reasoning_positions < data_positions)
+        & mx.any(targets == reasoning_token_id, axis=1)
+        & mx.any(targets == data_token_id, axis=1)
+    )
+
+    # compute base cross-entropy loss
+    ce = nn.losses.cross_entropy(logits, targets)
+
+    # masking loss before [DATA]; applying penalty for invalid seq
+    valid_loss = (ce * loss_mask).sum(axis=1) / (mx.sum(loss_mask, axis=1) + 1e-8)
+    final_loss = mx.where(valid_seq, valid_loss, penalty)  # 10.0 as invalid penalty
+    loss = mx.mean(final_loss)
+
+    valid_tokens = mx.sum(loss_mask) + 1e-8
+
+    return loss, valid_tokens
+
+
+def iterate_batches(dataset, tokenizer, batch_size, max_seq_length, train=False):
     # Sort by length:
     idx = sorted(range(len(dataset)), key=lambda idx: len(dataset[idx]))
     if len(dataset) < batch_size:
@@ -140,6 +197,7 @@ def iterate_batches(
                     truncated_length  # Update lengths to match truncated lengths
                 )
             batch = mx.array(batch_arr)
+
             yield batch, mx.array(list(zip(offsets, lengths)))
 
         if not train:
@@ -213,6 +271,11 @@ def train(
     if args.grad_checkpoint:
         grad_checkpoint(model.layers[0])
 
+    if args.cot:
+        loss = partial(cot_loss, tokenizer=tokenizer, penalty=10.0, args=args)
+    else:
+        loss = default_loss
+
     state = [model.state, optimizer.state]
 
     def step(batch):
@@ -235,6 +298,7 @@ def train(
     trained_tokens = 0
     train_time = 0
     # Main training loop
+    start = time.perf_counter()
     for it, batch in zip(
         range(1, args.iters + 1),
         iterate_batches(

@@ -64,6 +64,12 @@ lora_parameters:
   scale: 20.0
   dropout: 0.0
 
+# cot loss masking training
+# cot: 
+#   use_cot: true
+#   special: true
+#   additional_tokens: ["[REASONING]", "[DATA]"]
+
 # Schedule can only be specified in a config file, uncomment to use.
 #lr_schedule:
 #  name: cosine_decay
