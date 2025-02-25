@@ -183,7 +183,7 @@ class TestModels(unittest.TestCase):
             self.assertEqual(outputs.shape, (1, 2, vocab_size))
             self.assertEqual(outputs.dtype, t)
 
-            if model_type != "mamba":
+            if model_type not in ("mamba", "plamo2"):
                 mask = create_causal_mask(inputs.shape[1], 0).astype(t)
                 outputs = model(inputs, mask=mask)
                 self.assertEqual(outputs.shape, (1, 2, vocab_size))
@@ -368,6 +368,23 @@ class TestModels(unittest.TestCase):
             vocab_size=10_000,
         )
         model = plamo.Model(args)
+        self.model_test_runner(
+            model, args.model_type, args.vocab_size, args.num_hidden_layers
+        )
+
+    def test_plamo2(self):
+        from mlx_lm.models import plamo2
+
+        args = plamo2.ModelArgs(
+            model_type="plamo2",
+            hidden_size=1024,
+            num_hidden_layers=4,
+            intermediate_size=2048,
+            num_attention_heads=8,
+            rms_norm_eps=1e-5,
+            vocab_size=10_000,
+        )
+        model = plamo2.Model(args)
         self.model_test_runner(
             model, args.model_type, args.vocab_size, args.num_hidden_layers
         )
