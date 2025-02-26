@@ -279,7 +279,8 @@ def grpo_loss(
         reward_weights = mx.array(reward_weights, dtype=mx.float32)
     else:
         reward_weights = mx.ones(len(reward_funcs), dtype=mx.float32)
-        rewards = (rewards * mx.expand_dims(reward_weights, 0)).sum(axis=1)
+    
+    rewards = (rewards * mx.expand_dims(reward_weights, 0)).sum(axis=1)
 
     # Reshape rewards and compute advantages
     rewards_reshaped = rewards.reshape(batch_size, group_size)
