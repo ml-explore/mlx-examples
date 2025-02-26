@@ -1,14 +1,3 @@
-"""
-mamba2-minimal
-==============
-
-A minimal, single-file implementation of the Mamba-2 model in PyTorch.
-
-> **Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality**
-> Authors: Tri Dao, Albert Gu
-> Paper: https://arxiv.org/abs/2405.21060
-"""
-
 import json
 from dataclasses import dataclass
 from typing import Iterable, NamedTuple, TypeAlias, cast

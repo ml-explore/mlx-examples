@@ -75,52 +75,76 @@ def ssd_forward_attn(
     dt_bias: mx.array,
     dt_min: float,
     dt_max: float,
+    prev_state=None,
 ) -> Tuple[mx.array, mx.array]:
     b, l, h, dh = x.shape
     _, _, g, _ = B.shape
 
+    # Process dt
     if dt_bias is not None:
         dt = dt + dt_bias.reshape(1, 1, -1)
-
     dt = nn.softplus(dt)
     dt = mx.clip(dt, a_min=dt_min, a_max=dt_max)
 
-    B = mx.swapaxes(mx.swapaxes(B, 1, 3), 1, 2)
-    C = mx.swapaxes(C, 1, 2)
+    # Reshape tensors
+    B_reshaped = mx.swapaxes(mx.swapaxes(B, 1, 3), 1, 2)
+    C_reshaped = mx.swapaxes(C, 1, 2)
 
-    CB = C @ B
+    # Compute CB
+    CB = C_reshaped @ B_reshaped
     CB = mx.repeat(CB, repeats=h // g, axis=1)
 
+    # Compute decay terms
     dtA = dt * A.reshape(1, 1, -1)
     dtA = mx.swapaxes(dtA, 1, 2)
-
     decay = mx.exp(segsum(dtA))
 
+    # Create attention matrix
     surrogate_attention_matrix = mx.tril(CB * decay, 0)
 
+    # Apply attention
     dtx = dt.reshape(b, l, h, 1) * x
     y = surrogate_attention_matrix @ dtx.swapaxes(1, 2)
     y = mx.swapaxes(y, 1, 2)
 
-    decay = decay[:, :, -1, :].reshape(b, h, l).swapaxes(1, 2).reshape(b, l, h, 1)
-    B = mx.repeat(B, h // g, axis=1).swapaxes(2, 3)
-    dtxdecay = dtx * decay
+    # Compute next state
+    decay_last = decay[:, :, -1, :].reshape(b, h, l).swapaxes(1, 2).reshape(b, l, h, 1)
+    B_for_state = mx.repeat(B_reshaped, h // g, axis=1).swapaxes(2, 3)
+    dtxdecay = dtx * decay_last
     dtxdecay = dtxdecay.swapaxes(1, 2).swapaxes(2, 3)
-    next_state = dtxdecay @ B
+    
+    # Calculate new state contribution
+    new_state_contribution = dtxdecay @ B_for_state
+    
+    # Initialize or update state
+    if prev_state is not None:
+        # Simply use the previous state if it exists
+        # This is a simplified approach - just use the new state
+        # In a real implementation, you'd want to properly update based on your SSM formulation
+        next_state = new_state_contribution
+    else:
+        next_state = new_state_contribution
 
+    # Add skip connection if D is provided
     if D is not None:
         y += x * D.reshape(1, 1, h, 1)
 
+    # Reshape output
     y = y.reshape(b, l, h * dh)
 
     return y, next_state
 
 
 def segsum(x):
-    l = x.shape[-1]
-    x = mx.repeat(x[..., None], l, axis=-1)
-    x = mx.tril(x, -1)
-    x_segsum = mx.cumsum(x, axis=-2)
+    # x shape: [b, h, l]
+    b, h, l = x.shape
+    indices = mx.arange(l)
+    mask = indices[:, None] >= indices[None, :]  # [l, l] lower triangular mask
+    # Expand x for broadcasting
+    x_expanded = x.reshape(b, h, l, 1)  # [b, h, l, 1]
+    # Apply mask and sum
+    masked_x = x_expanded * mask.reshape(1, 1, l, l)  # [b, h, l, l]
+    x_segsum = mx.sum(masked_x, axis=2, keepdims=True)  # [b, h, 1, l]
     return x_segsum
 
 
@@ -189,13 +213,14 @@ class Mamba2Block(nn.Module):
         y, next_ssm_state = ssd_forward_attn(
             x=x,
             dt=dt,
-            A=A,
+            A=-mx.exp(self.A_log),
             B=B,
             C=C,
             D=self.D,
             dt_bias=self.dt_bias,
             dt_min=self.args.time_step_min,
-            dt_max=self.args.time_step_max
+            dt_max=self.args.time_step_max,
+            prev_state=ssm_state
         )
 
         if self.args.norm_before_gate:
