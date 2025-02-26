@@ -122,7 +122,7 @@ def main(args):
     # Initialize the distributed group and report the nodes that showed up
     world = mx.distributed.init()
     if world.size() > 1:
-        print(f"{world.rank()} of {world.size()}", flush=True)
+        print(f"Starting rank {world.rank()} of {world.size()}", flush=True)
 
     model = getattr(resnet, args.arch)()
 
