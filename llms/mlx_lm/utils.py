@@ -1016,11 +1016,13 @@ def save_config(
 
 
 def mixed_quant_predicate_builder(
-    low_bits: int = 4,
-    high_bits: int = 4,
-    group_size: int = 64
+    low_bits: int = 4, high_bits: int = 4, group_size: int = 64
 ) -> Callable[[str, nn.Module, dict], Union[bool, dict]]:
-    def mixed_quant_predicate(path: str, module: nn.Module, config: dict, low_bits: int = 4, high_bits: int = 4, group_size: int = 64) -> Union[bool, dict]:
+    def mixed_quant_predicate(
+        path: str,
+        module: nn.Module,
+        config: dict,
+    ) -> Union[bool, dict]:
         """Implements mixed quantization predicates with similar choices to, for example, llama.cpp's Q4_K_M.
         Ref: https://github.com/ggerganov/llama.cpp/blob/917786f43d0f29b7c77a0c56767c0fa4df68b1c5/src/llama.cpp#L5265
         By Alex Barron: https://gist.github.com/barronalex/84addb8078be21969f1690c1454855f3
@@ -1033,9 +1035,9 @@ def mixed_quant_predicate_builder(
 
         num_layers = config["num_hidden_layers"]
         use_more_bits = (
-            index < num_layers // 8 or
-            index >= 7 * num_layers // 8 or
-            (index - num_layers // 8) % 3 == 2
+            index < num_layers // 8
+            or index >= 7 * num_layers // 8
+            or (index - num_layers // 8) % 3 == 2
         )
         if "v_proj" in path and use_more_bits:
             return {"group_size": group_size, "bits": high_bits}
@@ -1045,10 +1047,13 @@ def mixed_quant_predicate_builder(
             return {"group_size": group_size, "bits": high_bits}
 
         return {"group_size": group_size, "bits": low_bits}
-    return functools.partial(mixed_quant_predicate, low_bits=low_bits, high_bits=high_bits, group_size=group_size)
+
+    return mixed_quant_predicate
+
 
 mixed_3_6 = mixed_quant_predicate_builder(low_bits=3)
 mixed_2_6 = mixed_quant_predicate_builder(low_bits=2)
+
 
 def convert(
     hf_path: str,

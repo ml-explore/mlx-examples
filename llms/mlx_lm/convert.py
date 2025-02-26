@@ -1,17 +1,19 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
-
-from .utils import convert, mixed_3_6, mixed_2_6
-
 from enum import Enum
+
+from .utils import convert, mixed_2_6, mixed_3_6
+
+
 class MixedQuants(Enum):
-    mixed_3_6 = mixed_3_6
-    mixed_2_6 = mixed_2_6
+    mixed_3_6 = "mixed_3_6"
+    mixed_2_6 = "mixed_2_6"
 
     @classmethod
     def recipe_names(cls):
         return [member.name for member in cls]
+
 
 def quant_args(arg):
     try:
