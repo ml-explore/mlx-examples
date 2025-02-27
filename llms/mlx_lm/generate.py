@@ -61,9 +61,9 @@ def setup_arg_parser():
         help="Message to be processed by the model ('-' reads from stdin)",
     )
     parser.add_argument(
-        "--prefill-prompt",
+        "--prefill-response",
         default=None,
-        help="Prefill prompt to be used for the chat template",
+        help="Prefill response to be used for the chat template",
     )
     parser.add_argument(
         "--max-tokens",
@@ -224,8 +224,8 @@ def main():
             messages = []
         messages.append({"role": "user", "content": prompt})
 
-        if args.prefill_prompt is not None:
-            messages.append({"role": "assistant", "content": args.prefill_prompt})
+        if args.prefill_response is not None:
+            messages.append({"role": "assistant", "content": args.prefill_response})
             prompt = tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
