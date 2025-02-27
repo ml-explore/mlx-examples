@@ -1,8 +1,27 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
+from enum import Enum
 
-from .utils import convert
+from .utils import convert, mixed_2_6, mixed_3_6
+
+
+class MixedQuants(Enum):
+    mixed_3_6 = "mixed_3_6"
+    mixed_2_6 = "mixed_2_6"
+
+    @classmethod
+    def recipe_names(cls):
+        return [member.name for member in cls]
+
+
+def quant_args(arg):
+    try:
+        return MixedQuants[arg].value
+    except KeyError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid q-recipe {arg!r}. Choose from: {MixedQuants.recipe_names()}"
+        )
 
 
 def configure_parser() -> argparse.ArgumentParser:
@@ -28,6 +47,12 @@ def configure_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--q-bits", help="Bits per weight for quantization.", type=int, default=4
+    )
+    parser.add_argument(
+        "--quant-predicate",
+        help=f"Mixed-bit quantization recipe. Choices: {MixedQuants.recipe_names()}",
+        type=quant_args,
+        required=False,
     )
     parser.add_argument(
         "--dtype",
