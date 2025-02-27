@@ -8,6 +8,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as opt
 from mlx.utils import tree_flatten, tree_unflatten
+from ..tokenizer_utils import TokenizerWrapper
+
 
 from ..models.switch_layers import QuantizedSwitchLinear, SwitchLinear
 from .dora import DoRAEmbedding, DoRALinear
@@ -159,7 +161,9 @@ def linear_to_lora_layers(
         model.update_modules(tree_unflatten(lora_modules))
 
 
-def load_adapters(model: nn.Module, adapter_path: str) -> nn.Module:
+def load_adapters(
+    model: nn.Module, tokenizer: TokenizerWrapper, adapter_path: str
+) -> nn.Module:
     """
     Load any fine-tuned adapters / layers.
 
@@ -184,7 +188,21 @@ def load_adapters(model: nn.Module, adapter_path: str) -> nn.Module:
             use_dora=(fine_tune_type == "dora"),
         )
     model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
-    return model
+    if cot := config.cot:
+        print("Loading additional tokens")
+        if tokens := cot.get("additional_tokens"):
+            from .new_tokens import implement_new_tokens
+
+            special = False
+            if (special_arg := cot.get("special")) and isinstance(special_arg, bool):
+                print("Updating model and tokenizer with new special tokens")
+                special = special_arg
+            else:
+                print("Updating model and tokenizer with new tokens")
+            model, tokenizer = implement_new_tokens(
+                model=model, tokenizer=tokenizer, tokens=tokens, special=special
+            )
+    return model, tokenizer
 
 
 def dequantize(model: nn.Module) -> nn.Module:

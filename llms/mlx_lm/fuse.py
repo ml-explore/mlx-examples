@@ -77,7 +77,8 @@ def main() -> None:
     model, config, tokenizer = fetch_from_hub(model_path)
 
     model.freeze()
-    model = load_adapters(model, args.adapter_path)
+
+    model, tokenizer = load_adapters(model, tokenizer, args.adapter_path)
 
     fused_linears = [
         (n, m.fuse()) for n, m in model.named_modules() if hasattr(m, "fuse")
@@ -105,7 +106,7 @@ def main() -> None:
     if args.de_quantize:
         config.pop("quantization", None)
 
-    save_config(config, config_path=save_path / "config.json")
+    save_config(config, tokenizer, config_path=save_path / "config.json")
 
     if args.export_gguf:
         model_type = config["model_type"]
