@@ -51,11 +51,13 @@ class SuScaledRotaryEmbedding(nn.Module):
             + math.log(max_position_embeddings / original_max_position_embeddings)
             / math.log(original_max_position_embeddings)
         )
+        self.dim = dims
 
     def __call__(self, x, offset: int = 0):
+        x[..., : self.dim] = self.scale * x[..., : self.dim]
         return mx.fast.rope(
-            self.scale * x,
-            x.shape[-1],
+            x,
+            self.dim,
             traditional=False,
             base=None,
             scale=1.0,
