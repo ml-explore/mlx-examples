@@ -65,12 +65,25 @@ def main():
         tokenizer_config={"trust_remote_code": True},
     )
 
-    print(f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.")
+    def print_help():
+        print("The command list:")
+        print("- 'q' to exit")
+        print("- 'r' to reset the chat")
+        print("- 'h' to display these commands")
+
+    print(f"[INFO] Starting chat session with {args.model}.")
+    print_help()
     prompt_cache = make_prompt_cache(model, args.max_kv_size)
     while True:
         query = input(">> ")
         if query == "q":
             break
+        if query == "r":
+            prompt_cache = make_prompt_cache(model, args.max_kv_size)
+            continue
+        if query == "h":
+            print_help()
+            continue
         messages = [{"role": "user", "content": query}]
         prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
         for response in stream_generate(
