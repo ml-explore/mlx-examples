@@ -64,7 +64,7 @@ CONFIG_DEFAULTS = {
     "grad_checkpoint": False,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
-
+    "mask_prompt": False,
     # DPO args
     "beta": 0.1,
     "dpo_loss_type": "sigmoid",
@@ -107,7 +107,7 @@ def build_parser():
         "--mask-prompt",
         action="store_true",
         help="Mask the prompt in the loss when training",
-        default=False,
+        default=None,
     )
 
     parser.add_argument(
