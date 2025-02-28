@@ -64,6 +64,7 @@ CONFIG_DEFAULTS = {
     "grad_checkpoint": False,
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "alpha": 16, "dropout": 0.0, "scale": 10.0},
+    "mask_prompt": False,
 
     # GRPO args
     "reference_model_path": None,
@@ -74,7 +75,7 @@ CONFIG_DEFAULTS = {
     "use_chat_template": False,
     "use_prompt": False,
     "temperature": 1.0,
-    "reward_weights": None,
+    "reward_weights": None
 }
 
 
@@ -112,7 +113,7 @@ def build_parser():
         "--mask-prompt",
         action="store_true",
         help="Mask the prompt in the loss when training",
-        default=False,
+        default=None,
     )
 
     parser.add_argument(
