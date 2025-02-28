@@ -1,5 +1,7 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import os
+import sys
 import argparse
 import json
 import math
@@ -14,6 +16,12 @@ import utils as lora_utils
 from mlx.utils import tree_flatten
 from models import LoRALinear
 
+
+# Disable output buffering to see print statements in real-time
+if sys.version_info >= (3, 7):
+    sys.stdout.reconfigure(line_buffering=True)
+else:
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 1)
 
 def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
