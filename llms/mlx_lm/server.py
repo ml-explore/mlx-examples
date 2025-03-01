@@ -695,7 +695,12 @@ def run(
 ):
     server_address = (host, port)
     prompt_cache = PromptCache()
-    server_class.address_family, _, _, _, server_address = next(iter(socket.getaddrinfo(*server_address, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)))
+    infos = socket.getaddrinfo(
+        *server_address,
+        type=socket.SOCK_STREAM,
+        flags=socket.AI_PASSIVE
+    )
+    server_class.address_family, _, _, _, server_address = next(iter(infos))
     httpd = server_class(
         server_address,
         lambda *args, **kwargs: handler_class(
