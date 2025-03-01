@@ -7,6 +7,15 @@ train: true
 # The fine-tuning method: "lora", "dora", or "full".
 fine_tune_type: lora
 
+# The Optimizer with its possible inputs
+optimizer: adamw
+# optimizer_config:
+#   adamw:
+#     betas: [0.9, 0.98]
+#     eps: 1e-6
+#     weight_decay: 0.05
+#     bias_correction: true
+
 # Directory with {train, valid, test}.jsonl files
 data: "/path/to/training/data"
 
