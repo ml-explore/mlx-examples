@@ -198,11 +198,6 @@ class Model(nn.Module):
         else:
             out = self.lm_head(out)
         return out
-    
-    def sanitize(self, weights):
-        return {
-            k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
-        }
 
     @property
     def layers(self):
