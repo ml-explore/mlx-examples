@@ -47,11 +47,12 @@ response = generate(
 )
 
 # Parse the tool call:
-tool_open = "<tool_call>\n"
-tool_close = "\n</tool_call>"
+# (Note, the tool call format is model specific)
+tool_open = "<tool_call>"
+tool_close = "</tool_call>"
 start_tool = response.find(tool_open) + len(tool_open)
 end_tool = response.find(tool_close)
-tool_call = json.loads(response[start_tool:end_tool])
+tool_call = json.loads(response[start_tool:end_tool].strip())
 tool_result = tools[tool_call["name"]](**tool_call["arguments"])
 
 # Put the tool result in the prompt
