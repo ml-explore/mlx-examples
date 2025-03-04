@@ -76,16 +76,12 @@ class Attention(nn.Module):
         cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
-
         queries, keys, values = self.q_proj(x), self.k_proj(x), self.v_proj(x)
         queries = self.q_norm(queries)
         keys = self.k_norm(keys)
-
-        # Prepare the queries, keys and values for the attention computation
         queries = queries.reshape(B, L, self.n_heads, -1).transpose(0, 2, 1, 3)
         keys = keys.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
         values = values.reshape(B, L, self.n_kv_heads, -1).transpose(0, 2, 1, 3)
-
         if cache is not None:
             queries = self.rope(queries, offset=cache.offset)
             keys = self.rope(keys, offset=cache.offset)
@@ -93,11 +89,9 @@ class Attention(nn.Module):
         else:
             queries = self.rope(queries)
             keys = self.rope(keys)
-
         output = scaled_dot_product_attention(
             queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
-
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
         return self.o_proj(output)
 
@@ -123,32 +117,17 @@ class OlmoeSparseMoeBlock(nn.Module):
         self.experts = [MLP(args) for _ in range(self.num_experts)]
 
     def __call__(self, x: mx.array) -> mx.array:
-        batch_size, sequence_length, hidden_dim = x.shape
-        x = x.reshape(-1, hidden_dim)
-        
-        # router_logits: (batch * sequence_length, n_experts)
+        B, L, D = x.shape
+        x = x.reshape(-1, D)
         router_logits = self.gate(x)
-
-        # Compute routing weights with softmax
         routing_weights = mx.softmax(router_logits, axis=1, precise=True)
-        
-        # Initialize output tensor
         final_hidden_states = mx.zeros_like(x)
-        
-        # Process each token through all experts, weighted by routing weights
         for expert_idx in range(self.num_experts):
-            # Get the weight for this expert for all tokens
             expert_weights = routing_weights[:, expert_idx:expert_idx+1]
-            
-            # Only process if any weight is significant
             if mx.max(expert_weights) > 1e-5:
-                # Apply expert to all tokens
                 expert_output = self.experts[expert_idx](x)
-                
-                # Weight the output and add to final result
                 final_hidden_states += expert_output * expert_weights
-        
-        return final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
+        return final_hidden_states.reshape(B, L, D)
 
 
 class TransformerBlock(nn.Module):
@@ -190,16 +169,12 @@ class OlmoeModel(nn.Module):
         mask=None,
     ):
         h = self.embed_tokens(inputs)
-
         if mask is None:
             mask = create_attention_mask(h, cache)
-
         if cache is None:
             cache = [None] * len(self.layers)
-
         for layer, c in zip(self.layers, cache):
             h = layer(h, mask, cache=c)
-
         return self.norm(h)
 
 
@@ -224,9 +199,8 @@ class Model(nn.Module):
         else:
             out = self.lm_head(out)
         return out
-
+    
     def sanitize(self, weights):
-        # Remove unused precomputed rotary freqs
         return {
             k: v for k, v in weights.items() if "self_attn.rotary_emb.inv_freq" not in k
         }
