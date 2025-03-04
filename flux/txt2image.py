@@ -76,6 +76,10 @@ if __name__ == "__main__":
         nn.quantize(flux.t5, class_predicate=quantization_predicate)
         nn.quantize(flux.clip, class_predicate=quantization_predicate)
 
+    group = mx.distributed.init()
+    if group.size() > 1:
+        flux.flow.shard(group)
+
     if args.preload_models:
         flux.ensure_models_are_loaded()
 
