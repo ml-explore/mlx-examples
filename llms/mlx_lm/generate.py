@@ -152,7 +152,7 @@ def setup_arg_parser():
         "--num-draft-tokens",
         type=int,
         help="Number of tokens to draft when using speculative decoding.",
-        default=2,
+        default=3,
     )
     return parser
 
