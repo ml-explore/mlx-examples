@@ -5,7 +5,7 @@ from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.nn.layers.distributed import shard_linear
+from mlx.nn.layers.distributed import shard_inplace, shard_linear
 
 from .layers import (
     DoubleStreamBlock,
@@ -107,30 +107,23 @@ class Flux(nn.Module):
             block.num_heads //= N
             block.img_attn.num_heads //= N
             block.txt_attn.num_heads //= N
+            block.sharding_group = group
             block.img_attn.qkv = shard_linear(
                 block.img_attn.qkv, "all-to-sharded", groups=3, group=group
             )
             block.txt_attn.qkv = shard_linear(
                 block.txt_attn.qkv, "all-to-sharded", groups=3, group=group
             )
-            block.img_attn.proj = shard_linear(
-                block.img_attn.proj, "sharded-to-all", group=group
-            )
-            block.txt_attn.proj = shard_linear(
-                block.txt_attn.proj, "sharded-to-all", group=group
-            )
+            shard_inplace(block.img_attn.proj, "sharded-to-all", group=group)
+            shard_inplace(block.txt_attn.proj, "sharded-to-all", group=group)
             block.img_mlp.layers[0] = shard_linear(
                 block.img_mlp.layers[0], "all-to-sharded", group=group
             )
             block.txt_mlp.layers[0] = shard_linear(
                 block.txt_mlp.layers[0], "all-to-sharded", group=group
             )
-            block.img_mlp.layers[2] = shard_linear(
-                block.img_mlp.layers[2], "sharded-to-all", group=group
-            )
-            block.txt_mlp.layers[2] = shard_linear(
-                block.txt_mlp.layers[2], "sharded-to-all", group=group
-            )
+            shard_inplace(block.img_mlp.layers[2], "sharded-to-all", group=group)
+            shard_inplace(block.txt_mlp.layers[2], "sharded-to-all", group=group)
 
         for block in self.single_blocks:
             block.num_heads //= N
