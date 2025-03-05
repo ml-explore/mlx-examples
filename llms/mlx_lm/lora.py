@@ -104,7 +104,7 @@ def build_parser():
         "--optimizer",
         type=str,
         choices=["adam", "adamw"],
-        default="adam",
+        default=None,
         help="Optimizer to use for training: adam or adamw",
     )
     parser.add_argument(
