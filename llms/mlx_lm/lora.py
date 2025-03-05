@@ -47,12 +47,6 @@ CONFIG_DEFAULTS = {
     "optimizer_config": {
         "adam": {"bias_correction": False},
         "adamw": {"weight_decay": 0.01, "bias_correction": False},
-        "muon": {
-            "momentum": 0.95,
-            "weight_decay": 0.01,
-            "nesterov": True,
-            "ns_steps": 5,
-        },
     },
     "data": "data/",
     "seed": 0,
@@ -109,9 +103,9 @@ def build_parser():
     parser.add_argument(
         "--optimizer",
         type=str,
-        choices=["adam", "adamw", "muon"],
+        choices=["adam", "adamw"],
         default="adam",
-        help="Optimizer to use for training: adam, adamw, or muon",
+        help="Optimizer to use for training: adam or adamw",
     )
     parser.add_argument(
         "--mask-prompt",
@@ -256,8 +250,6 @@ def train_model(
         opt_class = optim.Adam
     elif optimizer_name == "adamw":
         opt_class = optim.AdamW
-    elif optimizer_name == "muon":
-        opt_class = optim.Muon
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
