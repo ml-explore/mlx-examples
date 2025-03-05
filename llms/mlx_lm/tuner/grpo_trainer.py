@@ -343,6 +343,7 @@ def grpo_loss(
 
         # Convert to tensor
         prompt_tensor = mx.array(padded_prompts)
+        prompt_tensor = mx.stop_gradient(prompt_tensor) # Explicitly stop gradient on input
 
         try:
             mx.metal.clear_cache()
