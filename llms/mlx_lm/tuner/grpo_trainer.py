@@ -241,6 +241,7 @@ def generate_grpo(
                     if i >= max_tokens - 1:
                         break
 
+                mx.metal.clear_cache()
                 mx.eval(current_tokens)
 
                 if current_tokens:
