@@ -78,3 +78,7 @@ lora_parameters:
 #  prompt_feature: "text"
 #  completion_feature: "summary"
 
+# DPO parameters
+loss_type: "dpo"
+beta: 0.1
+label_smoothing: 0.0

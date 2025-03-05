@@ -15,6 +15,7 @@ from mlx.utils import tree_flatten
 from transformers import PreTrainedTokenizer
 
 from .datasets import CompletionsDataset
+from ..utils import get_batched_logps, dpo_loss as dpo_loss_fn
 
 
 def grad_checkpoint(layer):
@@ -64,6 +65,18 @@ class TrainingArgs:
         default=False,
         metadata={"help": "Use gradient checkpointing to reduce memory use."},
     )
+    loss_type: str = field(
+        default="cross_entropy",
+        metadata={"help": "Type of loss function to use: 'cross_entropy' or 'dpo'."},
+    )
+    beta: float = field(
+        default=0.1,
+        metadata={"help": "Temperature parameter for DPO loss."},
+    )
+    label_smoothing: float = field(
+        default=0.0,
+        metadata={"help": "Label smoothing parameter for DPO loss."},
+    )
 
 
 def default_loss(model, batch, lengths):
@@ -81,6 +94,23 @@ def default_loss(model, batch, lengths):
     ce = ce.sum() / ntoks
 
     return ce, ntoks
+
+
+def dpo_loss(model, batch, lengths, beta, label_smoothing):
+    inputs = batch[:, :-1]
+    targets = batch[:, 1:]
+
+    reference_chosen_logps, reference_rejected_logps = get_batched_logps(model, inputs, targets)
+
+    return dpo_loss_fn(
+        model,
+        beta,
+        label_smoothing,
+        reference_chosen_logps,
+        reference_rejected_logps,
+        inputs,
+        targets,
+    )
 
 
 def iterate_batches(
@@ -217,7 +247,12 @@ def train(
 
     def step(batch):
         # Forward and backward pass
-        (lvalue, toks), grad = loss_value_and_grad(model, *batch)
+        if args.loss_type == "dpo":
+            (lvalue, toks), grad = nn.value_and_grad(model, dpo_loss)(
+                model, *batch, args.beta, args.label_smoothing
+            )
+        else:
+            (lvalue, toks), grad = nn.value_and_grad(model, loss)(model, *batch)
 
         # All reduce the gradients if running in distributed mode
         grad = average_gradients(grad)
@@ -226,8 +261,6 @@ def train(
         optimizer.update(model, grad)
 
         return lvalue, toks
-
-    loss_value_and_grad = nn.value_and_grad(model, loss)
 
     losses = 0
     n_tokens = 0
