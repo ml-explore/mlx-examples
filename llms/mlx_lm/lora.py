@@ -45,8 +45,8 @@ CONFIG_DEFAULTS = {
     "fine_tune_type": "lora",
     "optimizer": "adam",
     "optimizer_config": {
-        "adam": {"bias_correction": False},
-        "adamw": {"weight_decay": 0.01, "bias_correction": False},
+        "adam": {},
+        "adamw": {},
     },
     "data": "data/",
     "seed": 0,
