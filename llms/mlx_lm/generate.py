@@ -16,7 +16,7 @@ DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_MIN_P = 0.0
 DEFAULT_MIN_TOKENS_TO_KEEP = 1
-DEFAULT_SEED = 0
+DEFAULT_SEED = None
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 DEFAULT_QUANTIZED_KV_START = 5000
 
@@ -87,7 +87,12 @@ def setup_arg_parser():
         default=DEFAULT_MIN_TOKENS_TO_KEEP,
         help="Minimum tokens to keep for min-p sampling.",
     )
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help="PRNG seed",
+    )
     parser.add_argument(
         "--ignore-chat-template",
         action="store_true",
@@ -160,7 +165,9 @@ def setup_arg_parser():
 def main():
     parser = setup_arg_parser()
     args = parser.parse_args()
-    mx.random.seed(args.seed)
+
+    if args.seed is not None:
+        mx.random.seed(args.seed)
 
     # Load the prompt cache and metadata if a cache file is provided
     using_cache = args.prompt_cache_file is not None
