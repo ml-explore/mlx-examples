@@ -91,7 +91,7 @@ def setup_arg_parser():
         "--seed",
         type=int,
         default=DEFAULT_SEED,
-        help="PRNG seed (default: use MLX's time-based RNG)",
+        help="PRNG seed",
     )
     parser.add_argument(
         "--ignore-chat-template",
