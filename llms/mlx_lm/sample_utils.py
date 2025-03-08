@@ -35,14 +35,25 @@ def make_sampler(
     """
     if temp == 0:
         return lambda x: mx.argmax(x, axis=-1)
-    elif top_p > 0 and top_p < 1.0:
-        return lambda x: top_p_sampling(x, top_p, temp)
-    elif min_p != 0.0:
-        return lambda x: min_p_sampling(x, min_p, min_tokens_to_keep, temp)
-    elif top_k > 0:
-        return lambda x: top_k_sampling(x, top_k, temp)
-    else:
-        return lambda x: categorical_sampling(x, temp)
+
+    # Create sampler chain
+    sampling_methods = []
+    if top_k > 0:
+        sampling_methods.append(lambda x: apply_top_k(x, top_k))
+    if top_p > 0 and top_p < 1.0:
+        sampling_methods.append(lambda x: apply_top_p(x, top_p))
+    if min_p != 0.0:
+        sampling_methods.append(lambda x: apply_min_p(x, min_p, min_tokens_to_keep))
+
+    # Apply the sampling methods
+    def sampler(logits):
+        for method in sampling_methods:
+            logits = method(logits)
+
+        # Return the sampled token
+        return categorical_sampling(logits, temp)
+
+    return sampler
 
 
 def make_logits_processors(
@@ -85,7 +96,7 @@ def make_logits_processors(
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
-def top_k_sampling(
+def apply_top_k(
     logprobs: mx.array,
     top_k: int,
 ) -> mx.array:
@@ -110,7 +121,7 @@ def top_k_sampling(
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
-def min_p_sampling(
+def apply_min_p(
     logprobs: mx.array,
     min_p: float,
     min_tokens_to_keep: int = 1,
@@ -171,7 +182,7 @@ def min_p_sampling(
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
-def top_p_sampling(logits: mx.array, top_p: float) -> mx.array:
+def apply_top_p(logits: mx.array, top_p: float) -> mx.array:
     """
     Apply top-p (nucleus) sampling to logits.
 
