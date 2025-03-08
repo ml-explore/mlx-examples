@@ -1,6 +1,6 @@
 import argparse
 
-import numpy
+import mlx.core as mx
 from transformers import AutoModel
 
 
@@ -23,9 +23,9 @@ def convert(bert_model: str, mlx_model: str) -> None:
     model = AutoModel.from_pretrained(bert_model)
     # save the tensors
     tensors = {
-        replace_key(key): tensor.numpy() for key, tensor in model.state_dict().items()
+        replace_key(key): mx.array(tensor) for key, tensor in model.state_dict().items()
     }
-    numpy.savez(mlx_model, **tensors)
+    mx.save_safetensors(mlx_model, tensors)
 
 
 if __name__ == "__main__":
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mlx-model",
         type=str,
-        default="weights/bert-base-uncased.npz",
+        default="bert-base-uncased.safetensors",
         help="The output path for the MLX BERT weights.",
     )
     args = parser.parse_args()
