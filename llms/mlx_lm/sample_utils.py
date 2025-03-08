@@ -88,7 +88,6 @@ def make_logits_processors(
 def top_k_sampling(
     logprobs: mx.array,
     top_k: int,
-    temperature=1.0,
 ) -> mx.array:
     """
     Sample from only the top K tokens ranked by probability.
@@ -103,12 +102,11 @@ def top_k_sampling(
             f"`top_k` has to be an integer in the (0, {vocab_size}] interval,"
             f" but is {top_k}."
         )
-    logprobs = logprobs * (1 / temperature)
     mask_idx = mx.argpartition(-logprobs, kth=top_k - 1, axis=-1)[..., top_k:]
     masked_logprobs = mx.put_along_axis(
         logprobs, mask_idx, mx.array(-float("inf"), logprobs.dtype), axis=-1
     )
-    return mx.random.categorical(masked_logprobs, axis=-1)
+    return masked_logprobs
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
@@ -116,7 +114,6 @@ def min_p_sampling(
     logprobs: mx.array,
     min_p: float,
     min_tokens_to_keep: int = 1,
-    temperature=1.0,
 ) -> mx.array:
     """
     Apply min-p sampling to the logprobs.
@@ -144,8 +141,6 @@ def min_p_sampling(
         )
     # reference implementation: https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py#L531-L605
 
-    logprobs = logprobs * (1 / temperature)
-
     # Indices sorted in decreasing order
     sorted_indices = mx.argsort(-logprobs, axis=-1)
     sorted_logprobs = mx.take_along_axis(logprobs, sorted_indices, axis=-1)
@@ -163,9 +158,16 @@ def min_p_sampling(
     # Create pool of tokens with probability less than scaled min_p
     selected_logprobs = mx.where(tokens_to_remove, -float("inf"), sorted_logprobs)
 
-    # Return sampled tokens
-    sorted_tokens = mx.random.categorical(selected_logprobs, axis=-1)[:, None]
-    return mx.take_along_axis(sorted_indices, sorted_tokens, axis=-1).squeeze(1)
+    # Create a mapping to rearrange back to original indices
+    # Use argsort of sorted_indices to get the inverse permutation
+    inverse_indices = mx.argsort(sorted_indices, axis=-1)
+
+    # Rearrange selected_logprobs back to original order
+    original_order_logprobs = mx.take_along_axis(
+        selected_logprobs, inverse_indices, axis=-1
+    )
+
+    return original_order_logprobs
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
