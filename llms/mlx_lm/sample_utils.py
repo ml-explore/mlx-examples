@@ -169,19 +169,18 @@ def min_p_sampling(
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
-def top_p_sampling(logits: mx.array, top_p: float, temperature: float) -> mx.array:
+def top_p_sampling(logits: mx.array, top_p: float) -> mx.array:
     """
     Apply top-p (nucleus) sampling to logits.
 
     Args:
         logits: The logits from the model's output.
         top_p: The cumulative probability threshold for top-p filtering.
-        temperature: Temperature parameter for softmax distribution reshaping.
     Returns:
         token selected based on the top-p criterion.
     """
     # referenced implementation from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py#L449-L460
-    probs = mx.softmax(logits * (1 / temperature), axis=-1)
+    probs = mx.softmax(logits, axis=-1)
 
     # sort probs in ascending order
     sorted_indices = mx.argsort(probs, axis=-1)
@@ -196,8 +195,15 @@ def top_p_sampling(logits: mx.array, top_p: float, temperature: float) -> mx.arr
         0,
     )
 
-    sorted_tokens = mx.random.categorical(mx.log(top_probs), axis=-1)[:, None]
-    return mx.take_along_axis(sorted_indices, sorted_tokens, axis=-1).squeeze(1)
+    # Create a mapping to rearrange back to original indices
+    # Use argsort of sorted_indices to get the inverse permutation
+    inverse_indices = mx.argsort(sorted_indices, axis=-1)
+
+    # Rearrange top_probs back to original order
+    original_order_probs = mx.take_along_axis(top_probs, inverse_indices, axis=-1)
+
+    # Convert back to logits and return
+    return mx.log(mx.where(original_order_probs > 0, original_order_probs, 0))
 
 
 @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
