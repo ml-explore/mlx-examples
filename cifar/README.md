@@ -48,3 +48,17 @@ Note this was run on an M1 Macbook Pro with 16GB RAM.
 
 At the time of writing, `mlx` doesn't have built-in learning rate schedules.
 We intend to update this example once these features are added.
+
+## Distributed training
+
+The example also supports distributed data parallel training. You can launch a
+distributed training as follows:
+
+```shell
+$ cat >hostfile.json
+[
+    {"ssh": "host-to-ssh-to", "ips": ["ip-to-bind-to"]},
+    {"ssh": "host-to-ssh-to", "ips": ["ip-to-bind-to"]}
+]
+$ mlx.launch --verbose --hostfile hostfile.json main.py --batch 256 --epochs 5 --arch resnet20
+```

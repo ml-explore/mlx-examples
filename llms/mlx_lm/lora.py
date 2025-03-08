@@ -45,6 +45,11 @@ CONFIG_DEFAULTS = {
     "train": False,
     "fine_tune_type": "lora",
     "training_mode": "normal",
+    "optimizer": "adam",
+    "optimizer_config": {
+        "adam": {},
+        "adamw": {},
+    },
     "data": "data/",
     "seed": 0,
     "num_layers": 16,
@@ -104,14 +109,19 @@ def build_parser():
         choices=["lora", "dora", "full"],
         help="Type of fine-tuning to perform: lora, dora, or full.",
     )
-
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        choices=["adam", "adamw"],
+        default=None,
+        help="Optimizer to use for training: adam or adamw",
+    )
     parser.add_argument(
         "--mask-prompt",
         action="store_true",
         help="Mask the prompt in the loss when training",
         default=None,
     )
-
     parser.add_argument(
         "--training-mode",
         type=str,
@@ -245,7 +255,7 @@ def train_model(
     save_config(vars(args), adapter_path / "adapter_config.json")
 
     model.train()
-    opt = optim.Adam(
+    opt = optim.Adam( # need to correct that part
         learning_rate=(
             build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
         )
@@ -288,6 +298,21 @@ def train_model(
             max_seq_length=args.max_seq_length,
             grad_checkpoint=args.grad_checkpoint
         )
+        
+    # Initialize the selected optimizer
+    lr = build_schedule(args.lr_schedule) if args.lr_schedule else args.learning_rate
+
+    optimizer_name = args.optimizer.lower()
+    optimizer_config = args.optimizer_config.get(optimizer_name, {})
+
+    if optimizer_name == "adam":
+        opt_class = optim.Adam
+    elif optimizer_name == "adamw":
+        opt_class = optim.AdamW
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+    opt = opt_class(learning_rate=lr, **optimizer_config)
 
         train(
             model=model,
