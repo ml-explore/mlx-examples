@@ -2,7 +2,22 @@
 
 import argparse
 
+from . import utils
 from .utils import convert
+
+QUANT_RECIPES = [
+    "mixed_2_6",
+    "mixed_3_6",
+]
+
+
+def quant_args(arg):
+    if arg not in QUANT_RECIPES:
+        raise argparse.ArgumentTypeError(
+            f"Invalid q-recipe {arg!r}. Choose from: {QUANT_RECIPES}"
+        )
+    else:
+        return getattr(utils, arg)
 
 
 def configure_parser() -> argparse.ArgumentParser:
@@ -28,6 +43,12 @@ def configure_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--q-bits", help="Bits per weight for quantization.", type=int, default=4
+    )
+    parser.add_argument(
+        "--quant-predicate",
+        help=f"Mixed-bit quantization recipe. Choices: {QUANT_RECIPES}",
+        type=quant_args,
+        required=False,
     )
     parser.add_argument(
         "--dtype",
