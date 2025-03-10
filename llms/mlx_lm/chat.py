@@ -11,7 +11,7 @@ from .utils import load, stream_generate
 
 DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
-DEFAULT_SEED = 0
+DEFAULT_SEED = None
 DEFAULT_MAX_TOKENS = 256
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 
@@ -36,7 +36,12 @@ def setup_arg_parser():
     parser.add_argument(
         "--top-p", type=float, default=DEFAULT_TOP_P, help="Sampling top-p"
     )
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help="PRNG seed",
+    )
     parser.add_argument(
         "--max-kv-size",
         type=int,
@@ -57,7 +62,8 @@ def main():
     parser = setup_arg_parser()
     args = parser.parse_args()
 
-    mx.random.seed(args.seed)
+    if args.seed is not None:
+        mx.random.seed(args.seed)
 
     model, tokenizer = load(
         args.model,
@@ -65,12 +71,25 @@ def main():
         tokenizer_config={"trust_remote_code": True},
     )
 
-    print(f"[INFO] Starting chat session with {args.model}. To exit, enter 'q'.")
+    def print_help():
+        print("The command list:")
+        print("- 'q' to exit")
+        print("- 'r' to reset the chat")
+        print("- 'h' to display these commands")
+
+    print(f"[INFO] Starting chat session with {args.model}.")
+    print_help()
     prompt_cache = make_prompt_cache(model, args.max_kv_size)
     while True:
         query = input(">> ")
         if query == "q":
             break
+        if query == "r":
+            prompt_cache = make_prompt_cache(model, args.max_kv_size)
+            continue
+        if query == "h":
+            print_help()
+            continue
         messages = [{"role": "user", "content": query}]
         prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
         for response in stream_generate(

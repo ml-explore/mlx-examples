@@ -16,7 +16,7 @@ DEFAULT_TEMP = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_MIN_P = 0.0
 DEFAULT_MIN_TOKENS_TO_KEEP = 1
-DEFAULT_SEED = 0
+DEFAULT_SEED = None
 DEFAULT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
 DEFAULT_QUANTIZED_KV_START = 5000
 
@@ -61,6 +61,11 @@ def setup_arg_parser():
         help="Message to be processed by the model ('-' reads from stdin)",
     )
     parser.add_argument(
+        "--prefill-response",
+        default=None,
+        help="Prefill response to be used for the chat template",
+    )
+    parser.add_argument(
         "--max-tokens",
         "-m",
         type=int,
@@ -82,7 +87,12 @@ def setup_arg_parser():
         default=DEFAULT_MIN_TOKENS_TO_KEEP,
         help="Minimum tokens to keep for min-p sampling.",
     )
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="PRNG seed")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help="PRNG seed",
+    )
     parser.add_argument(
         "--ignore-chat-template",
         action="store_true",
@@ -147,7 +157,7 @@ def setup_arg_parser():
         "--num-draft-tokens",
         type=int,
         help="Number of tokens to draft when using speculative decoding.",
-        default=2,
+        default=3,
     )
     return parser
 
@@ -155,7 +165,9 @@ def setup_arg_parser():
 def main():
     parser = setup_arg_parser()
     args = parser.parse_args()
-    mx.random.seed(args.seed)
+
+    if args.seed is not None:
+        mx.random.seed(args.seed)
 
     # Load the prompt cache and metadata if a cache file is provided
     using_cache = args.prompt_cache_file is not None
@@ -219,10 +231,14 @@ def main():
             messages = []
         messages.append({"role": "user", "content": prompt})
 
+        has_prefill = args.prefill_response is not None
+        if has_prefill:
+            messages.append({"role": "assistant", "content": args.prefill_response})
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
-            add_generation_prompt=True,
+            continue_final_message=has_prefill,
+            add_generation_prompt=not has_prefill,
             **template_kwargs,
         )
 
@@ -233,7 +249,8 @@ def main():
             test_prompt = tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
-                add_generation_prompt=True,
+                continue_final_message=has_prefill,
+                add_generation_prompt=not has_prefill,
             )
             prompt = prompt[test_prompt.index("<query>") :]
         prompt = tokenizer.encode(prompt, add_special_tokens=False)
