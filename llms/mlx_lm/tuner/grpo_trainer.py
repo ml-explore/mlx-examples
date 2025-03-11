@@ -381,9 +381,7 @@ def grpo_loss(
     )
 
     # Average over tokens
-    sequence_sums = per_token_loss.sum(axis=1)
-    sequence_lengths = length_mask.sum(axis=1)
-    loss = (sequence_sums / sequence_lengths).mean()
+    loss = (per_token_loss * length_mask).sum() / length_mask.sum() # Matches the pytorch implementaiton
 
     # Calculate mean KL divergence for metrics
     mean_kl = ((kl_div * length_mask).sum(axis=1) / length_mask.sum(axis=1)).mean()
@@ -454,7 +452,7 @@ def grpo_loss(
 
     mx.metal.clear_cache()
 
-    return loss, sequence_lengths.sum(), metrics
+    return loss, length_mask.sum(axis=1).sum(), metrics
 
 
 def iterate_grpo_batches(dataset, batch_size, max_seq_length, train=False):
