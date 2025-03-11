@@ -15,7 +15,7 @@ class TestSampleUtils(unittest.TestCase):
 
         new_logits = apply_top_p(logits, 0.95)
         actual_probs = mx.softmax(new_logits.squeeze())
-        self.assertEqual(probs.squeeze().tolist(), actual_probs.tolist())
+        self.assertTrue(mx.allclose(probs.squeeze(), actual_probs))
 
         probs = mx.array([0.0, 0.5, 0.4, 0.1])[None]
         logits = mx.log(probs)
@@ -56,7 +56,7 @@ class TestSampleUtils(unittest.TestCase):
         logits = mx.log(probs)
         new_logits = apply_min_p(logits, 0.05)
         actual_probs = mx.softmax(new_logits.squeeze())
-        self.assertEqual(actual_probs.tolist(), mx.squeeze(probs).tolist())
+        self.assertTrue(mx.allclose(actual_probs, mx.squeeze(probs)))
 
         # Batch mode works
         probs = mx.array([[0.9, 0.0, 0.0, 0.1], [0.0, 0.8, 0.0, 0.1]])
