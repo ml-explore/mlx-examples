@@ -85,9 +85,37 @@ ignore the prompt and compute loss for just the completion by passing
 datasets. For `chat` datasets the final message in the message list is
 considered the completion. See the [dataset section](#Data) for more details. 
 
-### Group Relative Policy Optimization (GRPO)
+# Group Relative Policy Optimization (GRPO)
 
-To fine-tune a model using GRPO, which optimizes policy using multiple responses per prompt, use:
+## Overview
+
+Group Relative Policy Optimization (GRPO) is a fine-tuning method that optimizes language models by generating multiple responses per prompt and learning from their relative quality. This approach helps improve response quality through comparative learning.
+
+## Dataset Format
+
+GRPO requires a dataset in JSONL format (one JSON object per line) with the following structure:
+
+```json
+{"prompt": "Your question or instruction here", "answer": "The expected response"}
+```
+
+Each entry must contain:
+- `prompt`: The input text for the model to respond to
+- `answer`: The target/reference response
+
+Optional fields:
+- `system`: A system message providing context or instructions for the model
+
+Example entries:
+```json
+{"prompt": "Gerald spends $100 a month on baseball supplies. His season is 4 months long. He wants to use the months he's not playing baseball to save up by raking, shoveling, and mowing lawns. He charges $10 for each. How many chores does he need to average a month to save up for his supplies?", "answer": "5"}
+{"prompt": "Ann is cutting fabric to make curtains. She cuts a 4 foot by 6 foot rectangle for the living room, and a 2 foot by 4 foot rectangle for the bedroom. If the bolt of fabric is 16 feet by 12 feet, how much fabric is left in square feet?", "answer": "160"}
+{"prompt": "Arnel had ten boxes of pencils with the same number of pencils in each box. He kept ten pencils and shared the remaining pencils equally with his five friends. If his friends got eight pencils each, how many pencils are in each box?", "answer": "5", "system": "You are a helpful math tutor."}
+```
+
+## Usage
+
+To fine-tune a model using GRPO:
 
 ```shell
 mlx_lm.lora \
@@ -98,7 +126,7 @@ mlx_lm.lora \
     --group-size 4
 ```
 
-GRPO specific arguments:
+## GRPO-Specific Arguments
 
 - `--group-size`: Number of responses generated per prompt (default: 4)
 - `--beta`: KL penalty coefficient for policy optimization (default: 0.1)
@@ -108,9 +136,44 @@ GRPO specific arguments:
 - `--temperature`: Sampling temperature for generations. Higher values increase randomness (default: 1.0)
 - `--reward-weights`: Optional list of weights for multiple reward functions. Must match number of reward functions. If not specified, all rewards weighted equally with 1.0
 
-The GRPO training method generates multiple responses for each prompt and optimizes the policy using relative rewards between responses. This approach helps improve response quality by learning from comparisons between different completions.
+## Training Process
 
-Note that GRPO requires more compute resources than standard LoRA training since it generates multiple responses per prompt. Consider reducing batch size or using gradient checkpointing if running into memory issues.
+During GRPO training, the model:
+1. Takes each prompt from the dataset
+2. Generates multiple responses (specified by `--group-size`)
+3. Evaluates these responses against the reference answer
+4. Optimizes the policy based on the relative quality of the responses
+
+## Resource Considerations
+
+GRPO requires more compute resources than standard LoRA training since it generates multiple responses per prompt. Consider:
+- Reducing batch size
+- Using gradient checkpointing
+- Adjusting `--group-size` to balance between quality and resource usage
+
+If running into memory issues, you can also try:
+- Reducing `--max-completion-length`
+- Using a smaller model for initial experiments
+
+## Example Command with Full Options
+
+```shell
+mlx_lm.lora \
+    --model <path_to_model> \
+    --train \
+    --data <path_to_data> \
+    --fine-tune-type grpo \
+    --group-size 4 \
+    --beta 0.1 \
+    --epsilon 1e-4 \
+    --max-completion-length 512 \
+    --reference-model-path <optional_path_to_reference_model> \
+    --temperature 1.0 \
+    --reward-weights 1.0 1.0 \
+    --batch-size 4 \
+    --learning-rate 1e-5 \
+    --num-epochs 3
+```
 
 ### Evaluate
 
