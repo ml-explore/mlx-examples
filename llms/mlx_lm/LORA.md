@@ -135,6 +135,8 @@ mlx_lm.lora \
 - `--reference-model-path`: Path to reference model weights. If not specified, uses the same model
 - `--temperature`: Sampling temperature for generations. Higher values increase randomness (default: 1.0)
 - `--reward-weights`: Optional list of weights for multiple reward functions. Must match number of reward functions. If not specified, all rewards weighted equally with 1.0
+- `--use-chat-template`: Whether to use the model's chat template for formatting prompts (default: False)
+- `--use-prompt`: Whether to use the prompt as part of the input for generation (default: False)
 
 ## Training Process
 
@@ -170,6 +172,8 @@ mlx_lm.lora \
     --reference-model-path <optional_path_to_reference_model> \
     --temperature 1.0 \
     --reward-weights 1.0 1.0 \
+    --use-chat-template False \
+    --use-prompt False \
     --batch-size 4 \
     --learning-rate 1e-5 \
     --num-epochs 3
