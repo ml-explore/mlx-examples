@@ -37,7 +37,7 @@ val_batches: 25
 # Adam learning rate.
 learning_rate: 1e-5
 
-# to report the loggs to WandB
+# Whether to report the logs to WandB
 report_to_wand: true
 
 # Number of training steps between loss reporting.
