@@ -387,6 +387,10 @@ tokens-per-second, using the MLX Example
 [`wikisql`](https://github.com/ml-explore/mlx-examples/tree/main/lora/data)
 data set.
 
+## Logging
+
+You can log training metrics to Weights & Biases by adding the `--report-to-wandb` flag. This requires installing wandb manually with `pip install wandb`. When enabled, all training and validation metrics will be logged to your wandb account.
+
 [^lora]: Refer to the [arXiv paper](https://arxiv.org/abs/2106.09685) for more details on LoRA.
 
 [^qlora]: Refer to the paper [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
