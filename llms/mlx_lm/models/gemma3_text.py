@@ -27,15 +27,6 @@ class ModelArgs(BaseModelArgs):
     sliding_window: int = 512
     sliding_window_pattern: int = 6
 
-    @classmethod
-    def from_dict(cls, params):
-        return cls(
-            **{
-                k: v
-                for k, v in params.items()
-                if k in inspect.signature(cls).parameters
-            }
-        )
 
 
 class Attention(nn.Module):
