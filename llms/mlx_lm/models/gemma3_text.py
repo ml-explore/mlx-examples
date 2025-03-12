@@ -25,7 +25,6 @@ class ModelArgs(BaseModelArgs):
     rope_traditional: bool = False
     query_pre_attn_scalar: float = 256
     sliding_window: int = 512
-    mm_tokens_per_image: int = 256
     sliding_window_pattern: int = 6
 
     @classmethod
