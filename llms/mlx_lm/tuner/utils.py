@@ -98,6 +98,7 @@ def linear_to_lora_layers(
         "minicpm",
         "deepseek",
         "olmo2",
+        "olmoe",
         "internlm3",
     ]:
         keys = set(["self_attn.q_proj", "self_attn.v_proj"])
@@ -106,6 +107,8 @@ def linear_to_lora_layers(
         if model.model_type == "qwen2_moe":
             keys.add("mlp.gate")
             keys.add("mlp.shared_expert_gate")
+        if model.model_type == "olmoe":
+            keys.add("mlp.gate")
 
     elif model.model_type == "gpt_bigcode":
         keys = set(["attn.c_attn"])
