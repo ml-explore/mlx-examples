@@ -100,7 +100,7 @@ class Attention(nn.Module):
         if self.is_sliding and mask is not None:
             key_len = keys.shape[-2]
             if mask.shape[-1] != key_len:
-                mask = mask[..., :key_len]
+                mask = mask[..., -key_len:]
 
 
         output = mx.fast.scaled_dot_product_attention(
