@@ -116,7 +116,6 @@ class MLP(nn.Module):
         self.up_proj = nn.Linear(dim, hidden_dim, bias=False)
 
     def __call__(self, x) -> mx.array:
-        # This should not be GELU approx, jax.nn.gelu
         return self.down_proj(nn.gelu_approx(self.gate_proj(x)) * self.up_proj(x))
 
 
