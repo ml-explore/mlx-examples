@@ -161,6 +161,7 @@ def load_model_tokenizer(model_path: str):
     start_time = time.time()
     model, tokenizer = load(model_path)
     model_load_time = time.time() - start_time
+    tokenizer.eos_token_ids.clear()  # Remove EOS token to prevent early termination
     return model, tokenizer, model_load_time
 
 
