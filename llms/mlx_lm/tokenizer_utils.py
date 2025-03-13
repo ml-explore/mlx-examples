@@ -352,7 +352,7 @@ def load_tokenizer(model_path, tokenizer_config_extra={}, eos_token_ids=None):
 
     tokenizer_file = model_path / "tokenizer.json"
     if tokenizer_file.exists():
-        with open(tokenizer_file, "r") as fid:
+        with open(tokenizer_file, "r", encoding="utf-8") as fid:
             tokenizer_content = json.load(fid)
         if "decoder" in tokenizer_content:
             if _is_spm_decoder(tokenizer_content["decoder"]):
