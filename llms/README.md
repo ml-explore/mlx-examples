@@ -1,3 +1,9 @@
+# DEPRECATED
+
+The mlx-lm package has moved to a [new repo](https://github.com/ml-explore/mlx-lm).
+
+The package here will be removed soon. Send new contributions and issues to the MLX LM repo.
+
 ## Generate Text with LLMs and MLX
 
 The easiest way to get started is to install the `mlx-lm` package:

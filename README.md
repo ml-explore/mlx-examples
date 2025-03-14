@@ -4,12 +4,12 @@ This repo contains a variety of standalone examples using the [MLX
 framework](https://github.com/ml-explore/mlx).
 
 The [MNIST](mnist) example is a good starting point to learn how to use MLX.
-
-Some more useful examples are listed below.
+Some more useful examples are listed below. Check-out [MLX
+LM](https://github.com/ml-explore/mlx-lm) for a more fully featured Python
+package for LLMs with MLX.
 
 ### Text Models 
 
-- [MLX LM](llms/README.md) a package for LLM text generation, fine-tuning, and more.
 - [Transformer language model](transformer_lm) training.
 - Minimal examples of large scale text generation with [LLaMA](llms/llama),
   [Mistral](llms/mistral), and more in the [LLMs](llms) directory.
@@ -30,6 +30,7 @@ Some more useful examples are listed below.
 
 - Speech recognition with [OpenAI's Whisper](whisper).
 - Audio compression and generation with [Meta's EnCodec](encodec).
+- Music generation with [Meta's MusicGen](musicgen).
 
 ### Multimodal models
 
