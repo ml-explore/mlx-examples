@@ -73,8 +73,6 @@ CONFIG_DEFAULTS = {
   
     # ORPO args
     "beta": 0.1,
-    "dpo_loss_type": "sigmoid",
-    "delta": 50.0,
     "reference_model_path": None,
     "reward_scaling": 1.0,
 }
