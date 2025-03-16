@@ -166,7 +166,7 @@ useful for the sake of attribution and model versioning.
 For example, to fuse and upload a model derived from Mistral-7B-v0.1, run: 
 
 ```
-python fuse.py --upload-name My-4-bit-model --hf-repo mistralai/Mistral-7B-v0.1
+python fuse.py --upload-name My-4-bit-model --hf-path mistralai/Mistral-7B-v0.1
 ```
 
 ## Custom Data
