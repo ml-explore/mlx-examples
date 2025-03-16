@@ -1052,8 +1052,8 @@ def mixed_quant_predicate_builder(
     return mixed_quant_predicate
 
 
-mixed_3_6 = mixed_quant_predicate_builder(low_bits=3)
-mixed_2_6 = mixed_quant_predicate_builder(low_bits=2)
+mixed_3_6 = mixed_quant_predicate_builder(low_bits=3, high_bits=6)
+mixed_2_6 = mixed_quant_predicate_builder(low_bits=2, high_bits=6)
 
 
 def convert(
