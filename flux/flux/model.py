@@ -109,10 +109,10 @@ class Flux(nn.Module):
             block.txt_attn.num_heads //= N
             block.sharding_group = group
             block.img_attn.qkv = shard_linear(
-                block.img_attn.qkv, "all-to-sharded", groups=3, group=group
+                block.img_attn.qkv, "all-to-sharded", segments=3, group=group
             )
             block.txt_attn.qkv = shard_linear(
-                block.txt_attn.qkv, "all-to-sharded", groups=3, group=group
+                block.txt_attn.qkv, "all-to-sharded", segments=3, group=group
             )
             shard_inplace(block.img_attn.proj, "sharded-to-all", group=group)
             shard_inplace(block.txt_attn.proj, "sharded-to-all", group=group)
@@ -131,11 +131,11 @@ class Flux(nn.Module):
             block.linear1 = shard_linear(
                 block.linear1,
                 "all-to-sharded",
-                groups=[1 / 7, 2 / 7, 3 / 7],
+                segments=[1 / 7, 2 / 7, 3 / 7],
                 group=group,
             )
             block.linear2 = shard_linear(
-                block.linear2, "sharded-to-all", groups=[1 / 5], group=group
+                block.linear2, "sharded-to-all", segments=[1 / 5], group=group
             )
 
     def __call__(
