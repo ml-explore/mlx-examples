@@ -41,7 +41,7 @@ def load_adapter(flux, adapter_file, fuse=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate images from a textual prompt using stable diffusion"
+        description="Generate images from a textual prompt using FLUX"
     )
     parser.add_argument("prompt")
     parser.add_argument("--model", choices=["schnell", "dev"], default="schnell")
