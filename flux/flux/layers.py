@@ -178,6 +178,8 @@ class DoubleStreamBlock(nn.Module):
             nn.Linear(mlp_hidden_dim, hidden_size, bias=True),
         )
 
+        self.sharding_group = None
+
     def __call__(
         self, img: mx.array, txt: mx.array, vec: mx.array, pe: mx.array
     ) -> Tuple[mx.array, mx.array]:
@@ -216,17 +218,34 @@ class DoubleStreamBlock(nn.Module):
         attn = _attention(q, k, v, pe)
         txt_attn, img_attn = mx.split(attn, [S], axis=1)
 
+        # Project - cat - average - split
+        txt_attn = self.txt_attn.proj(txt_attn)
+        img_attn = self.img_attn.proj(img_attn)
+        if self.sharding_group is not None:
+            attn = mx.concatenate([txt_attn, img_attn], axis=1)
+            attn = mx.distributed.all_sum(attn, group=self.sharding_group)
+            txt_attn, img_attn = mx.split(attn, [S], axis=1)
+
         # calculate the img bloks
-        img = img + img_mod1.gate * self.img_attn.proj(img_attn)
-        img = img + img_mod2.gate * self.img_mlp(
+        img = img + img_mod1.gate * img_attn
+        img_mlp = self.img_mlp(
             (1 + img_mod2.scale) * self.img_norm2(img) + img_mod2.shift
         )
 
         # calculate the txt bloks
-        txt = txt + txt_mod1.gate * self.txt_attn.proj(txt_attn)
-        txt = txt + txt_mod2.gate * self.txt_mlp(
+        txt = txt + txt_mod1.gate * txt_attn
+        txt_mlp = self.txt_mlp(
             (1 + txt_mod2.scale) * self.txt_norm2(txt) + txt_mod2.shift
         )
+
+        if self.sharding_group is not None:
+            txt_img = mx.concatenate([txt_mlp, img_mlp], axis=1)
+            txt_img = mx.distributed.all_sum(txt_img, group=self.sharding_group)
+            txt_mlp, img_mlp = mx.split(txt_img, [S], axis=1)
+
+        # finalize the img/txt blocks
+        img = img + img_mod2.gate * img_mlp
+        txt = txt + txt_mod2.gate * txt_mlp
 
         return img, txt
 
