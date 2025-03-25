@@ -35,7 +35,7 @@ def to_latent_size(image_size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate images from a textual prompt using stable diffusion"
+        description="Generate images from a textual prompt using FLUX"
     )
     parser.add_argument("--quantize", "-q", action="store_true")
     parser.add_argument("--model", choices=["schnell", "dev"], default="schnell")

@@ -226,7 +226,7 @@ this section assumes you can launch distributed MLX programs using `mlx.launch
 ### Distributed Finetuning
 
 Distributed finetuning scales very well with FLUX and all one has to do is
-simply to adjust the gradient accumulation and iterations so that the batch
+adjust the gradient accumulation and training iterations so that the batch
 size remains the same. For instance, to replicate the following training
 
 ```shell
