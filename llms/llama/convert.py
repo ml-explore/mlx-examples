@@ -8,6 +8,7 @@ import json
 import shutil
 from pathlib import Path
 from typing import Dict
+
 import mlx.core as mx
 import mlx.nn as nn
 import torch
@@ -149,7 +150,7 @@ def quantize(weights, config, args):
 def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
     max_file_size_bytes = max_file_size_gibibyte << 30
     shards = []
-    shard : Dict[str, mx.array] = {}
+    shard: Dict[str, mx.array] = {}
     shard_size = 0
     for k, v in weights.items():
         if shard_size + v.nbytes > max_file_size_bytes:

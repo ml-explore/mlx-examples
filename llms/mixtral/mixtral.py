@@ -91,7 +91,7 @@ class FeedForward(nn.Module):
 class MOEFeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        
+
         if args.moe is None:
             raise ValueError("args.moe must not be None for MOEFeedForward")
 
