@@ -17,10 +17,10 @@ class ModelArgs:
     num_attention_heads: int
     rms_norm_eps: float
     vocab_size: int
-    num_key_value_heads: int = None
+    num_key_value_heads: Optional[int] = None
     rope_theta: float = 10000
     rope_traditional: bool = False
-    model_type: str = None
+    model_type: Optional[str] = None
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
 
     def __post_init__(self):
@@ -136,6 +136,11 @@ class Attention(nn.Module):
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
+        if n_heads is None or n_kv_heads is None:
+            raise ValueError(
+                "num_attention_heads and num_key_value_heads must not be None"
+            )
+
         self.repeats = n_heads // n_kv_heads
 
         head_dim = args.hidden_size // n_heads
@@ -146,7 +151,7 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
         self.o_proj = nn.Linear(n_heads * head_dim, dim, bias=False)
         rope_scale = (
-            1 / args.rope_scaling["factor"]
+            1 / float(args.rope_scaling["factor"])
             if args.rope_scaling is not None and args.rope_scaling["type"] == "linear"
             else 1
         )
