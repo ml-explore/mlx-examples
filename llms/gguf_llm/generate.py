@@ -40,7 +40,7 @@ def generate(
     if len(tokens) == 0:
         print("No tokens generated for this prompt")
         return
-    prompt_tps = prompt.size / prompt_time
+    prompt_tps = len(prompt) / prompt_time
     gen_tps = (len(tokens) - 1) / gen_time
     print(f"Prompt: {prompt_tps:.3f} tokens-per-sec")
     print(f"Generation: {gen_tps:.3f} tokens-per-sec")
