@@ -23,7 +23,7 @@ class ModelArgs:
     n_kv_heads: int
     norm_eps: float
     vocab_size: int
-    moe: dict = None
+    moe: dict
 
 
 class Attention(nn.Module):
@@ -91,7 +91,6 @@ class FeedForward(nn.Module):
 class MOEFeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-
         self.num_experts = args.moe["num_experts"]
         self.num_experts_per_tok = args.moe["num_experts_per_tok"]
         self.experts = [FeedForward(args) for _ in range(self.num_experts)]
@@ -115,7 +114,6 @@ class MOEFeedForward(nn.Module):
             yt = (yt * st).sum(axis=-1)
             y.append(yt[None, :])
         y = mx.concatenate(y)
-
         return y.reshape(orig_shape)
 
 
