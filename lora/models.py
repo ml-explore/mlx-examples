@@ -136,11 +136,6 @@ class Attention(nn.Module):
         self.n_heads = n_heads = args.num_attention_heads
         self.n_kv_heads = n_kv_heads = args.num_key_value_heads
 
-        if n_heads is None or n_kv_heads is None:
-            raise ValueError(
-                "num_attention_heads and num_key_value_heads must not be None"
-            )
-
         self.repeats = n_heads // n_kv_heads
 
         head_dim = args.hidden_size // n_heads

@@ -169,7 +169,7 @@ class SpeculativeDecoder:
 
             n_steps += 1
 
-            for t in list(new_tokens):
+            for t in new_tokens.tolist():
                 if t == self.tokenizer.eos_id or ntoks >= max_tokens:
                     break
                 outputs.append(t)
