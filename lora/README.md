@@ -7,7 +7,7 @@ available on Hugging Face.
 
 > [!TIP]
 > For a more fully featured LLM package, checkout [MLX
-> LM](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm).
+> LM](https://github.com/ml-explore/mlx-lm).
 
 In this example we'll use the WikiSQL[^wikisql] dataset to train the LLM to
 generate SQL queries from natural language. However, the example is intended to
