@@ -15,3 +15,4 @@ MLX Examples was developed with contributions from the following individuals:
 - Prince Canuma: Helped add support for `Starcoder2` models.
 - Shiyu Li: Added the `Segment Anything Model`.
 - Gökdeniz Gülmez: Added support for `MiniCPM`, `Helium`, `Mamba version 1`, `OLMoE` archtectures and support for `full-fine-tuning`.
+- Huss (Shubbair) : Add GAN example
