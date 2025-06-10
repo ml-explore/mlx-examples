@@ -1,0 +1,12 @@
+mlx==0.25.2
+mlx-data==0.1.0
+mlx-lm==0.24.1
+torch==2.7.0
+transformers==4.52.3
+datasets==3.6.0
+huggingface-hub==0.32.2
+numpy
+jupyterlab
+ipykernel
+matplotlib
+ipywidgets
