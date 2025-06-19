@@ -1,2 +1,0 @@
-include mlx_lm/requirements.txt
-recursive-include mlx_lm/ *.py

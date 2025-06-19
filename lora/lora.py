@@ -3,6 +3,8 @@
 import argparse
 import json
 import math
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -13,6 +15,9 @@ import numpy as np
 import utils as lora_utils
 from mlx.utils import tree_flatten
 from models import LoRALinear
+
+# Disable output buffering to see print statements in real-time
+sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
 
 def build_parser():
