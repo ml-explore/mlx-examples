@@ -1,2 +1,2 @@
 from . import configs, modules
-from .text2video_mlx import WanT2V
+from .text2video import WanT2V

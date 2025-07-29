@@ -11,11 +11,11 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from .modules.model_mlx import WanModel
-from .modules.t5_mlx import T5EncoderModel
-from .modules.vae_mlx import WanVAE
-from .utils.fm_solvers_mlx import FlowDPMSolverMultistepScheduler, get_sampling_sigmas, retrieve_timesteps
-from .utils.fm_solvers_unipc_mlx import FlowUniPCMultistepScheduler
+from .modules.model import WanModel
+from .modules.t5 import T5EncoderModel
+from .modules.vae import WanVAE
+from .utils.fm_solvers import FlowDPMSolverMultistepScheduler, get_sampling_sigmas, retrieve_timesteps
+from .utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 from .wan_model_io import load_wan_from_safetensors
 
 

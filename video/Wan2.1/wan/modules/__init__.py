@@ -1,7 +1,7 @@
-from .model_mlx import WanModel
-from .t5_mlx import T5Decoder, T5Encoder, T5EncoderModel, T5Model
+from .model import WanModel
+from .t5 import T5Decoder, T5Encoder, T5EncoderModel, T5Model
 from .tokenizers import HuggingfaceTokenizer
-from .vae_mlx import WanVAE
+from .vae import WanVAE
 
 __all__ = [
     'WanVAE',

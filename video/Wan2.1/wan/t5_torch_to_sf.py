@@ -4,7 +4,7 @@ from safetensors.torch import save_file
 from pathlib import Path
 import json
 
-from wan.modules.t5_mlx import T5Model
+from wan.modules.t5 import T5Model
 
 
 def convert_pickle_to_safetensors(

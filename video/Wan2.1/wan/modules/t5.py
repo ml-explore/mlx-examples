@@ -1,11 +1,13 @@
-# Modified from transformers.models.t5.modeling_t5
+# Modified from transformers.models.t5.modeling_t5 for MLX
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import logging
 import math
+from typing import Optional, Tuple, List
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import mlx.core as mx
+import mlx.nn as nn
+import numpy as np
+from mlx.utils import tree_unflatten
 
 from .tokenizers import HuggingfaceTokenizer
 
@@ -18,59 +20,41 @@ __all__ = [
 
 
 def fp16_clamp(x):
-    if x.dtype == torch.float16 and torch.isinf(x).any():
-        clamp = torch.finfo(x.dtype).max - 1000
-        x = torch.clamp(x, min=-clamp, max=clamp)
+    if x.dtype == mx.float16:
+        # Use same clamping as PyTorch for consistency
+        clamp = 65504.0  # max value for float16
+        return mx.clip(x, -clamp, clamp)
     return x
 
 
-def init_weights(m):
-    if isinstance(m, T5LayerNorm):
-        nn.init.ones_(m.weight)
-    elif isinstance(m, T5Model):
-        nn.init.normal_(m.token_embedding.weight, std=1.0)
-    elif isinstance(m, T5FeedForward):
-        nn.init.normal_(m.gate[0].weight, std=m.dim**-0.5)
-        nn.init.normal_(m.fc1.weight, std=m.dim**-0.5)
-        nn.init.normal_(m.fc2.weight, std=m.dim_ffn**-0.5)
-    elif isinstance(m, T5Attention):
-        nn.init.normal_(m.q.weight, std=(m.dim * m.dim_attn)**-0.5)
-        nn.init.normal_(m.k.weight, std=m.dim**-0.5)
-        nn.init.normal_(m.v.weight, std=m.dim**-0.5)
-        nn.init.normal_(m.o.weight, std=(m.num_heads * m.dim_attn)**-0.5)
-    elif isinstance(m, T5RelativeEmbedding):
-        nn.init.normal_(
-            m.embedding.weight, std=(2 * m.num_buckets * m.num_heads)**-0.5)
-
-
 class GELU(nn.Module):
-
-    def forward(self, x):
-        return 0.5 * x * (1.0 + torch.tanh(
-            math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
+    def __call__(self, x):
+        return 0.5 * x * (1.0 + mx.tanh(
+            math.sqrt(2.0 / math.pi) * (x + 0.044715 * mx.power(x, 3.0))))
 
 
 class T5LayerNorm(nn.Module):
-
     def __init__(self, dim, eps=1e-6):
-        super(T5LayerNorm, self).__init__()
+        super().__init__()
         self.dim = dim
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        self.weight = mx.ones((dim,))
 
-    def forward(self, x):
-        x = x * torch.rsqrt(x.float().pow(2).mean(dim=-1, keepdim=True) +
-                            self.eps)
-        if self.weight.dtype in [torch.float16, torch.float32]:
-            x = x.type_as(self.weight)
-        return self.weight * x
+    def __call__(self, x):
+        # Match PyTorch's approach: convert to float32 for stability
+        x_float = x.astype(mx.float32) if x.dtype == mx.float16 else x
+        variance = mx.mean(mx.square(x_float), axis=-1, keepdims=True)
+        x_norm = x_float * mx.rsqrt(variance + self.eps)
+        # Convert back to original dtype
+        if x.dtype == mx.float16:
+            x_norm = x_norm.astype(mx.float16)
+        return self.weight * x_norm
 
 
 class T5Attention(nn.Module):
-
-    def __init__(self, dim, dim_attn, num_heads, dropout=0.1):
+    def __init__(self, dim, dim_attn, num_heads, dropout=0.0):
         assert dim_attn % num_heads == 0
-        super(T5Attention, self).__init__()
+        super().__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.num_heads = num_heads
@@ -83,7 +67,7 @@ class T5Attention(nn.Module):
         self.o = nn.Linear(dim_attn, dim, bias=False)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, context=None, mask=None, pos_bias=None):
+    def __call__(self, x, context=None, mask=None, pos_bias=None):
         """
         x:          [B, L1, C].
         context:    [B, L2, C] or None.
@@ -91,50 +75,72 @@ class T5Attention(nn.Module):
         """
         # check inputs
         context = x if context is None else context
-        b, n, c = x.size(0), self.num_heads, self.head_dim
+        b, l1, _ = x.shape
+        _, l2, _ = context.shape
+        n, c = self.num_heads, self.head_dim
 
         # compute query, key, value
-        q = self.q(x).view(b, -1, n, c)
-        k = self.k(context).view(b, -1, n, c)
-        v = self.v(context).view(b, -1, n, c)
+        q = self.q(x).reshape(b, l1, n, c)
+        k = self.k(context).reshape(b, l2, n, c)
+        v = self.v(context).reshape(b, l2, n, c)
 
-        # attention bias
-        attn_bias = x.new_zeros(b, n, q.size(1), k.size(1))
-        if pos_bias is not None:
-            attn_bias += pos_bias
-        if mask is not None:
-            assert mask.ndim in [2, 3]
-            mask = mask.view(b, 1, 1,
-                             -1) if mask.ndim == 2 else mask.unsqueeze(1)
-            attn_bias.masked_fill_(mask == 0, torch.finfo(x.dtype).min)
+        # transpose for attention: [B, N, L, C]
+        q = mx.transpose(q, (0, 2, 1, 3))
+        k = mx.transpose(k, (0, 2, 1, 3))
+        v = mx.transpose(v, (0, 2, 1, 3))
 
         # compute attention (T5 does not use scaling)
-        attn = torch.einsum('binc,bjnc->bnij', q, k) + attn_bias
-        attn = F.softmax(attn.float(), dim=-1).type_as(attn)
-        x = torch.einsum('bnij,bjnc->binc', attn, v)
+        attn = mx.matmul(q, mx.transpose(k, (0, 1, 3, 2)))  # [B, N, L1, L2]
+        
+        # add position bias if provided
+        if pos_bias is not None:
+            attn = attn + pos_bias
+            
+        # apply mask
+        if mask is not None:
+            if mask.ndim == 2:
+                # [B, L2] -> [B, 1, 1, L2]
+                mask = mask[:, None, None, :]
+            elif mask.ndim == 3:
+                # [B, L1, L2] -> [B, 1, L1, L2]
+                mask = mask[:, None, :, :]
+            # Use very negative value that works well with float16
+            min_value = -65504.0 if attn.dtype == mx.float16 else -1e9
+            attn = mx.where(mask == 0, min_value, attn)
 
-        # output
-        x = x.reshape(b, -1, n * c)
+        # softmax and apply attention
+        attn = mx.softmax(attn.astype(mx.float32), axis=-1).astype(attn.dtype)
+        attn = self.dropout(attn)
+        
+        # apply attention to values
+        x = mx.matmul(attn, v)  # [B, N, L1, C]
+        
+        # transpose back and reshape
+        x = mx.transpose(x, (0, 2, 1, 3))  # [B, L1, N, C]
+        x = x.reshape(b, l1, -1)
+        
+        # output projection
         x = self.o(x)
         x = self.dropout(x)
         return x
 
 
 class T5FeedForward(nn.Module):
-
-    def __init__(self, dim, dim_ffn, dropout=0.1):
-        super(T5FeedForward, self).__init__()
+    def __init__(self, dim, dim_ffn, dropout=0.0):
+        super().__init__()
         self.dim = dim
         self.dim_ffn = dim_ffn
 
         # layers
-        self.gate = nn.Sequential(nn.Linear(dim, dim_ffn, bias=False), GELU())
+        self.gate_proj = nn.Linear(dim, dim_ffn, bias=False)
+        self.gate_act = GELU()
         self.fc1 = nn.Linear(dim, dim_ffn, bias=False)
         self.fc2 = nn.Linear(dim_ffn, dim, bias=False)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        x = self.fc1(x) * self.gate(x)
+    def __call__(self, x):
+        gate = self.gate_act(self.gate_proj(x))
+        x = self.fc1(x) * gate
         x = self.dropout(x)
         x = self.fc2(x)
         x = self.dropout(x)
@@ -142,7 +148,6 @@ class T5FeedForward(nn.Module):
 
 
 class T5SelfAttention(nn.Module):
-
     def __init__(self,
                  dim,
                  dim_attn,
@@ -150,8 +155,8 @@ class T5SelfAttention(nn.Module):
                  num_heads,
                  num_buckets,
                  shared_pos=True,
-                 dropout=0.1):
-        super(T5SelfAttention, self).__init__()
+                 dropout=0.0):
+        super().__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.dim_ffn = dim_ffn
@@ -167,16 +172,15 @@ class T5SelfAttention(nn.Module):
         self.pos_embedding = None if shared_pos else T5RelativeEmbedding(
             num_buckets, num_heads, bidirectional=True)
 
-    def forward(self, x, mask=None, pos_bias=None):
+    def __call__(self, x, mask=None, pos_bias=None):
         e = pos_bias if self.shared_pos else self.pos_embedding(
-            x.size(1), x.size(1))
+            x.shape[1], x.shape[1])
         x = fp16_clamp(x + self.attn(self.norm1(x), mask=mask, pos_bias=e))
         x = fp16_clamp(x + self.ffn(self.norm2(x)))
         return x
 
 
 class T5CrossAttention(nn.Module):
-
     def __init__(self,
                  dim,
                  dim_attn,
@@ -184,8 +188,8 @@ class T5CrossAttention(nn.Module):
                  num_heads,
                  num_buckets,
                  shared_pos=True,
-                 dropout=0.1):
-        super(T5CrossAttention, self).__init__()
+                 dropout=0.0):
+        super().__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.dim_ffn = dim_ffn
@@ -203,14 +207,14 @@ class T5CrossAttention(nn.Module):
         self.pos_embedding = None if shared_pos else T5RelativeEmbedding(
             num_buckets, num_heads, bidirectional=False)
 
-    def forward(self,
+    def __call__(self,
                 x,
                 mask=None,
                 encoder_states=None,
                 encoder_mask=None,
                 pos_bias=None):
         e = pos_bias if self.shared_pos else self.pos_embedding(
-            x.size(1), x.size(1))
+            x.shape[1], x.shape[1])
         x = fp16_clamp(x + self.self_attn(self.norm1(x), mask=mask, pos_bias=e))
         x = fp16_clamp(x + self.cross_attn(
             self.norm2(x), context=encoder_states, mask=encoder_mask))
@@ -219,9 +223,8 @@ class T5CrossAttention(nn.Module):
 
 
 class T5RelativeEmbedding(nn.Module):
-
     def __init__(self, num_buckets, num_heads, bidirectional, max_dist=128):
-        super(T5RelativeEmbedding, self).__init__()
+        super().__init__()
         self.num_buckets = num_buckets
         self.num_heads = num_heads
         self.bidirectional = bidirectional
@@ -230,42 +233,55 @@ class T5RelativeEmbedding(nn.Module):
         # layers
         self.embedding = nn.Embedding(num_buckets, num_heads)
 
-    def forward(self, lq, lk):
-        device = self.embedding.weight.device
-        # rel_pos = torch.arange(lk).unsqueeze(0).to(device) - \
-        #     torch.arange(lq).unsqueeze(1).to(device)
-        rel_pos = torch.arange(lk, device=device).unsqueeze(0) - \
-            torch.arange(lq, device=device).unsqueeze(1)
+    def __call__(self, lq, lk):
+        # Create relative position matrix
+        positions_q = mx.arange(lq)[:, None]
+        positions_k = mx.arange(lk)[None, :]
+        rel_pos = positions_k - positions_q
+        
+        # Apply bucketing
         rel_pos = self._relative_position_bucket(rel_pos)
+        
+        # Get embeddings
         rel_pos_embeds = self.embedding(rel_pos)
-        rel_pos_embeds = rel_pos_embeds.permute(2, 0, 1).unsqueeze(
-            0)  # [1, N, Lq, Lk]
-        return rel_pos_embeds.contiguous()
+        
+        # Reshape to [1, N, Lq, Lk]
+        rel_pos_embeds = mx.transpose(rel_pos_embeds, (2, 0, 1))
+        rel_pos_embeds = mx.expand_dims(rel_pos_embeds, 0)
+        
+        return rel_pos_embeds
 
     def _relative_position_bucket(self, rel_pos):
         # preprocess
         if self.bidirectional:
             num_buckets = self.num_buckets // 2
-            rel_buckets = (rel_pos > 0).long() * num_buckets
-            rel_pos = torch.abs(rel_pos)
+            rel_buckets = mx.array(rel_pos > 0, dtype=mx.int32) * num_buckets
+            rel_pos = mx.abs(rel_pos)
         else:
             num_buckets = self.num_buckets
-            rel_buckets = 0
-            rel_pos = -torch.min(rel_pos, torch.zeros_like(rel_pos))
+            rel_buckets = mx.zeros_like(rel_pos, dtype=mx.int32)
+            rel_pos = -mx.minimum(rel_pos, mx.zeros_like(rel_pos))
 
         # embeddings for small and large positions
         max_exact = num_buckets // 2
-        rel_pos_large = max_exact + (torch.log(rel_pos.float() / max_exact) /
-                                     math.log(self.max_dist / max_exact) *
-                                     (num_buckets - max_exact)).long()
-        rel_pos_large = torch.min(
-            rel_pos_large, torch.full_like(rel_pos_large, num_buckets - 1))
-        rel_buckets += torch.where(rel_pos < max_exact, rel_pos, rel_pos_large)
+        is_small = rel_pos < max_exact
+        
+        # For large positions, use log scale
+        rel_pos_large = max_exact + (
+            mx.log(mx.array(rel_pos, dtype=mx.float32) / max_exact) /
+            math.log(self.max_dist / max_exact) *
+            (num_buckets - max_exact)
+        ).astype(mx.int32)
+        
+        rel_pos_large = mx.minimum(rel_pos_large, num_buckets - 1)
+        
+        # Combine small and large position buckets
+        rel_buckets = rel_buckets + mx.where(is_small, rel_pos, rel_pos_large)
+        
         return rel_buckets
 
 
 class T5Encoder(nn.Module):
-
     def __init__(self,
                  vocab,
                  dim,
@@ -275,8 +291,8 @@ class T5Encoder(nn.Module):
                  num_layers,
                  num_buckets,
                  shared_pos=True,
-                 dropout=0.1):
-        super(T5Encoder, self).__init__()
+                 dropout=0.0):
+        super().__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.dim_ffn = dim_ffn
@@ -286,25 +302,25 @@ class T5Encoder(nn.Module):
         self.shared_pos = shared_pos
 
         # layers
-        self.token_embedding = vocab if isinstance(vocab, nn.Embedding) \
-            else nn.Embedding(vocab, dim)
+        if isinstance(vocab, nn.Embedding):
+            self.token_embedding = vocab
+        else:
+            self.token_embedding = nn.Embedding(vocab, dim)
+            
         self.pos_embedding = T5RelativeEmbedding(
             num_buckets, num_heads, bidirectional=True) if shared_pos else None
         self.dropout = nn.Dropout(dropout)
-        self.blocks = nn.ModuleList([
+        self.blocks = [
             T5SelfAttention(dim, dim_attn, dim_ffn, num_heads, num_buckets,
                             shared_pos, dropout) for _ in range(num_layers)
-        ])
+        ]
         self.norm = T5LayerNorm(dim)
 
-        # initialize weights
-        self.apply(init_weights)
-
-    def forward(self, ids, mask=None):
+    def __call__(self, ids, mask=None):
         x = self.token_embedding(ids)
         x = self.dropout(x)
-        e = self.pos_embedding(x.size(1),
-                               x.size(1)) if self.shared_pos else None
+        e = self.pos_embedding(x.shape[1],
+                               x.shape[1]) if self.shared_pos else None
         for block in self.blocks:
             x = block(x, mask, pos_bias=e)
         x = self.norm(x)
@@ -313,7 +329,6 @@ class T5Encoder(nn.Module):
 
 
 class T5Decoder(nn.Module):
-
     def __init__(self,
                  vocab,
                  dim,
@@ -323,8 +338,8 @@ class T5Decoder(nn.Module):
                  num_layers,
                  num_buckets,
                  shared_pos=True,
-                 dropout=0.1):
-        super(T5Decoder, self).__init__()
+                 dropout=0.0):
+        super().__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.dim_ffn = dim_ffn
@@ -334,34 +349,35 @@ class T5Decoder(nn.Module):
         self.shared_pos = shared_pos
 
         # layers
-        self.token_embedding = vocab if isinstance(vocab, nn.Embedding) \
-            else nn.Embedding(vocab, dim)
+        if isinstance(vocab, nn.Embedding):
+            self.token_embedding = vocab
+        else:
+            self.token_embedding = nn.Embedding(vocab, dim)
+            
         self.pos_embedding = T5RelativeEmbedding(
             num_buckets, num_heads, bidirectional=False) if shared_pos else None
         self.dropout = nn.Dropout(dropout)
-        self.blocks = nn.ModuleList([
+        self.blocks = [
             T5CrossAttention(dim, dim_attn, dim_ffn, num_heads, num_buckets,
                              shared_pos, dropout) for _ in range(num_layers)
-        ])
+        ]
         self.norm = T5LayerNorm(dim)
 
-        # initialize weights
-        self.apply(init_weights)
-
-    def forward(self, ids, mask=None, encoder_states=None, encoder_mask=None):
-        b, s = ids.size()
+    def __call__(self, ids, mask=None, encoder_states=None, encoder_mask=None):
+        b, s = ids.shape
 
         # causal mask
         if mask is None:
-            mask = torch.tril(torch.ones(1, s, s).to(ids.device))
+            mask = mx.tril(mx.ones((1, s, s)))
         elif mask.ndim == 2:
-            mask = torch.tril(mask.unsqueeze(1).expand(-1, s, -1))
+            # Expand mask properly
+            mask = mx.tril(mx.expand_dims(mask, 1).broadcast_to((b, s, s)))
 
         # layers
         x = self.token_embedding(ids)
         x = self.dropout(x)
-        e = self.pos_embedding(x.size(1),
-                               x.size(1)) if self.shared_pos else None
+        e = self.pos_embedding(x.shape[1],
+                               x.shape[1]) if self.shared_pos else None
         for block in self.blocks:
             x = block(x, mask, encoder_states, encoder_mask, pos_bias=e)
         x = self.norm(x)
@@ -370,7 +386,6 @@ class T5Decoder(nn.Module):
 
 
 class T5Model(nn.Module):
-
     def __init__(self,
                  vocab_size,
                  dim,
@@ -381,8 +396,8 @@ class T5Model(nn.Module):
                  decoder_layers,
                  num_buckets,
                  shared_pos=True,
-                 dropout=0.1):
-        super(T5Model, self).__init__()
+                 dropout=0.0):
+        super().__init__()
         self.vocab_size = vocab_size
         self.dim = dim
         self.dim_attn = dim_attn
@@ -402,14 +417,56 @@ class T5Model(nn.Module):
                                  shared_pos, dropout)
         self.head = nn.Linear(dim, vocab_size, bias=False)
 
-        # initialize weights
-        self.apply(init_weights)
-
-    def forward(self, encoder_ids, encoder_mask, decoder_ids, decoder_mask):
+    def __call__(self, encoder_ids, encoder_mask, decoder_ids, decoder_mask):
         x = self.encoder(encoder_ids, encoder_mask)
         x = self.decoder(decoder_ids, decoder_mask, x, encoder_mask)
         x = self.head(x)
         return x
+
+
+def init_mlx_weights(module, key):
+    """Initialize weights for T5 model components to match PyTorch initialization"""
+    
+    def normal(key, shape, std=1.0):
+        return mx.random.normal(key, shape) * std
+    
+    if isinstance(module, T5LayerNorm):
+        module.weight = mx.ones_like(module.weight)
+    elif isinstance(module, nn.Embedding):
+        key = mx.random.split(key, 1)[0]
+        module.weight = normal(key, module.weight.shape, std=1.0)
+    elif isinstance(module, T5FeedForward):
+        # Match PyTorch initialization
+        key1, key2, key3 = mx.random.split(key, 3)
+        module.gate_proj.weight = normal(key1, module.gate_proj.weight.shape, 
+                                        std=module.dim**-0.5)
+        module.fc1.weight = normal(key2, module.fc1.weight.shape, 
+                                  std=module.dim**-0.5)
+        module.fc2.weight = normal(key3, module.fc2.weight.shape, 
+                                  std=module.dim_ffn**-0.5)
+    elif isinstance(module, T5Attention):
+        # Match PyTorch initialization
+        key1, key2, key3, key4 = random.split(key, 4)
+        module.q.weight = normal(key1, module.q.weight.shape, 
+                                std=(module.dim * module.dim_attn)**-0.5)
+        module.k.weight = normal(key2, module.k.weight.shape, 
+                                std=module.dim**-0.5)
+        module.v.weight = normal(key3, module.v.weight.shape, 
+                                std=module.dim**-0.5)
+        module.o.weight = normal(key4, module.o.weight.shape, 
+                                std=(module.num_heads * module.dim_attn)**-0.5)
+    elif isinstance(module, T5RelativeEmbedding):
+        key = mx.random.split(key, 1)[0]
+        module.embedding.weight = normal(key, module.embedding.weight.shape,
+                                        std=(2 * module.num_buckets * module.num_heads)**-0.5)
+    elif isinstance(module, nn.Linear):
+        # Generic linear layer initialization
+        key = mx.random.split(key, 1)[0]
+        fan_in = module.weight.shape[1]
+        bound = 1.0 / math.sqrt(fan_in)
+        module.weight = mx.random.uniform(key, module.weight.shape, -bound, bound)
+    
+    return module
 
 
 def _t5(name,
@@ -417,8 +474,6 @@ def _t5(name,
         decoder_only=False,
         return_tokenizer=False,
         tokenizer_kwargs={},
-        dtype=torch.float32,
-        device='cpu',
         **kwargs):
     # sanity check
     assert not (encoder_only and decoder_only)
@@ -438,11 +493,11 @@ def _t5(name,
         model_cls = T5Model
 
     # init model
-    with torch.device(device):
-        model = model_cls(**kwargs)
-
-    # set device
-    model = model.to(dtype=dtype, device=device)
+    model = model_cls(**kwargs)
+    
+    # Initialize weights properly
+    key = mx.random.key(0)
+    model = init_mlx_weights(model, key)
 
     # init tokenizer
     if return_tokenizer:
@@ -464,50 +519,99 @@ def umt5_xxl(**kwargs):
         decoder_layers=24,
         num_buckets=32,
         shared_pos=False,
-        dropout=0.1)
+        dropout=0.0)
     cfg.update(**kwargs)
     return _t5('umt5-xxl', **cfg)
 
 
 class T5EncoderModel:
-
     def __init__(
         self,
         text_len,
-        dtype=torch.float32,
-        device='mps' if torch.backends.mps.is_available() else 'cpu',
         checkpoint_path=None,
         tokenizer_path=None,
-        shard_fn=None,
     ):
         self.text_len = text_len
-        self.dtype = dtype
-        self.device = device
         self.checkpoint_path = checkpoint_path
         self.tokenizer_path = tokenizer_path
 
         # init model
         model = umt5_xxl(
             encoder_only=True,
-            return_tokenizer=False,
-            dtype=dtype,
-            device=device).eval().requires_grad_(False)
-        logging.info(f'loading {checkpoint_path}')
-        model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
+            return_tokenizer=False)
+        
+        if checkpoint_path:
+            logging.info(f'loading {checkpoint_path}')
+            # Load weights - assuming MLX format checkpoint
+            weights = mx.load(checkpoint_path)
+            model.update(tree_unflatten(list(weights.items())))
+        
         self.model = model
-        if shard_fn is not None:
-            self.model = shard_fn(self.model, sync_module_states=False)
-        else:
-            self.model.to(self.device)
+        
         # init tokenizer
+        from .tokenizers import HuggingfaceTokenizer
         self.tokenizer = HuggingfaceTokenizer(
-            name=tokenizer_path, seq_len=text_len, clean='whitespace')
+            name=tokenizer_path if tokenizer_path else 'google/umt5-xxl', 
+            seq_len=text_len, 
+            clean='whitespace')
 
-    def __call__(self, texts, device):
-        ids, mask = self.tokenizer(
+    def __call__(self, texts):
+        # Handle single string input
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        # Tokenize texts
+        tokenizer_output = self.tokenizer(
             texts, return_mask=True, add_special_tokens=True)
-        ids = ids.to(device)
-        mask = mask.to(device)
-        seq_lens = mask.gt(0).sum(dim=1).long()
+        
+        # Handle different tokenizer output formats
+        if isinstance(tokenizer_output, tuple):
+            ids, mask = tokenizer_output
+        else:
+            # Assuming dict output with 'input_ids' and 'attention_mask'
+            ids = tokenizer_output['input_ids']
+            mask = tokenizer_output['attention_mask']
+        
+        # Convert to MLX arrays if not already
+        if not isinstance(ids, mx.array):
+            ids = mx.array(ids)
+        if not isinstance(mask, mx.array):
+            mask = mx.array(mask)
+        
+        # Get sequence lengths
+        seq_lens = mx.sum(mask > 0, axis=1)
+        
+        # Run encoder
         context = self.model(ids, mask)
-        return [u[:v] for u, v in zip(context, seq_lens)]
+        
+        # Return variable length outputs
+        # Convert seq_lens to Python list for indexing
+        if seq_lens.ndim == 0:  # Single value
+            seq_lens_list = [seq_lens.item()]
+        else:
+            seq_lens_list = seq_lens.tolist()
+        
+        return [context[i, :int(seq_lens_list[i])] for i in range(len(texts))]
+
+
+# Utility function to convert PyTorch checkpoint to MLX
+def convert_pytorch_checkpoint(pytorch_path, mlx_path):
+    """Convert PyTorch checkpoint to MLX format"""
+    import torch
+    
+    # Load PyTorch checkpoint
+    pytorch_state = torch.load(pytorch_path, map_location='cpu')
+    
+    # Convert to numpy then to MLX
+    mlx_state = {}
+    for key, value in pytorch_state.items():
+        if isinstance(value, torch.Tensor):
+            # Handle the key mapping if needed
+            mlx_key = key
+            # Convert tensor to MLX array
+            mlx_state[mlx_key] = mx.array(value.numpy())
+    
+    # Save MLX checkpoint
+    mx.save(mlx_path, mlx_state)
+    
+    return mlx_state
