@@ -1,0 +1,12 @@
+mlx
+torch
+transformers
+numpy
+pandas
+seaborn
+biopython
+biotite
+scipy
+tqdm
+scikit-learn
+matplotlib
