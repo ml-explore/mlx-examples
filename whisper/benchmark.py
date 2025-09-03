@@ -12,12 +12,6 @@ audio_file = "mlx_whisper/assets/ls_test.flac"
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Benchmark script.")
     parser.add_argument(
-        "--mlx-dir",
-        type=str,
-        default="mlx_models",
-        help="The folder of MLX models",
-    )
-    parser.add_argument(
         "--all",
         action="store_true",
         help="Use all available models, i.e. tiny,small,medium,large-v3",
