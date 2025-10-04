@@ -156,42 +156,42 @@ def build_parser():
         "--prepend-punctuations",
         type=str,
         default="\"'“¿([{-",
-        help="If word-timestamps is True, merge these punctuation symbols with the next word",
+        help="If --word-timestamps is True, merge these punctuation symbols with the next word",
     )
     parser.add_argument(
         "--append-punctuations",
         type=str,
         default="\"'.。,，!！?？:：”)]}、",
-        help="If word_timestamps is True, merge these punctuation symbols with the previous word",
+        help="If --word-timestamps is True, merge these punctuation symbols with the previous word",
     )
     parser.add_argument(
         "--highlight-words",
         type=str2bool,
         default=False,
-        help="(requires --word_timestamps True) underline each word as it is spoken in srt and vtt",
+        help="(requires --word-timestamps True) underline each word as it is spoken in srt and vtt",
     )
     parser.add_argument(
         "--max-line-width",
         type=int,
         default=None,
-        help="(requires --word_timestamps True) the maximum number of characters in a line before breaking the line",
+        help="(requires --word-timestampss True) the maximum number of characters in a line before breaking the line",
     )
     parser.add_argument(
         "--max-line-count",
         type=int,
         default=None,
-        help="(requires --word_timestamps True) the maximum number of lines in a segment",
+        help="(requires --word-timestamps True) the maximum number of lines in a segment",
     )
     parser.add_argument(
         "--max-words-per-line",
         type=int,
         default=None,
-        help="(requires --word_timestamps True, no effect with --max_line_width) the maximum number of words in a segment",
+        help="(requires --word-timestamps True, no effect with --max-line-width) the maximum number of words in a segment",
     )
     parser.add_argument(
         "--hallucination-silence-threshold",
         type=optional_float,
-        help="(requires --word_timestamps True) skip silent periods longer than this threshold (in seconds) when a possible hallucination is detected",
+        help="(requires --word-timestamps True) skip silent periods longer than this threshold (in seconds) when a possible hallucination is detected",
     )
     parser.add_argument(
         "--clip-timestamps",
