@@ -1,0 +1,25 @@
+name: Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/head/main' }}
+
+jobs:
+  check_lint:
+    if: github.repository == 'ml-explore/mlx-examples'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - uses: pre-commit/action@v3.0.1
+
