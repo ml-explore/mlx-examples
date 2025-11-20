@@ -127,6 +127,7 @@ class DecodingResult:
     no_speech_prob: float = np.nan
     temperature: float = np.nan
     compression_ratio: float = np.nan
+    num_inference_steps: int = 0  # Total decoder forward passes
 
 
 class Inference:
@@ -572,6 +573,7 @@ class DecodingTask:
     def _main_loop(self, audio_features: mx.array, tokens: mx.array):
         n_batch = tokens.shape[0]
         sum_logprobs = mx.zeros(n_batch)
+        inference_steps = 1  # Count the first step
 
         def _step(inputs, audio_features, tokens, sum_logprobs):
             pre_logits = self.inference.logits(inputs, audio_features)
@@ -608,13 +610,14 @@ class DecodingTask:
                 inputs, audio_features, tokens, sum_logprobs
             )
             mx.async_eval(next_completed, next_tokens, next_sum_logprobs)
+            inference_steps += 1  # Count each iteration
             if completed:
                 break
             tokens = next_tokens
             completed = next_completed
             sum_logprobs = next_sum_logprobs
 
-        return tokens, sum_logprobs, no_speech_probs
+        return tokens, sum_logprobs, no_speech_probs, inference_steps
 
     def run(self, mel: mx.array) -> List[DecodingResult]:
         self.inference.reset()
@@ -647,7 +650,9 @@ class DecodingTask:
             tokens = tokens.reshape((n_audio * self.n_group, len(self.initial_tokens)))
 
         # call the main sampling loop
-        tokens, sum_logprobs, no_speech_probs = self._main_loop(audio_features, tokens)
+        tokens, sum_logprobs, no_speech_probs, inference_steps = self._main_loop(
+            audio_features, tokens
+        )
 
         # reshape the tensors to have (n_audio, n_group) as the first two dimensions
         audio_features = audio_features[:: self.n_group]
@@ -699,6 +704,7 @@ class DecodingTask:
                 no_speech_prob=no_speech_prob,
                 temperature=self.options.temperature,
                 compression_ratio=compression_ratio(text),
+                num_inference_steps=inference_steps,
             )
             for text, language, tokens, features, avg_logprob, no_speech_prob in zip(
                 *fields
