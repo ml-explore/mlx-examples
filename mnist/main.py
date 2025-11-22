@@ -87,6 +87,11 @@ def main(args):
             f" Time {toc - tic:.3f} (s)"
         )
 
+    # Save the trained model
+    if args.save_model:
+        model.save_weights(args.save_model)
+        print(f"\nModel saved to {args.save_model}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Train a simple MLP on MNIST with MLX.")
@@ -97,6 +102,12 @@ if __name__ == "__main__":
         default="mnist",
         choices=["mnist", "fashion_mnist"],
         help="The dataset to use.",
+    )
+    parser.add_argument(
+        "--save-model",
+        type=str,
+        default="model.safetensors",
+        help="Path to save the trained model (default: model.safetensors).",
     )
     args = parser.parse_args()
     if not args.gpu:
