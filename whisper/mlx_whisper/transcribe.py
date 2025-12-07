@@ -2,7 +2,7 @@
 
 import sys
 import warnings
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, cast
 
 import mlx.core as mx
 import numpy as np
@@ -65,40 +65,6 @@ class ModelHolder:
             cls.model = load_model(model_path, dtype=dtype)
             cls.model_path = model_path
         return cls.model
-
-
-def _sanitize_decoding_options(decode_options: dict) -> dict:
-    """Remove unsupported beam search options.
-
-    Beam search is not implemented in the current decoder, so any related
-    options (``beam_size``/``patience``) are ignored to avoid runtime errors.
-    """
-
-    options = dict(decode_options)
-    beam_size = options.get("beam_size")
-    patience = options.get("patience")
-
-    if beam_size is not None:
-        warnings.warn(
-            "beam_size is not supported (beam search decoder unavailable); "
-            "falling back to greedy decoding.",
-            stacklevel=2,
-        )
-        options.pop("beam_size", None)
-        if patience is not None:
-            warnings.warn(
-                "patience ignored because beam search is not supported.",
-                stacklevel=2,
-            )
-            options.pop("patience", None)
-    elif patience is not None:
-        warnings.warn(
-            "patience requires beam search, which is not implemented; ignoring patience.",
-            stacklevel=2,
-        )
-        options.pop("patience", None)
-
-    return options
 
 
 def _filter_empty_segments(segments: List[dict]) -> List[dict]:
@@ -245,9 +211,6 @@ def transcribe(
     the spoken language ("language"), which is detected when `decode_options["language"]` is None.
     """
 
-    # Remove unsupported beam search parameters to avoid runtime errors.
-    decode_options = _sanitize_decoding_options(decode_options)
-
     dtype = mx.float16 if decode_options.get("fp16", True) else mx.float32
     model = ModelHolder.get_model(path_or_hf_repo, dtype)
 
@@ -307,7 +270,7 @@ def transcribe(
                     f"Detected language: {LANGUAGES[decode_options['language']].title()}"
                 )
 
-    language: str = decode_options["language"]
+    language: str = cast(str, decode_options["language"])
     task: str = decode_options.get("task", "transcribe")
     tokenizer = get_tokenizer(
         model.is_multilingual,
@@ -393,7 +356,7 @@ def transcribe(
     def new_segment(
         *, start: float, end: float, tokens: mx.array, result: DecodingResult
     ):
-        tokens = tokens.tolist()
+        tokens = tokens.tolist()    # type: ignore
         text_tokens = [token for token in tokens if token < tokenizer.eot]
         return {
             "seek": seek,

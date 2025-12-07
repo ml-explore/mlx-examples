@@ -82,6 +82,33 @@ To see more transcription options use:
 >>> help(mlx_whisper.transcribe)
 ```
 
+### Beam Search Decoding
+
+By default, mlx-whisper uses greedy decoding. Enable beam search for potentially
+more accurate transcriptions at the cost of speed:
+
+```bash
+# Enable beam search with beam size 5
+mlx_whisper audio.mp3 --beam-size 5
+
+# Adjust patience for earlier/later stopping (default: 1.0)
+mlx_whisper audio.mp3 --beam-size 5 --patience 1.5
+```
+
+In Python:
+
+```python
+result = mlx_whisper.transcribe(
+    "audio.mp3",
+    beam_size=5,
+    patience=1.0
+)
+```
+
+The `patience` parameter controls early stopping: decoding stops when
+`round(beam_size * patience)` finished sequences have been collected.
+Higher patience values explore more candidates before stopping.
+
 ### Voice Activity Detection (VAD)
 
 Enable Silero VAD to filter silent audio regions before transcription. This can
