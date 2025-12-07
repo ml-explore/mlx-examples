@@ -244,14 +244,14 @@ def transcribe(
     content_frames = mel.shape[-2] - N_FRAMES
     content_duration = float(content_frames * HOP_LENGTH / SAMPLE_RATE)
 
+    make_safe = lambda x: x
     if verbose:
         system_encoding = sys.getdefaultencoding()
         if system_encoding != "utf-8":
             make_safe = lambda x: x.encode(system_encoding, errors="replace").decode(
                 system_encoding
             )
-        else:
-            make_safe = lambda x: x
+
 
     if decode_options.get("language", None) is None:
         if not model.is_multilingual:
@@ -335,7 +335,7 @@ def transcribe(
             if not needs_fallback:
                 break
 
-        return decode_result
+        return decode_result    # type: ignore
 
     clip_idx = 0
     seek = seek_clips[clip_idx][0]

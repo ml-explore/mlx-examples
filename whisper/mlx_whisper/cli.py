@@ -154,8 +154,7 @@ def build_parser():
     )
     parser.add_argument(
         "--word-timestamps",
-        type=str2bool,
-        default=False,
+        action="store_true",
         help="Extract word-level timestamps and refine the results based on them",
     )
     parser.add_argument(
@@ -172,8 +171,7 @@ def build_parser():
     )
     parser.add_argument(
         "--highlight-words",
-        type=str2bool,
-        default=False,
+        action="store_true",
         help="(requires --word-timestamps True) underline each word as it is spoken in srt and vtt",
     )
     parser.add_argument(
@@ -208,8 +206,7 @@ def build_parser():
     # VAD arguments
     parser.add_argument(
         "--vad-filter",
-        type=str2bool,
-        default=False,
+        action="store_true",
         help="Enable Silero VAD to filter silent audio before transcription",
     )
     parser.add_argument(
@@ -233,8 +230,7 @@ def build_parser():
     # Diarization arguments
     parser.add_argument(
         "--diarize",
-        type=str2bool,
-        default=False,
+        action="store_true",
         help="Enable speaker diarization (requires pyannote.audio)",
     )
     parser.add_argument(
@@ -367,7 +363,7 @@ def main():
                     vad_options=vad_options,
                     **args,
                 )
-            writer(result, output_name, **writer_args)
+            writer(result, output_name, writer_args)
         except Exception as e:
             traceback.print_exc()
             print(f"Skipping {audio_obj} due to {type(e).__name__}: {str(e)}")
