@@ -26,6 +26,11 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
+    extras_require={
+        "vad": ["torch"],
+        "diarize": ["pyannote.audio>=3.1", "pandas", "torch"],
+        "all": ["torch", "pyannote.audio>=3.1", "pandas"],
+    },
     packages=find_namespace_packages(),
     include_package_data=True,
     python_requires=">=3.8",

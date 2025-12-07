@@ -148,6 +148,9 @@ class SubtitlesWriter(ResultWriter):
                 subtitle_start = self.format_timestamp(subtitle[0]["start"])
                 subtitle_end = self.format_timestamp(subtitle[-1]["end"])
                 subtitle_text = "".join([word["word"] for word in subtitle])
+                # Add speaker label if first word has speaker info
+                if subtitle and "speaker" in subtitle[0]:
+                    subtitle_text = f"[{subtitle[0]['speaker']}] {subtitle_text}"
                 if highlight_words:
                     last = subtitle_start
                     all_words = [timing["word"] for timing in subtitle]
@@ -175,6 +178,9 @@ class SubtitlesWriter(ResultWriter):
                 segment_start = self.format_timestamp(segment["start"])
                 segment_end = self.format_timestamp(segment["end"])
                 segment_text = segment["text"].strip().replace("-->", "->")
+                # Prepend speaker label if available
+                if "speaker" in segment:
+                    segment_text = f"[{segment['speaker']}] {segment_text}"
                 yield segment_start, segment_end, segment_text
 
     def format_timestamp(self, seconds: float):
@@ -243,6 +249,41 @@ class WriteJSON(ResultWriter):
         json.dump(result, file, ensure_ascii=False)
 
 
+class WriteRTTM(ResultWriter):
+    """Write diarization results in RTTM format.
+
+    RTTM (Rich Transcription Time Marked) is the standard format
+    for speaker diarization evaluation.
+    Format: SPEAKER file 1 start duration <NA> <NA> speaker <NA> <NA>
+    """
+
+    extension: str = "rttm"
+
+    def write_result(
+        self, result: dict, file: TextIO, options: Optional[dict] = None, **kwargs
+    ):
+        file_id = options.get("file_id", "audio") if options else "audio"
+
+        if "diarization" in result:
+            for seg in result["diarization"]["segments"]:
+                duration = seg["end"] - seg["start"]
+                print(
+                    f"SPEAKER {file_id} 1 {seg['start']:.3f} {duration:.3f} "
+                    f"<NA> <NA> {seg['speaker']} <NA> <NA>",
+                    file=file,
+                )
+        else:
+            # Fall back to segment-level speakers
+            for segment in result["segments"]:
+                if "speaker" in segment:
+                    duration = segment["end"] - segment["start"]
+                    print(
+                        f"SPEAKER {file_id} 1 {segment['start']:.3f} {duration:.3f} "
+                        f"<NA> <NA> {segment['speaker']} <NA> <NA>",
+                        file=file,
+                    )
+
+
 def get_writer(
     output_format: str, output_dir: str
 ) -> Callable[[dict, TextIO, dict], None]:
@@ -252,6 +293,7 @@ def get_writer(
         "srt": WriteSRT,
         "tsv": WriteTSV,
         "json": WriteJSON,
+        "rttm": WriteRTTM,
     }
 
     if output_format == "all":

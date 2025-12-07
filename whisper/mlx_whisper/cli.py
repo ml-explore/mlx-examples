@@ -59,7 +59,7 @@ def build_parser():
         "-f",
         type=str,
         default="txt",
-        choices=["txt", "vtt", "srt", "tsv", "json", "all"],
+        choices=["txt", "vtt", "srt", "tsv", "json", "rttm", "all"],
         help="Format of the output file",
     )
     parser.add_argument(
@@ -91,6 +91,12 @@ def build_parser():
         type=optional_int,
         default=5,
         help="Number of candidates when sampling with non-zero temperature",
+    )
+    parser.add_argument(
+        "--beam-size",
+        type=optional_int,
+        default=None,
+        help="Beam size for beam search (currently not implemented; option will be ignored)",
     )
     parser.add_argument(
         "--patience",
@@ -199,6 +205,69 @@ def build_parser():
         default="0",
         help="Comma-separated list start,end,start,end,... timestamps (in seconds) of clips to process, where the last end timestamp defaults to the end of the file",
     )
+    # VAD arguments
+    parser.add_argument(
+        "--vad-filter",
+        type=str2bool,
+        default=False,
+        help="Enable Silero VAD to filter silent audio before transcription",
+    )
+    parser.add_argument(
+        "--vad-threshold",
+        type=float,
+        default=0.5,
+        help="VAD speech detection threshold (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--vad-min-silence-ms",
+        type=int,
+        default=2000,
+        help="Minimum silence duration to split speech segments (ms)",
+    )
+    parser.add_argument(
+        "--vad-speech-pad-ms",
+        type=int,
+        default=400,
+        help="Padding added around speech segments (ms)",
+    )
+    # Diarization arguments
+    parser.add_argument(
+        "--diarize",
+        type=str2bool,
+        default=False,
+        help="Enable speaker diarization (requires pyannote.audio)",
+    )
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        default=None,
+        help="HuggingFace token for pyannote models (or set HF_TOKEN env var)",
+    )
+    parser.add_argument(
+        "--diarize-model",
+        type=str,
+        default="pyannote/speaker-diarization-3.1",
+        help="Diarization model to use",
+    )
+    parser.add_argument(
+        "--min-speakers",
+        type=optional_int,
+        default=None,
+        help="Minimum number of speakers for diarization",
+    )
+    parser.add_argument(
+        "--max-speakers",
+        type=optional_int,
+        default=None,
+        help="Maximum number of speakers for diarization",
+    )
+    parser.add_argument(
+        "--diarize-device",
+        type=str,
+        default="cpu",
+        choices=["cpu", "cuda", "mps"],
+        help="Device for diarization model",
+    )
     return parser
 
 
@@ -232,6 +301,40 @@ def main():
     if writer_args["max_words_per_line"] and writer_args["max_line_width"]:
         warnings.warn("--max-words-per-line has no effect with --max-line-width")
 
+    # Extract VAD options
+    vad_filter = args.pop("vad_filter")
+    vad_threshold = args.pop("vad_threshold")
+    vad_min_silence_ms = args.pop("vad_min_silence_ms")
+    vad_speech_pad_ms = args.pop("vad_speech_pad_ms")
+
+    vad_options = None
+    if vad_filter:
+        from .vad import VadOptions
+
+        vad_options = VadOptions(
+            threshold=vad_threshold,
+            min_silence_duration_ms=vad_min_silence_ms,
+            speech_pad_ms=vad_speech_pad_ms,
+        )
+    elif any(
+        [vad_threshold != 0.5, vad_min_silence_ms != 2000, vad_speech_pad_ms != 400]
+    ):
+        warnings.warn("VAD options have no effect without --vad-filter")
+
+    # Extract diarization options
+    diarize = args.pop("diarize")
+    hf_token = args.pop("hf_token") or os.environ.get("HF_TOKEN")
+    diarize_model = args.pop("diarize_model")
+    min_speakers = args.pop("min_speakers")
+    max_speakers = args.pop("max_speakers")
+    diarize_device = args.pop("diarize_device")
+
+    if diarize and not hf_token:
+        warnings.warn(
+            "Diarization requires a HuggingFace token. "
+            "Set --hf-token or HF_TOKEN environment variable."
+        )
+
     for audio_obj in args.pop("audio"):
         if audio_obj == "-":
             # receive the contents from stdin rather than read a file
@@ -241,11 +344,29 @@ def main():
         else:
             output_name = output_name or pathlib.Path(audio_obj).stem
         try:
-            result = transcribe(
-                audio_obj,
-                path_or_hf_repo=path_or_hf_repo,
-                **args,
-            )
+            if diarize:
+                from .transcribe import transcribe_with_diarization
+
+                result = transcribe_with_diarization(
+                    audio_obj,
+                    path_or_hf_repo=path_or_hf_repo,
+                    hf_token=hf_token,
+                    diarize_model=diarize_model,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
+                    device=diarize_device,
+                    vad_filter=vad_filter,
+                    vad_options=vad_options,
+                    **args,
+                )
+            else:
+                result = transcribe(
+                    audio_obj,
+                    path_or_hf_repo=path_or_hf_repo,
+                    vad_filter=vad_filter,
+                    vad_options=vad_options,
+                    **args,
+                )
             writer(result, output_name, **writer_args)
         except Exception as e:
             traceback.print_exc()
