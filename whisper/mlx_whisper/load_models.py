@@ -26,7 +26,10 @@ def load_model(
 
     model_args = whisper.ModelDimensions(**config)
 
-    wf = model_path / "weights.safetensors"
+    # Prefer model.safetensors, fall back to weights.safetensors, then weights.npz
+    wf = model_path / "model.safetensors"
+    if not wf.exists():
+        wf = model_path / "weights.safetensors"
     if not wf.exists():
         wf = model_path / "weights.npz"
     weights = mx.load(str(wf))

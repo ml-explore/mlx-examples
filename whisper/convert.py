@@ -382,7 +382,7 @@ if __name__ == "__main__":
 
     # Save weights
     print("[INFO] Saving")
-    mx.save_safetensors(str(mlx_path / "weights.safetensors"), weights)
+    mx.save_safetensors(str(mlx_path / "model.safetensors"), weights)
 
     # Save config.json with model_type
     with open(str(mlx_path / "config.json"), "w") as f:
