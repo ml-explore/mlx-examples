@@ -26,6 +26,10 @@ package for LLMs with MLX.
 - Image classification using [ResNets on CIFAR-10](cifar).
 - Convolutional variational autoencoder [(CVAE) on MNIST](cvae).
 
+### Video Models
+
+- Text-to-video generation with [Wan2.1](video/wan2.1).
+
 ### Audio Models
 
 - Speech recognition with [OpenAI's Whisper](whisper).
