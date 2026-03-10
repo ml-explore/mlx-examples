@@ -9,7 +9,6 @@ FlowUniPCMultistepScheduler for Wan2.1 denoising.
 UniPC multistep solver adapted for flow matching prediction.
 """
 
-import math
 from typing import List, Optional
 
 import mlx.core as mx
@@ -382,3 +381,53 @@ class FlowUniPCMultistepScheduler:
 
         self._step_index += 1
         return prev_sample
+
+
+class FlowEulerDiscreteScheduler:
+    """Simple Euler flow-matching scheduler for step-distilled models.
+
+    Unlike UniPC, this uses a single-step Euler update matching how
+    step-distilled models were trained. Timestep selection uses indexed
+    positions from the full 1000-step schedule (via denoising_step_list)
+    rather than linear interpolation.
+    """
+
+    def __init__(self, num_train_timesteps=1000):
+        self.num_train_timesteps = num_train_timesteps
+        self.timesteps = None
+        self.sigmas = None
+        self.num_inference_steps = 0
+
+    def set_timesteps(self, denoising_step_list, shift=5.0):
+        """Build schedule by indexing into the full shifted schedule.
+
+        Args:
+            denoising_step_list: e.g. [1000, 750, 500, 250]. Each value V
+                maps to index (num_train_timesteps - V) in the shifted schedule.
+            shift: Noise schedule shift factor (default 5.0 for distilled).
+        """
+        sigmas = mx.linspace(1.0, 0.0, self.num_train_timesteps + 1)[:-1]
+        sigmas = shift * sigmas / (1 + (shift - 1) * sigmas)
+        timesteps = sigmas * self.num_train_timesteps
+
+        indices = mx.array([self.num_train_timesteps - x for x in denoising_step_list])
+        self.sigmas = sigmas[indices].astype(mx.float32)
+        self.timesteps = timesteps[indices].astype(mx.float32)
+        self.num_inference_steps = len(denoising_step_list)
+
+    def step(self, model_output, timestep, sample):
+        """Euler flow-matching update: x_new = x - sigma * f + f * sigma_next."""
+        if isinstance(timestep, mx.array):
+            t_val = timestep.item()
+        else:
+            t_val = timestep
+        step_index = int(
+            mx.argmin(mx.abs(self.timesteps.astype(mx.float32) - t_val)).item()
+        )
+
+        sigma = self.sigmas[step_index]
+        x_new = sample.astype(mx.float32) - sigma * model_output.astype(mx.float32)
+        if step_index < self.num_inference_steps - 1:
+            sigma_next = self.sigmas[step_index + 1]
+            x_new = x_new + model_output.astype(mx.float32) * sigma_next
+        return x_new.astype(sample.dtype)

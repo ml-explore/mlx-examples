@@ -15,7 +15,7 @@ from typing import Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
-from .rope import _rope_3d
+from .rope import rope_apply
 
 
 @partial(mx.compile, shapeless=True)
@@ -29,126 +29,6 @@ def _residual_gate(x, y, gate):
 
 
 _gelu = mx.compile(nn.gelu_approx)
-
-
-@partial(mx.compile)
-def _self_attn_fn(
-    x,
-    q_w,
-    q_b,
-    k_w,
-    k_b,
-    v_w,
-    v_b,
-    o_w,
-    o_b,
-    nq_w,
-    nk_w,
-    n,
-    d,
-    eps,
-    f,
-    h,
-    w,
-    frame_dim,
-    height_dim,
-    width_dim,
-    theta,
-):
-    B, L, _ = x.shape
-    q = mx.matmul(x, q_w.T) + q_b
-    k = mx.matmul(x, k_w.T) + k_b
-    v = mx.matmul(x, v_w.T) + v_b
-    q = mx.fast.rms_norm(q, nq_w, eps)
-    k = mx.fast.rms_norm(k, nk_w, eps)
-    q = q.reshape(B, L, n, d)
-    k = k.reshape(B, L, n, d)
-    v = v.reshape(B, L, n, d)
-    q = _rope_3d(q, f, h, w, frame_dim, height_dim, width_dim, theta)
-    k = _rope_3d(k, f, h, w, frame_dim, height_dim, width_dim, theta)
-    scale = d**-0.5
-    q = q.transpose(0, 2, 1, 3)
-    k = k.transpose(0, 2, 1, 3)
-    v = v.transpose(0, 2, 1, 3)
-    x = mx.fast.scaled_dot_product_attention(q, k, v, scale=scale)
-    x = x.transpose(0, 2, 1, 3).reshape(B, L, n * d)
-    x = mx.matmul(x, o_w.T) + o_b
-    return x
-
-
-@partial(mx.compile)
-def _cross_attn_fn(
-    x,
-    context,
-    q_w,
-    q_b,
-    k_w,
-    k_b,
-    v_w,
-    v_b,
-    o_w,
-    o_b,
-    nq_w,
-    nk_w,
-    n,
-    d,
-    eps,
-):
-    B = x.shape[0]
-    L1 = x.shape[1]
-    L2 = context.shape[1]
-    q = mx.matmul(x, q_w.T) + q_b
-    k = mx.matmul(context, k_w.T) + k_b
-    v = mx.matmul(context, v_w.T) + v_b
-    q = mx.fast.rms_norm(q, nq_w, eps)
-    k = mx.fast.rms_norm(k, nk_w, eps)
-    q = q.reshape(B, L1, n, d).transpose(0, 2, 1, 3)
-    k = k.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
-    v = v.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
-    x = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5)
-    x = x.transpose(0, 2, 1, 3).reshape(B, L1, n * d)
-    x = mx.matmul(x, o_w.T) + o_b
-    return x
-
-
-@partial(mx.compile)
-def _cross_attn_mask_fn(
-    x,
-    context,
-    context_lens,
-    q_w,
-    q_b,
-    k_w,
-    k_b,
-    v_w,
-    v_b,
-    o_w,
-    o_b,
-    nq_w,
-    nk_w,
-    n,
-    d,
-    eps,
-):
-    B = x.shape[0]
-    L1 = x.shape[1]
-    L2 = context.shape[1]
-    q = mx.matmul(x, q_w.T) + q_b
-    k = mx.matmul(context, k_w.T) + k_b
-    v = mx.matmul(context, v_w.T) + v_b
-    q = mx.fast.rms_norm(q, nq_w, eps)
-    k = mx.fast.rms_norm(k, nk_w, eps)
-    q = q.reshape(B, L1, n, d).transpose(0, 2, 1, 3)
-    k = k.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
-    v = v.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
-    positions = mx.arange(L2).reshape(1, 1, 1, L2)
-    lengths = context_lens.reshape(-1, 1, 1, 1)
-    attn_mask = mx.where(positions >= lengths, float("-inf"), 0.0)
-    attn_mask = attn_mask.astype(q.dtype)
-    x = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5, mask=attn_mask)
-    x = x.transpose(0, 2, 1, 3).reshape(B, L1, n * d)
-    x = mx.matmul(x, o_w.T) + o_b
-    return x
 
 
 @partial(mx.compile, shapeless=True)
@@ -199,9 +79,7 @@ class WanSelfAttention(nn.Module):
         self.head_dim = dim // num_heads
         self.qk_norm = qk_norm
 
-        self.q = nn.Linear(dim, dim)
-        self.k = nn.Linear(dim, dim)
-        self.v = nn.Linear(dim, dim)
+        self.qkv = nn.Linear(dim, dim * 3)
         self.o = nn.Linear(dim, dim)
 
         if qk_norm:
@@ -214,30 +92,31 @@ class WanSelfAttention(nn.Module):
         grid_sizes: list,
         freqs: dict,
     ) -> mx.array:
-        f, h, w = grid_sizes[0]
-        return _self_attn_fn(
-            x,
-            self.q.weight,
-            self.q.bias,
-            self.k.weight,
-            self.k.bias,
-            self.v.weight,
-            self.v.bias,
-            self.o.weight,
-            self.o.bias,
-            self.norm_q.weight,
-            self.norm_k.weight,
-            self.num_heads,
-            self.head_dim,
-            self.norm_q.eps,
-            f,
-            h,
-            w,
-            freqs["frame"]["full_dim"],
-            freqs["height"]["full_dim"],
-            freqs["width"]["full_dim"],
-            freqs["theta"],
-        )
+        B, L, C = x.shape
+        n, d = self.num_heads, self.head_dim
+
+        qkv = self.qkv(x)
+        q, k, v = mx.split(qkv, 3, axis=-1)
+
+        if self.qk_norm:
+            q = self.norm_q(q)
+            k = self.norm_k(k)
+
+        q = q.reshape(B, L, n, d)
+        k = k.reshape(B, L, n, d)
+        v = v.reshape(B, L, n, d)
+
+        q = rope_apply(q, grid_sizes, freqs)
+        k = rope_apply(k, grid_sizes, freqs)
+
+        scale = self.head_dim**-0.5
+        q = q.transpose(0, 2, 1, 3)
+        k = k.transpose(0, 2, 1, 3)
+        v = v.transpose(0, 2, 1, 3)
+        x = mx.fast.scaled_dot_product_attention(q, k, v, scale=scale)
+        x = x.transpose(0, 2, 1, 3).reshape(B, L, C)
+        x = self.o(x)
+        return x
 
 
 class WanCrossAttention(nn.Module):
@@ -256,8 +135,7 @@ class WanCrossAttention(nn.Module):
         self.qk_norm = qk_norm
 
         self.q = nn.Linear(dim, dim)
-        self.k = nn.Linear(dim, dim)
-        self.v = nn.Linear(dim, dim)
+        self.kv = nn.Linear(dim, dim * 2)
         self.o = nn.Linear(dim, dim)
 
         if qk_norm:
@@ -272,23 +150,33 @@ class WanCrossAttention(nn.Module):
     ) -> mx.array:
         if context_lens is not None:
             return self._call_with_mask(x, context, context_lens)
-        return _cross_attn_fn(
-            x,
-            context,
-            self.q.weight,
-            self.q.bias,
-            self.k.weight,
-            self.k.bias,
-            self.v.weight,
-            self.v.bias,
-            self.o.weight,
-            self.o.bias,
-            self.norm_q.weight,
-            self.norm_k.weight,
-            self.num_heads,
-            self.head_dim,
-            self.norm_q.eps,
-        )
+        return self._forward(x, context)
+
+    def _forward(
+        self,
+        x: mx.array,
+        context: mx.array,
+    ) -> mx.array:
+        B = x.shape[0]
+        L1, L2 = x.shape[1], context.shape[1]
+        n, d = self.num_heads, self.head_dim
+
+        q = self.q(x)
+        kv = self.kv(context)
+        k, v = mx.split(kv, 2, axis=-1)
+
+        if self.qk_norm:
+            q = self.norm_q(q)
+            k = self.norm_k(k)
+
+        q = q.reshape(B, L1, n, d).transpose(0, 2, 1, 3)
+        k = k.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
+        v = v.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
+
+        x = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5)
+        x = x.transpose(0, 2, 1, 3).reshape(B, L1, self.dim)
+        x = self.o(x)
+        return x
 
     def _call_with_mask(
         self,
@@ -298,24 +186,174 @@ class WanCrossAttention(nn.Module):
     ) -> mx.array:
         if not isinstance(context_lens, mx.array):
             context_lens = mx.array(context_lens, dtype=mx.int32)
-        return _cross_attn_mask_fn(
-            x,
-            context,
-            context_lens,
-            self.q.weight,
-            self.q.bias,
-            self.k.weight,
-            self.k.bias,
-            self.v.weight,
-            self.v.bias,
-            self.o.weight,
-            self.o.bias,
-            self.norm_q.weight,
-            self.norm_k.weight,
-            self.num_heads,
-            self.head_dim,
-            self.norm_q.eps,
+
+        B = x.shape[0]
+        L1, L2 = x.shape[1], context.shape[1]
+        n, d = self.num_heads, self.head_dim
+
+        q = self.q(x)
+        kv = self.kv(context)
+        k, v = mx.split(kv, 2, axis=-1)
+
+        if self.qk_norm:
+            q = self.norm_q(q)
+            k = self.norm_k(k)
+
+        q = q.reshape(B, L1, n, d).transpose(0, 2, 1, 3)
+        k = k.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
+        v = v.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
+
+        positions = mx.arange(L2).reshape(1, 1, 1, L2)
+        lengths = context_lens.reshape(-1, 1, 1, 1)
+        attn_mask = mx.where(positions >= lengths, float("-inf"), 0.0)
+        attn_mask = attn_mask.astype(q.dtype)
+
+        x = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5, mask=attn_mask)
+        x = x.transpose(0, 2, 1, 3).reshape(B, L1, self.dim)
+        x = self.o(x)
+        return x
+
+
+T5_CONTEXT_TOKEN_NUMBER = 512
+
+
+class WanI2VCrossAttention(nn.Module):
+    """Cross-attention with separate image and text paths for I2V."""
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        qk_norm: bool = True,
+        eps: float = 1e-6,
+    ):
+        assert dim % num_heads == 0
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.qk_norm = qk_norm
+
+        # Text path (same as WanCrossAttention)
+        self.q = nn.Linear(dim, dim)
+        self.kv = nn.Linear(dim, dim * 2)
+        self.o = nn.Linear(dim, dim)
+
+        # Image path
+        self.k_img = nn.Linear(dim, dim)
+        self.v_img = nn.Linear(dim, dim)
+
+        if qk_norm:
+            self.norm_q = WanRMSNorm(dim, eps=eps)
+            self.norm_k = WanRMSNorm(dim, eps=eps)
+            self.norm_k_img = WanRMSNorm(dim, eps=eps)
+
+    def __call__(
+        self,
+        x: mx.array,
+        context: mx.array,
+        context_lens: Optional[mx.array],
+    ) -> mx.array:
+        img_ctx_len = context.shape[1] - T5_CONTEXT_TOKEN_NUMBER
+        if context_lens is not None:
+            return self._call_with_mask(x, context, context_lens, img_ctx_len)
+        return self._forward(x, context, img_ctx_len)
+
+    def _forward(
+        self,
+        x: mx.array,
+        context: mx.array,
+        img_ctx_len: int,
+    ) -> mx.array:
+        B = x.shape[0]
+        L1 = x.shape[1]
+        n, d = self.num_heads, self.head_dim
+
+        context_img = context[:, :img_ctx_len]
+        context_txt = context[:, img_ctx_len:]
+        L_txt, L_img = context_txt.shape[1], context_img.shape[1]
+
+        q = self.norm_q(self.q(x))
+        q = q.reshape(B, L1, n, d).transpose(0, 2, 1, 3)
+
+        # Text attention
+        kv = self.kv(context_txt)
+        k, v = mx.split(kv, 2, axis=-1)
+        k = self.norm_k(k)
+        k = k.reshape(B, L_txt, n, d).transpose(0, 2, 1, 3)
+        v = v.reshape(B, L_txt, n, d).transpose(0, 2, 1, 3)
+        x_txt = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5)
+
+        # Image attention
+        ki = self.norm_k_img(self.k_img(context_img))
+        vi = self.v_img(context_img)
+        ki = ki.reshape(B, L_img, n, d).transpose(0, 2, 1, 3)
+        vi = vi.reshape(B, L_img, n, d).transpose(0, 2, 1, 3)
+        x_img = mx.fast.scaled_dot_product_attention(q, ki, vi, scale=d**-0.5)
+
+        x = (x_txt + x_img).transpose(0, 2, 1, 3).reshape(B, L1, self.dim)
+        x = self.o(x)
+        return x
+
+    def _call_with_mask(
+        self,
+        x: mx.array,
+        context: mx.array,
+        context_lens,
+        img_ctx_len: int,
+    ) -> mx.array:
+        if not isinstance(context_lens, mx.array):
+            context_lens = mx.array(context_lens, dtype=mx.int32)
+        return self._forward_with_mask(x, context, context_lens, img_ctx_len)
+
+    def _forward_with_mask(
+        self,
+        x: mx.array,
+        context: mx.array,
+        context_lens: mx.array,
+        img_ctx_len: int,
+    ) -> mx.array:
+        B = x.shape[0]
+        L1 = x.shape[1]
+        n, d = self.num_heads, self.head_dim
+
+        context_img = context[:, :img_ctx_len]
+        context_txt = context[:, img_ctx_len:]
+        L_txt, L_img = context_txt.shape[1], context_img.shape[1]
+
+        q = self.norm_q(self.q(x))
+        q = q.reshape(B, L1, n, d).transpose(0, 2, 1, 3)
+
+        # Text attention with mask
+        kv = self.kv(context_txt)
+        k, v = mx.split(kv, 2, axis=-1)
+        k = self.norm_k(k)
+        k = k.reshape(B, L_txt, n, d).transpose(0, 2, 1, 3)
+        v = v.reshape(B, L_txt, n, d).transpose(0, 2, 1, 3)
+        positions = mx.arange(L_txt).reshape(1, 1, 1, L_txt)
+        lengths = context_lens.reshape(-1, 1, 1, 1)
+        attn_mask = mx.where(positions >= lengths, float("-inf"), 0.0)
+        attn_mask = attn_mask.astype(q.dtype)
+        x_txt = mx.fast.scaled_dot_product_attention(
+            q, k, v, scale=d**-0.5, mask=attn_mask
         )
+
+        # Image attention (no mask)
+        ki = self.norm_k_img(self.k_img(context_img))
+        vi = self.v_img(context_img)
+        ki = ki.reshape(B, L_img, n, d).transpose(0, 2, 1, 3)
+        vi = vi.reshape(B, L_img, n, d).transpose(0, 2, 1, 3)
+        x_img = mx.fast.scaled_dot_product_attention(q, ki, vi, scale=d**-0.5)
+
+        x = (x_txt + x_img).transpose(0, 2, 1, 3).reshape(B, L1, self.dim)
+        x = self.o(x)
+        return x
+
+
+_cross_attn_classes = {
+    "t2v": WanCrossAttention,
+    "i2v": WanI2VCrossAttention,
+}
 
 
 class WanAttentionBlock(nn.Module):
@@ -334,6 +372,7 @@ class WanAttentionBlock(nn.Module):
         qk_norm: bool = True,
         cross_attn_norm: bool = False,
         eps: float = 1e-6,
+        cross_attn_type: str = "t2v",
     ):
         super().__init__()
         self.dim = dim
@@ -346,7 +385,9 @@ class WanAttentionBlock(nn.Module):
             self.norm3 = None
 
         self.self_attn = WanSelfAttention(dim, num_heads, qk_norm, eps)
-        self.cross_attn = WanCrossAttention(dim, num_heads, qk_norm, eps)
+        self.cross_attn = _cross_attn_classes[cross_attn_type](
+            dim, num_heads, qk_norm, eps
+        )
 
         self.ffn_linear1 = nn.Linear(dim, ffn_dim)
         self.ffn_linear2 = nn.Linear(ffn_dim, dim)

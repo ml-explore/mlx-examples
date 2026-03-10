@@ -1,6 +1,6 @@
-# Copyright © 2025 Apple Inc.
+# Copyright © 2026 Apple Inc.
 
-"""Generate videos from text using Wan2.1."""
+"""Generate videos from an image and text prompt using Wan2.1 I2V."""
 
 import argparse
 import logging
@@ -8,7 +8,7 @@ import logging
 import mlx.core as mx
 import mlx.nn as nn
 from tqdm import tqdm
-from wan import WanT2VPipeline
+from wan import WanI2VPipeline
 from wan.utils import save_video
 
 
@@ -18,10 +18,11 @@ def quantization_predicate(name, m):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate videos from text using Wan2.1"
+        description="Generate videos from an image and text prompt using Wan2.1 I2V"
     )
     parser.add_argument("prompt")
-    parser.add_argument("--model", choices=["t2v-1.3B", "t2v-14B"], default="t2v-1.3B")
+    parser.add_argument("--image", required=True, help="Path to input image")
+    parser.add_argument("--model", choices=["i2v-14B"], default="i2v-14B")
     parser.add_argument(
         "--size",
         type=lambda x: tuple(map(int, x.split("x"))),
@@ -30,10 +31,10 @@ if __name__ == "__main__":
     )
     parser.add_argument("--frames", type=int, default=81)
     parser.add_argument(
-        "--steps", type=int, default=50, help="Number of denoising steps"
+        "--steps", type=int, default=40, help="Number of denoising steps"
     )
     parser.add_argument("--guidance", type=float, default=5.0)
-    parser.add_argument("--shift", type=float, default=5.0)
+    parser.add_argument("--shift", type=float, default=3.0)
     parser.add_argument("--seed", type=int)
     parser.add_argument(
         "--quantize",
@@ -49,17 +50,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n-prompt",
         default="镜头晃动，色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
-    )
-    parser.add_argument(
-        "--teacache",
-        type=float,
-        default=0.0,
-        help="TeaCache threshold for step skipping (0=off, 0.05=recommended)",
-    )
-    parser.add_argument(
-        "--no-ret-steps",
-        action="store_true",
-        help="Use raw time embedding for TeaCache distance (alternative calibration mode)",
     )
     parser.add_argument(
         "--checkpoint",
@@ -97,7 +87,7 @@ if __name__ == "__main__":
         logging.getLogger("wan").addHandler(handler)
 
     # Load pipeline
-    pipeline = WanT2VPipeline(args.model, checkpoint=args.checkpoint)
+    pipeline = WanI2VPipeline(args.model, checkpoint=args.checkpoint)
 
     # Quantize DiT
     if args.quantize:
@@ -109,9 +99,10 @@ if __name__ == "__main__":
     if args.preload_models:
         pipeline.ensure_models_are_loaded()
 
-    # Generate latents (generator pattern matching flux)
+    # Generate latents (generator pattern)
     latents = pipeline.generate_latents(
         args.prompt,
+        image_path=args.image,
         negative_prompt=args.n_prompt,
         size=args.size,
         frame_num=args.frames,
@@ -119,8 +110,6 @@ if __name__ == "__main__":
         guidance=args.guidance,
         shift=args.shift,
         seed=args.seed,
-        teacache=args.teacache,
-        use_ret_steps=not args.no_ret_steps,
         verbose=args.verbose,
         denoising_step_list=denoising_step_list,
     )
@@ -131,8 +120,9 @@ if __name__ == "__main__":
     peak_mem_conditioning = mx.get_peak_memory() / 1024**3
     mx.reset_peak_memory()
 
-    # Free T5 memory
+    # Free T5 and CLIP memory
     del pipeline.t5
+    del pipeline.clip
     mx.clear_cache()
 
     # 2. Denoising loop

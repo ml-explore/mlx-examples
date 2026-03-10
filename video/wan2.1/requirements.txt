@@ -2,6 +2,7 @@ einops>=0.8.2  # for mlx compatible einops
 huggingface_hub
 mlx>=0.22.0
 numpy
+Pillow
 tokenizers
 torch  # for loading of huggingface weights
 tqdm

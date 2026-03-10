@@ -30,6 +30,7 @@ class ModelSpec:
     repo_t5: str
     dit_params: Dict
     repo_tokenizer: str = "google/umt5-xxl/tokenizer.json"
+    repo_clip: Optional[str] = None
     ckpt_path: Optional[str] = None
 
 
@@ -49,6 +50,22 @@ configs = {
         repo_t5="models_t5_umt5-xxl-enc-bf16.pth",
         dit_params={"dim": 5120, "ffn_dim": 13824, "num_heads": 40, "num_layers": 40},
         ckpt_path=os.getenv("WAN_T2V_14B"),
+    ),
+    "i2v-14B": ModelSpec(
+        repo_id="Wan-AI/Wan2.1-I2V-14B-480P",
+        repo_dit="diffusion_pytorch_model.safetensors.index.json",
+        repo_vae="Wan2.1_VAE.pth",
+        repo_t5="models_t5_umt5-xxl-enc-bf16.pth",
+        repo_clip="models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth",
+        dit_params={
+            "dim": 5120,
+            "ffn_dim": 13824,
+            "num_heads": 40,
+            "num_layers": 40,
+            "model_type": "i2v",
+            "in_dim": 36,
+        },
+        ckpt_path=os.getenv("WAN_I2V_14B"),
     ),
 }
 
@@ -83,16 +100,16 @@ def _load_weights(path: str) -> dict:
         return mx.load(path)
 
 
-def load_dit(name: str) -> WanModel:
+def load_dit(name: str, checkpoint: Optional[str] = None) -> WanModel:
     """Load DiT model with weights from HF Hub."""
     spec = configs[name]
     model = create_wan_model(**spec.dit_params)
-    ckpt_path = spec.ckpt_path
+    ckpt_path = checkpoint or spec.ckpt_path
     if ckpt_path is None:
         ckpt_path = _hf_download(spec.repo_id, spec.repo_dit)
     weights = _load_weights(ckpt_path)
     weights = WanModel.sanitize(weights)
-    model.load_weights(list(weights.items()), strict=False)
+    model.load_weights(list(weights.items()), strict=True)
     return model
 
 
@@ -114,8 +131,23 @@ def load_t5(name: str) -> T5Encoder:
     weight_path = _hf_download(spec.repo_id, spec.repo_t5)
     weights = _load_weights(weight_path)
     weights = T5Encoder.sanitize(weights)
-    t5.load_weights(list(weights.items()), strict=False)
+    t5.load_weights(list(weights.items()), strict=True)
     return t5
+
+
+def load_clip(name: str):
+    """Load CLIP vision encoder with weights from HF Hub."""
+    from .clip import CLIPVisionEncoder
+
+    spec = configs[name]
+    if spec.repo_clip is None:
+        raise ValueError(f"Model {name} does not have a CLIP config")
+    clip = CLIPVisionEncoder()
+    weight_path = _hf_download(spec.repo_id, spec.repo_clip)
+    weights = _load_weights(weight_path)
+    weights = CLIPVisionEncoder.sanitize(weights)
+    clip.load_weights(list(weights.items()), strict=True)
+    return clip
 
 
 def load_t5_tokenizer(name: str) -> T5Tokenizer:

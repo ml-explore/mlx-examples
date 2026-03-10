@@ -1,130 +1,78 @@
 Wan2.1
 ======
 
-Wan2.1 text-to-video implementation in MLX. The model weights are downloaded
-directly from the [Hugging Face Hub](https://huggingface.co/Wan-AI).
+Wan2.1 text-to-video and image-to-video implementation in MLX. The model
+weights are downloaded directly from the [Hugging Face
+Hub](https://huggingface.co/Wan-AI).
 
-Two model sizes are supported:
-
-| Model | Parameters | HF Repo | RAM (quantized) |
-|-------|-----------|---------|-----------------|
-| 1.3B | 1.3B | [Wan-AI/Wan2.1-T2V-1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) | ~16GB |
-| 14B | 14B | [Wan-AI/Wan2.1-T2V-14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) | ~48GB |
+| Model | Task | HF Repo | RAM (quantized) |
+|-------|------|---------|-----------------|
+| 1.3B | T2V | [Wan-AI/Wan2.1-T2V-1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) | ~16GB |
+| 14B | T2V | [Wan-AI/Wan2.1-T2V-14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) | ~48GB |
+| 14B | I2V | [Wan-AI/Wan2.1-I2V-14B-480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) | ~48GB |
 
 ![WAN 1.3B](static/out.mp4)
 
 Installation
 ------------
 
-The dependencies are minimal, namely:
-
-- `huggingface-hub` to download the checkpoints.
-- `tokenizers` for the T5 tokenizer
-- `einops` for tensor reshaping
-- `tqdm` and `numpy` for the scripts
-- `mlx >= 0.22.0`
-
-You can install all of the above with the `requirements.txt` as follows:
+Install the dependencies:
 
     pip install -r requirements.txt
 
 > [!Note]
-> Saving videos requires [ffmpeg](https://ffmpeg.org/) to be installed and
-> available on your PATH.
+> Saving videos requires [ffmpeg](https://ffmpeg.org/) on your PATH.
 
 Usage
 -----
 
+### Text-to-Video
+
 Generate a video with the default 1.3B model:
 
 ```shell
-python txt2video.py 'A cat playing piano' \
-    --output out.mp4 \
-    --verbose
+python txt2video.py 'A cat playing piano' --output out.mp4 --verbose
 ```
 
 Use the 14B model with quantization:
 
 ```shell
 python txt2video.py 'A cat playing piano' \
-    --model t2v-14B \
-    --quantize \
-    --output out_14B.mp4 \
-    --verbose
+    --model t2v-14B --quantize --output out_14B.mp4
 ```
 
 Adjust resolution, frame count, and sampling parameters:
 
 ```shell
 python txt2video.py 'Ocean waves crashing on a rocky shore at sunset' \
-    --size 832x480 \
-    --frames 81 \
-    --steps 50 \
-    --guidance 5.0 \
-    --seed 42 \
+    --size 832x480 --frames 81 --steps 50 --guidance 5.0 --seed 42 \
     --output waves.mp4
 ```
 
-For more parameters, use the `--help` command:
+For more parameters, use `python txt2video.py --help`.
+
+### Image-to-Video
+
+Generate a video from an input image:
 
 ```shell
-python txt2video.py --help
+python img2video.py 'A cat playing piano' \
+    --image cat.jpg --quantize --output out_i2v.mp4
 ```
 
-Inference
----------
+Adjust resolution and sampling parameters:
 
-The `WanT2VPipeline` class follows the same generator pattern as
-`FluxPipeline`. This allows fine-grained control over memory by unloading
-models between stages.
-
-```python
-import mlx.core as mx
-from wan import WanT2VPipeline
-
-# This will download all the weights from HF Hub
-pipeline = WanT2VPipeline("t2v-1.3B")
-
-# Optionally specify dtype (default: mx.bfloat16)
-# pipeline = WanT2VPipeline("t2v-1.3B", dtype=mx.float16)
-
-# Make a generator that returns the latent variables from the reverse
-# diffusion process
-latents = pipeline.generate_latents(
-    "A cat playing piano",
-    num_steps=50,
-    size=(832, 480),
-    frame_num=81,
-)
-
-# The first yield contains the conditioning (noise + text embeddings).
-# Evaluating it here allows us to unload T5 before running the DiT.
-conditioning = next(latents)
-mx.eval(conditioning)
-
-# Free T5 memory (~4GB)
-del pipeline.t5
-
-# Evaluate each denoising step
-for x_t in latents:
-    mx.eval(x_t)
-
-# Free DiT memory
-del pipeline.flow
-
-# Decode latents to video frames
-video = pipeline.decode(x_t)
-mx.eval(video)
-
-# Save to file
-from wan.utils import save_video
-save_video(video, "out.mp4")
+```shell
+python img2video.py 'Ocean waves crashing on a rocky shore at sunset' \
+    --image shore.jpg --size 832x480 --frames 81 --steps 40 \
+    --guidance 5.0 --shift 3.0 --seed 42 --output waves_i2v.mp4
 ```
+
+For more parameters, use `python img2video.py --help`.
 
 ### Quantization
 
-Quantization reduces memory usage significantly. Pass `--quantize` (or `-q`)
-to the CLI, or apply it directly:
+Pass `--quantize` (or `-q`) to the CLI, or apply it directly:
 
 ```python
 import mlx.nn as nn
@@ -135,23 +83,49 @@ nn.quantize(pipeline.flow, class_predicate=lambda n, m: (
 ))
 ```
 
-### Negative Prompts
+### Custom DiT Weights
 
-Use `--n-prompt` to guide the model away from unwanted content:
+Use `--checkpoint` to load custom DiT weights (e.g. [step-distilled models](https://huggingface.co/lightx2v/Wan2.1-Distill-Models)).
+Pass `--sampler euler` to use Euler sampling for step-distilled models:
 
-```shell
-python txt2video.py 'A serene mountain landscape' \
-    --n-prompt 'blurry, low quality, distorted' \
-    --output landscape.mp4
-```
-
-### Disabling Classifier-Free Guidance
-
-Set `--guidance 1.0` to skip the unconditional forward pass, roughly halving
-the compute per denoising step:
-
+For text to video pipeline you can try [this 4 steps distilled model](https://huggingface.co/lightx2v/Wan2.1-Distill-Models/blob/main/wan2.1_t2v_14b_lightx2v_4step.safetensors)
 ```shell
 python txt2video.py 'A cat playing piano' \
-    --guidance 1.0 \
-    --output out_no_cfg.mp4
+    --model t2v-14B --checkpoint /path/to/distilled_dit.safetensors \
+    --sampler euler --steps 4 --guidance 1.0 \
+    --quantize --output out_distilled.mp4
 ```
+
+For image to video pipeline we use [4 steps distilled i2v model](https://huggingface.co/lightx2v/Wan2.1-Distill-Models/blob/main/wan2.1_i2v_480p_scaled_fp8_e4m3_lightx2v_4step.safetensors)
+```shell
+python img2video.py 'A cat playing piano' \
+    --image cat.jpg --checkpoint /path/to/distilled_i2v.safetensors \
+    --sampler euler --steps 4 --guidance 1.0 --shift 5.0 \
+    --quantize --output out_i2v_distilled.mp4
+```
+
+### Options
+
+- **Negative prompts**: `--n-prompt 'blurry, low quality, distorted'`
+- **Disable CFG**: `--guidance 1.0` skips the unconditional pass, roughly
+  halving compute per step.
+
+### TeaCache
+
+TeaCache skips redundant transformer computations when consecutive steps
+produce similar embeddings, eliminating 20-60% of forward passes.
+
+```shell
+python txt2video.py 'A cat playing piano' --teacache 0.05 --output out.mp4
+```
+
+Pass `--no-ret-steps` to use the raw time embedding instead of the default
+projected embedding.
+
+Recommended thresholds (1.3B):
+
+| Threshold | Skip Rate | Quality |
+|-----------|-----------|---------|
+| `0.05` | ~34% | Almost lossless |
+| `0.1` | ~50% | Slightly corrupted |
+| `0.26` | ~75% | Visible quality loss |
