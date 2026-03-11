@@ -11,7 +11,7 @@ with setattr-based block registration for weight remapping compatibility.
 import math
 import re
 from functools import partial
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -199,83 +199,59 @@ class WanModel(nn.Module):
 
     def compute_time_embedding(self, t: mx.array):
         """Compute time embeddings for TeaCache. Returns (t_emb, e0).
-        t_emb: [B, dim] (pre-projection, used by head)
-        e0: [B, 6*dim] (projected, used for block modulation)"""
+        t_emb: [1, dim] (pre-projection, used by head)
+        e0: [1, 6*dim] (projected, used for block modulation)"""
         t_emb = self._embed_time(t)
         e0 = self._project_time(t_emb)
         return t_emb, e0
 
     def __call__(
         self,
-        x: List[mx.array],
+        x: mx.array,
         t: mx.array,
-        context: List[mx.array],
-        context_lens: Optional[List[int]] = None,
+        context: mx.array,
+        context_lens: Optional[int] = None,
         block_residual: Optional[mx.array] = None,
         precomputed_time: Optional[Tuple[mx.array, mx.array]] = None,
         clip_fea: Optional[mx.array] = None,
-        first_frame: Optional[List[mx.array]] = None,
-    ) -> List[mx.array]:
+        first_frame: Optional[mx.array] = None,
+    ) -> mx.array:
         """
         Forward pass for t2v and i2v.
 
         Args:
-            x: List of input latents, each [C_in, F, H, W]
-            t: Timesteps [B]
-            context: List of text embeddings, each [L, C_text]
-            context_lens: Actual context lengths (before padding)
+            x: Input latent [F, H, W, C_in] (channels-last)
+            t: Timestep [1]
+            context: Text embedding [L, C_text]
+            context_lens: Actual context length (before padding)
             block_residual: Precomputed block residual for TeaCache skip
             precomputed_time: (t_emb, e0) tuple for TeaCache
-            clip_fea: CLIP image features [B, 257, 1280] (I2V only)
-            first_frame: List of image conditioning [C_cond, F, H, W] (I2V only).
+            clip_fea: CLIP image features [1, 257, 1280] (I2V only)
+            first_frame: Image conditioning [F, H, W, C_cond] (I2V only).
                Concatenated channel-wise with x before patchify (in_dim=36).
 
         Returns:
-            List of output latents, each [C_out, F, H, W]
+            Output latent [F, H, W, C_out] (channels-last)
         """
-        B = len(x)
-
         # Channel-concat image conditioning before patchify (I2V)
         if first_frame is not None:
-            x = [
-                mx.concatenate([x_i, ff_i], axis=0) for x_i, ff_i in zip(x, first_frame)
-            ]
+            x = mx.concatenate([x, first_frame], axis=-1)
 
-        # Patchify and embed
-        x_embedded = []
-        grid_sizes = []
-        seq_lens = []
-        for x_i in x:
-            x_i = x_i.transpose(1, 2, 3, 0)[None, :, :, :, :]  # [1, F, H, W, C]
-            x_i = mx.conv3d(
-                x_i, self.patch_embedding_weight, stride=self.patch_size, padding=0
+        # Patchify: [F, H, W, C] -> [1, F, H, W, C] -> conv3d -> [1, Fp, Hp, Wp, dim]
+        x = x[None]
+        x = mx.conv3d(x, self.patch_embedding_weight, stride=self.patch_size, padding=0)
+        x = x + self.patch_embedding_bias[None, None, None, None, :]
+        _, Fp, Hp, Wp, _ = x.shape
+        grid_sizes = [[Fp, Hp, Wp]]
+        x = x.reshape(1, Fp * Hp * Wp, self.dim)
+
+        # Embed context: [L, C_text] -> [1, text_len, dim]
+        if context.shape[0] < self.text_len:
+            pad_len = self.text_len - context.shape[0]
+            context = mx.concatenate(
+                [context, mx.zeros((pad_len, context.shape[1]))], axis=0
             )
-            x_i = x_i + self.patch_embedding_bias[None, None, None, None, :]
-            _, Fp, Hp, Wp, _ = x_i.shape
-            x_i = x_i.reshape(Fp * Hp * Wp, self.dim)
-            x_embedded.append(x_i)
-            grid_sizes.append([Fp, Hp, Wp])
-            seq_lens.append(Fp * Hp * Wp)
-
-        # Pad and stack into batch
-        max_len = max(seq_lens)
-        x_padded = []
-        for x_i in x_embedded:
-            if x_i.shape[0] < max_len:
-                pad_len = max_len - x_i.shape[0]
-                x_i = mx.concatenate([x_i, mx.zeros((pad_len, self.dim))], axis=0)
-            x_padded.append(x_i)
-        x = mx.stack(x_padded, axis=0)
-
-        # Pad and embed context
-        context_padded = []
-        for c_i in context:
-            if c_i.shape[0] < self.text_len:
-                pad_len = self.text_len - c_i.shape[0]
-                c_i = mx.concatenate([c_i, mx.zeros((pad_len, c_i.shape[1]))], axis=0)
-            context_padded.append(c_i)
-        context_padded = mx.stack(context_padded, axis=0)
-        context = self._embed_text(context_padded)
+        context = self._embed_text(context[None])
 
         # Prepend projected CLIP features to context (I2V)
         if clip_fea is not None:
@@ -283,15 +259,15 @@ class WanModel(nn.Module):
             context = mx.concatenate([clip_proj, context], axis=1)
 
         if context_lens is not None:
-            context_lens = mx.array(context_lens, dtype=mx.int32)
+            context_lens = mx.array([context_lens], dtype=mx.int32)
 
-        # Time embedding (per-sample, not per-patch)
+        # Time embedding
         if precomputed_time is not None:
             t_emb, e = precomputed_time[0], precomputed_time[1]
         else:
             t_emb = self._embed_time(t)
             e = self._project_time(t_emb)
-        e = e.reshape(B, 6, self.dim)  # [B, 6, dim]
+        e = e.reshape(1, 6, self.dim)
 
         # Transformer blocks
         if block_residual is not None:
@@ -301,31 +277,23 @@ class WanModel(nn.Module):
             for i in range(self.num_layers):
                 block = getattr(self, f"block_{i}")
                 x = block(x, e, grid_sizes, self.freqs, context, context_lens)
-            # Set by model.__call__ — read by pipeline for TeaCache caching
             self._last_block_residual = x - x_in
 
         # Output head
         x = self.head(x, t_emb)
 
-        # Unpatchify
-        outputs = []
-        for i, (seq_len_i, grid_size) in enumerate(zip(seq_lens, grid_sizes)):
-            x_i = x[i, :seq_len_i, :]
-            Fp, Hp, Wp = grid_size
-            pt, ph, pw = self.patch_size
-            x_i = rearrange(
-                x_i,
-                "(Fp Hp Wp) (pt ph pw c) -> c (Fp pt) (Hp ph) (Wp pw)",
-                Fp=Fp,
-                Hp=Hp,
-                Wp=Wp,
-                pt=pt,
-                ph=ph,
-                pw=pw,
-            )
-            outputs.append(x_i)
-
-        return outputs
+        # Unpatchify: [1, seq_len, patch_features] -> [F, H, W, C]
+        pt, ph, pw = self.patch_size
+        return rearrange(
+            x[0],
+            "(Fp Hp Wp) (pt ph pw c) -> (Fp pt) (Hp ph) (Wp pw) c",
+            Fp=Fp,
+            Hp=Hp,
+            Wp=Wp,
+            pt=pt,
+            ph=ph,
+            pw=pw,
+        )
 
     @staticmethod
     def sanitize(weights: Dict[str, mx.array]) -> Dict[str, mx.array]:
@@ -333,6 +301,10 @@ class WanModel(nn.Module):
         remapped = {}
         for key, value in weights.items():
             new_key = key
+
+            # Skip fp8 scale metadata from LightX2V quantized checkpoints
+            if "weight_scale" in new_key:
+                continue
 
             # Remove model. prefix
             if new_key.startswith("model."):

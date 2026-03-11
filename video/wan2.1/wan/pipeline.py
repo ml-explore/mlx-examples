@@ -127,10 +127,10 @@ class WanT2VPipeline:
 
         W, H = size
         target_shape = (
-            self.z_dim,
             (frame_num - 1) // self.vae_stride[0] + 1,
             H // self.vae_stride[1],
             W // self.vae_stride[2],
+            self.z_dim,
         )
 
         # Encode text
@@ -205,12 +205,12 @@ class WanT2VPipeline:
                 )
                 if skip_cond:
                     noise_cond = self.flow(
-                        [x_t],
+                        x_t,
                         t=t_val,
-                        context=[context],
+                        context=context,
                         block_residual=prev_residual_cond,
                         precomputed_time=(t_emb, e0),
-                    )[0]
+                    )
                     skipped_steps += 1
                     if verbose:
                         logger.info(
@@ -219,11 +219,11 @@ class WanT2VPipeline:
                         )
                 else:
                     noise_cond = self.flow(
-                        [x_t],
+                        x_t,
                         t=t_val,
-                        context=[context],
+                        context=context,
                         precomputed_time=(t_emb, e0),
-                    )[0]
+                    )
                     # Set by model.__call__ — TeaCache block-residual caching
                     prev_residual_cond = self.flow._last_block_residual
                     mx.eval(prev_residual_cond)  # Materialize to release graph
@@ -240,19 +240,19 @@ class WanT2VPipeline:
                     )
                     if skip_uncond:
                         noise_uncond = self.flow(
-                            [x_t],
+                            x_t,
                             t=t_val,
-                            context=[context_null],
+                            context=context_null,
                             block_residual=prev_residual_uncond,
                             precomputed_time=(t_emb, e0),
-                        )[0]
+                        )
                     else:
                         noise_uncond = self.flow(
-                            [x_t],
+                            x_t,
                             t=t_val,
-                            context=[context_null],
+                            context=context_null,
                             precomputed_time=(t_emb, e0),
-                        )[0]
+                        )
                         prev_residual_uncond = self.flow._last_block_residual
                         mx.eval(prev_residual_uncond)
                         accum_uncond = 0.0
@@ -270,17 +270,17 @@ class WanT2VPipeline:
             else:
                 # Standard path (no TeaCache)
                 noise_cond = self.flow(
-                    [x_t],
+                    x_t,
                     t=t_val,
-                    context=[context],
-                )[0]
+                    context=context,
+                )
 
                 if guidance > 1.0:
                     noise_uncond = self.flow(
-                        [x_t],
+                        x_t,
                         t=t_val,
-                        context=[context_null],
-                    )[0]
+                        context=context_null,
+                    )
                     noise_pred = noise_uncond + guidance * (noise_cond - noise_uncond)
                 else:
                     noise_pred = noise_cond
@@ -295,11 +295,11 @@ class WanT2VPipeline:
         Decode latents to video frames.
 
         Args:
-            latents: [C, F, H, W] latent tensor
+            latents: [F, H, W, C] latent tensor (channels-last)
             compile_vae: If True, compile the VAE decoder for frames 1+
 
         Returns:
-            [C, F, H, W] video tensor in [-1, 1]
+            [F, H, W, C] video tensor in [-1, 1] (channels-last)
         """
         return self.vae.decode(latents, compile=compile_vae)
 
@@ -391,32 +391,21 @@ class WanI2VPipeline:
         img_arr = (img_arr - 0.5) / 0.5
         img_tensor = mx.array(img_arr)  # [H, W, 3]
 
-        # Build video: first frame = image, rest = zeros -> [3, F, H, W]
-        img_chw = img_tensor.transpose(2, 0, 1)  # [3, H, W]
-        zeros = mx.zeros((3, frame_num - 1, H, W))
-        video = mx.concatenate([img_chw[:, None, :, :], zeros], axis=1)  # [3, F, H, W]
+        # Build video: first frame = image, rest = zeros -> [F, H, W, 3]
+        zeros = mx.zeros((frame_num - 1, H, W, 3))
+        video = mx.concatenate([img_tensor[None], zeros], axis=0)  # [F, H, W, 3]
 
-        # VAE encode
-        vae_latent = self.vae.encode(video)  # [16, T', H', W']
+        # VAE encode -> [T', H', W', 16]
+        vae_latent = self.vae.encode(video)
 
-        # Build temporal mask:
-        # 1. mask [1, F, H', W'] — first frame=1, rest=0
-        # 2. Repeat first position 4x, concat with rest
-        # 3. Reshape to [4, T', H', W']
-        msk = mx.concatenate(
-            [
-                mx.ones((1, 1, H_latent, W_latent)),
-                mx.zeros((1, frame_num - 1, H_latent, W_latent)),
-            ],
-            axis=1,
-        )
-        first_repeated = mx.repeat(msk[:, 0:1], repeats=4, axis=1)
-        msk = mx.concatenate([first_repeated, msk[:, 1:]], axis=1)
-        msk = msk.reshape(1, T_latent, 4, H_latent, W_latent)
-        msk = msk.transpose(0, 2, 1, 3, 4)[0]  # [4, T', H', W']
+        # Build temporal mask -> [T', H', W', 4]
+        # First latent frame = 1 (conditioned), rest = 0
+        msk_first = mx.ones((1, H_latent, W_latent, 4))
+        msk_rest = mx.zeros((T_latent - 1, H_latent, W_latent, 4))
+        msk = mx.concatenate([msk_first, msk_rest], axis=0)
 
-        # Concat: [4 + 16, T', H', W'] = [20, T', H', W']
-        y = mx.concatenate([msk, vae_latent], axis=0)
+        # Concat: [T', H', W', 4+16] = [T', H', W', 20]
+        y = mx.concatenate([msk, vae_latent], axis=-1)
         return y.astype(self.dtype)
 
     def generate_latents(
@@ -448,10 +437,10 @@ class WanI2VPipeline:
 
         W, H = size
         target_shape = (
-            self.z_dim,
             (frame_num - 1) // self.vae_stride[0] + 1,
             H // self.vae_stride[1],
             W // self.vae_stride[2],
+            self.z_dim,
         )
 
         # Encode text
@@ -464,7 +453,7 @@ class WanI2VPipeline:
         # Encode image with CLIP
         clip_features = self._encode_clip(image_path)
 
-        # Prepare VAE image conditioning
+        # Prepare VAE image conditioning [F, H, W, 20] (channels-last)
         y = self._prepare_image_conditioning(image_path, size, frame_num)
 
         # Initial noise
@@ -486,23 +475,23 @@ class WanI2VPipeline:
         for step_idx, t in enumerate(sampler.timesteps):
             t_val = t.reshape(1).astype(mx.float32)
 
-            # Conditional forward (clip_fea and y used in both passes)
+            # Conditional forward (clip_fea and first_frame used in both passes)
             noise_cond = self.flow(
-                [x_t],
+                x_t,
                 t=t_val,
-                context=[context],
+                context=context,
                 clip_fea=clip_features,
-                first_frame=[y],
-            )[0]
+                first_frame=y,
+            )
 
             if guidance > 1.0:
                 noise_uncond = self.flow(
-                    [x_t],
+                    x_t,
                     t=t_val,
-                    context=[context_null],
+                    context=context_null,
                     clip_fea=clip_features,
-                    first_frame=[y],
-                )[0]
+                    first_frame=y,
+                )
                 noise_pred = noise_uncond + guidance * (noise_cond - noise_uncond)
             else:
                 noise_pred = noise_cond

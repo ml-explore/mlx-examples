@@ -394,14 +394,14 @@ class WanVAE(nn.Module):
         Decode latent to video.
 
         Args:
-            z: Latent tensor [C, F, H, W]
+            z: Latent tensor [F, H, W, C] (channels-last)
             compile: If True, compile the VAE decoder for frames 1+
 
         Returns:
-            Video tensor [C, F, H, W] clamped to [-1, 1]
+            Video tensor [F, H, W, C] clamped to [-1, 1] (channels-last)
         """
-        # Convert [C, F, H, W] -> [1, F, H, W, C]
-        z = z.transpose(1, 2, 3, 0)[None, :, :, :, :]
+        # Add batch dim: [F, H, W, C] -> [1, F, H, W, C]
+        z = z[None]
 
         # Unscale latents
         scale = 1.0 / self.std
@@ -436,23 +436,22 @@ class WanVAE(nn.Module):
         out = mx.concatenate(outputs, axis=1)
         out = mx.clip(out, -1.0, 1.0)
 
-        # Convert back [1, F, H, W, C] -> [C, F, H, W]
-        out = out[0].transpose(3, 0, 1, 2)
-        return out
+        # Remove batch dim: [1, F, H, W, C] -> [F, H, W, C]
+        return out[0]
 
     def encode(self, x: mx.array, compile: bool = False) -> mx.array:
         """
         Encode video to latent.
 
         Args:
-            x: Video tensor [C, F, H, W]
+            x: Video tensor [F, H, W, C] (channels-last)
             compile: If True, compile the VAE encoder for chunks 1+
 
         Returns:
-            Latent tensor [C, F', H/8, W/8]
+            Latent tensor [F', H/8, W/8, C] (channels-last)
         """
-        # Convert [C, F, H, W] -> [1, F, H, W, C]
-        x = x.transpose(1, 2, 3, 0)[None, :, :, :, :]
+        # Add batch dim: [F, H, W, C] -> [1, F, H, W, C]
+        x = x[None]
 
         num_frames = x.shape[1]
         feat_cache = [None] * 32
@@ -495,9 +494,8 @@ class WanVAE(nn.Module):
             1, 1, 1, 1, self.z_dim
         )
 
-        # Convert back [1, F', H', W', C] -> [C, F', H', W']
-        mu = mu[0].transpose(3, 0, 1, 2)
-        return mu
+        # Remove batch dim: [1, F', H', W', C] -> [F', H', W', C]
+        return mu[0]
 
     @staticmethod
     def sanitize(weights: Dict[str, mx.array]) -> Dict[str, mx.array]:
