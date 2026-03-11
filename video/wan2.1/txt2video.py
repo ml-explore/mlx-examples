@@ -57,11 +57,6 @@ if __name__ == "__main__":
         help="TeaCache threshold for step skipping (0=off, 0.05=recommended)",
     )
     parser.add_argument(
-        "--no-ret-steps",
-        action="store_true",
-        help="Use raw time embedding for TeaCache distance (alternative calibration mode)",
-    )
-    parser.add_argument(
         "--checkpoint",
         type=str,
         default=None,
@@ -78,6 +73,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compile-vae", action="store_true", help="Compile VAE decoder"
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable Metal buffer cache (mx.set_cache_limit(0)) to reduce swap pressure",
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -89,6 +89,8 @@ if __name__ == "__main__":
         denoising_step_list = None
 
     mx.set_default_device(mx.gpu)
+    if args.no_cache:
+        mx.set_cache_limit(0)
 
     if args.verbose:
         handler = logging.StreamHandler()
@@ -120,7 +122,6 @@ if __name__ == "__main__":
         shift=args.shift,
         seed=args.seed,
         teacache=args.teacache,
-        use_ret_steps=not args.no_ret_steps,
         verbose=args.verbose,
         denoising_step_list=denoising_step_list,
     )

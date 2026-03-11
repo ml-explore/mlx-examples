@@ -25,7 +25,7 @@ def _modulate(x, scale, shift):
 
 @partial(mx.compile, shapeless=True)
 def _residual_gate(x, y, gate):
-    return x.astype(mx.float32) + (y * gate).astype(mx.float32)
+    return x + y * gate
 
 
 _gelu = mx.compile(nn.gelu_approx)
@@ -403,11 +403,11 @@ class WanAttentionBlock(nn.Module):
         context: mx.array,
         context_lens: Optional[mx.array],
     ) -> mx.array:
-        e = (self.modulation + e).astype(mx.float32)
+        e = self.modulation + e
         e = [chunk.squeeze(1) for chunk in e.split(6, axis=1)]
 
         # Self-attention with modulation
-        x_norm = self.norm1(x).astype(mx.float32)
+        x_norm = self.norm1(x)
         y = self.self_attn(
             _modulate(x_norm, e[1], e[0]),
             grid_sizes,
@@ -423,7 +423,7 @@ class WanAttentionBlock(nn.Module):
         x = x + self.cross_attn(x_normed, context, context_lens)
 
         # FFN with modulation
-        x_norm = self.norm2(x).astype(mx.float32)
+        x_norm = self.norm2(x)
         y = self.ffn_linear2(_gelu(self.ffn_linear1(_modulate(x_norm, e[4], e[3]))))
         x = _residual_gate(x, y, e[5])
 
@@ -452,10 +452,9 @@ class Head(nn.Module):
         self.modulation = mx.zeros((1, 2, dim))
 
     def __call__(self, x: mx.array, e: mx.array) -> mx.array:
-        e = (self.modulation + e[:, None, :]).astype(mx.float32)
+        e = self.modulation + e[:, None, :]
         e = e.split(2, axis=1)
-        x = x.astype(mx.float32)
-        x_norm = self.norm(x).astype(mx.float32)
+        x_norm = self.norm(x)
         x = (
             mx.matmul(
                 _modulate(x_norm, e[1].squeeze(1), e[0].squeeze(1)),

@@ -16,16 +16,30 @@ from .sampler import FlowEulerDiscreteScheduler, FlowUniPCMultistepScheduler
 from .utils import load_clip, load_dit, load_t5, load_t5_tokenizer, load_vae
 
 # Polynomial coefficients for TeaCache distance rescaling (calibrated per model).
-# Each entry is (use_ret_steps=True coefficients, use_ret_steps=False coefficients).
-_tea_coeffs = {
-    "t2v-1.3B": (
-        [-5.21862437e04, 9.23041404e03, -5.28275948e02, 1.36987616e01, -4.99875664e-02],
-        [2.39676752e03, -1.31110545e03, 2.01331979e02, -8.29855975e00, 1.37887774e-01],
-    ),
-    "t2v-14B": (
-        [-3.03318725e05, 4.90537029e04, -2.65530556e03, 5.87365115e01, -3.15583525e-01],
-        [-5784.54975374, 5449.50911966, -1811.16591783, 256.27178429, -13.02252404],
-    ),
+# Each entry: (coefficients, ret_steps, cutoff_offset, use_projected_embedding)
+_tea_coeffs = {  # from https://github.com/ModelTC/LightX2V/blob/main/configs/caching/teacache/wan_t2v_1_3b_tea_480p.json
+    "t2v-1.3B": {
+        "coeffs": [
+            -5.21862437e04,
+            9.23041404e03,
+            -5.28275948e02,
+            1.36987616e01,
+            -4.99875664e-02,
+        ],
+        "ret_steps": 5,
+        "use_e0": True,
+    },
+    "t2v-14B": {  # from https://github.com/ModelTC/LightX2V/blob/main/configs/caching/custom/wan_t2v_custom_14b.json
+        "coeffs": [
+            -5784.54975374,
+            5449.50911966,
+            -1811.16591783,
+            256.27178429,
+            -13.02252404,
+        ],
+        "ret_steps": 1,
+        "use_e0": False,
+    },
 }
 
 
@@ -41,9 +55,6 @@ class WanT2VPipeline:
         self.vae_stride = (4, 8, 8)
         self.z_dim = 16
         self._null_context = None
-
-        # Disable Metal buffer cache to prevent swap pressure
-        mx.set_cache_limit(0)
 
         self.flow = load_dit(name, checkpoint=checkpoint)
         self.vae = load_vae(name)
@@ -92,7 +103,6 @@ class WanT2VPipeline:
         shift: float = 5.0,
         seed: Optional[int] = None,
         teacache: float = 0.0,
-        use_ret_steps: bool = True,
         verbose: bool = False,
         denoising_step_list=None,
     ):
@@ -148,9 +158,11 @@ class WanT2VPipeline:
         # TeaCache state
         use_teacache = teacache > 0
         if use_teacache:
-            coeffs = _tea_coeffs[self.name][0 if use_ret_steps else 1]
-            ret_steps = 5 if use_ret_steps else 1
-            cutoff_steps = num_steps if use_ret_steps else num_steps - 1
+            tea_cfg = _tea_coeffs[self.name]
+            coeffs = tea_cfg["coeffs"]
+            ret_steps = tea_cfg["ret_steps"]
+            use_e0 = tea_cfg["use_e0"]
+            cutoff_steps = num_steps if use_e0 else num_steps - 1
             prev_e0 = None
             accum_cond = 0.0
             accum_uncond = 0.0
@@ -175,7 +187,7 @@ class WanT2VPipeline:
 
                 if not must_compute:
                     # Relative L1 distance with polynomial rescaling
-                    dist_emb = e0 if use_ret_steps else t_emb
+                    dist_emb = e0 if use_e0 else t_emb
                     raw_dist = (
                         mx.abs(dist_emb - prev_e0).mean()
                         / (mx.abs(prev_e0).mean() + 1e-8)
@@ -248,7 +260,7 @@ class WanT2VPipeline:
                 else:
                     noise_pred = noise_cond
 
-                prev_e0 = e0 if use_ret_steps else t_emb
+                prev_e0 = e0 if use_e0 else t_emb
 
                 if verbose and step_idx == num_steps - 1:
                     logger.info(
@@ -304,8 +316,6 @@ class WanI2VPipeline:
         self.vae_stride = (4, 8, 8)
         self.z_dim = 16
         self._null_context = None
-
-        mx.set_cache_limit(0)
 
         self.flow = load_dit(name, checkpoint=checkpoint)
         self.vae = load_vae(name)
@@ -482,7 +492,7 @@ class WanI2VPipeline:
                 t=t_val,
                 context=[context],
                 clip_fea=clip_features,
-                y=[y],
+                first_frame=[y],
             )[0]
 
             if guidance > 1.0:
@@ -491,7 +501,7 @@ class WanI2VPipeline:
                     t=t_val,
                     context=[context_null],
                     clip_fea=clip_features,
-                    y=[y],
+                    first_frame=[y],
                 )[0]
                 noise_pred = noise_uncond + guidance * (noise_cond - noise_uncond)
             else:

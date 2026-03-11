@@ -78,11 +78,24 @@ def _hf_download(repo_id: str, filename: str) -> str:
 
 def _load_weights(path: str) -> dict:
     """Unified loader for safetensors, sharded index, and .pth files."""
+    assert os.path.isfile(path), f"Weights file at {path} does not exist"
     if path.endswith(".index.json"):
         weight_dir = os.path.dirname(path)
         with open(path) as f:
             index = json.load(f)
         weight_files = set(index["weight_map"].values())
+        # Ensure all shards are downloaded (for HF Hub paths)
+        for wf in weight_files:
+            shard_path = os.path.join(weight_dir, wf)
+            if not os.path.exists(shard_path):
+                # Infer repo_id from HF cache path structure
+                # .../models--Org--Repo/snapshots/hash/file
+                parts = Path(path).parts
+                for i, p in enumerate(parts):
+                    if p.startswith("models--"):
+                        repo_id = p.replace("models--", "").replace("--", "/")
+                        _hf_download(repo_id, wf)
+                        break
         weights = {}
         for wf in weight_files:
             weights.update(mx.load(os.path.join(weight_dir, wf)))

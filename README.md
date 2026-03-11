@@ -28,7 +28,7 @@ package for LLMs with MLX.
 
 ### Video Models
 
-- Text-to-video generation with [Wan2.1](video/wan2.1).
+- Text-to-video and image-to-video generation with [Wan2.1](video/wan2.1).
 
 ### Audio Models
 

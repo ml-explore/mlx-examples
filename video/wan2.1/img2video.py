@@ -68,6 +68,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compile-vae", action="store_true", help="Compile VAE decoder"
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable Metal buffer cache (mx.set_cache_limit(0)) to reduce swap pressure",
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -79,6 +84,8 @@ if __name__ == "__main__":
         denoising_step_list = None
 
     mx.set_default_device(mx.gpu)
+    if args.no_cache:
+        mx.set_cache_limit(0)
 
     if args.verbose:
         handler = logging.StreamHandler()

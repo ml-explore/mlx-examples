@@ -1,9 +1,10 @@
 # Copyright © 2026 Apple Inc.
 
 """
-Wan2.1 non-causal DiT (Diffusion Transformer) for text-to-video generation.
+Wan2.1 bidirectional DiT (Diffusion Transformer) for video generation.
 
-Supports 1.3B and 14B model sizes. Uses bidirectional attention (no KV cache)
+Supports 1.3B and 14B model sizes with text-to-video (t2v) and
+image-to-video (i2v) modes. Uses bidirectional attention
 with setattr-based block registration for weight remapping compatibility.
 """
 
@@ -200,8 +201,8 @@ class WanModel(nn.Module):
         """Compute time embeddings for TeaCache. Returns (t_emb, e0).
         t_emb: [B, dim] (pre-projection, used by head)
         e0: [B, 6*dim] (projected, used for block modulation)"""
-        t_emb = self._embed_time(t).astype(mx.float32)
-        e0 = self._project_time(t_emb).astype(mx.float32)
+        t_emb = self._embed_time(t)
+        e0 = self._project_time(t_emb)
         return t_emb, e0
 
     def __call__(
@@ -213,18 +214,21 @@ class WanModel(nn.Module):
         block_residual: Optional[mx.array] = None,
         precomputed_time: Optional[Tuple[mx.array, mx.array]] = None,
         clip_fea: Optional[mx.array] = None,
-        y: Optional[List[mx.array]] = None,
+        first_frame: Optional[List[mx.array]] = None,
     ) -> List[mx.array]:
         """
-        Forward pass.
+        Forward pass for t2v and i2v.
 
         Args:
             x: List of input latents, each [C_in, F, H, W]
             t: Timesteps [B]
             context: List of text embeddings, each [L, C_text]
             context_lens: Actual context lengths (before padding)
+            block_residual: Precomputed block residual for TeaCache skip
+            precomputed_time: (t_emb, e0) tuple for TeaCache
             clip_fea: CLIP image features [B, 257, 1280] (I2V only)
-            y: List of image conditioning tensors, each [C_cond, F, H, W] (I2V only)
+            first_frame: List of image conditioning [C_cond, F, H, W] (I2V only).
+               Concatenated channel-wise with x before patchify (in_dim=36).
 
         Returns:
             List of output latents, each [C_out, F, H, W]
@@ -232,8 +236,10 @@ class WanModel(nn.Module):
         B = len(x)
 
         # Channel-concat image conditioning before patchify (I2V)
-        if y is not None:
-            x = [mx.concatenate([x_i, y_i], axis=0) for x_i, y_i in zip(x, y)]
+        if first_frame is not None:
+            x = [
+                mx.concatenate([x_i, ff_i], axis=0) for x_i, ff_i in zip(x, first_frame)
+            ]
 
         # Patchify and embed
         x_embedded = []
@@ -283,8 +289,8 @@ class WanModel(nn.Module):
         if precomputed_time is not None:
             t_emb, e = precomputed_time[0], precomputed_time[1]
         else:
-            t_emb = self._embed_time(t).astype(mx.float32)  # [B, dim]
-            e = self._project_time(t_emb).astype(mx.float32)
+            t_emb = self._embed_time(t)
+            e = self._project_time(t_emb)
         e = e.reshape(B, 6, self.dim)  # [B, 6, dim]
 
         # Transformer blocks
