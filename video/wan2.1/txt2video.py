@@ -8,7 +8,7 @@ import logging
 import mlx.core as mx
 import mlx.nn as nn
 from tqdm import tqdm
-from wan import WanT2VPipeline
+from wan import WanPipeline
 from wan.utils import save_video
 
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         logging.getLogger("wan").addHandler(handler)
 
     # Load pipeline
-    pipeline = WanT2VPipeline(args.model, checkpoint=args.checkpoint)
+    pipeline = WanPipeline(args.model, checkpoint=args.checkpoint)
 
     # Quantize DiT
     if args.quantize:

@@ -71,7 +71,6 @@ class WanModel(nn.Module):
         out_dim: int = 16,
         num_heads: int = 16,
         num_layers: int = 32,
-        qk_norm: bool = True,
         cross_attn_norm: bool = True,
         eps: float = 1e-6,
     ):
@@ -139,7 +138,6 @@ class WanModel(nn.Module):
                 dim,
                 ffn_dim,
                 num_heads,
-                qk_norm,
                 cross_attn_norm,
                 eps,
                 cross_attn_type=model_type,
@@ -215,7 +213,7 @@ class WanModel(nn.Module):
         precomputed_time: Optional[Tuple[mx.array, mx.array]] = None,
         clip_fea: Optional[mx.array] = None,
         first_frame: Optional[mx.array] = None,
-    ) -> mx.array:
+    ) -> Tuple[mx.array, mx.array]:
         """
         Forward pass for t2v and i2v.
 
@@ -231,7 +229,9 @@ class WanModel(nn.Module):
                Concatenated channel-wise with x before patchify (in_dim=36).
 
         Returns:
-            Output latent [F, H, W, C_out] (channels-last)
+            (output, block_residual): output latent [F, H, W, C_out] and
+            block residual for TeaCache caching (None-equivalent zeros when
+            using cached residual).
         """
         # Channel-concat image conditioning before patchify (I2V)
         if first_frame is not None:
@@ -272,19 +272,20 @@ class WanModel(nn.Module):
         # Transformer blocks
         if block_residual is not None:
             x = x + block_residual
+            new_residual = block_residual  # pass through (caller won't cache this)
         else:
             x_in = x
             for i in range(self.num_layers):
                 block = getattr(self, f"block_{i}")
                 x = block(x, e, grid_sizes, self.freqs, context, context_lens)
-            self._last_block_residual = x - x_in
+            new_residual = x - x_in
 
         # Output head
         x = self.head(x, t_emb)
 
         # Unpatchify: [1, seq_len, patch_features] -> [F, H, W, C]
         pt, ph, pw = self.patch_size
-        return rearrange(
+        output = rearrange(
             x[0],
             "(Fp Hp Wp) (pt ph pw c) -> (Fp pt) (Hp ph) (Wp pw) c",
             Fp=Fp,
@@ -294,6 +295,7 @@ class WanModel(nn.Module):
             ph=ph,
             pw=pw,
         )
+        return output, new_residual
 
     @staticmethod
     def sanitize(weights: Dict[str, mx.array]) -> Dict[str, mx.array]:

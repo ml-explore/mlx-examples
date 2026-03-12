@@ -5,7 +5,7 @@ Wan2.1 text-to-video and image-to-video implementation in MLX. The model
 weights are downloaded directly from the [Hugging Face
 Hub](https://huggingface.co/Wan-AI).
 
-| Model | Task | HF Repo | RAM (unquantized) | Single DiT step on M4 Pro chip |
+| Model | Task | HF Repo | RAM (unquantized), 81 frames | Single DiT step on M4 Max chip, 81 frames |
 |-------|------|---------|-----------------|---|
 | 1.3B | T2V | [Wan-AI/Wan2.1-T2V-1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) | ~10GB | ~100 s/it |
 | 14B | T2V | [Wan-AI/Wan2.1-T2V-14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) | ~36GB | ~230 s/it |
@@ -82,7 +82,7 @@ python txt2video.py 'A cat playing piano' --quantize --output out_quantized.mp4
 ```
 
 ### Disabling the cache
-To get additional memory savings at the expense of a bit of speed use `--no-cache` argument that will prevent MLX from utilizing the cache (sets `mx.set_cache_limit(0)` under the hood). See [documentation](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.set_cache_limit.html) for more info
+To get additional memory savings at the expense of a bit of speed use `--no-cache` argument. It will prevent MLX from utilizing the cache (sets `mx.set_cache_limit(0)` under the hood). See [documentation](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.set_cache_limit.html) for more info
 ```shell
 python txt2video.py 'A cat playing piano' --output out.mp4 --no-cache
 ```
@@ -107,15 +107,15 @@ python txt2video.py 'A cat playing piano' \
     --quantize --output out_t2v_distilled.mp4
 ```
 
-For image to video pipeline we use [4 steps distilled i2v model](https://huggingface.co/lightx2v/Wan2.1-Distill-Models/blob/main/wan2.1_i2v_480p_scaled_fp8_e4m3_lightx2v_4step.safetensors)
+For image to video pipeline we use [4 steps distilled i2v model](https://huggingface.co/lightx2v/Wan2.1-Distill-Models/resolve/main/wan2.1_i2v_480p_lightx2v_4step.safetensors)
 
 ```shell
-wget https://huggingface.co/lightx2v/Wan2.1-Distill-Models/blob/main/wan2.1_i2v_480p_scaled_fp8_e4m3_lightx2v_4step.safetensors
+wget https://huggingface.co/lightx2v/Wan2.1-Distill-Models/resolve/main/wan2.1_i2v_480p_lightx2v_4step.safetensors
 ```
 
 ```shell
 python img2video.py 'Astronaut riding a horse' \
-    --image ./inputs/astronaut-on-a-horse.png --checkpoint ./wan2.1_i2v_480p_scaled_fp8_e4m3_lightx2v_4step.safetensors \
+    --image ./inputs/astronaut-on-a-horse.png --checkpoint ./wan2.1_i2v_480p_lightx2v_4step.safetensors \
     --sampler euler --steps 4 --guidance 1.0 --shift 5.0 \
     --quantize --output out_i2v_distilled.mp4
 ```

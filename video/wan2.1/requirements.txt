@@ -1,6 +1,6 @@
 einops>=0.8.2  # for mlx compatible einops
 huggingface_hub
-mlx>=0.22.0
+mlx>=0.31.0  # for conv3d memory and speed fix
 numpy
 Pillow
 tokenizers

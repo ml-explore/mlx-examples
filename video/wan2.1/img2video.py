@@ -8,7 +8,7 @@ import logging
 import mlx.core as mx
 import mlx.nn as nn
 from tqdm import tqdm
-from wan import WanI2VPipeline
+from wan import WanPipeline
 from wan.utils import save_video
 
 
@@ -50,6 +50,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n-prompt",
         default="镜头晃动，色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+    )
+    parser.add_argument(
+        "--teacache",
+        type=float,
+        default=0.0,
+        help="TeaCache threshold for step skipping (0=off, 0.26=recommended for i2v)",
     )
     parser.add_argument(
         "--checkpoint",
@@ -94,7 +100,7 @@ if __name__ == "__main__":
         logging.getLogger("wan").addHandler(handler)
 
     # Load pipeline
-    pipeline = WanI2VPipeline(args.model, checkpoint=args.checkpoint)
+    pipeline = WanPipeline(args.model, checkpoint=args.checkpoint)
 
     # Quantize DiT
     if args.quantize:
@@ -117,6 +123,7 @@ if __name__ == "__main__":
         guidance=args.guidance,
         shift=args.shift,
         seed=args.seed,
+        teacache=args.teacache,
         verbose=args.verbose,
         denoising_step_list=denoising_step_list,
     )
@@ -129,7 +136,8 @@ if __name__ == "__main__":
 
     # Free T5 and CLIP memory
     del pipeline.t5
-    del pipeline.clip
+    if pipeline.clip is not None:
+        del pipeline.clip
     mx.clear_cache()
 
     # 2. Denoising loop
