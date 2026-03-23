@@ -94,7 +94,7 @@ def precompute_rope_freqs(
     }
 
 
-@partial(mx.compile)
+@mx.compile
 def _rope_3d(x, f, h, w, frame_dim, height_dim, width_dim, theta):
     B = x.shape[0]
 

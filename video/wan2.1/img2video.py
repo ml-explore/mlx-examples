@@ -72,9 +72,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="out.mp4")
     parser.add_argument("--preload-models", action="store_true")
     parser.add_argument(
-        "--compile-vae", action="store_true", help="Compile VAE decoder"
-    )
-    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="Disable Metal buffer cache (mx.set_cache_limit(0)) to reduce swap pressure",
@@ -151,7 +148,7 @@ if __name__ == "__main__":
     mx.reset_peak_memory()
 
     # 3. VAE decode
-    video = pipeline.decode(x_t, compile_vae=args.compile_vae)
+    video = pipeline.decode(x_t)
     mx.eval(video)
     peak_mem_decoding = mx.get_peak_memory() / 1024**3
 

@@ -370,15 +370,14 @@ class WanPipeline:
             mx.async_eval(x_t)
             yield x_t
 
-    def decode(self, latents: mx.array, compile_vae: bool = False) -> mx.array:
+    def decode(self, latents: mx.array) -> mx.array:
         """
         Decode latents to video frames.
 
         Args:
             latents: [F, H, W, C] latent tensor (channels-last)
-            compile_vae: If True, compile the VAE decoder for frames 1+
 
         Returns:
             [F, H, W, C] video tensor in [-1, 1] (channels-last)
         """
-        return self.vae.decode(latents, compile=compile_vae)
+        return self.vae.decode(latents)

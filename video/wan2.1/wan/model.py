@@ -4,8 +4,8 @@
 Wan2.1 bidirectional DiT (Diffusion Transformer) for video generation.
 
 Supports 1.3B and 14B model sizes with text-to-video (t2v) and
-image-to-video (i2v) modes. Uses bidirectional attention
-with setattr-based block registration for weight remapping compatibility.
+image-to-video (i2v) modes. Uses bidirectional attention with
+nn.Sequential embeddings and list-based block storage.
 """
 
 import math
@@ -25,36 +25,13 @@ from .rope import precompute_rope_freqs
 def sinusoidal_embedding_1d(dim: int, position: mx.array) -> mx.array:
     assert dim % 2 == 0
     half = dim // 2
+    dtype = position.dtype
     position = position.astype(mx.float32)
     sinusoid = (
         position[:, None]
         * mx.exp(-math.log(10000) * mx.arange(half, dtype=mx.float32) / half)[None, :]
     )
-    return mx.concatenate([mx.cos(sinusoid), mx.sin(sinusoid)], axis=1)
-
-
-@partial(mx.compile, shapeless=True)
-def _embed_text_fn(context, w1, b1, w2, b2):
-    x = mx.matmul(context, w1.T) + b1
-    x = nn.gelu_approx(x)
-    x = mx.matmul(x, w2.T) + b2
-    return x
-
-
-@partial(mx.compile, shapeless=True)
-def _embed_time_fn(freq_dim, t, w1, b1, w2, b2):
-    x = sinusoidal_embedding_1d(freq_dim, t)
-    x = mx.matmul(x, w1.T) + b1
-    x = nn.silu(x)
-    x = mx.matmul(x, w2.T) + b2
-    return x
-
-
-@partial(mx.compile, shapeless=True)
-def _project_time_fn(e, w, b):
-    x = nn.silu(e)
-    x = mx.matmul(x, w.T) + b
-    return x
+    return mx.concatenate([mx.cos(sinusoid), mx.sin(sinusoid)], axis=1).astype(dtype)
 
 
 class WanModel(nn.Module):
@@ -88,41 +65,17 @@ class WanModel(nn.Module):
         self.num_layers = num_layers
         self.head_dim = dim // num_heads
 
-        # Patch embedding: raw Conv3d weight/bias
-        self.patch_embedding_weight = mx.random.normal((dim, *patch_size, in_dim)) * (
-            1.0 / (in_dim * math.prod(patch_size)) ** 0.5
+        self.patch_embedding = nn.Conv3d(
+            in_dim, dim, kernel_size=patch_size, stride=patch_size, bias=True
         )
-        self.patch_embedding_bias = mx.zeros((dim,))
 
-        # Text embedding: raw weight arrays (linear1/linear2 naming)
-        scale1 = 1.0 / text_dim**0.5
-        self.text_embedding_linear1_weight = mx.random.uniform(
-            low=-scale1, high=scale1, shape=(dim, text_dim)
+        self.text_embedding = nn.Sequential(
+            nn.Linear(text_dim, dim), nn.GELU(approx="tanh"), nn.Linear(dim, dim)
         )
-        self.text_embedding_linear1_bias = mx.zeros((dim,))
-        scale2 = 1.0 / dim**0.5
-        self.text_embedding_linear2_weight = mx.random.uniform(
-            low=-scale2, high=scale2, shape=(dim, dim)
+        self.time_embedding = nn.Sequential(
+            nn.Linear(freq_dim, dim), nn.SiLU(), nn.Linear(dim, dim)
         )
-        self.text_embedding_linear2_bias = mx.zeros((dim,))
-
-        # Time embedding: raw weight arrays (linear1/linear2 naming)
-        scale_t1 = 1.0 / freq_dim**0.5
-        self.time_embedding_linear1_weight = mx.random.uniform(
-            low=-scale_t1, high=scale_t1, shape=(dim, freq_dim)
-        )
-        self.time_embedding_linear1_bias = mx.zeros((dim,))
-        scale_t2 = 1.0 / dim**0.5
-        self.time_embedding_linear2_weight = mx.random.uniform(
-            low=-scale_t2, high=scale_t2, shape=(dim, dim)
-        )
-        self.time_embedding_linear2_bias = mx.zeros((dim,))
-
-        # Time projection: raw weight arrays
-        self.time_projection_linear_weight = mx.random.uniform(
-            low=-scale_t2, high=scale_t2, shape=(6 * dim, dim)
-        )
-        self.time_projection_linear_bias = mx.zeros((6 * dim,))
+        self.time_projection = nn.Sequential(nn.SiLU(), nn.Linear(dim, 6 * dim))
 
         # Image embedding MLP for I2V: LayerNorm -> Linear -> GELU -> Linear -> LayerNorm
         if model_type == "i2v":
@@ -132,9 +85,9 @@ class WanModel(nn.Module):
             self.img_emb_linear2 = nn.Linear(clip_dim, dim)
             self.img_emb_norm2 = nn.LayerNorm(dim)
 
-        # Transformer blocks via setattr
-        for i in range(num_layers):
-            block = WanAttentionBlock(
+        # Transformer blocks as list
+        self.blocks = [
+            WanAttentionBlock(
                 dim,
                 ffn_dim,
                 num_heads,
@@ -142,7 +95,8 @@ class WanModel(nn.Module):
                 eps,
                 cross_attn_type=model_type,
             )
-            setattr(self, f"block_{i}", block)
+            for _ in range(num_layers)
+        ]
 
         # Output head
         self.head = Head(dim, out_dim, patch_size, eps)
@@ -160,15 +114,6 @@ class WanModel(nn.Module):
     def freqs(self):
         return self._freqs
 
-    def _embed_text(self, context: mx.array) -> mx.array:
-        return _embed_text_fn(
-            context,
-            self.text_embedding_linear1_weight,
-            self.text_embedding_linear1_bias,
-            self.text_embedding_linear2_weight,
-            self.text_embedding_linear2_bias,
-        )
-
     def _embed_image(self, clip_fea: mx.array) -> mx.array:
         """Project CLIP features through img_emb MLP."""
         x = self.img_emb_norm1(clip_fea)
@@ -178,29 +123,13 @@ class WanModel(nn.Module):
         x = self.img_emb_norm2(x)
         return x
 
-    def _embed_time(self, t: mx.array) -> mx.array:
-        return _embed_time_fn(
-            self.freq_dim,
-            t,
-            self.time_embedding_linear1_weight,
-            self.time_embedding_linear1_bias,
-            self.time_embedding_linear2_weight,
-            self.time_embedding_linear2_bias,
-        )
-
-    def _project_time(self, e: mx.array) -> mx.array:
-        return _project_time_fn(
-            e,
-            self.time_projection_linear_weight,
-            self.time_projection_linear_bias,
-        )
-
     def compute_time_embedding(self, t: mx.array):
         """Compute time embeddings for TeaCache. Returns (t_emb, e0).
         t_emb: [1, dim] (pre-projection, used by head)
         e0: [1, 6*dim] (projected, used for block modulation)"""
-        t_emb = self._embed_time(t)
-        e0 = self._project_time(t_emb)
+        e = sinusoidal_embedding_1d(self.freq_dim, t)
+        t_emb = self.time_embedding(e)
+        e0 = self.time_projection(t_emb)
         return t_emb, e0
 
     def __call__(
@@ -238,9 +167,7 @@ class WanModel(nn.Module):
             x = mx.concatenate([x, first_frame], axis=-1)
 
         # Patchify: [F, H, W, C] -> [1, F, H, W, C] -> conv3d -> [1, Fp, Hp, Wp, dim]
-        x = x[None]
-        x = mx.conv3d(x, self.patch_embedding_weight, stride=self.patch_size, padding=0)
-        x = x + self.patch_embedding_bias[None, None, None, None, :]
+        x = self.patch_embedding(x[None])
         _, Fp, Hp, Wp, _ = x.shape
         grid_sizes = [[Fp, Hp, Wp]]
         x = x.reshape(1, Fp * Hp * Wp, self.dim)
@@ -249,9 +176,10 @@ class WanModel(nn.Module):
         if context.shape[0] < self.text_len:
             pad_len = self.text_len - context.shape[0]
             context = mx.concatenate(
-                [context, mx.zeros((pad_len, context.shape[1]))], axis=0
+                [context, mx.zeros((pad_len, context.shape[1]), dtype=context.dtype)],
+                axis=0,
             )
-        context = self._embed_text(context[None])
+        context = self.text_embedding(context[None])
 
         # Prepend projected CLIP features to context (I2V)
         if clip_fea is not None:
@@ -265,8 +193,9 @@ class WanModel(nn.Module):
         if precomputed_time is not None:
             t_emb, e = precomputed_time[0], precomputed_time[1]
         else:
-            t_emb = self._embed_time(t)
-            e = self._project_time(t_emb)
+            e = sinusoidal_embedding_1d(self.freq_dim, t)
+            t_emb = self.time_embedding(e)
+            e = self.time_projection(t_emb)
         e = e.reshape(1, 6, self.dim)
 
         # Transformer blocks
@@ -275,8 +204,7 @@ class WanModel(nn.Module):
             new_residual = block_residual  # pass through (caller won't cache this)
         else:
             x_in = x
-            for i in range(self.num_layers):
-                block = getattr(self, f"block_{i}")
+            for block in self.blocks:
                 x = block(x, e, grid_sizes, self.freqs, context, context_lens)
             new_residual = x - x_in
 
@@ -312,9 +240,6 @@ class WanModel(nn.Module):
             if new_key.startswith("model."):
                 new_key = new_key[6:]
 
-            # patch_embedding.weight/bias -> patch_embedding_weight/bias
-            new_key = re.sub(r"patch_embedding\.(\w+)", r"patch_embedding_\1", new_key)
-
             # Transpose Conv3d weights for patch_embedding
             if (
                 "patch_embedding" in new_key
@@ -323,36 +248,23 @@ class WanModel(nn.Module):
             ):
                 value = mx.transpose(value, (0, 2, 3, 4, 1))
 
-            # blocks.N -> block_N
-            new_key = re.sub(r"blocks\.(\d+)\.", r"block_\1.", new_key)
+            # nn.Sequential key mappings for FFN
+            new_key = new_key.replace("ffn.0.", "ffn.layers.0.")
+            new_key = new_key.replace("ffn.2.", "ffn.layers.2.")
 
-            # ffn.0 -> ffn_linear1, ffn.2 -> ffn_linear2
-            new_key = re.sub(r"ffn\.0\.(\w+)", r"ffn_linear1.\1", new_key)
-            new_key = re.sub(r"ffn\.2\.(\w+)", r"ffn_linear2.\1", new_key)
+            # nn.Sequential key mappings for text_embedding
+            new_key = new_key.replace("text_embedding.0.", "text_embedding.layers.0.")
+            new_key = new_key.replace("text_embedding.2.", "text_embedding.layers.2.")
 
-            # text_embedding.0/2 -> text_embedding_linear1/2_weight/bias
-            new_key = re.sub(
-                r"text_embedding\.0\.(\w+)", r"text_embedding_linear1_\1", new_key
-            )
-            new_key = re.sub(
-                r"text_embedding\.2\.(\w+)", r"text_embedding_linear2_\1", new_key
-            )
+            # nn.Sequential key mappings for time_embedding
+            new_key = new_key.replace("time_embedding.0.", "time_embedding.layers.0.")
+            new_key = new_key.replace("time_embedding.2.", "time_embedding.layers.2.")
 
-            # time_embedding.0/2 -> time_embedding_linear1/2_weight/bias
-            new_key = re.sub(
-                r"time_embedding\.0\.(\w+)", r"time_embedding_linear1_\1", new_key
-            )
-            new_key = re.sub(
-                r"time_embedding\.2\.(\w+)", r"time_embedding_linear2_\1", new_key
-            )
+            # nn.Sequential key mapping for time_projection
+            new_key = new_key.replace("time_projection.1.", "time_projection.layers.1.")
 
-            # time_projection.1 -> time_projection_linear_weight/bias
-            new_key = re.sub(
-                r"time_projection\.1\.(\w+)", r"time_projection_linear_\1", new_key
-            )
-
-            # head.head.weight -> head.head_weight
-            new_key = re.sub(r"head\.head\.(\w+)", r"head.head_\1", new_key)
+            # head.head -> head.linear
+            new_key = new_key.replace("head.head.", "head.linear.")
 
             # img_emb.proj.N -> img_emb_* (I2V MLPProj)
             new_key = re.sub(r"img_emb\.proj\.0\.(\w+)", r"img_emb_norm1.\1", new_key)
@@ -365,6 +277,34 @@ class WanModel(nn.Module):
         # Merge separate Q/K/V into QKV for self-attention,
         # and K/V into KV for cross-attention
         remapped = WanModel._merge_qkv_weights(remapped)
+
+        # Bake 1+ into modulation scale positions
+        for key in list(remapped.keys()):
+            if key.endswith(".modulation"):
+                v = remapped[key]
+                if v.shape[1] == 6:  # block modulation [1, 6, dim]
+                    # Add 1 to scale positions (1 and 4)
+                    update = mx.concatenate(
+                        [
+                            mx.zeros_like(v[:, :1]),
+                            mx.ones_like(v[:, :1]),
+                            mx.zeros_like(v[:, 2:4]),
+                            mx.ones_like(v[:, :1]),
+                            mx.zeros_like(v[:, 5:]),
+                        ],
+                        axis=1,
+                    )
+                    remapped[key] = v + update
+                elif v.shape[1] == 2:  # head modulation [1, 2, dim]
+                    update = mx.concatenate(
+                        [
+                            mx.zeros_like(v[:, :1]),
+                            mx.ones_like(v[:, :1]),
+                        ],
+                        axis=1,
+                    )
+                    remapped[key] = v + update
+
         return remapped
 
     @staticmethod
@@ -375,7 +315,7 @@ class WanModel(nn.Module):
 
         for key in weights:
             # Self-attention: merge q, k, v -> qkv
-            m = re.match(r"(block_\d+\.self_attn)\.(q)\.(weight|bias)$", key)
+            m = re.match(r"(blocks\.\d+\.self_attn)\.(q)\.(weight|bias)$", key)
             if m:
                 prefix, _, param = m.groups()
                 q_key = f"{prefix}.q.{param}"
@@ -389,7 +329,7 @@ class WanModel(nn.Module):
                 continue
 
             # Cross-attention: merge k, v -> kv (q stays separate)
-            m = re.match(r"(block_\d+\.cross_attn)\.(k)\.(weight|bias)$", key)
+            m = re.match(r"(blocks\.\d+\.cross_attn)\.(k)\.(weight|bias)$", key)
             if m:
                 prefix, _, param = m.groups()
                 k_key = f"{prefix}.k.{param}"

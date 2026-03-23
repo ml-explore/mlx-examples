@@ -141,25 +141,19 @@ class Resample(nn.Module):
 
         if mode == "upsample2d":
             self.upsample = Upsample()
-            scale = 1.0 / (dim * 3 * 3) ** 0.5
-            self.conv_weight = mx.random.uniform(
-                low=-scale, high=scale, shape=(dim // 2, 3, 3, dim)
+            self.conv = nn.Conv2d(
+                dim, dim // 2, kernel_size=3, stride=1, padding=0, bias=True
             )
-            self.conv_bias = mx.zeros((dim // 2,))
         elif mode == "upsample3d":
             self.upsample = Upsample()
-            scale = 1.0 / (dim * 3 * 3) ** 0.5
-            self.conv_weight = mx.random.uniform(
-                low=-scale, high=scale, shape=(dim // 2, 3, 3, dim)
+            self.conv = nn.Conv2d(
+                dim, dim // 2, kernel_size=3, stride=1, padding=0, bias=True
             )
-            self.conv_bias = mx.zeros((dim // 2,))
             self.time_conv = CausalConv3d(dim, dim * 2, (3, 1, 1), padding=(1, 0, 0))
         elif mode in ("downsample2d", "downsample3d"):
-            scale = 1.0 / (dim * 3 * 3) ** 0.5
-            self.conv_weight = mx.random.uniform(
-                low=-scale, high=scale, shape=(dim, 3, 3, dim)
+            self.conv = nn.Conv2d(
+                dim, dim, kernel_size=3, stride=2, padding=0, bias=True
             )
-            self.conv_bias = mx.zeros((dim,))
             if mode == "downsample3d":
                 self.time_conv = CausalConv3d(
                     dim, dim, (3, 1, 1), stride=(2, 1, 1), padding=(0, 0, 0)
@@ -188,12 +182,10 @@ class Resample(nn.Module):
         if self.mode in ("upsample2d", "upsample3d"):
             x = self.upsample(x)
             x = mx.pad(x, [(0, 0), (1, 1), (1, 1), (0, 0)])
-            x = mx.conv2d(x, self.conv_weight, stride=1, padding=0)
-            x = x + self.conv_bias
+            x = self.conv(x)
         elif self.mode in ("downsample2d", "downsample3d"):
             x = mx.pad(x, [(0, 0), (0, 1), (0, 1), (0, 0)])
-            x = mx.conv2d(x, self.conv_weight, stride=2, padding=0)
-            x = x + self.conv_bias
+            x = self.conv(x)
 
         x = x.reshape(b, t_out, x.shape[1], x.shape[2], x.shape[3])
 
@@ -233,12 +225,10 @@ class Resample(nn.Module):
         if self.mode in ("upsample2d", "upsample3d"):
             x = self.upsample(x)
             x = mx.pad(x, [(0, 0), (1, 1), (1, 1), (0, 0)])
-            x = mx.conv2d(x, self.conv_weight, stride=1, padding=0)
-            x = x + self.conv_bias
+            x = self.conv(x)
         elif self.mode in ("downsample2d", "downsample3d"):
             x = mx.pad(x, [(0, 0), (0, 1), (0, 1), (0, 0)])
-            x = mx.conv2d(x, self.conv_weight, stride=2, padding=0)
-            x = x + self.conv_bias
+            x = self.conv(x)
 
         x = x.reshape(b, t_out, x.shape[1], x.shape[2], x.shape[3])
 
@@ -315,20 +305,15 @@ class AttentionBlock(nn.Module):
         super().__init__()
         self.dim = dim
         self.norm = RMSNorm(dim)
-        scale = 1.0 / dim**0.5
-        self.to_qkv_weight = mx.random.uniform(
-            low=-scale, high=scale, shape=(dim * 3, 1, 1, dim)
-        )
-        self.to_qkv_bias = mx.zeros((dim * 3,))
-        self.proj_weight = mx.zeros((dim, 1, 1, dim))
-        self.proj_bias = mx.zeros((dim,))
+        self.to_qkv = nn.Linear(dim, dim * 3)
+        self.proj = nn.Linear(dim, dim)
 
     def __call__(self, x):
         identity = x
         b, t, h, w, c = x.shape
         x = x.reshape(b * t, h, w, c)
         x = self.norm(x)
-        qkv = mx.conv2d(x, self.to_qkv_weight, stride=1, padding=0) + self.to_qkv_bias
+        qkv = self.to_qkv(x)
         qkv = qkv.reshape(b * t, h * w, 3, c)
         q, k, v = qkv[:, :, 0, :], qkv[:, :, 1, :], qkv[:, :, 2, :]
         q = q.reshape(b * t, 1, h * w, c)
@@ -337,6 +322,6 @@ class AttentionBlock(nn.Module):
         scale = c**-0.5
         attn = mx.fast.scaled_dot_product_attention(q, k, v, scale=scale)
         attn = attn.squeeze(1).reshape(b * t, h, w, c)
-        out = mx.conv2d(attn, self.proj_weight, stride=1, padding=0) + self.proj_bias
+        out = self.proj(attn)
         out = out.reshape(b, t, h, w, c)
         return out + identity

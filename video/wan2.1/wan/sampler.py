@@ -9,16 +9,15 @@ FlowUniPCMultistepScheduler for Wan2.1 denoising.
 UniPC multistep solver adapted for flow matching prediction.
 """
 
+from functools import partial
 from typing import List, Optional
 
 import mlx.core as mx
 
-_cpu = mx.cpu
-
 
 def _lambda64(alpha: mx.array, sigma: mx.array) -> mx.array:
     # float64 is not supported on metal GPU, running on CPU for numerical stability
-    with mx.stream(_cpu):
+    with mx.stream(mx.cpu):
         result = mx.log(alpha.astype(mx.float64)) - mx.log(sigma.astype(mx.float64))
         return result.astype(mx.float32)
 
@@ -198,7 +197,7 @@ class FlowUniPCMultistepScheduler:
             if order == 2:
                 rhos_p = mx.array([0.5], dtype=x.dtype)
             else:
-                with mx.stream(_cpu):
+                with mx.stream(mx.cpu):
                     rhos_p = mx.linalg.solve(R[:-1, :-1], b[:-1]).astype(x.dtype)
         else:
             D1s = None
@@ -287,7 +286,7 @@ class FlowUniPCMultistepScheduler:
         if order == 1:
             rhos_c = mx.array([0.5], dtype=x.dtype)
         else:
-            with mx.stream(_cpu):
+            with mx.stream(mx.cpu):
                 rhos_c = mx.linalg.solve(R, b).astype(x.dtype)
 
         if self.predict_x0:
@@ -383,6 +382,11 @@ class FlowUniPCMultistepScheduler:
         return prev_sample
 
 
+@partial(mx.compile, shapeless=True)
+def _euler_step(model_output, sample, sigma, sigma_next):
+    return sample + model_output * (sigma_next - sigma)
+
+
 class FlowEulerDiscreteScheduler:
     """Simple Euler flow-matching scheduler for step-distilled models.
 
@@ -416,18 +420,21 @@ class FlowEulerDiscreteScheduler:
         self.num_inference_steps = len(denoising_step_list)
 
     def step(self, model_output, timestep, sample):
-        """Euler flow-matching update: x_new = x - sigma * f + f * sigma_next."""
-        if isinstance(timestep, mx.array):
-            t_val = timestep.item()
-        else:
-            t_val = timestep
+        """Euler flow-matching update: x_new = x + f * (sigma_next - sigma)."""
+        t_val = timestep.item() if isinstance(timestep, mx.array) else timestep
         step_index = int(
             mx.argmin(mx.abs(self.timesteps.astype(mx.float32) - t_val)).item()
         )
 
         sigma = self.sigmas[step_index]
-        x_new = sample.astype(mx.float32) - sigma * model_output.astype(mx.float32)
-        if step_index < self.num_inference_steps - 1:
-            sigma_next = self.sigmas[step_index + 1]
-            x_new = x_new + model_output.astype(mx.float32) * sigma_next
-        return x_new.astype(sample.dtype)
+        sigma_next = (
+            self.sigmas[step_index + 1]
+            if step_index < self.num_inference_steps - 1
+            else mx.array(0.0)
+        )
+        return _euler_step(
+            model_output.astype(mx.float32),
+            sample.astype(mx.float32),
+            sigma,
+            sigma_next,
+        ).astype(sample.dtype)

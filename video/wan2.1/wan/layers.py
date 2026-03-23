@@ -4,8 +4,7 @@
 Transformer layers for Wan2.1 DiT.
 
 Norms, attention, blocks, and output head. Uses bidirectional (non-causal)
-attention with setattr-based block registration for weight remapping
-compatibility.
+attention with fused norm+modulate via mx.fast.layer_norm.
 """
 
 import math
@@ -19,23 +18,8 @@ from .rope import rope_apply
 
 
 @partial(mx.compile, shapeless=True)
-def _modulate(x, scale, shift):
-    return x * (1 + scale) + shift
-
-
-@partial(mx.compile, shapeless=True)
 def _residual_gate(x, y, gate):
     return x + y * gate
-
-
-_gelu = mx.compile(nn.gelu_approx)
-
-
-@partial(mx.compile, shapeless=True)
-def _layer_norm(x, eps):
-    mean = x.mean(axis=-1, keepdims=True)
-    var = x.var(axis=-1, keepdims=True)
-    return (x - mean) / mx.sqrt(var + eps)
 
 
 class WanRMSNorm(nn.Module):
@@ -46,22 +30,6 @@ class WanRMSNorm(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         return mx.fast.rms_norm(x, self.weight, self.eps)
-
-
-class WanLayerNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6, elementwise_affine: bool = False):
-        super().__init__()
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-        if elementwise_affine:
-            self.weight = mx.ones((dim,))
-            self.bias = mx.zeros((dim,))
-
-    def __call__(self, x: mx.array) -> mx.array:
-        if self.elementwise_affine:
-            return mx.fast.layer_norm(x, self.weight, self.bias, self.eps)
-        else:
-            return _layer_norm(x, self.eps)
 
 
 class WanSelfAttention(nn.Module):
@@ -213,8 +181,9 @@ class WanAttentionBlock(nn.Module):
     """
     Transformer block with self-attn, cross-attn, and FFN.
 
-    Uses ffn_linear1/ffn_linear2 naming (not nn.Sequential) for weight
-    remapping compatibility and selective quantization.
+    Uses fused norm+modulate via mx.fast.layer_norm where the modulation
+    scale/shift are passed as weight/bias. Requires sanitize to bake 1+
+    into modulation scale positions.
     """
 
     def __init__(
@@ -228,19 +197,21 @@ class WanAttentionBlock(nn.Module):
     ):
         super().__init__()
         self.dim = dim
+        self.eps = eps
 
-        self.norm1 = WanLayerNorm(dim, eps)
-        self.norm2 = WanLayerNorm(dim, eps)
         if cross_attn_norm:
-            self.norm3 = WanLayerNorm(dim, eps, elementwise_affine=True)
+            self.norm3 = nn.LayerNorm(dim, eps=eps)
         else:
             self.norm3 = None
 
         self.self_attn = WanSelfAttention(dim, num_heads, eps)
         self.cross_attn = _cross_attn_classes[cross_attn_type](dim, num_heads, eps)
 
-        self.ffn_linear1 = nn.Linear(dim, ffn_dim)
-        self.ffn_linear2 = nn.Linear(ffn_dim, dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, ffn_dim),
+            nn.GELU(approx="tanh"),
+            nn.Linear(ffn_dim, dim),
+        )
 
         self.modulation = mx.zeros((1, 6, dim))
 
@@ -255,10 +226,9 @@ class WanAttentionBlock(nn.Module):
     ) -> mx.array:
         e = self.modulation + e
 
-        # Self-attention with modulation
-        x_norm = self.norm1(x)
+        # Self-attention: fused norm + modulate
         y = self.self_attn(
-            _modulate(x_norm, e[:, 1], e[:, 0]),
+            mx.fast.layer_norm(x, e[0, 1], e[0, 0], self.eps),
             grid_sizes,
             freqs,
         )
@@ -271,18 +241,15 @@ class WanAttentionBlock(nn.Module):
             x_normed = x
         x = x + self.cross_attn(x_normed, context, context_lens)
 
-        # FFN with modulation
-        x_norm = self.norm2(x)
-        y = self.ffn_linear2(
-            _gelu(self.ffn_linear1(_modulate(x_norm, e[:, 4], e[:, 3])))
-        )
+        # FFN: fused norm + modulate
+        y = self.ffn(mx.fast.layer_norm(x, e[0, 4], e[0, 3], self.eps))
         x = _residual_gate(x, y, e[:, 5])
 
         return x
 
 
 class Head(nn.Module):
-    """Output head with modulation. Uses raw weight arrays for remapping compat."""
+    """Output head with fused norm+modulate and nn.Linear."""
 
     def __init__(
         self,
@@ -293,23 +260,12 @@ class Head(nn.Module):
     ):
         super().__init__()
         self.dim = dim
+        self.eps = eps
         out_features = math.prod(patch_size) * out_dim
-        self.norm = WanLayerNorm(dim, eps)
-        scale = 1.0 / dim**0.5
-        self.head_weight = mx.random.uniform(
-            low=-scale, high=scale, shape=(out_features, dim)
-        )
-        self.head_bias = mx.zeros((out_features,))
+        self.linear = nn.Linear(dim, out_features)
         self.modulation = mx.zeros((1, 2, dim))
 
     def __call__(self, x: mx.array, e: mx.array) -> mx.array:
         e = self.modulation + e[:, None, :]
-        x_norm = self.norm(x)
-        x = (
-            mx.matmul(
-                _modulate(x_norm, e[:, 1], e[:, 0]),
-                self.head_weight.T,
-            )
-            + self.head_bias
-        )
-        return x
+        x = mx.fast.layer_norm(x, e[0, 1], e[0, 0], self.eps)
+        return self.linear(x)

@@ -64,27 +64,22 @@ class Decoder3d(nn.Module):
         self.middle_attn = AttentionBlock(dims[0])
         self.middle_res2 = ResidualBlock(dims[0], dims[0])
 
-        # Build upsample stages
+        # Build upsample stages as nested lists
         self.upsamples = []
         for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:])):
-            stage_layers = []
+            stage = []
             if i == 1 or i == 2 or i == 3:
                 in_dim = in_dim // 2
             for j in range(num_res_blocks + 1):
-                stage_layers.append(("resblock", ResidualBlock(in_dim, out_dim)))
+                stage.append(ResidualBlock(in_dim, out_dim))
                 if scale in attn_scales:
-                    stage_layers.append(("attn", AttentionBlock(out_dim)))
+                    stage.append(AttentionBlock(out_dim))
                 in_dim = out_dim
             if i != len(dim_mult) - 1:
                 mode = "upsample3d" if temporal_upsample[i] else "upsample2d"
-                stage_layers.append(("resample", Resample(out_dim, mode=mode)))
+                stage.append(Resample(out_dim, mode=mode))
                 scale *= 2.0
-            self.upsamples.append(stage_layers)
-
-        # Register all layers via setattr
-        for stage_idx, stage in enumerate(self.upsamples):
-            for layer_idx, (layer_type, layer) in enumerate(stage):
-                setattr(self, f"upsample_s{stage_idx}_l{layer_idx}_{layer_type}", layer)
+            self.upsamples.append(stage)
 
         self.head_norm = RMSNorm(dims[-1])
         self.head_conv = CausalConv3d(dims[-1], 3, 3, padding=1)
@@ -101,16 +96,13 @@ class Decoder3d(nn.Module):
         x = self.middle_attn(x)
         x, feat_idx = self.middle_res2(x, feat_cache, feat_idx)
 
-        for stage_idx, stage in enumerate(self.upsamples):
-            for layer_idx, (layer_type, _) in enumerate(stage):
-                layer = getattr(
-                    self, f"upsample_s{stage_idx}_l{layer_idx}_{layer_type}"
-                )
-                if layer_type == "resblock":
+        for stage in self.upsamples:
+            for layer in stage:
+                if isinstance(layer, ResidualBlock):
                     x, feat_idx = layer(x, feat_cache, feat_idx)
-                elif layer_type == "attn":
+                elif isinstance(layer, AttentionBlock):
                     x = layer(x)
-                elif layer_type == "resample":
+                elif isinstance(layer, Resample):
                     x, feat_idx = layer(x, feat_cache, feat_idx)
 
         x = self.head_norm(x)
@@ -147,21 +139,18 @@ class Decoder3d(nn.Module):
         new_cache.append(c2)
         cache_idx += 2
 
-        for stage_idx, stage in enumerate(self.upsamples):
-            for layer_idx, (layer_type, _) in enumerate(stage):
-                layer = getattr(
-                    self, f"upsample_s{stage_idx}_l{layer_idx}_{layer_type}"
-                )
-                if layer_type == "resblock":
+        for stage in self.upsamples:
+            for layer in stage:
+                if isinstance(layer, ResidualBlock):
                     x, c1, c2 = layer.forward_functional(
                         x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
                     )
                     new_cache.append(c1)
                     new_cache.append(c2)
                     cache_idx += 2
-                elif layer_type == "attn":
+                elif isinstance(layer, AttentionBlock):
                     x = layer(x)
-                elif layer_type == "resample":
+                elif isinstance(layer, Resample):
                     x, c = layer.forward_functional(x, feat_cache[cache_idx])
                     if c is not None:
                         new_cache.append(c)
@@ -213,27 +202,20 @@ class Encoder3d(nn.Module):
 
         self.conv1 = CausalConv3d(3, dims[0], 3, padding=1)
 
-        # Build downsample stages
+        # Build downsample stages as nested lists
         self.downsamples = []
         for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:])):
-            stage_layers = []
+            stage = []
             for j in range(num_res_blocks):
-                stage_layers.append(("resblock", ResidualBlock(in_dim, out_dim)))
+                stage.append(ResidualBlock(in_dim, out_dim))
                 if scale in attn_scales:
-                    stage_layers.append(("attn", AttentionBlock(out_dim)))
+                    stage.append(AttentionBlock(out_dim))
                 in_dim = out_dim
             if i != len(dim_mult) - 1:
                 mode = "downsample3d" if temporal_downsample[i] else "downsample2d"
-                stage_layers.append(("resample", Resample(out_dim, mode=mode)))
+                stage.append(Resample(out_dim, mode=mode))
                 scale /= 2.0
-            self.downsamples.append(stage_layers)
-
-        # Register all layers via setattr
-        for stage_idx, stage in enumerate(self.downsamples):
-            for layer_idx, (layer_type, layer) in enumerate(stage):
-                setattr(
-                    self, f"downsample_s{stage_idx}_l{layer_idx}_{layer_type}", layer
-                )
+            self.downsamples.append(stage)
 
         self.middle_res1 = ResidualBlock(dims[-1], dims[-1])
         self.middle_attn = AttentionBlock(dims[-1])
@@ -250,16 +232,13 @@ class Encoder3d(nn.Module):
         write_cache(feat_cache, feat_idx, cache_input)
         feat_idx += 1
 
-        for stage_idx, stage in enumerate(self.downsamples):
-            for layer_idx, (layer_type, _) in enumerate(stage):
-                layer = getattr(
-                    self, f"downsample_s{stage_idx}_l{layer_idx}_{layer_type}"
-                )
-                if layer_type == "resblock":
+        for stage in self.downsamples:
+            for layer in stage:
+                if isinstance(layer, ResidualBlock):
                     x, feat_idx = layer(x, feat_cache, feat_idx)
-                elif layer_type == "attn":
+                elif isinstance(layer, AttentionBlock):
                     x = layer(x)
-                elif layer_type == "resample":
+                elif isinstance(layer, Resample):
                     x, feat_idx = layer(x, feat_cache, feat_idx)
 
         x, feat_idx = self.middle_res1(x, feat_cache, feat_idx)
@@ -284,21 +263,18 @@ class Encoder3d(nn.Module):
         new_cache.append(create_cache_entry(cache_input, feat_cache[cache_idx]))
         cache_idx += 1
 
-        for stage_idx, stage in enumerate(self.downsamples):
-            for layer_idx, (layer_type, _) in enumerate(stage):
-                layer = getattr(
-                    self, f"downsample_s{stage_idx}_l{layer_idx}_{layer_type}"
-                )
-                if layer_type == "resblock":
+        for stage in self.downsamples:
+            for layer in stage:
+                if isinstance(layer, ResidualBlock):
                     x, c1, c2 = layer.forward_functional(
                         x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
                     )
                     new_cache.append(c1)
                     new_cache.append(c2)
                     cache_idx += 2
-                elif layer_type == "attn":
+                elif isinstance(layer, AttentionBlock):
                     x = layer(x)
-                elif layer_type == "resample":
+                elif isinstance(layer, Resample):
                     x, c = layer.forward_functional(x, feat_cache[cache_idx])
                     if c is not None:
                         new_cache.append(c)
@@ -386,16 +362,15 @@ class WanVAE(nn.Module):
             ]
         )
         self.z_dim = 16
-        self._compiled_decode = None
-        self._compiled_encode = None
+        self._compiled_decode = mx.compile(self.decoder._forward_functional)
+        self._compiled_encode = mx.compile(self.encoder._forward_functional)
 
-    def decode(self, z: mx.array, compile: bool = False) -> mx.array:
+    def decode(self, z: mx.array) -> mx.array:
         """
         Decode latent to video.
 
         Args:
             z: Latent tensor [F, H, W, C] (channels-last)
-            compile: If True, compile the VAE decoder for frames 1+
 
         Returns:
             Video tensor [F, H, W, C] clamped to [-1, 1] (channels-last)
@@ -419,17 +394,7 @@ class WanVAE(nn.Module):
 
         for i in range(num_frames):
             frame = x[:, i : i + 1, :, :, :]
-
-            if compile and i == 1 and self._compiled_decode is None:
-                self._compiled_decode = mx.compile(self.decoder._forward_functional)
-
-            if self._compiled_decode is not None:
-                out_frame, feat_cache = self._compiled_decode(frame, feat_cache)
-            else:
-                out_frame, feat_cache = self.decoder._forward_functional(
-                    frame, feat_cache
-                )
-
+            out_frame, feat_cache = self._compiled_decode(frame, feat_cache)
             mx.eval(out_frame)
             outputs.append(out_frame)
 
@@ -439,13 +404,12 @@ class WanVAE(nn.Module):
         # Remove batch dim: [1, F, H, W, C] -> [F, H, W, C]
         return out[0]
 
-    def encode(self, x: mx.array, compile: bool = False) -> mx.array:
+    def encode(self, x: mx.array) -> mx.array:
         """
         Encode video to latent.
 
         Args:
             x: Video tensor [F, H, W, C] (channels-last)
-            compile: If True, compile the VAE encoder for chunks 1+
 
         Returns:
             Latent tensor [F', H/8, W/8, C] (channels-last)
@@ -468,16 +432,7 @@ class WanVAE(nn.Module):
                 chunk = x[:, i : i + 4, :, :, :]
                 i += 4
 
-            if compile and chunk_idx == 1 and self._compiled_encode is None:
-                self._compiled_encode = mx.compile(self.encoder._forward_functional)
-
-            if self._compiled_encode is not None:
-                out_chunk, feat_cache = self._compiled_encode(chunk, feat_cache)
-            else:
-                out_chunk, feat_cache = self.encoder._forward_functional(
-                    chunk, feat_cache
-                )
-
+            out_chunk, feat_cache = self._compiled_encode(chunk, feat_cache)
             mx.eval(out_chunk)
             outputs.append(out_chunk)
             chunk_idx += 1
@@ -533,13 +488,17 @@ class WanVAE(nn.Module):
             new_key = re.sub(r"\.residual\.3\.", ".norm2.", new_key)
             new_key = re.sub(r"\.residual\.6\.", ".conv2.", new_key)
 
-            new_key = re.sub(r"\.proj\.bias$", ".proj_bias", new_key)
-            new_key = re.sub(r"\.proj\.weight$", ".proj_weight", new_key)
-            new_key = re.sub(r"\.to_qkv\.bias$", ".to_qkv_bias", new_key)
-            new_key = re.sub(r"\.to_qkv\.weight$", ".to_qkv_weight", new_key)
+            # Resample conv: .resample.1. -> .conv.
+            new_key = re.sub(r"\.resample\.1\.", ".conv.", new_key)
 
-            new_key = re.sub(r"\.resample\.1\.weight$", ".conv_weight", new_key)
-            new_key = re.sub(r"\.resample\.1\.bias$", ".conv_bias", new_key)
+            # Squeeze 1x1 conv weights to 2D for nn.Linear (to_qkv, proj)
+            if ("to_qkv" in new_key or "proj" in new_key) and "weight" in new_key:
+                if (
+                    len(value.shape) == 4
+                    and value.shape[1] == 1
+                    and value.shape[2] == 1
+                ):
+                    value = value.reshape(value.shape[0], value.shape[3])
 
             if "norm" in new_key and "weight" in new_key:
                 if len(value.shape) > 1:
@@ -567,12 +526,7 @@ def _map_vae_upsample_key(key: str) -> str:
             break
         local_idx -= size
 
-    if stage < 3:
-        layer_type = "resblock" if local_idx < 3 else "resample"
-    else:
-        layer_type = "resblock"
-
-    return f"decoder.upsample_s{stage}_l{local_idx}_{layer_type}.{rest}"
+    return f"decoder.upsamples.{stage}.{local_idx}.{rest}"
 
 
 def _map_vae_downsample_key(key: str) -> str:
@@ -593,9 +547,4 @@ def _map_vae_downsample_key(key: str) -> str:
             break
         local_idx -= size
 
-    if stage < 3:
-        layer_type = "resblock" if local_idx < 2 else "resample"
-    else:
-        layer_type = "resblock"
-
-    return f"encoder.downsample_s{stage}_l{local_idx}_{layer_type}.{rest}"
+    return f"encoder.downsamples.{stage}.{local_idx}.{rest}"
