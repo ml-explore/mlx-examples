@@ -22,16 +22,6 @@ def _residual_gate(x, y, gate):
     return x + y * gate
 
 
-class WanRMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-5):
-        super().__init__()
-        self.eps = eps
-        self.weight = mx.ones((dim,))
-
-    def __call__(self, x: mx.array) -> mx.array:
-        return mx.fast.rms_norm(x, self.weight, self.eps)
-
-
 class WanSelfAttention(nn.Module):
     def __init__(
         self,
@@ -48,10 +38,10 @@ class WanSelfAttention(nn.Module):
         self.qkv = nn.Linear(dim, dim * 3)
         self.o = nn.Linear(dim, dim)
 
-        self.norm_q = WanRMSNorm(dim, eps=eps)
-        self.norm_k = WanRMSNorm(dim, eps=eps)
+        self.norm_q = nn.RMSNorm(dim, eps=eps)
+        self.norm_k = nn.RMSNorm(dim, eps=eps)
 
-    def _attend(self, x, grid_sizes, freqs):
+    def _attend(self, x, grid_sizes):
         """Compute self-attention. Returns attn output [B, n, L, d]."""
         B, L, _ = x.shape
         n, d = self.num_heads, self.head_dim
@@ -66,17 +56,17 @@ class WanSelfAttention(nn.Module):
         k = k.reshape(B, L, n, d)
         v = v.reshape(B, L, n, d)
 
-        q = rope_apply(q, grid_sizes, freqs)
-        k = rope_apply(k, grid_sizes, freqs)
+        q = rope_apply(q, grid_sizes, self.head_dim)
+        k = rope_apply(k, grid_sizes, self.head_dim)
 
         q = q.transpose(0, 2, 1, 3)
         k = k.transpose(0, 2, 1, 3)
         v = v.transpose(0, 2, 1, 3)
         return mx.fast.scaled_dot_product_attention(q, k, v, scale=self.head_dim**-0.5)
 
-    def __call__(self, x, grid_sizes, freqs):
+    def __call__(self, x, grid_sizes):
         B, L, C = x.shape
-        attn = self._attend(x, grid_sizes, freqs)
+        attn = self._attend(x, grid_sizes)
         return self.o(attn.transpose(0, 2, 1, 3).reshape(B, L, C))
 
 
@@ -97,8 +87,8 @@ class WanCrossAttention(nn.Module):
         self.kv = nn.Linear(dim, dim * 2)
         self.o = nn.Linear(dim, dim)
 
-        self.norm_q = WanRMSNorm(dim, eps=eps)
-        self.norm_k = WanRMSNorm(dim, eps=eps)
+        self.norm_q = nn.RMSNorm(dim, eps=eps)
+        self.norm_k = nn.RMSNorm(dim, eps=eps)
 
     def _attend(self, x, context, context_lens):
         """Compute text cross-attention. Returns (q, attn_out) both [B, n, L, d]."""
@@ -147,7 +137,7 @@ class WanI2VCrossAttention(WanCrossAttention):
         super().__init__(dim, num_heads, eps)
         self.k_img = nn.Linear(dim, dim)
         self.v_img = nn.Linear(dim, dim)
-        self.norm_k_img = WanRMSNorm(dim, eps=eps)
+        self.norm_k_img = nn.RMSNorm(dim, eps=eps)
 
     def __call__(self, x, context, context_lens):
         img_ctx_len = context.shape[1] - T5_CONTEXT_TOKEN_NUMBER
@@ -220,7 +210,6 @@ class WanAttentionBlock(nn.Module):
         x: mx.array,
         e: mx.array,
         grid_sizes: list,
-        freqs: dict,
         context: mx.array,
         context_lens: Optional[mx.array],
     ) -> mx.array:
@@ -230,7 +219,6 @@ class WanAttentionBlock(nn.Module):
         y = self.self_attn(
             mx.fast.layer_norm(x, e[0, 1], e[0, 0], self.eps),
             grid_sizes,
-            freqs,
         )
         x = _residual_gate(x, y, e[:, 2])
 

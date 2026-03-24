@@ -33,18 +33,6 @@ def create_cache_entry(x, existing_cache=None):
             return mx.concatenate([zeros, cache_x], axis=1)
 
 
-def write_cache(feat_cache, idx, x):
-    t = x.shape[1]
-    if t >= CACHE_T:
-        feat_cache[idx] = x[:, -CACHE_T:, :, :, :]
-    else:
-        cache_x = x[:, -t:, :, :, :]
-        if feat_cache[idx] is not None:
-            old_frames = feat_cache[idx][:, -(CACHE_T - t) :, :, :, :]
-            cache_x = mx.concatenate([old_frames, cache_x], axis=1)
-        feat_cache[idx] = cache_x
-
-
 class CausalConv3d(nn.Module):
     def __init__(
         self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=True
@@ -104,28 +92,6 @@ class CausalConv3d(nn.Module):
         return y
 
 
-class RMSNorm(nn.Module):
-    def __init__(self, dim, eps=1e-12):
-        super().__init__()
-        self.eps = eps
-        self.weight = mx.ones((dim,))
-
-    def __call__(self, x):
-        weight = self.weight
-        if weight.ndim > 1:
-            weight = weight.squeeze()
-        return mx.fast.rms_norm(x, weight, self.eps)
-
-
-class Upsample(nn.Module):
-    def __init__(self, scale_factor=(2.0, 2.0)):
-        super().__init__()
-        self.scale_factor = scale_factor
-
-    def __call__(self, x):
-        return nn.Upsample(scale_factor=self.scale_factor, mode="nearest")(x)
-
-
 class Resample(nn.Module):
     def __init__(self, dim, mode):
         assert mode in (
@@ -140,12 +106,12 @@ class Resample(nn.Module):
         self.mode = mode
 
         if mode == "upsample2d":
-            self.upsample = Upsample()
+            self.upsample = nn.Upsample(scale_factor=(2.0, 2.0), mode="nearest")
             self.conv = nn.Conv2d(
                 dim, dim // 2, kernel_size=3, stride=1, padding=0, bias=True
             )
         elif mode == "upsample3d":
-            self.upsample = Upsample()
+            self.upsample = nn.Upsample(scale_factor=(2.0, 2.0), mode="nearest")
             self.conv = nn.Conv2d(
                 dim, dim // 2, kernel_size=3, stride=1, padding=0, bias=True
             )
@@ -159,51 +125,7 @@ class Resample(nn.Module):
                     dim, dim, (3, 1, 1), stride=(2, 1, 1), padding=(0, 0, 0)
                 )
 
-    def __call__(self, x, feat_cache, feat_idx):
-        b, t, h, w, c = x.shape
-
-        if self.mode == "upsample3d":
-            if feat_cache[feat_idx] is None:
-                feat_cache[feat_idx] = mx.zeros((b, CACHE_T, h, w, c), dtype=x.dtype)
-                feat_idx += 1
-            else:
-                cache_input = x
-                x = self.time_conv(x, feat_cache[feat_idx])
-                write_cache(feat_cache, feat_idx, cache_input)
-                feat_idx += 1
-                x = x.reshape(b, t, h, w, 2, c)
-                x = x.transpose(0, 1, 4, 2, 3, 5)
-                x = x.reshape(b, t * 2, h, w, c)
-
-        t_out = x.shape[1]
-        c_out = x.shape[4]
-        x = x.reshape(b * t_out, x.shape[2], x.shape[3], c_out)
-
-        if self.mode in ("upsample2d", "upsample3d"):
-            x = self.upsample(x)
-            x = mx.pad(x, [(0, 0), (1, 1), (1, 1), (0, 0)])
-            x = self.conv(x)
-        elif self.mode in ("downsample2d", "downsample3d"):
-            x = mx.pad(x, [(0, 0), (0, 1), (0, 1), (0, 0)])
-            x = self.conv(x)
-
-        x = x.reshape(b, t_out, x.shape[1], x.shape[2], x.shape[3])
-
-        if self.mode == "downsample3d":
-            if feat_cache[feat_idx] is None:
-                feat_cache[feat_idx] = x
-                feat_idx += 1
-            else:
-                x_with_cache = mx.concatenate(
-                    [feat_cache[feat_idx][:, -1:, :, :, :], x], axis=1
-                )
-                feat_cache[feat_idx] = x[:, -1:, :, :, :]
-                feat_idx += 1
-                x = self.time_conv(x_with_cache, None)
-
-        return x, feat_idx
-
-    def forward_functional(self, x, cache=None):
+    def __call__(self, x, cache=None):
         b, t, h, w, c = x.shape
         new_cache = None
 
@@ -248,38 +170,16 @@ class ResidualBlock(nn.Module):
         super().__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
-        self.norm1 = RMSNorm(in_dim)
+        self.norm1 = nn.RMSNorm(in_dim, eps=1e-12)
         self.conv1 = CausalConv3d(in_dim, out_dim, 3, padding=1)
-        self.norm2 = RMSNorm(out_dim)
+        self.norm2 = nn.RMSNorm(out_dim, eps=1e-12)
         self.conv2 = CausalConv3d(out_dim, out_dim, 3, padding=1)
         if in_dim != out_dim:
             self.shortcut = CausalConv3d(in_dim, out_dim, 1)
         else:
             self.shortcut = None
 
-    def __call__(self, x, feat_cache, feat_idx):
-        if self.shortcut is not None:
-            h = self.shortcut(x)
-        else:
-            h = x
-
-        residual = self.norm1(x)
-        residual = nn.silu(residual)
-        cache_input = residual
-        residual = self.conv1(residual, feat_cache[feat_idx])
-        write_cache(feat_cache, feat_idx, cache_input)
-        feat_idx += 1
-
-        residual = self.norm2(residual)
-        residual = nn.silu(residual)
-        cache_input = residual
-        residual = self.conv2(residual, feat_cache[feat_idx])
-        write_cache(feat_cache, feat_idx, cache_input)
-        feat_idx += 1
-
-        return h + residual, feat_idx
-
-    def forward_functional(self, x, cache1, cache2):
+    def __call__(self, x, cache1, cache2):
         if self.shortcut is not None:
             h = self.shortcut(x)
         else:
@@ -304,7 +204,7 @@ class AttentionBlock(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-        self.norm = RMSNorm(dim)
+        self.norm = nn.RMSNorm(dim, eps=1e-12)
         self.to_qkv = nn.Linear(dim, dim * 3)
         self.proj = nn.Linear(dim, dim)
 

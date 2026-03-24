@@ -18,9 +18,7 @@ from .vae_layers import (
     CausalConv3d,
     Resample,
     ResidualBlock,
-    RMSNorm,
     create_cache_entry,
-    write_cache,
 )
 
 
@@ -81,40 +79,10 @@ class Decoder3d(nn.Module):
                 scale *= 2.0
             self.upsamples.append(stage)
 
-        self.head_norm = RMSNorm(dims[-1])
+        self.head_norm = nn.RMSNorm(dims[-1], eps=1e-12)
         self.head_conv = CausalConv3d(dims[-1], 3, 3, padding=1)
 
     def __call__(self, x, feat_cache):
-        feat_idx = 0
-
-        cache_input = x
-        x = self.conv1(x, feat_cache[feat_idx])
-        write_cache(feat_cache, feat_idx, cache_input)
-        feat_idx += 1
-
-        x, feat_idx = self.middle_res1(x, feat_cache, feat_idx)
-        x = self.middle_attn(x)
-        x, feat_idx = self.middle_res2(x, feat_cache, feat_idx)
-
-        for stage in self.upsamples:
-            for layer in stage:
-                if isinstance(layer, ResidualBlock):
-                    x, feat_idx = layer(x, feat_cache, feat_idx)
-                elif isinstance(layer, AttentionBlock):
-                    x = layer(x)
-                elif isinstance(layer, Resample):
-                    x, feat_idx = layer(x, feat_cache, feat_idx)
-
-        x = self.head_norm(x)
-        x = nn.silu(x)
-        cache_input = x
-        x = self.head_conv(x, feat_cache[feat_idx])
-        write_cache(feat_cache, feat_idx, cache_input)
-        feat_idx += 1
-
-        return x, feat_cache
-
-    def _forward_functional(self, x, feat_cache):
         cache_idx = 0
         new_cache = []
 
@@ -123,7 +91,7 @@ class Decoder3d(nn.Module):
         new_cache.append(create_cache_entry(cache_input, feat_cache[cache_idx]))
         cache_idx += 1
 
-        x, c1, c2 = self.middle_res1.forward_functional(
+        x, c1, c2 = self.middle_res1(
             x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
         )
         new_cache.append(c1)
@@ -132,7 +100,7 @@ class Decoder3d(nn.Module):
 
         x = self.middle_attn(x)
 
-        x, c1, c2 = self.middle_res2.forward_functional(
+        x, c1, c2 = self.middle_res2(
             x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
         )
         new_cache.append(c1)
@@ -142,7 +110,7 @@ class Decoder3d(nn.Module):
         for stage in self.upsamples:
             for layer in stage:
                 if isinstance(layer, ResidualBlock):
-                    x, c1, c2 = layer.forward_functional(
+                    x, c1, c2 = layer(
                         x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
                     )
                     new_cache.append(c1)
@@ -151,7 +119,7 @@ class Decoder3d(nn.Module):
                 elif isinstance(layer, AttentionBlock):
                     x = layer(x)
                 elif isinstance(layer, Resample):
-                    x, c = layer.forward_functional(x, feat_cache[cache_idx])
+                    x, c = layer(x, feat_cache[cache_idx])
                     if c is not None:
                         new_cache.append(c)
                         cache_idx += 1
@@ -221,40 +189,10 @@ class Encoder3d(nn.Module):
         self.middle_attn = AttentionBlock(dims[-1])
         self.middle_res2 = ResidualBlock(dims[-1], dims[-1])
 
-        self.head_norm = RMSNorm(dims[-1])
+        self.head_norm = nn.RMSNorm(dims[-1], eps=1e-12)
         self.head_conv = CausalConv3d(dims[-1], z_dim * 2, 3, padding=1)
 
     def __call__(self, x, feat_cache):
-        feat_idx = 0
-
-        cache_input = x
-        x = self.conv1(x, feat_cache[feat_idx])
-        write_cache(feat_cache, feat_idx, cache_input)
-        feat_idx += 1
-
-        for stage in self.downsamples:
-            for layer in stage:
-                if isinstance(layer, ResidualBlock):
-                    x, feat_idx = layer(x, feat_cache, feat_idx)
-                elif isinstance(layer, AttentionBlock):
-                    x = layer(x)
-                elif isinstance(layer, Resample):
-                    x, feat_idx = layer(x, feat_cache, feat_idx)
-
-        x, feat_idx = self.middle_res1(x, feat_cache, feat_idx)
-        x = self.middle_attn(x)
-        x, feat_idx = self.middle_res2(x, feat_cache, feat_idx)
-
-        x = self.head_norm(x)
-        x = nn.silu(x)
-        cache_input = x
-        x = self.head_conv(x, feat_cache[feat_idx])
-        write_cache(feat_cache, feat_idx, cache_input)
-        feat_idx += 1
-
-        return x, feat_cache
-
-    def _forward_functional(self, x, feat_cache):
         cache_idx = 0
         new_cache = []
 
@@ -266,7 +204,7 @@ class Encoder3d(nn.Module):
         for stage in self.downsamples:
             for layer in stage:
                 if isinstance(layer, ResidualBlock):
-                    x, c1, c2 = layer.forward_functional(
+                    x, c1, c2 = layer(
                         x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
                     )
                     new_cache.append(c1)
@@ -275,12 +213,12 @@ class Encoder3d(nn.Module):
                 elif isinstance(layer, AttentionBlock):
                     x = layer(x)
                 elif isinstance(layer, Resample):
-                    x, c = layer.forward_functional(x, feat_cache[cache_idx])
+                    x, c = layer(x, feat_cache[cache_idx])
                     if c is not None:
                         new_cache.append(c)
                         cache_idx += 1
 
-        x, c1, c2 = self.middle_res1.forward_functional(
+        x, c1, c2 = self.middle_res1(
             x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
         )
         new_cache.append(c1)
@@ -289,7 +227,7 @@ class Encoder3d(nn.Module):
 
         x = self.middle_attn(x)
 
-        x, c1, c2 = self.middle_res2.forward_functional(
+        x, c1, c2 = self.middle_res2(
             x, feat_cache[cache_idx], feat_cache[cache_idx + 1]
         )
         new_cache.append(c1)
@@ -362,8 +300,8 @@ class WanVAE(nn.Module):
             ]
         )
         self.z_dim = 16
-        self._compiled_decode = mx.compile(self.decoder._forward_functional)
-        self._compiled_encode = mx.compile(self.encoder._forward_functional)
+        self._compiled_decode = mx.compile(self.decoder.__call__)
+        self._compiled_encode = mx.compile(self.encoder.__call__)
 
     def decode(self, z: mx.array) -> mx.array:
         """
@@ -500,6 +438,7 @@ class WanVAE(nn.Module):
                 ):
                     value = value.reshape(value.shape[0], value.shape[3])
 
+            # Squeeze norm weights to 1D (required — nn.RMSNorm expects 1D)
             if "norm" in new_key and "weight" in new_key:
                 if len(value.shape) > 1:
                     value = mx.squeeze(value)

@@ -16,16 +16,6 @@ import mlx.nn as nn
 from einops import rearrange
 
 
-class T5LayerNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__()
-        self.eps = eps
-        self.weight = mx.ones((dim,))
-
-    def __call__(self, x: mx.array) -> mx.array:
-        return mx.fast.rms_norm(x, self.weight, self.eps)
-
-
 class T5RelativeEmbedding(nn.Module):
     def __init__(self, num_buckets, num_heads, bidirectional=True, max_dist=128):
         super().__init__()
@@ -116,9 +106,9 @@ class T5SelfAttention(nn.Module):
     def __init__(self, dim, dim_attn, dim_ffn, num_heads, num_buckets, shared_pos=True):
         super().__init__()
         self.shared_pos = shared_pos
-        self.norm1 = T5LayerNorm(dim)
+        self.norm1 = nn.RMSNorm(dim, eps=1e-6)
         self.attn = T5Attention(dim, dim_attn, num_heads)
-        self.norm2 = T5LayerNorm(dim)
+        self.norm2 = nn.RMSNorm(dim, eps=1e-6)
         self.ffn = T5FeedForward(dim, dim_ffn)
         self.pos_embedding = (
             None
@@ -159,7 +149,7 @@ class T5Encoder(nn.Module):
             T5SelfAttention(dim, dim_attn, dim_ffn, num_heads, num_buckets, shared_pos)
             for _ in range(num_layers)
         ]
-        self.norm = T5LayerNorm(dim)
+        self.norm = nn.RMSNorm(dim, eps=1e-6)
 
     def __call__(self, ids, mask=None):
         x = self.token_embedding(ids)

@@ -16,7 +16,7 @@ from typing import Dict, Optional
 import mlx.core as mx
 import numpy as np
 
-from .model import WanModel, create_wan_model
+from .model import WanModel
 from .t5 import T5Encoder, create_umt5_xxl_encoder
 from .tokenizers import T5Tokenizer
 from .vae import WanVAE
@@ -116,7 +116,7 @@ def _load_weights(path: str) -> dict:
 def load_dit(name: str, checkpoint: Optional[str] = None) -> WanModel:
     """Load DiT model with weights from HF Hub."""
     spec = configs[name]
-    model = create_wan_model(**spec.dit_params)
+    model = WanModel(**spec.dit_params)
     ckpt_path = checkpoint or spec.ckpt_path
     if ckpt_path is None:
         ckpt_path = _hf_download(spec.repo_id, spec.repo_dit)

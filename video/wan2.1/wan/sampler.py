@@ -29,9 +29,6 @@ class FlowUniPCMultistepScheduler:
         solver_order: int = 2,
         prediction_type: str = "flow_prediction",
         shift: Optional[float] = 1.0,
-        thresholding: bool = False,
-        dynamic_thresholding_ratio: float = 0.995,
-        sample_max_value: float = 1.0,
         predict_x0: bool = True,
         solver_type: str = "bh2",
         lower_order_final: bool = True,
@@ -48,9 +45,6 @@ class FlowUniPCMultistepScheduler:
         self.solver_order = solver_order
         self.prediction_type = prediction_type
         self.shift = shift
-        self.thresholding = thresholding
-        self.dynamic_thresholding_ratio = dynamic_thresholding_ratio
-        self.sample_max_value = sample_max_value
         self.predict_x0 = predict_x0
         self.solver_type = solver_type
         self.lower_order_final = lower_order_final
@@ -111,35 +105,11 @@ class FlowUniPCMultistepScheduler:
         return 1 - sigma, sigma
 
     def convert_model_output(self, model_output, sample):
-        sigma = self.sigmas[self.step_index]
-        alpha_t, sigma_t = self._sigma_to_alpha_sigma_t(sigma)
-
+        sigma_t = self.sigmas[self.step_index]
         if self.predict_x0:
-            sigma_t = self.sigmas[self.step_index]
-            x0_pred = sample - sigma_t * model_output
-            if self.thresholding:
-                x0_pred = self._threshold_sample(x0_pred)
-            return x0_pred
+            return sample - sigma_t * model_output
         else:
-            sigma_t = self.sigmas[self.step_index]
-            epsilon = sample - (1 - sigma_t) * model_output
-            return epsilon
-
-    def _threshold_sample(self, sample):
-        dtype = sample.dtype
-        batch_size, channels, *remaining_dims = sample.shape
-        num_elements = 1
-        for d in remaining_dims:
-            num_elements *= d
-        sample = sample.reshape(batch_size, channels * num_elements)
-        abs_sample = mx.abs(sample)
-        sorted_abs = mx.sort(abs_sample, axis=1)
-        quantile_idx = int(self.dynamic_thresholding_ratio * abs_sample.shape[1])
-        s = sorted_abs[:, quantile_idx : quantile_idx + 1]
-        s = mx.clip(s, 1.0, self.sample_max_value)
-        sample = mx.clip(sample, -s, s) / s
-        sample = sample.reshape(batch_size, channels, *remaining_dims)
-        return sample.astype(dtype)
+            return sample - (1 - sigma_t) * model_output
 
     def multistep_uni_p_bh_update(self, model_output, sample, order):
         model_output_list = self.model_outputs
@@ -197,6 +167,8 @@ class FlowUniPCMultistepScheduler:
             if order == 2:
                 rhos_p = mx.array([0.5], dtype=x.dtype)
             else:
+                # Run on CPU for numerical stability (float64 not supported on Metal GPU),
+                # matching the reference implementation.
                 with mx.stream(mx.cpu):
                     rhos_p = mx.linalg.solve(R[:-1, :-1], b[:-1]).astype(x.dtype)
         else:
@@ -286,6 +258,8 @@ class FlowUniPCMultistepScheduler:
         if order == 1:
             rhos_c = mx.array([0.5], dtype=x.dtype)
         else:
+            # Run on CPU for numerical stability (float64 not supported on Metal GPU),
+            # matching the reference implementation.
             with mx.stream(mx.cpu):
                 rhos_c = mx.linalg.solve(R, b).astype(x.dtype)
 

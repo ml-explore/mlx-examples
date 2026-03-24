@@ -97,7 +97,7 @@ Pass `--sampler euler` to use Euler sampling for step-distilled models:
 For text to video pipeline you can try [this 4 steps distilled model](https://huggingface.co/lightx2v/Wan2.1-Distill-Models/blob/main/wan2.1_t2v_14b_lightx2v_4step.safetensors)
 
 ```shell
-wget https://huggingface.co/lightx2v/Wan2.1-Distill-Models/blob/main/wan2.1_t2v_14b_lightx2v_4step.safetensors
+wget https://huggingface.co/lightx2v/Wan2.1-Distill-Models/resolve/main/wan2.1_t2v_14b_lightx2v_4step.safetensors
 ```
 
 ```shell
@@ -150,5 +150,5 @@ Recommended thresholds (1.3B):
 |![WAN t2v 1.3B teacache=0.05](static/out_t2v_1_3b_teacache_005.gif)|![WAN t2v 1.3B teacache=0.05](static/out_t2v_1_3b_teacache_01.gif)|![WAN t2v 1.3B teacache=0.05](static/out_t2v_1_3b_teacache_025.gif)|
 
 # References
-1. [Original WAN 2.1 implemetation](https://github.com/Wan-Video/Wan2.1)
+1. [Original WAN 2.1 implementation](https://github.com/Wan-Video/Wan2.1)
 2. [LightX2V](https://github.com/ModelTC/LightX2V)

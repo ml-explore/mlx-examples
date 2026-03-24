@@ -18,7 +18,6 @@ import mlx.nn as nn
 from einops import rearrange
 
 from .layers import Head, WanAttentionBlock
-from .rope import precompute_rope_freqs
 
 
 @partial(mx.compile, shapeless=True)
@@ -100,19 +99,6 @@ class WanModel(nn.Module):
 
         # Output head
         self.head = Head(dim, out_dim, patch_size, eps)
-
-        # Precompute RoPE frequencies (not saved in checkpoint)
-        self._freqs = precompute_rope_freqs(
-            max_frames=1024,
-            max_height=1024,
-            max_width=1024,
-            head_dim=self.head_dim,
-            theta=10000.0,
-        )
-
-    @property
-    def freqs(self):
-        return self._freqs
 
     def _embed_image(self, clip_fea: mx.array) -> mx.array:
         """Project CLIP features through img_emb MLP."""
@@ -205,7 +191,7 @@ class WanModel(nn.Module):
         else:
             x_in = x
             for block in self.blocks:
-                x = block(x, e, grid_sizes, self.freqs, context, context_lens)
+                x = block(x, e, grid_sizes, context, context_lens)
             new_residual = x - x_in
 
         # Output head
@@ -347,27 +333,3 @@ class WanModel(nn.Module):
                 merged[key] = value
 
         return merged
-
-
-def create_wan_model(model_size: str = "1.3B", **kwargs) -> WanModel:
-    configs = {
-        "1.3B": {
-            "dim": 1536,
-            "ffn_dim": 8960,
-            "freq_dim": 256,
-            "num_heads": 12,
-            "num_layers": 30,
-        },
-        "14B": {
-            "dim": 5120,
-            "ffn_dim": 13824,
-            "freq_dim": 256,
-            "num_heads": 40,
-            "num_layers": 40,
-        },
-    }
-    if model_size not in configs:
-        raise ValueError(f"Unknown model size: {model_size}")
-    config = configs[model_size]
-    config.update(kwargs)
-    return WanModel(**config)

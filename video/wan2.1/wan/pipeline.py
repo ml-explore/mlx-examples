@@ -159,6 +159,62 @@ class WanPipeline:
         y = mx.concatenate([msk, vae_latent], axis=-1)
         return y.astype(self.dtype)
 
+    def _precompute_teacache(self, sampler, num_steps, teacache):
+        """Precompute time embeddings and TeaCache skip schedule.
+
+        Returns:
+            (all_t_emb, all_e0, skip_mask): Lists of precomputed embeddings
+            and a boolean list where True means skip (use cached residual).
+        """
+        tea_cfg = _tea_coeffs[self.name]
+        coeffs = mx.array(tea_cfg["coeffs"], dtype=mx.float64)
+        ret_steps = tea_cfg["ret_steps"]
+        use_e0 = tea_cfg["use_e0"]
+        cutoff_steps = num_steps if use_e0 else num_steps - 1
+
+        # Precompute all time embeddings (network dtype, lazy)
+        all_t_emb = []
+        all_e0 = []
+        for t in sampler.timesteps:
+            t_val = t.reshape(1).astype(mx.float32)
+            t_emb, e0 = self.flow.compute_time_embedding(t_val)
+            all_t_emb.append(t_emb)
+            all_e0.append(e0)
+
+        # Vectorized distance computation (network dtype, lazy)
+        embs = mx.stack(all_e0 if use_e0 else all_t_emb)  # [N, 1, D]
+        raw_dists = mx.abs(embs[1:] - embs[:-1]).mean(axis=(1, 2)) / (
+            mx.abs(embs[:-1]).mean(axis=(1, 2)) + 1e-8
+        )
+
+        # Polynomial rescaling in float64 on CPU
+        with mx.stream(mx.cpu):
+            dists_f64 = raw_dists.astype(mx.float64)
+            rescaled = coeffs[0]
+            for c in coeffs[1:]:
+                rescaled = rescaled * dists_f64 + c
+            rescaled = mx.abs(rescaled).astype(mx.float32)
+
+        # Single eval materializes embeddings (GPU) + rescaled distances (CPU)
+        mx.eval(rescaled, *all_t_emb, *all_e0)
+
+        # Simulate accumulation to build skip schedule (~50 iters)
+        skip_mask = []
+        accum = mx.array(0.0)
+        for step_idx in range(num_steps):
+            must_compute = (
+                step_idx < ret_steps or step_idx >= cutoff_steps or step_idx == 0
+            )
+            if not must_compute:
+                accum += rescaled[step_idx - 1]
+
+            should_skip = not must_compute and accum < teacache
+            skip_mask.append(should_skip)
+            if not should_skip:
+                accum = mx.array(0.0)
+
+        return all_t_emb, all_e0, skip_mask
+
     def generate_latents(
         self,
         text: str,
@@ -234,17 +290,21 @@ class WanPipeline:
         # TeaCache state
         use_teacache = teacache > 0
         if use_teacache:
-            tea_cfg = _tea_coeffs[self.name]
-            coeffs = tea_cfg["coeffs"]
-            ret_steps = tea_cfg["ret_steps"]
-            use_e0 = tea_cfg["use_e0"]
-            cutoff_steps = num_steps if use_e0 else num_steps - 1
-            prev_e0 = None
-            accum_cond = 0.0
-            accum_uncond = 0.0
+            # Must run before mx.compile(self.flow.__call__) below, since
+            # compute_time_embedding uses self.flow.state and mx.eval here
+            # materializes those parameters.
+            all_t_emb, all_e0, skip_mask = self._precompute_teacache(
+                sampler, num_steps, teacache
+            )
             prev_residual_cond = None
             prev_residual_uncond = None
-            skipped_steps = 0
+
+            if verbose:
+                n_skip = sum(skip_mask)
+                logger.info(
+                    f"TeaCache: will skip {n_skip}/{num_steps} steps "
+                    f"({100 * n_skip / num_steps:.0f}%)"
+                )
 
         flow = mx.compile(self.flow.__call__, inputs=[self.flow.state])
 
@@ -253,29 +313,9 @@ class WanPipeline:
             t_val = t.reshape(1).astype(mx.float32)
 
             if use_teacache:
-                t_emb, e0 = self.flow.compute_time_embedding(t_val)
-                mx.eval(t_emb, e0)
+                precomputed = (all_t_emb[step_idx], all_e0[step_idx])
 
-                must_compute = (
-                    step_idx < ret_steps or step_idx >= cutoff_steps or prev_e0 is None
-                )
-
-                if not must_compute:
-                    dist_emb = e0 if use_e0 else t_emb
-                    raw_dist = (
-                        mx.abs(dist_emb - prev_e0).mean()
-                        / (mx.abs(prev_e0).mean() + 1e-8)
-                    ).item()
-                    rescaled = float(np.polyval(coeffs, raw_dist))
-                    accum_cond += abs(rescaled)
-                    accum_uncond += abs(rescaled)
-
-                skip_cond = (
-                    not must_compute
-                    and accum_cond < teacache
-                    and prev_residual_cond is not None
-                )
-                if skip_cond:
+                if skip_mask[step_idx]:
                     noise_cond, _ = flow(
                         x_t,
                         t=t_val,
@@ -283,14 +323,10 @@ class WanPipeline:
                         clip_fea=clip_features,
                         first_frame=first_frame,
                         block_residual=prev_residual_cond,
-                        precomputed_time=(t_emb, e0),
+                        precomputed_time=precomputed,
                     )
-                    skipped_steps += 1
                     if verbose:
-                        logger.info(
-                            f"Step {step_idx}/{num_steps}: skip "
-                            f"(accum_cond={accum_cond:.4f})"
-                        )
+                        logger.info(f"Step {step_idx}/{num_steps}: skip")
                 else:
                     noise_cond, prev_residual_cond = flow(
                         x_t,
@@ -298,20 +334,14 @@ class WanPipeline:
                         context=context,
                         clip_fea=clip_features,
                         first_frame=first_frame,
-                        precomputed_time=(t_emb, e0),
+                        precomputed_time=precomputed,
                     )
                     mx.eval(prev_residual_cond)
-                    accum_cond = 0.0
                     if verbose:
                         logger.info(f"Step {step_idx}/{num_steps}: compute")
 
                 if guidance > 1.0:
-                    skip_uncond = (
-                        not must_compute
-                        and accum_uncond < teacache
-                        and prev_residual_uncond is not None
-                    )
-                    if skip_uncond:
+                    if skip_mask[step_idx]:
                         noise_uncond, _ = flow(
                             x_t,
                             t=t_val,
@@ -319,7 +349,7 @@ class WanPipeline:
                             clip_fea=clip_features,
                             first_frame=first_frame,
                             block_residual=prev_residual_uncond,
-                            precomputed_time=(t_emb, e0),
+                            precomputed_time=precomputed,
                         )
                     else:
                         noise_uncond, prev_residual_uncond = flow(
@@ -328,21 +358,12 @@ class WanPipeline:
                             context=context_null,
                             clip_fea=clip_features,
                             first_frame=first_frame,
-                            precomputed_time=(t_emb, e0),
+                            precomputed_time=precomputed,
                         )
                         mx.eval(prev_residual_uncond)
-                        accum_uncond = 0.0
                     noise_pred = noise_uncond + guidance * (noise_cond - noise_uncond)
                 else:
                     noise_pred = noise_cond
-
-                prev_e0 = e0 if use_e0 else t_emb
-
-                if verbose and step_idx == num_steps - 1:
-                    logger.info(
-                        f"TeaCache: skipped {skipped_steps}/{num_steps} steps "
-                        f"({100 * skipped_steps / num_steps:.0f}%)"
-                    )
             else:
                 # Standard path
                 noise_cond, _ = flow(
@@ -365,7 +386,8 @@ class WanPipeline:
                 else:
                     noise_pred = noise_cond
 
-            # Scheduler step
+            # Scheduler step — async_eval starts GPU work before yielding
+            # so the caller's mx.eval(x_t) blocks for less time.
             x_t = sampler.step(noise_pred, t, x_t)
             mx.async_eval(x_t)
             yield x_t
