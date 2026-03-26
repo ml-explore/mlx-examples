@@ -20,11 +20,11 @@ Installation
 ------------
 
 Install the dependencies:
+```shell
+pip install -r requirements.txt
+```
 
-    pip install -r requirements.txt
-
-> [!Note]
-> Saving videos requires [ffmpeg](https://ffmpeg.org/) on your PATH.
+Saving videos requires [ffmpeg](https://ffmpeg.org/) on your PATH.
 
 Usage
 -----
