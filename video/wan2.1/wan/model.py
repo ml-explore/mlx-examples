@@ -270,17 +270,7 @@ class WanModel(nn.Module):
                 v = remapped[key]
                 if v.shape[1] == 6:  # block modulation [1, 6, dim]
                     # Add 1 to scale positions (1 and 4)
-                    update = mx.concatenate(
-                        [
-                            mx.zeros_like(v[:, :1]),
-                            mx.ones_like(v[:, :1]),
-                            mx.zeros_like(v[:, 2:4]),
-                            mx.ones_like(v[:, :1]),
-                            mx.zeros_like(v[:, 5:]),
-                        ],
-                        axis=1,
-                    )
-                    remapped[key] = v + update
+                    remapped[key] = v + mx.array([0, 1, 0, 0, 1, 0])[:, None]
                 elif v.shape[1] == 2:  # head modulation [1, 2, dim]
                     update = mx.concatenate(
                         [
