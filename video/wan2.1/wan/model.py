@@ -272,14 +272,7 @@ class WanModel(nn.Module):
                     # Add 1 to scale positions (1 and 4)
                     remapped[key] = v + mx.array([0, 1, 0, 0, 1, 0])[:, None]
                 elif v.shape[1] == 2:  # head modulation [1, 2, dim]
-                    update = mx.concatenate(
-                        [
-                            mx.zeros_like(v[:, :1]),
-                            mx.ones_like(v[:, :1]),
-                        ],
-                        axis=1,
-                    )
-                    remapped[key] = v + update
+                    remapped[key] = v + mx.array([0, 1])[:, None]
 
         return remapped
 
