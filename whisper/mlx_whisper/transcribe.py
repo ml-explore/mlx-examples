@@ -19,7 +19,6 @@ from .audio import (
 )
 from .decoding import DecodingOptions, DecodingResult
 from .load_models import load_model
-from .timing import add_word_timestamps
 from .tokenizer import LANGUAGES, get_tokenizer
 
 
@@ -412,6 +411,8 @@ def transcribe(
                     seek += segment_size
 
                 if word_timestamps:
+                    from .timing import add_word_timestamps
+
                     add_word_timestamps(
                         segments=current_segments,
                         model=model,
