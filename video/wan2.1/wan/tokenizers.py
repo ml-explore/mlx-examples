@@ -20,7 +20,6 @@ class T5Tokenizer:
 
         self._tokenizer = Tokenizer.from_file(tokenizer_path)
         self.pad_token_id = self._tokenizer.token_to_id("<pad>") or 0
-        self.eos_token_id = self._tokenizer.token_to_id("</s>") or 1
 
     def __call__(
         self,

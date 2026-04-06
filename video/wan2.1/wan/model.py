@@ -20,6 +20,7 @@ from einops import rearrange
 from .layers import Head, WanAttentionBlock
 
 
+# shapeless=True: avoids recompilation across varying input shapes.
 @partial(mx.compile, shapeless=True)
 def sinusoidal_embedding_1d(dim: int, position: mx.array) -> mx.array:
     assert dim % 2 == 0
@@ -51,18 +52,9 @@ class WanModel(nn.Module):
         eps: float = 1e-6,
     ):
         super().__init__()
-        self.model_type = model_type
         self.patch_size = patch_size
-        self.text_len = text_len
-        self.in_dim = in_dim
         self.dim = dim
-        self.ffn_dim = ffn_dim
         self.freq_dim = freq_dim
-        self.text_dim = text_dim
-        self.out_dim = out_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.head_dim = dim // num_heads
 
         self.patch_embedding = nn.Conv3d(
             in_dim, dim, kernel_size=patch_size, stride=patch_size, bias=True
@@ -123,7 +115,6 @@ class WanModel(nn.Module):
         x: mx.array,
         t: mx.array,
         context: mx.array,
-        context_lens: Optional[int] = None,
         block_residual: Optional[mx.array] = None,
         precomputed_time: Optional[Tuple[mx.array, mx.array]] = None,
         clip_fea: Optional[mx.array] = None,
@@ -136,7 +127,6 @@ class WanModel(nn.Module):
             x: Input latent [F, H, W, C_in] (channels-last)
             t: Timestep [1]
             context: Text embedding [L, C_text]
-            context_lens: Actual context length (before padding)
             block_residual: Precomputed block residual for TeaCache skip
             precomputed_time: (t_emb, e0) tuple for TeaCache
             clip_fea: CLIP image features [1, 257, 1280] (I2V only)
@@ -159,21 +149,12 @@ class WanModel(nn.Module):
         x = x.reshape(1, Fp * Hp * Wp, self.dim)
 
         # Embed context: [L, C_text] -> [1, text_len, dim]
-        if context.shape[0] < self.text_len:
-            pad_len = self.text_len - context.shape[0]
-            context = mx.concatenate(
-                [context, mx.zeros((pad_len, context.shape[1]), dtype=context.dtype)],
-                axis=0,
-            )
         context = self.text_embedding(context[None])
 
         # Prepend projected CLIP features to context (I2V)
         if clip_fea is not None:
             clip_proj = self._embed_image(clip_fea)
             context = mx.concatenate([clip_proj, context], axis=1)
-
-        if context_lens is not None:
-            context_lens = mx.array([context_lens], dtype=mx.int32)
 
         # Time embedding
         if precomputed_time is not None:
@@ -191,7 +172,7 @@ class WanModel(nn.Module):
         else:
             x_in = x
             for block in self.blocks:
-                x = block(x, e, grid_sizes, context, context_lens)
+                x = block(x, e, grid_sizes, context)
             new_residual = x - x_in
 
         # Output head
@@ -226,7 +207,7 @@ class WanModel(nn.Module):
             if new_key.startswith("model."):
                 new_key = new_key[6:]
 
-            # Transpose Conv3d weights for patch_embedding
+            # PyTorch Conv3d [O,I,kT,kH,kW] -> MLX Conv3d [O,kT,kH,kW,I]
             if (
                 "patch_embedding" in new_key
                 and "weight" in new_key
@@ -234,19 +215,16 @@ class WanModel(nn.Module):
             ):
                 value = mx.transpose(value, (0, 2, 3, 4, 1))
 
-            # nn.Sequential key mappings for FFN
+            # PyTorch nn.Sequential uses flat keys ("ffn.0."), MLX nests under ".layers." ("ffn.layers.0.")
             new_key = new_key.replace("ffn.0.", "ffn.layers.0.")
             new_key = new_key.replace("ffn.2.", "ffn.layers.2.")
 
-            # nn.Sequential key mappings for text_embedding
             new_key = new_key.replace("text_embedding.0.", "text_embedding.layers.0.")
             new_key = new_key.replace("text_embedding.2.", "text_embedding.layers.2.")
 
-            # nn.Sequential key mappings for time_embedding
             new_key = new_key.replace("time_embedding.0.", "time_embedding.layers.0.")
             new_key = new_key.replace("time_embedding.2.", "time_embedding.layers.2.")
 
-            # nn.Sequential key mapping for time_projection
             new_key = new_key.replace("time_projection.1.", "time_projection.layers.1.")
 
             # head.head -> head.linear
@@ -264,7 +242,9 @@ class WanModel(nn.Module):
         # and K/V into KV for cross-attention
         remapped = WanModel._merge_qkv_weights(remapped)
 
-        # Bake 1+ into modulation scale positions
+        # Modulation vectors are [shift, scale, gate, ...]. The DiT block applies
+        # them as x * (1 + scale) + shift, but we fuse the "1 +" into the stored
+        # scale weights here so the forward pass is just x * scale + shift.
         for key in list(remapped.keys()):
             if key.endswith(".modulation"):
                 v = remapped[key]

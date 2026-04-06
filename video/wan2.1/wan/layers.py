@@ -9,7 +9,7 @@ attention with fused norm+modulate via mx.fast.layer_norm.
 
 import math
 from functools import partial
-from typing import Optional, Tuple
+from typing import Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -17,6 +17,7 @@ import mlx.nn as nn
 from .rope import rope_apply
 
 
+# Compiled to fuse x + y * gate into a single Metal kernel (hot path).
 @partial(mx.compile, shapeless=True)
 def _residual_gate(x, y, gate):
     return x + y * gate
@@ -90,7 +91,7 @@ class WanCrossAttention(nn.Module):
         self.norm_q = nn.RMSNorm(dim, eps=eps)
         self.norm_k = nn.RMSNorm(dim, eps=eps)
 
-    def _attend(self, x, context, context_lens):
+    def _attend(self, x, context):
         """Compute text cross-attention. Returns (q, attn_out) both [B, n, L, d]."""
         B = x.shape[0]
         L1, L2 = x.shape[1], context.shape[1]
@@ -105,28 +106,18 @@ class WanCrossAttention(nn.Module):
         k = k.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
         v = v.reshape(B, L2, n, d).transpose(0, 2, 1, 3)
 
-        if context_lens is not None:
-            if not isinstance(context_lens, mx.array):
-                context_lens = mx.array(context_lens, dtype=mx.int32)
-            positions = mx.arange(L2).reshape(1, 1, 1, L2)
-            lengths = context_lens.reshape(-1, 1, 1, 1)
-            attn_mask = mx.where(positions >= lengths, float("-inf"), 0.0)
-            attn_mask = attn_mask.astype(q.dtype)
-            out = mx.fast.scaled_dot_product_attention(
-                q, k, v, scale=d**-0.5, mask=attn_mask
-            )
-        else:
-            out = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5)
+        out = mx.fast.scaled_dot_product_attention(q, k, v, scale=d**-0.5)
 
         return q, out
 
-    def __call__(self, x, context, context_lens):
-        _, attn = self._attend(x, context, context_lens)
+    def __call__(self, x, context):
+        _, attn = self._attend(x, context)
         B, _, L1, _ = attn.shape
         x = attn.transpose(0, 2, 1, 3).reshape(B, L1, self.dim)
         return self.o(x)
 
 
+# T5 text tokens in context; remaining tokens are CLIP image tokens (I2V only).
 T5_CONTEXT_TOKEN_NUMBER = 512
 
 
@@ -139,15 +130,15 @@ class WanI2VCrossAttention(WanCrossAttention):
         self.v_img = nn.Linear(dim, dim)
         self.norm_k_img = nn.RMSNorm(dim, eps=eps)
 
-    def __call__(self, x, context, context_lens):
+    def __call__(self, x, context):
         img_ctx_len = context.shape[1] - T5_CONTEXT_TOKEN_NUMBER
         context_img = context[:, :img_ctx_len]
         context_txt = context[:, img_ctx_len:]
 
         # Text attention
-        q, x_txt = self._attend(x, context_txt, context_lens)
+        q, x_txt = self._attend(x, context_txt)
 
-        # Image attention (no mask, reuses q)
+        # Image attention: reuses q from text path (q encodes the latent, not the context)
         B, L1 = x.shape[:2]
         n, d = self.num_heads, self.head_dim
         L_img = context_img.shape[1]
@@ -203,6 +194,7 @@ class WanAttentionBlock(nn.Module):
             nn.Linear(ffn_dim, dim),
         )
 
+        # Modulation: [shift, scale, gate] x 2 for self-attn (indices 0-2) and FFN (indices 3-5)
         self.modulation = mx.zeros((1, 6, dim))
 
     def __call__(
@@ -211,11 +203,10 @@ class WanAttentionBlock(nn.Module):
         e: mx.array,
         grid_sizes: list,
         context: mx.array,
-        context_lens: Optional[mx.array],
     ) -> mx.array:
         e = self.modulation + e
 
-        # Self-attention: fused norm + modulate
+        # Self-attention: fused LayerNorm where e[:,1]=scale (weight), e[:,0]=shift (bias), e[:,2]=gate
         y = self.self_attn(
             mx.fast.layer_norm(x, e[0, 1], e[0, 0], self.eps),
             grid_sizes,
@@ -227,9 +218,9 @@ class WanAttentionBlock(nn.Module):
             x_normed = self.norm3(x)
         else:
             x_normed = x
-        x = x + self.cross_attn(x_normed, context, context_lens)
+        x = x + self.cross_attn(x_normed, context)
 
-        # FFN: fused norm + modulate
+        # FFN: fused LayerNorm where e[:,4]=scale, e[:,3]=shift, e[:,5]=gate
         y = self.ffn(mx.fast.layer_norm(x, e[0, 4], e[0, 3], self.eps))
         x = _residual_gate(x, y, e[:, 5])
 
@@ -251,6 +242,7 @@ class Head(nn.Module):
         self.eps = eps
         out_features = math.prod(patch_size) * out_dim
         self.linear = nn.Linear(dim, out_features)
+        # Modulation: [shift, scale] for output head norm
         self.modulation = mx.zeros((1, 2, dim))
 
     def __call__(self, x: mx.array, e: mx.array) -> mx.array:

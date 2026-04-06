@@ -16,7 +16,7 @@ from .sampler import FlowEulerDiscreteScheduler, FlowUniPCMultistepScheduler
 from .utils import configs, load_clip, load_dit, load_t5, load_t5_tokenizer, load_vae
 
 # Polynomial coefficients for TeaCache distance rescaling (calibrated per model).
-# Each entry: (coefficients, ret_steps, cutoff_offset, use_projected_embedding)
+# Each entry has keys: coeffs, ret_steps, use_e0
 _tea_coeffs = {  # from https://github.com/ModelTC/LightX2V/blob/main/configs/caching/teacache/wan_t2v_1_3b_tea_480p.json
     "t2v-1.3B": {
         "coeffs": [
@@ -84,12 +84,9 @@ class WanPipeline:
             params.append(self.clip.parameters())
         mx.eval(*params)
 
-    def tokenize(self, text: str):
-        return self.t5_tokenizer(text)
-
     def _encode_text(self, text: str) -> mx.array:
         """Encode text prompt with T5. Returns [512, 4096]."""
-        tokens = self.tokenize(text)
+        tokens = self.t5_tokenizer(text)
         ids = tokens["input_ids"]
         mask = tokens["attention_mask"]
         embeddings = self.t5(ids, mask=mask)
@@ -172,7 +169,7 @@ class WanPipeline:
         use_e0 = tea_cfg["use_e0"]
         cutoff_steps = num_steps if use_e0 else num_steps - 1
 
-        # Precompute all time embeddings (network dtype, lazy)
+        # Precompute all time embeddings (float32, lazy)
         all_t_emb = []
         all_e0 = []
         for t in sampler.timesteps:
@@ -181,7 +178,7 @@ class WanPipeline:
             all_t_emb.append(t_emb)
             all_e0.append(e0)
 
-        # Vectorized distance computation (network dtype, lazy)
+        # Vectorized distance computation (lazy)
         embs = mx.stack(all_e0 if use_e0 else all_t_emb)  # [N, 1, D]
         raw_dists = mx.abs(embs[1:] - embs[:-1]).mean(axis=(1, 2)) / (
             mx.abs(embs[:-1]).mean(axis=(1, 2)) + 1e-8
@@ -198,7 +195,7 @@ class WanPipeline:
         # Single eval materializes embeddings (GPU) + rescaled distances (CPU)
         mx.eval(rescaled, *all_t_emb, *all_e0)
 
-        # Simulate accumulation to build skip schedule (~50 iters)
+        # Simulate accumulation to build skip schedule
         skip_mask = []
         accum = mx.array(0.0)
         for step_idx in range(num_steps):
@@ -336,7 +333,9 @@ class WanPipeline:
                         first_frame=first_frame,
                         precomputed_time=precomputed,
                     )
-                    mx.eval(prev_residual_cond)
+                    mx.eval(
+                        prev_residual_cond
+                    )  # Materialize residual now so it persists for cached (skip) steps.
                     if verbose:
                         logger.info(f"Step {step_idx}/{num_steps}: compute")
 
@@ -386,8 +385,8 @@ class WanPipeline:
                 else:
                     noise_pred = noise_cond
 
-            # Scheduler step — async_eval starts GPU work before yielding
-            # so the caller's mx.eval(x_t) blocks for less time.
+            # async_eval starts GPU work on x_t and returns immediately,
+            # so the caller's mx.eval blocks less (pipeline overlap).
             x_t = sampler.step(noise_pred, t, x_t)
             mx.async_eval(x_t)
             yield x_t

@@ -11,11 +11,6 @@ from tqdm import tqdm
 from wan import WanPipeline
 from wan.utils import save_video
 
-
-def quantization_predicate(name, m):
-    return hasattr(m, "to_quantized") and m.weight.shape[1] % 512 == 0
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate videos from text using Wan2.1"
@@ -48,7 +43,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--n-prompt",
-        default="Text, watermarks, blury image, JPEG artifacts",
+        default="Text, watermarks, blurry image, JPEG artifacts",
     )
     parser.add_argument(
         "--teacache",
@@ -100,9 +95,7 @@ if __name__ == "__main__":
 
     # Quantize DiT
     if args.quantize:
-        nn.quantize(
-            pipeline.flow, bits=args.quantize, class_predicate=quantization_predicate
-        )
+        nn.quantize(pipeline.flow, bits=args.quantize)
         print(f"Quantized DiT to {args.quantize}-bit")
 
     if args.preload_models:

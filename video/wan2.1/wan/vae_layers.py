@@ -9,6 +9,7 @@ All layers use channels-last format (NTHWC) as required by MLX.
 import mlx.core as mx
 import mlx.nn as nn
 
+# Temporal cache depth: 2 frames for causal conv with kernel_size=3 along time.
 CACHE_T = 2
 
 
@@ -19,6 +20,7 @@ def _normalize_tuple(value, n):
 
 
 def create_cache_entry(x, existing_cache=None):
+    """Build temporal cache from the last CACHE_T frames of x, merging with existing cache."""
     t = x.shape[1]
     if t >= CACHE_T:
         return x[:, -CACHE_T:, :, :, :]
@@ -66,6 +68,7 @@ class CausalConv3d(nn.Module):
             self.bias = mx.zeros((out_channels,))
 
     def __call__(self, x, cache_x=None):
+        # Causal temporal padding (left-only), then symmetric spatial padding, then conv with padding=0.
         temporal_pad = self._temporal_pad
         if cache_x is not None and self._temporal_pad > 0:
             x = mx.concatenate([cache_x, x], axis=1)
@@ -95,7 +98,6 @@ class CausalConv3d(nn.Module):
 class Resample(nn.Module):
     def __init__(self, dim, mode):
         assert mode in (
-            "none",
             "upsample2d",
             "upsample3d",
             "downsample2d",

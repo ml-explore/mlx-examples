@@ -1,7 +1,7 @@
 # Copyright © 2026 Apple Inc.
 
 """
-Utility functions for Wan2.1 T2V pipeline.
+Utility functions for Wan2.1 pipeline.
 
 Weight loading, HF Hub downloading, video saving.
 """
@@ -179,7 +179,7 @@ def save_video(
     Save video frames to file using ffmpeg.
 
     Args:
-        frames: Video tensor [C, T, H, W] in range [-1, 1] or [T, H, W, C] in [0, 1]
+        frames: Video tensor [T, H, W, C] (channels-last) in [-1, 1] or [0, 1]
         output_path: Output file path
         fps: Frames per second
 
@@ -188,13 +188,8 @@ def save_video(
     """
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # Handle various input formats
     if frames.ndim == 5:
         frames = frames[0]
-    if frames.ndim == 4:
-        # Detect [C, T, H, W] format
-        if frames.shape[0] in [1, 3, 4] and frames.shape[-1] > 10:
-            frames = frames.transpose(1, 2, 3, 0)
 
     # Convert from [-1, 1] to [0, 1]
     mx.eval(frames)

@@ -109,17 +109,12 @@ class CLIPVisionEncoder(nn.Module):
         x = self.patch_embedding(x)
         x = x.reshape(B, -1, self.dim)
 
-        # Prepend CLS token
         cls = mx.broadcast_to(self.cls_embedding, (B, 1, self.dim))
         x = mx.concatenate([cls, x], axis=1)
-
-        # Add position embedding
         x = x + self.position_embedding
-
-        # Pre-norm
         x = self.pre_norm(x)
 
-        # First 31 of 32 transformer blocks
+        # Only first 31 of 32 blocks (matching reference use_31_block=True)
         for i in range(self.num_layers - 1):
             block = getattr(self, f"block_{i}")
             x = block(x)

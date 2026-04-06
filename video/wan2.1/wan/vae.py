@@ -82,6 +82,17 @@ class Decoder3d(nn.Module):
         self.head_norm = nn.RMSNorm(dims[-1], eps=1e-12)
         self.head_conv = CausalConv3d(dims[-1], 3, 3, padding=1)
 
+        # Count temporal cache slots from architecture
+        n = 1 + 2 + 2  # conv1, middle_res1, middle_res2
+        for stage in self.upsamples:
+            for layer in stage:
+                if isinstance(layer, ResidualBlock):
+                    n += 2
+                elif isinstance(layer, Resample) and hasattr(layer, "time_conv"):
+                    n += 1
+        n += 1  # head_conv
+        self.num_cache_slots = n
+
     def __call__(self, x, feat_cache):
         cache_idx = 0
         new_cache = []
@@ -192,6 +203,17 @@ class Encoder3d(nn.Module):
         self.head_norm = nn.RMSNorm(dims[-1], eps=1e-12)
         self.head_conv = CausalConv3d(dims[-1], z_dim * 2, 3, padding=1)
 
+        # Count temporal cache slots from architecture
+        n = 1  # conv1
+        for stage in self.downsamples:
+            for layer in stage:
+                if isinstance(layer, ResidualBlock):
+                    n += 2
+                elif isinstance(layer, Resample) and hasattr(layer, "time_conv"):
+                    n += 1
+        n += 2 + 2 + 1  # middle_res1, middle_res2, head_conv
+        self.num_cache_slots = n
+
     def __call__(self, x, feat_cache):
         cache_idx = 0
         new_cache = []
@@ -246,10 +268,10 @@ class Encoder3d(nn.Module):
 
 class WanVAE(nn.Module):
     """
-    High-level VAE wrapper for Wan2.1 T2V.
+    High-level VAE wrapper for Wan2.1.
 
-    Input: [C, F, H, W] latent (PyTorch convention)
-    Output: [C, F, H, W] decoded video clamped to [-1, 1]
+    Encode: [F, H, W, C] video -> [F', H/8, W/8, z_dim] latent
+    Decode: [F, H, W, C] latent -> [F*4, H*8, W*8, 3] video clamped to [-1, 1]
     """
 
     def __init__(self):
@@ -300,6 +322,7 @@ class WanVAE(nn.Module):
             ]
         )
         self.z_dim = 16
+        # Pre-compile for the frame-by-frame loop: avoids recompiling each frame.
         self._compiled_decode = mx.compile(self.decoder.__call__)
         self._compiled_encode = mx.compile(self.encoder.__call__)
 
@@ -325,9 +348,9 @@ class WanVAE(nn.Module):
         # Pre-decoder conv
         x = self.conv2(z)
 
-        # Frame-by-frame decode with cache
+        # Decode one frame at a time. mx.eval per frame releases intermediates, keeping memory bounded.
         num_frames = x.shape[1]
-        feat_cache = [None] * 32
+        feat_cache = [None] * self.decoder.num_cache_slots
         outputs = []
 
         for i in range(num_frames):
@@ -356,10 +379,10 @@ class WanVAE(nn.Module):
         x = x[None]
 
         num_frames = x.shape[1]
-        feat_cache = [None] * 32
+        feat_cache = [None] * self.encoder.num_cache_slots
         outputs = []
 
-        # First chunk: 1 frame, subsequent: 4 frames
+        # First chunk is 1 frame (causal init), subsequent chunks are 4 frames (matching VAE temporal stride).
         i = 0
         chunk_idx = 0
         while i < num_frames:
@@ -455,7 +478,10 @@ def _map_vae_upsample_key(key: str) -> str:
     layer_idx = int(match.group(1))
     rest = match.group(2)
 
-    stage_sizes = [4, 4, 4, 3]
+    # Decoder stages: (num_res_blocks+1) ResBlocks + 1 Resample each, except last (no Resample).
+    # Assumes attn_scales=[] (Wan2.1 default — no AttentionBlocks in stages).
+    num_res_blocks, num_stages = 2, 4
+    stage_sizes = [num_res_blocks + 2] * (num_stages - 1) + [num_res_blocks + 1]
     stage = 0
     local_idx = layer_idx
 
@@ -476,7 +502,10 @@ def _map_vae_downsample_key(key: str) -> str:
     layer_idx = int(match.group(1))
     rest = match.group(2)
 
-    stage_sizes = [3, 3, 3, 2]
+    # Encoder stages: num_res_blocks ResBlocks + 1 Resample each, except last (no Resample).
+    # Assumes attn_scales=[] (Wan2.1 default — no AttentionBlocks in stages).
+    num_res_blocks, num_stages = 2, 4
+    stage_sizes = [num_res_blocks + 1] * (num_stages - 1) + [num_res_blocks]
     stage = 0
     local_idx = layer_idx
 

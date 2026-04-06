@@ -16,7 +16,7 @@ import mlx.core as mx
 
 
 def _lambda64(alpha: mx.array, sigma: mx.array) -> mx.array:
-    # float64 is not supported on metal GPU, running on CPU for numerical stability
+    # log(alpha/sigma) needs float64 for numerical stability; Metal GPU doesn't support float64.
     with mx.stream(mx.cpu):
         result = mx.log(alpha.astype(mx.float64)) - mx.log(sigma.astype(mx.float64))
         return result.astype(mx.float32)
@@ -57,28 +57,23 @@ class FlowUniPCMultistepScheduler:
             1.0 - mx.linspace(1, 1 / num_train_timesteps, num_train_timesteps)[::-1]
         )
         sigmas = shift * sigmas / (1 + (shift - 1) * sigmas)
+        sigmas = sigmas.astype(mx.float32)
 
-        self.sigmas = sigmas.astype(mx.float32)
-        self.timesteps = self.sigmas * num_train_timesteps
+        self.sigma_min = float(sigmas[-1].item())
+        self.sigma_max = float(sigmas[0].item())
 
+        self.sigmas = None
+        self.timesteps = None
         self.num_inference_steps = None
         self.model_outputs = [None] * solver_order
         self.timestep_list = [None] * solver_order
         self.lower_order_nums = 0
         self.last_sample = None
         self._step_index = None
-        self._begin_index = None
-
-        self.sigma_min = float(self.sigmas[-1].item())
-        self.sigma_max = float(self.sigmas[0].item())
 
     @property
     def step_index(self):
         return self._step_index
-
-    @property
-    def begin_index(self):
-        return self._begin_index
 
     def set_timesteps(self, num_inference_steps, shift=None):
         sigmas = mx.linspace(self.sigma_max, self.sigma_min, num_inference_steps + 1)[
@@ -99,7 +94,6 @@ class FlowUniPCMultistepScheduler:
         self.lower_order_nums = 0
         self.last_sample = None
         self._step_index = None
-        self._begin_index = None
 
     def _sigma_to_alpha_sigma_t(self, sigma):
         return 1 - sigma, sigma
@@ -112,6 +106,16 @@ class FlowUniPCMultistepScheduler:
             return sample - (1 - sigma_t) * model_output
 
     def multistep_uni_p_bh_update(self, model_output, sample, order):
+        """Predictor step of the UniPC multistep solver.
+
+        Key variables:
+            rks: Ratios of lambda differences between past and current steps
+            D1s: First-order finite differences of model outputs
+            R, b: Linear system for polynomial coefficient computation
+            h_phi_k: Exponential integrator phi functions
+            B_h: Scale factor -- expm1(h) for bh2 solver type
+            rhos_p: Polynomial coefficients from solving R*rhos = b
+        """
         model_output_list = self.model_outputs
         m0 = model_output_list[-1]
         x = sample
@@ -301,10 +305,7 @@ class FlowUniPCMultistepScheduler:
         return int(first_idx.item())
 
     def _init_step_index(self, timestep):
-        if self.begin_index is None:
-            self._step_index = self.index_for_timestep(timestep)
-        else:
-            self._step_index = self._begin_index
+        self._step_index = self.index_for_timestep(timestep)
 
     def step(self, model_output, timestep, sample):
         if self.num_inference_steps is None:
