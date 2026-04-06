@@ -1,0 +1,5 @@
+transformers
+datasets
+jinja2
+zstandard
+wandb

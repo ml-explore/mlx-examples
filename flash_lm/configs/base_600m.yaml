@@ -1,0 +1,25 @@
+model: 
+  model_type: "transformer"
+  hidden_size: 1024 
+  head_dim: 128
+  vocab_size: 128256
+  intermediate_size: 3072 
+  num_attention_heads: 16
+  num_key_value_heads: 8
+  num_hidden_layers: 28 
+
+seed: 0
+batch_size: 2
+context_size: 2048
+optim: "adam"
+weight_decay: 0.1
+learning_rate: 1e-4
+num_steps: 1000000
+warmup_steps: 1000
+decay_steps: 1000
+max_grad_norm: 5
+data_type: "bfloat16"
+
+steps_per_eval: 100000
+steps_per_report: 10
+steps_per_checkpoint: 100000
