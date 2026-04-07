@@ -380,8 +380,22 @@ def transcribe(
                         last_slice = current_slice
 
                     if single_timestamp_ending:
-                        # single timestamp at the end means no speech after the last timestamp.
-                        seek += segment_size
+                        # When single_timestamp_ending and there's remaining audio,
+                        # advance to the timestamp position instead of full segment to avoid
+                        # skipping content in short audio clips.
+                        last_timestamp_token = tokens[-1].item()
+                        if last_timestamp_token != tokenizer.timestamp_begin:
+                            last_timestamp_pos = (
+                                last_timestamp_token - tokenizer.timestamp_begin
+                            )
+                            timestamp_seek = last_timestamp_pos * input_stride
+                            # Only use timestamp-based seek if there's remaining audio
+                            if seek + timestamp_seek < content_frames:
+                                seek += timestamp_seek
+                            else:
+                                seek += segment_size
+                        else:
+                            seek += segment_size
                     else:
                         # otherwise, ignore the unfinished segment and seek to the last timestamp
                         last_timestamp_pos = (
@@ -409,7 +423,24 @@ def transcribe(
                             result=result,
                         )
                     )
-                    seek += segment_size
+                    # When single_timestamp_ending and there's remaining audio,
+                    # advance to the timestamp position instead of full segment to avoid
+                    # skipping content in short audio clips.
+                    if (
+                        single_timestamp_ending
+                        and len(timestamps) > 0
+                        and timestamps[-1].item() != tokenizer.timestamp_begin
+                    ):
+                        last_timestamp_pos = (
+                            timestamps[-1].item() - tokenizer.timestamp_begin
+                        )
+                        timestamp_seek = last_timestamp_pos * input_stride
+                        if seek + timestamp_seek < content_frames:
+                            seek += timestamp_seek
+                        else:
+                            seek += segment_size
+                    else:
+                        seek += segment_size
 
                 if word_timestamps:
                     add_word_timestamps(
