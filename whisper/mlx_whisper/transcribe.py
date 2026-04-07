@@ -2,7 +2,7 @@
 
 import sys
 import warnings
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, cast
 
 import mlx.core as mx
 import numpy as np
@@ -14,6 +14,7 @@ from .audio import (
     N_FRAMES,
     N_SAMPLES,
     SAMPLE_RATE,
+    load_audio,
     log_mel_spectrogram,
     pad_or_trim,
 )
@@ -21,6 +22,13 @@ from .decoding import DecodingOptions, DecodingResult
 from .load_models import load_model
 from .timing import add_word_timestamps
 from .tokenizer import LANGUAGES, get_tokenizer
+from .vad import (
+    VadOptions,
+    SileroVAD,
+    SpeechTimestampsMap,
+    get_speech_chunks,
+    is_available as vad_is_available,
+)
 
 
 def _format_timestamp(seconds: float):
@@ -59,6 +67,57 @@ class ModelHolder:
         return cls.model
 
 
+def _filter_empty_segments(segments: List[dict]) -> List[dict]:
+    """Remove segments with empty text or zero duration."""
+
+    filtered: List[dict] = []
+    for segment in segments:
+        text = segment.get("text", "")
+        start = segment.get("start")
+        end = segment.get("end")
+
+        if text.strip() == "":
+            continue
+        if start is not None and end is not None and start == end:
+            continue
+
+        filtered.append(segment)
+
+    return filtered
+
+
+def _deduplicate_segments(
+    segments: List[dict], tolerance: float = 0.5
+) -> List[dict]:
+    """Remove consecutively repeated segments.
+
+    When Whisper gets stuck in a repetition loop it emits the same text with
+    increasing timestamps. This helper drops segments whose stripped text
+    matches the previous segment and whose start time is within ``tolerance``
+    seconds of the previous segment's end. When merging, the retained segment's
+    end time is extended to cover the dropped segment.
+    """
+
+    if not segments:
+        return segments
+
+    deduped: List[dict] = [dict(segments[0])]
+    for seg in segments[1:]:
+        prev = deduped[-1]
+        prev_text = prev.get("text", "").strip()
+        cur_text = seg.get("text", "").strip()
+
+        gap = seg.get("start", 0) - prev.get("end", 0)
+        if cur_text == prev_text and abs(gap) <= tolerance:
+            # Extend the retained segment's end time to cover this duplicate
+            prev["end"] = max(prev.get("end", 0), seg.get("end", 0))
+            continue
+
+        deduped.append(dict(seg))
+
+    return deduped
+
+
 def transcribe(
     audio: Union[str, np.ndarray, mx.array],
     *,
@@ -75,6 +134,8 @@ def transcribe(
     append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
     clip_timestamps: Union[str, List[float]] = "0",
     hallucination_silence_threshold: Optional[float] = None,
+    vad_filter: bool = False,
+    vad_options: Optional[VadOptions] = None,
     **decode_options,
 ):
     """
@@ -137,6 +198,13 @@ def transcribe(
         When word_timestamps is True, skip silent periods longer than this threshold (in seconds)
         when a possible hallucination is detected
 
+    vad_filter: bool
+        Enable Voice Activity Detection to filter silent audio before transcription.
+        Requires torch to be installed.
+
+    vad_options: Optional[VadOptions]
+        Configuration options for VAD. Only used when vad_filter is True.
+
     Returns
     -------
     A dictionary containing the resulting text ("text") and segment-level details ("segments"), and
@@ -146,19 +214,44 @@ def transcribe(
     dtype = mx.float16 if decode_options.get("fp16", True) else mx.float32
     model = ModelHolder.get_model(path_or_hf_repo, dtype)
 
+    # VAD preprocessing
+    timestamps_map = None
+    if vad_filter:
+        if not vad_is_available():
+            from .vad import VadUnavailableError
+            raise VadUnavailableError()
+
+        # Load audio if path
+        if isinstance(audio, str):
+            audio_array = np.array(load_audio(audio))
+        elif isinstance(audio, mx.array):
+            audio_array = np.array(audio)
+        else:
+            audio_array = audio
+
+        # Run VAD
+        vad = SileroVAD()
+        speech_timestamps = vad(audio_array, vad_options)
+
+        if speech_timestamps:
+            # Create timestamp mapper for restoring original times
+            timestamps_map = SpeechTimestampsMap(speech_timestamps, SAMPLE_RATE)
+            # Concatenate speech chunks
+            audio = get_speech_chunks(audio_array, speech_timestamps)
+
     # Pad 30-seconds of silence to the input audio, for slicing
     mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
     content_frames = mel.shape[-2] - N_FRAMES
     content_duration = float(content_frames * HOP_LENGTH / SAMPLE_RATE)
 
+    make_safe = lambda x: x
     if verbose:
         system_encoding = sys.getdefaultencoding()
         if system_encoding != "utf-8":
             make_safe = lambda x: x.encode(system_encoding, errors="replace").decode(
                 system_encoding
             )
-        else:
-            make_safe = lambda x: x
+
 
     if decode_options.get("language", None) is None:
         if not model.is_multilingual:
@@ -177,7 +270,7 @@ def transcribe(
                     f"Detected language: {LANGUAGES[decode_options['language']].title()}"
                 )
 
-    language: str = decode_options["language"]
+    language: str = cast(str, decode_options["language"])
     task: str = decode_options.get("task", "transcribe")
     tokenizer = get_tokenizer(
         model.is_multilingual,
@@ -242,7 +335,7 @@ def transcribe(
             if not needs_fallback:
                 break
 
-        return decode_result
+        return decode_result    # type: ignore
 
     clip_idx = 0
     seek = seek_clips[clip_idx][0]
@@ -263,7 +356,7 @@ def transcribe(
     def new_segment(
         *, start: float, end: float, tokens: mx.array, result: DecodingResult
     ):
-        tokens = tokens.tolist()
+        tokens = tokens.tolist()    # type: ignore
         text_tokens = [token for token in tokens if token < tokenizer.eot]
         return {
             "seek": seek,
@@ -493,6 +586,9 @@ def transcribe(
                     if last_word_end is not None:
                         last_speech_timestamp = last_word_end
 
+                # drop empty or zero-length segments before logging/appending
+                current_segments = _filter_empty_segments(current_segments)
+
                 if verbose:
                     for segment in current_segments:
                         start, end, text = (
@@ -502,16 +598,6 @@ def transcribe(
                         )
                         line = f"[{_format_timestamp(start)} --> {_format_timestamp(end)}] {text}"
                         print(make_safe(line))
-
-                # if a segment is instantaneous or does not contain text, clear it
-                for i, segment in enumerate(current_segments):
-                    if (
-                        segment["start"] == segment["end"]
-                        or segment["text"].strip() == ""
-                    ):
-                        segment["text"] = ""
-                        segment["tokens"] = []
-                        segment["words"] = []
 
                 all_segments.extend(
                     [
@@ -536,8 +622,125 @@ def transcribe(
                 # update progress bar
                 pbar.update(min(content_frames, seek) - previous_seek)
 
+    # Restore timestamps if VAD was used
+    if timestamps_map is not None:
+        for segment in all_segments:
+            segment["start"] = timestamps_map.get_original_time(segment["start"])
+            segment["end"] = timestamps_map.get_original_time(segment["end"])
+
+            if "words" in segment:
+                for word in segment["words"]:
+                    if "start" in word:
+                        word["start"] = timestamps_map.get_original_time(word["start"])
+                    if "end" in word:
+                        word["end"] = timestamps_map.get_original_time(word["end"])
+
+    # Deduplicate repetition-loop segments
+    all_segments = _deduplicate_segments(all_segments)
+
     return dict(
         text=tokenizer.decode(all_tokens[len(initial_prompt_tokens) :]),
         segments=all_segments,
         language=language,
     )
+
+
+def transcribe_with_diarization(
+    audio: Union[str, np.ndarray, mx.array],
+    *,
+    hf_token: Optional[str] = None,
+    diarize_model: str = "pyannote/speaker-diarization-3.1",
+    num_speakers: Optional[int] = None,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+    device: str = "cpu",
+    **transcribe_kwargs,
+) -> dict:
+    """Transcribe audio with speaker diarization.
+
+    Runs transcription followed by speaker diarization and assignment.
+
+    Parameters
+    ----------
+    audio: Union[str, np.ndarray, mx.array]
+        The path to the audio file to open, or the audio waveform
+
+    hf_token: Optional[str]
+        HuggingFace token for pyannote models (or set HF_TOKEN env var)
+
+    diarize_model: str
+        Diarization model to use (default: pyannote/speaker-diarization-3.1)
+
+    num_speakers: Optional[int]
+        Exact number of speakers (if known)
+
+    min_speakers: Optional[int]
+        Minimum number of speakers
+
+    max_speakers: Optional[int]
+        Maximum number of speakers
+
+    device: str
+        Device for diarization model ('cpu', 'cuda', 'mps')
+
+    **transcribe_kwargs
+        Additional arguments passed to transcribe()
+
+    Returns
+    -------
+    dict
+        Transcription result with speaker assignments including:
+        - text: Full transcription text
+        - segments: List of segments with speaker labels
+        - language: Detected language
+        - speakers: List of unique speaker IDs
+        - diarization: Raw diarization info with segments
+    """
+    from .diarize import (
+        DiarizationPipeline,
+        assign_word_speakers,
+        is_available as diarize_is_available,
+        DiarizationUnavailableError,
+    )
+
+    if not diarize_is_available():
+        raise DiarizationUnavailableError()
+
+    # Run transcription
+    result = transcribe(audio, **transcribe_kwargs)
+
+    # Load audio for diarization
+    if isinstance(audio, str):
+        audio_array = np.array(load_audio(audio))
+    elif isinstance(audio, mx.array):
+        audio_array = np.array(audio)
+    else:
+        audio_array = audio
+
+    # Run diarization
+    diarize_pipeline = DiarizationPipeline(
+        model_name=diarize_model,
+        token=hf_token,
+        device=device,
+    )
+
+    diarize_df = diarize_pipeline(
+        audio_array,
+        num_speakers=num_speakers,
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
+    )
+
+    # Assign speakers to segments and words
+    result["segments"] = assign_word_speakers(diarize_df, result["segments"])
+
+    # Add speaker list
+    result["speakers"] = sorted(diarize_df["speaker"].unique().tolist())
+
+    # Add raw diarization segments
+    result["diarization"] = {
+        "num_speakers": len(result["speakers"]),
+        "segments": diarize_df.to_dict(orient="records"),
+    }
+
+    return result

@@ -82,6 +82,103 @@ To see more transcription options use:
 >>> help(mlx_whisper.transcribe)
 ```
 
+### Beam Search Decoding
+
+By default, mlx-whisper uses greedy decoding. Enable beam search for potentially
+more accurate transcriptions at the cost of speed:
+
+```bash
+# Enable beam search with beam size 5
+mlx_whisper audio.mp3 --beam-size 5
+
+# Adjust patience for earlier/later stopping (default: 1.0)
+mlx_whisper audio.mp3 --beam-size 5 --patience 1.5
+```
+
+In Python:
+
+```python
+result = mlx_whisper.transcribe(
+    "audio.mp3",
+    beam_size=5,
+    patience=1.0
+)
+```
+
+The `patience` parameter controls early stopping: decoding stops when
+`round(beam_size * patience)` finished sequences have been collected.
+Higher patience values explore more candidates before stopping.
+
+### Voice Activity Detection (VAD)
+
+Enable Silero VAD to filter silent audio regions before transcription. This can
+significantly speed up transcription for audio with long silent periods:
+
+```bash
+# Enable VAD
+mlx_whisper audio.mp3 --vad-filter
+
+# Customize VAD settings
+mlx_whisper audio.mp3 --vad-filter --vad-threshold 0.6 --vad-min-silence-ms 1000
+```
+
+In Python:
+
+```python
+from mlx_whisper import transcribe
+from mlx_whisper.vad import VadOptions
+
+result = transcribe("audio.mp3", vad_filter=True)
+
+# With custom options
+vad_opts = VadOptions(threshold=0.6, min_silence_duration_ms=1000)
+result = transcribe("audio.mp3", vad_filter=True, vad_options=vad_opts)
+```
+
+**Requirements**: `pip install torch`
+
+### Speaker Diarization
+
+Identify who is speaking when with pyannote.audio. Diarization adds speaker
+labels to transcription segments:
+
+```bash
+# Enable diarization (requires HuggingFace token)
+export HF_TOKEN=your_token
+mlx_whisper audio.mp3 --diarize --word-timestamps
+
+# Specify speaker count
+mlx_whisper audio.mp3 --diarize --min-speakers 2 --max-speakers 4
+
+# Output diarization in RTTM format
+mlx_whisper audio.mp3 --diarize -f rttm
+```
+
+In Python:
+
+```python
+from mlx_whisper import transcribe_with_diarization
+
+result = transcribe_with_diarization(
+    "audio.mp3",
+    hf_token="your_token",
+    word_timestamps=True
+)
+
+# Access speaker info
+for segment in result["segments"]:
+    speaker = segment.get("speaker", "Unknown")
+    print(f"{speaker}: {segment['text']}")
+
+# List of speakers
+print(result["speakers"])  # ['SPEAKER_00', 'SPEAKER_01', ...]
+```
+
+**Requirements**:
+- `pip install pyannote.audio pandas`
+- Accept model terms at https://huggingface.co/pyannote/speaker-diarization-3.1
+- Set `HF_TOKEN` environment variable or pass `--hf-token`
+
 ### Converting models
 
 > [!TIP]

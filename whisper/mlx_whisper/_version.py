@@ -1,3 +1,3 @@
 # Copyright © 2023-2024 Apple Inc.
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"
