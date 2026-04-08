@@ -70,6 +70,7 @@ def transcribe(
     no_speech_threshold: Optional[float] = 0.6,
     condition_on_previous_text: bool = True,
     initial_prompt: Optional[str] = None,
+    carry_initial_prompt: bool = False,
     word_timestamps: bool = False,
     prepend_punctuations: str = "\"'“¿([{-",
     append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
@@ -125,6 +126,11 @@ def transcribe(
         Optional text to provide as a prompt for the first window. This can be used to provide, or
         "prompt-engineer" a context for transcription, e.g. custom vocabularies or proper nouns
         to make it more likely to predict those word correctly.
+
+    carry_initial_prompt: bool
+        If True, the `initial_prompt` is forcefully carried forward into the context window for all
+        subsequent text segments. This ensures the model does not forget prompt-engineered context
+        over long audio files.
 
     decode_options: dict
         Keyword arguments to construct `DecodingOptions` instances
@@ -293,7 +299,27 @@ def transcribe(
                 segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE
                 mel_segment = pad_or_trim(mel_segment, N_FRAMES, axis=-2).astype(dtype)
 
-                decode_options["prompt"] = all_tokens[prompt_reset_since:]
+                prompt_tokens = all_tokens[prompt_reset_since:]
+                if carry_initial_prompt and initial_prompt_tokens:
+                    # Extract previous text tokens, removing the initial prompt if it's currently at the beginning
+                    prev_tokens = (
+                        prompt_tokens[len(initial_prompt_tokens) :]
+                        if prompt_reset_since == 0
+                        else prompt_tokens
+                    )
+                    # Calculate available space across context window
+                    max_prompt_length = model.dims.n_text_ctx // 2 - 1
+                    max_prev_length = max(
+                        0, max_prompt_length - len(initial_prompt_tokens)
+                    )
+                    # Retain initial prompt and latest previous tokens
+                    prompt_tokens = (
+                        initial_prompt_tokens + prev_tokens[-max_prev_length:]
+                        if max_prev_length > 0
+                        else initial_prompt_tokens
+                    )
+
+                decode_options["prompt"] = prompt_tokens
                 result: DecodingResult = decode_with_fallback(mel_segment)
 
                 tokens = np.array(result.tokens)
