@@ -31,9 +31,75 @@ mlx_whisper audio_file.mp3
 
 This will make a text file `audio_file.txt` with the results.
 
-Use `-f` to specify the output format and `--model` to specify the model. There
-are many other supported command line options. To see them all, run
-`mlx_whisper -h`.
+**Common Options:**
+
+```sh
+# Specify output format (txt, vtt, srt, tsv, json, all)
+mlx_whisper audio.mp3 -f json
+
+# Choose a different model
+mlx_whisper audio.mp3 --model mlx-community/whisper-large-v3-mlx
+
+# Enable detailed performance metrics
+mlx_whisper audio.mp3 --verbose True
+
+# Combine options
+mlx_whisper audio.mp3 --model mlx-community/whisper-base.en-mlx -f srt --verbose True
+```
+
+**Performance Benchmarking:**
+
+Use `--verbose True` to display detailed performance metrics:
+
+```sh
+mlx_whisper audio.mp3 --verbose True
+```
+
+This will show:
+
+- Model load time (ms)
+- Mel spectrogram computation time (ms)
+- Inference time (ms)
+- Total processing time (ms)
+- RTF (Real-Time Factor) - values < 1.0 indicate faster-than-real-time
+- Token generation throughput (tokens/sec and steps/sec)
+- Per-segment performance breakdown
+
+Example output:
+
+```
+================================================================================
+BENCHMARK METRICS
+================================================================================
+Model load time: 386.68 ms
+Mel spectrogram time: 62.27 ms
+Inference time: 242.75 ms
+Total time: 691.70 ms
+Audio duration: 20.03 s
+RTF (Real-Time Factor): 0.035
+
+Total output tokens: 75
+Total inference steps (decoder forward passes): 77
+Average output tokens/sec: 308.95
+Average inference steps/sec: 317.19
+================================================================================
+```
+
+**Additional Options:**
+
+```sh
+# Word-level timestamps
+mlx_whisper audio.mp3 --word-timestamps True
+
+# Specify language (skip auto-detection)
+mlx_whisper audio.mp3 --language en
+
+# Translate to English
+mlx_whisper audio.mp3 --task translate
+
+# Custom output name
+mlx_whisper audio.mp3 --output-name my_transcript
+```
 
 You can also pipe the audio content of other programs via stdin:
 
@@ -43,6 +109,12 @@ some-process | mlx_whisper -
 
 The default output file name will be `content.*`. You can specify the name with
 the `--output-name` flag.
+
+To see all available options, run:
+
+```sh
+mlx_whisper -h
+```
 
 #### API
 

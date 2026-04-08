@@ -1,6 +1,7 @@
 # Copyright © 2023 Apple Inc.
 
 import sys
+import time
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -144,10 +145,17 @@ def transcribe(
     """
 
     dtype = mx.float16 if decode_options.get("fp16", True) else mx.float32
-    model = ModelHolder.get_model(path_or_hf_repo, dtype)
 
+    # Track model loading time
+    model_load_start = time.time()
+    model = ModelHolder.get_model(path_or_hf_repo, dtype)
+    model_load_time = time.time() - model_load_start
+
+    # Track mel spectrogram computation time
+    mel_start = time.time()
     # Pad 30-seconds of silence to the input audio, for slicing
     mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
+    mel_time = time.time() - mel_start
     content_frames = mel.shape[-2] - N_FRAMES
     content_duration = float(content_frames * HOP_LENGTH / SAMPLE_RATE)
 
@@ -204,11 +212,22 @@ def transcribe(
     if word_timestamps and task == "translate":
         warnings.warn("Word-level timestamps on translations may not be reliable.")
 
+    # Initialize timing metrics
+    total_inference_time = 0.0
+    total_tokens_generated = 0
+    total_inference_steps = (
+        0  # Total decoder forward passes (comparable to whisper.cpp "runs")
+    )
+    segment_timings = []
+
     def decode_with_fallback(segment: mx.array) -> DecodingResult:
+        nonlocal total_inference_time, total_tokens_generated, total_inference_steps
         temperatures = (
             [temperature] if isinstance(temperature, (int, float)) else temperature
         )
         decode_result = None
+
+        segment_start_time = time.time()
 
         for t in temperatures:
             kwargs = {**decode_options}
@@ -241,6 +260,31 @@ def transcribe(
                 needs_fallback = False  # silence
             if not needs_fallback:
                 break
+
+        segment_inference_time = time.time() - segment_start_time
+        total_inference_time += segment_inference_time
+        num_output_tokens = len(decode_result.tokens)
+        num_inference_steps = decode_result.num_inference_steps
+        total_tokens_generated += num_output_tokens
+        total_inference_steps += num_inference_steps
+
+        segment_timings.append(
+            {
+                "time": segment_inference_time,
+                "output_tokens": num_output_tokens,
+                "inference_steps": num_inference_steps,
+                "output_tokens_per_sec": (
+                    num_output_tokens / segment_inference_time
+                    if segment_inference_time > 0
+                    else 0
+                ),
+                "inference_steps_per_sec": (
+                    num_inference_steps / segment_inference_time
+                    if segment_inference_time > 0
+                    else 0
+                ),
+            }
+        )
 
         return decode_result
 
@@ -535,6 +579,54 @@ def transcribe(
 
                 # update progress bar
                 pbar.update(min(content_frames, seek) - previous_seek)
+
+    # Print detailed inference metrics
+    total_time = model_load_time + mel_time + total_inference_time
+    rtf = (total_time / content_duration) if content_duration > 0 else 0
+
+    if verbose is not False:
+        print("\n" + "=" * 80)
+        print("BENCHMARK METRICS")
+        print("=" * 80)
+        print(f"Model load time: {model_load_time * 1000:.2f} ms")
+        print(f"Mel spectrogram time: {mel_time * 1000:.2f} ms")
+        print(f"Inference time: {total_inference_time * 1000:.2f} ms")
+        print(f"Total time: {total_time * 1000:.2f} ms")
+        print(f"Audio duration: {content_duration:.2f} s")
+        print(f"RTF (Real-Time Factor): {rtf:.3f}")
+        print(f"\nTotal output tokens: {total_tokens_generated}")
+        print(
+            f"Total inference steps (decoder forward passes): {total_inference_steps}"
+        )
+        if total_inference_time > 0:
+            print(
+                f"Average output tokens/sec: {total_tokens_generated / total_inference_time:.2f}"
+            )
+            print(
+                f"Average inference steps/sec: {total_inference_steps / total_inference_time:.2f}"
+            )
+        print(f"Number of segments: {len(segment_timings)}")
+
+        if verbose and len(segment_timings) > 0:
+            print("\nPer-segment details:")
+            print(
+                f"{'Seg#':<6} {'Out':<6} {'Steps':<7} {'Time(s)':<10} {'Out/s':<10} {'Steps/s':<10}"
+            )
+            print("-" * 80)
+            for i, timing in enumerate(segment_timings):
+                print(
+                    f"{i:<6} {timing['output_tokens']:<6} {timing['inference_steps']:<7} "
+                    f"{timing['time']:<10.3f} {timing['output_tokens_per_sec']:<10.2f} "
+                    f"{timing['inference_steps_per_sec']:<10.2f}"
+                )
+
+        print("\nNOTE:")
+        print("- RTF < 1.0 means faster than real-time")
+        print("- 'Output tokens': Final text tokens (excluding special tokens)")
+        print(
+            "- 'Inference steps': Total decoder forward passes (comparable to whisper.cpp 'runs')"
+        )
+        print("=" * 80 + "\n")
 
     return dict(
         text=tokenizer.decode(all_tokens[len(initial_prompt_tokens) :]),
