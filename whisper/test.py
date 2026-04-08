@@ -197,6 +197,17 @@ class TestWhisper(unittest.TestCase):
             ),
         )
 
+    def test_carry_initial_prompt(self):
+        result = mlx_whisper.transcribe(
+            TEST_AUDIO,
+            path_or_hf_repo=MLX_FP32_MODEL_PATH,
+            fp16=False,
+            initial_prompt="A test prompt.",
+            carry_initial_prompt=True,
+        )
+        self.assertIn("text", result)
+        self.assertGreater(len(result["text"]), 0)
+
     def test_transcribe_alice(self):
         audio_file = os.path.join(
             os.path.expanduser("~"),
