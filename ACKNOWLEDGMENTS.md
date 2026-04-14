@@ -15,3 +15,4 @@ MLX Examples was developed with contributions from the following individuals:
 - Prince Canuma: Helped add support for `Starcoder2` models.
 - Shiyu Li: Added the `Segment Anything Model`.
 - Gökdeniz Gülmez: Added support for `MiniCPM`, `Helium`, `Mamba version 1`, `OLMoE` archtectures and support for `full-fine-tuning`.
+- Vinay Gupta (@iamrealvinnu): Added Self-Healing Llama example with Asynchronous Verification Daemon (AVD) and Entropy-Driven Context Compaction (EDCC).
