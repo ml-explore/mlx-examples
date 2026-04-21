@@ -4,7 +4,7 @@ Speech recognition with Whisper in MLX. Whisper is a set of open source speech
 recognition models from OpenAI, ranging from 39 million to 1.5 billion
 parameters.[^1]
 
-### Setup
+## Setup
 
 Install [`ffmpeg`](https://ffmpeg.org/):
 
@@ -19,9 +19,9 @@ Install the `mlx-whisper` package with:
 pip install mlx-whisper
 ```
 
-### Run
+## Run
 
-#### CLI
+### CLI
 
 At its simplest:
 
@@ -44,7 +44,7 @@ some-process | mlx_whisper -
 The default output file name will be `content.*`. You can specify the name with
 the `--output-name` flag.
 
-#### API
+### API
 
 Transcribe audio with:
 
@@ -82,7 +82,7 @@ To see more transcription options use:
 >>> help(mlx_whisper.transcribe)
 ```
 
-### Converting models
+## Converting models
 
 > [!TIP]
 > Skip the conversion step by using pre-converted checkpoints from the Hugging
