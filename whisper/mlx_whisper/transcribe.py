@@ -41,10 +41,11 @@ def _format_timestamp(seconds: float):
 
 
 def _get_end(segments: List[dict]) -> Optional[float]:
-    return next(
-        (w["end"] for s in reversed(segments) for w in reversed(s["words"])),
-        segments[-1]["end"] if segments else None,
-    )
+    for s in reversed(segments):
+        words = s.get("words") or []
+        if words:
+            return words[-1]["end"]
+    return segments[-1]["end"] if segments else None
 
 
 class ModelHolder:

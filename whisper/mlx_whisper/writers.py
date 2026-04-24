@@ -27,11 +27,16 @@ def format_timestamp(
     )
 
 
+def _segments_use_word_timings(segments: List[dict]) -> bool:
+    return bool(segments) and all(s.get("words") for s in segments)
+
+
 def get_start(segments: List[dict]) -> Optional[float]:
-    return next(
-        (w["start"] for s in segments for w in s["words"]),
-        segments[0]["start"] if segments else None,
-    )
+    for s in segments:
+        words = s.get("words") or []
+        if words:
+            return words[0]["start"]
+    return segments[0]["start"] if segments else None
 
 
 class ResultWriter:
@@ -143,7 +148,7 @@ class SubtitlesWriter(ResultWriter):
             if len(subtitle) > 0:
                 yield subtitle
 
-        if len(result["segments"]) > 0 and "words" in result["segments"][0]:
+        if _segments_use_word_timings(result["segments"]):
             for subtitle in iterate_subtitles():
                 subtitle_start = self.format_timestamp(subtitle[0]["start"])
                 subtitle_end = self.format_timestamp(subtitle[-1]["end"])
