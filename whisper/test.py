@@ -1,5 +1,6 @@
 # Copyright © 2023-2024 Apple Inc.
 
+import importlib
 import json
 import os
 import unittest
@@ -11,6 +12,7 @@ import mlx_whisper
 import mlx_whisper.audio as audio
 import mlx_whisper.decoding as decoding
 import mlx_whisper.load_models as load_models
+import mlx_whisper.writers as writers
 import numpy as np
 import torch
 from convert import convert, load_torch_model, quantize
@@ -438,6 +440,146 @@ class TestWhisper(unittest.TestCase):
 
         # Randomly check a couple of segments
         check_words(result["segments"][0]["words"], expected_0)
+
+
+class TestSegmentWordTimings(unittest.TestCase):
+    """Guards segment vs. word-level timing helpers (mixed / missing word lists)."""
+
+    def test_segments_use_word_timings(self):
+        self.assertFalse(writers._segments_use_word_timings([]))
+        self.assertFalse(
+            writers._segments_use_word_timings(
+                [
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "text": "a",
+                        "words": [{"word": "a", "start": 0.0, "end": 1.0}],
+                    },
+                    {"start": 2.0, "end": 3.0, "text": "b"},
+                ]
+            )
+        )
+        self.assertFalse(
+            writers._segments_use_word_timings(
+                [
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "text": "a",
+                        "words": [{"word": "a", "start": 0.0, "end": 1.0}],
+                    },
+                    {"start": 2.0, "end": 3.0, "text": "b", "words": []},
+                ]
+            )
+        )
+        self.assertTrue(
+            writers._segments_use_word_timings(
+                [
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "text": "a",
+                        "words": [{"word": "a", "start": 0.0, "end": 1.0}],
+                    },
+                    {
+                        "start": 2.0,
+                        "end": 3.0,
+                        "text": "b",
+                        "words": [{"word": "b", "start": 2.0, "end": 3.0}],
+                    },
+                ]
+            )
+        )
+
+    def test_get_start(self):
+        self.assertIsNone(writers.get_start([]))
+        self.assertEqual(
+            writers.get_start(
+                [{"start": 5.0, "end": 10.0, "text": "no words key"}]
+            ),
+            5.0,
+        )
+        self.assertEqual(
+            writers.get_start(
+                [
+                    {"start": 0.0, "end": 1.0, "text": "a"},
+                    {
+                        "start": 2.0,
+                        "end": 4.0,
+                        "text": "b",
+                        "words": [{"word": "b", "start": 2.5, "end": 4.0}],
+                    },
+                ]
+            ),
+            2.5,
+        )
+
+    def test_get_end(self):
+        transcribe_mod = importlib.import_module("mlx_whisper.transcribe")
+        self.assertIsNone(transcribe_mod._get_end([]))
+        # Last segment has no words: use the last segment-from-end that still has words.
+        self.assertEqual(
+            transcribe_mod._get_end(
+                [
+                    {
+                        "start": 0.0,
+                        "end": 5.0,
+                        "text": "a",
+                        "words": [{"word": "a", "start": 0.0, "end": 5.0}],
+                    },
+                    {"start": 10.0, "end": 20.0, "text": "b"},
+                ]
+            ),
+            5.0,
+        )
+        # No non-empty word lists: fall back to the final segment boundary.
+        self.assertEqual(
+            transcribe_mod._get_end(
+                [
+                    {"start": 0.0, "end": 3.0, "text": "a"},
+                    {"start": 10.0, "end": 20.0, "text": "b"},
+                ]
+            ),
+            20.0,
+        )
+        self.assertEqual(
+            transcribe_mod._get_end(
+                [
+                    {
+                        "start": 0.0,
+                        "end": 3.0,
+                        "text": "a",
+                        "words": [{"word": "a", "start": 0.0, "end": 3.0}],
+                    },
+                    {
+                        "start": 4.0,
+                        "end": 7.0,
+                        "text": "b",
+                        "words": [{"word": "b", "start": 4.0, "end": 7.0}],
+                    },
+                ]
+            ),
+            7.0,
+        )
+
+    def test_write_srt_mixed_word_and_segment_timings(self):
+        """Regression: first segment must not force word-level path for all segments."""
+        result = {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": " Hello",
+                    "words": [{"word": " Hello", "start": 0.0, "end": 1.0}],
+                },
+                {"start": 2.0, "end": 5.0, "text": " world"},
+            ]
+        }
+        writer = writers.WriteSRT("/tmp")
+        lines = list(writer.iterate_result(result))
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(all(len(t) == 3 for t in lines))
 
 
 class TestAudio(unittest.TestCase):
