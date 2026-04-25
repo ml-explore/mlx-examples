@@ -37,9 +37,26 @@ class Tokenizer:
             )["input_ids"]
         )
 
-    def decode(self, t: List[int], with_sep: bool = True) -> str:
-        tokens = self._tokenizer.convert_ids_to_tokens(t)
-        return "".join(t.replace("▁", " " if with_sep else "") for t in tokens)
+    def decode(self, t: List[int]) -> str:
+        return self._tokenizer.decode(t, skip_special_tokens=True)
+
+    def new_stream_state(self) -> dict:
+        """Return state for incremental streaming detokenization.
+
+        Per-token detokenization is unsafe for most HuggingFace tokenizers
+        (byte-level BPE merges and SentencePiece byte-fallback both span
+        multiple ids), so the streaming loop must hand each new id to
+        ``stream_decode`` along with this state object.
+        """
+        return {"ids": [], "text": ""}
+
+    def stream_decode(self, state: dict, token_id: int) -> str:
+        """Append ``token_id`` to ``state`` and return the new text fragment."""
+        state["ids"].append(int(token_id))
+        text = self._tokenizer.decode(state["ids"], skip_special_tokens=True)
+        delta = text[len(state["text"]) :]
+        state["text"] = text
+        return delta
 
 
 def _relative_position_bucket(
@@ -505,13 +522,14 @@ if __name__ == "__main__":
     print("Input: ", args.prompt, flush=True)
 
     start = perf_counter_ns()
+    stream_state = tokenizer.new_stream_state()
     for token, n_tokens in zip(
         generate(args.prompt, model, tokenizer, args.temp), range(args.max_tokens)
     ):
         if token.item() == tokenizer.eos_id:
             break
         print(
-            tokenizer.decode([token.item()], with_sep=n_tokens > 0),
+            tokenizer.stream_decode(stream_state, token.item()),
             end="",
             flush=True,
         )
