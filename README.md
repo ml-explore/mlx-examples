@@ -47,6 +47,8 @@ package for LLMs with MLX.
 - Semi-supervised learning on graph-structured data with [GCN](gcn).
 - Real NVP [normalizing flow](normalizing_flow) for density estimation and
   sampling.
+- Stochastic Lanczos quadrature for [von Neumann entropy](von_neumann_entropy_slq)
+  — `O(k * m * N^2)` matrix-function trace estimator on the Metal GPU.
 
 ### Hugging Face
 
