@@ -186,6 +186,15 @@ file should look like:
 
 Note other keys will be ignored by the loader.
 
+For instruction tuning, each line can also provide a prompt and response:
+
+```
+{"prompt": "[INST] Your input prompt here [/INST]", "text": "The expected output result here"}
+```
+
+When `prompt` is present, the loader trains on the tokens from `text` only. The
+prompt is included as context, but prompt tokens are masked out of the loss.
+
 ## Memory Issues
 
 Fine-tuning a large model with LoRA requires a machine with a decent amount

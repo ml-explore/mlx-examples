@@ -16,9 +16,6 @@ import utils as lora_utils
 from mlx.utils import tree_flatten
 from models import LoRALinear
 
-# Disable output buffering to see print statements in real-time
-sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
-
 
 def build_parser():
     parser = argparse.ArgumentParser(description="LoRA or QLoRA finetuning.")
@@ -142,7 +139,10 @@ class Dataset:
         self._key = key
 
     def __getitem__(self, idx: int):
-        return self._data[idx][self._key]
+        item = self._data[idx]
+        if "prompt" in item:
+            return item
+        return item[self._key]
 
     def __len__(self):
         return len(self._data)
@@ -175,19 +175,52 @@ def load(args):
     return train, valid, test
 
 
-def loss(model, inputs, targets, lengths):
+def loss(model, inputs, targets, loss_masks):
     # Run model on inputs
     logits, _ = model(inputs)
     logits = logits.astype(mx.float32)
 
-    # Mask padding tokens
-    length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
-
     # Calculate the loss
-    ce = nn.losses.cross_entropy(logits, targets) * length_mask
-    ntoks = length_mask.sum()
+    ce = nn.losses.cross_entropy(logits, targets) * loss_masks
+    ntoks = loss_masks.sum()
     ce = ce.sum() / ntoks
     return ce, ntoks
+
+
+def _encode(tokenizer, text, **kwargs):
+    try:
+        return tokenizer.encode(text, **kwargs)
+    except TypeError:
+        return tokenizer.encode(text)
+
+
+def _remove_trailing_eos(tokens, tokenizer):
+    eos_token_id = getattr(tokenizer, "eos_token_id", None)
+    if eos_token_id is not None and tokens and tokens[-1] == eos_token_id:
+        return tokens[:-1]
+    return tokens
+
+
+def encode_dataset_item(item, tokenizer):
+    if not isinstance(item, dict):
+        tokens = _encode(tokenizer, item)
+        return tokens, np.ones(len(tokens) - 1, dtype=np.float32)
+
+    if "prompt" not in item or "text" not in item:
+        raise ValueError("Prompt-completion examples must contain 'prompt' and 'text'.")
+
+    prompt_tokens = _remove_trailing_eos(_encode(tokenizer, item["prompt"]), tokenizer)
+    completion_tokens = _encode(tokenizer, item["text"], add_special_tokens=False)
+    tokens = prompt_tokens + completion_tokens
+
+    if getattr(tokenizer, "add_eos_token", False):
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        if eos_token_id is not None and (not tokens or tokens[-1] != eos_token_id):
+            tokens.append(eos_token_id)
+
+    loss_mask = np.zeros(len(tokens) - 1, dtype=np.float32)
+    loss_mask[max(len(prompt_tokens) - 1, 0) :] = 1
+    return tokens, loss_mask
 
 
 def iterate_batches(dset, tokenizer, batch_size, train=False):
@@ -200,7 +233,12 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
         # Collect batches from dataset
         for i in range(0, len(indices) - batch_size + 1, batch_size):
             # Encode batch
-            batch = [tokenizer.encode(dset[indices[i + j]]) for j in range(batch_size)]
+            batch, loss_masks = zip(
+                *[
+                    encode_dataset_item(dset[indices[i + j]], tokenizer)
+                    for j in range(batch_size)
+                ]
+            )
             lengths = [len(x) for x in batch]
 
             # Check if any sequence is longer than 2048 tokens
@@ -212,11 +250,13 @@ def iterate_batches(dset, tokenizer, batch_size, train=False):
 
             # Pad to the max length
             batch_arr = np.zeros((batch_size, max(lengths)), np.int32)
+            loss_mask_arr = np.zeros((batch_size, max(lengths) - 1), np.float32)
 
             for j in range(batch_size):
                 batch_arr[j, : lengths[j]] = batch[j]
+                loss_mask_arr[j, : lengths[j] - 1] = loss_masks[j]
             batch = mx.array(batch_arr)
-            yield batch[:, :-1], batch[:, 1:], mx.array(lengths)
+            yield batch[:, :-1], batch[:, 1:], mx.array(loss_mask_arr)
 
         if not train:
             break
@@ -327,6 +367,9 @@ def generate(model, prompt, tokenizer, args):
 
 
 if __name__ == "__main__":
+    # Disable output buffering to see print statements in real-time
+    sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
+
     parser = build_parser()
     args = parser.parse_args()
 
