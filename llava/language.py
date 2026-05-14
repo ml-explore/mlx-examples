@@ -21,6 +21,7 @@ class TextConfig:
     rope_theta: float = 10000
     rope_traditional: bool = False
     rope_scaling: Optional[Dict[str, Union[float, str]]] = None
+    rope_parameters: Optional[Dict[str, Union[float, str]]] = None
 
     @classmethod
     def from_dict(cls, params):
@@ -35,6 +36,9 @@ class TextConfig:
     def __post_init__(self):
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
+
+        if self.rope_parameters is not None:
+            self.rope_theta = self.rope_parameters.get("rope_theta", self.rope_theta)
 
         if self.rope_scaling:
             required_keys = {"factor", "type"}
@@ -188,9 +192,10 @@ class LanguageModel(nn.Module):
     def __init__(self, config: TextConfig):
         super().__init__()
         self.model_type = config.model_type
-        if self.model_type != "llama":
+        if self.model_type not in ["llama", "mistral"]:
             raise ValueError(
-                f"Model type {self.model_type} not supported. Currently only 'llama' is supported"
+                f"Model type {self.model_type} not supported. Currently only "
+                "'llama' and 'mistral' are supported"
             )
         self.model = Llama(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)

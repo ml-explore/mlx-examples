@@ -47,14 +47,56 @@ max_tokens, temperature = 128, 0.0
 
 prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
 image = "http://images.cocodataset.org/val2017/000000039769.jpg"
-input_ids, pixel_values = prepare_inputs(processor, image, prompt)
+pixel_values, input_ids, image_sizes = prepare_inputs(processor, image, prompt)
 
 reply = generate_text(
-    input_ids, pixel_values, model, processor, max_tokens, temperature
+    input_ids,
+    pixel_values,
+    model,
+    processor,
+    max_tokens,
+    temperature,
+    image_sizes=image_sizes,
 )
 
 print(reply)
 ```
+
+For LLaVA 1.6 models, use the matching prompt format and model name:
+
+```bash
+python generate.py \
+  --model llava-hf/llava-v1.6-mistral-7b-hf \
+  --image "http://images.cocodataset.org/val2017/000000039769.jpg" \
+  --prompt "[INST] <image>\nWhat are these? [/INST]" \
+  --max-tokens 128 \
+  --temp 0
+```
+
+## LoRA Fine-tuning
+
+The `train_lora.py` script fine-tunes LoRA adapters on the language model while
+keeping the vision tower and multimodal projector frozen. It expects JSONL
+records with an image, prompt, and response:
+
+```json
+{"image": "path/to/image.jpg", "prompt": "[INST] <image>\nDescribe this image. [/INST]", "text": "A short description of the image."}
+```
+
+Run fine-tuning with:
+
+```bash
+python train_lora.py \
+  --model llava-hf/llava-v1.6-mistral-7b-hf \
+  --train-data train.jsonl \
+  --valid-data valid.jsonl \
+  --iters 600 \
+  --adapter-file llava_adapters.npz
+```
+
+Only response tokens from `text` contribute to the loss. The prompt and image
+tokens are included as context but masked from the loss. Fine-tuning currently
+uses a batch size of 1.
 
 [^1]:
     Refer to [LLaVA project webpage](https://llava-vl.github.io/) for more

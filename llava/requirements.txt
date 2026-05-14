@@ -1,6 +1,6 @@
 mlx>=0.8.0
 numpy
-transformers
+transformers>=4.39.1
 torch
 huggingface_hub
 Pillow
