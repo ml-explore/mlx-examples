@@ -13,6 +13,7 @@ package for LLMs with MLX.
 - [Transformer language model](transformer_lm) training.
 - Minimal examples of large scale text generation with [LLaMA](llms/llama),
   [Mistral](llms/mistral), and more in the [LLMs](llms) directory.
+- A local coding-model server for VS Code chat using [MLX LM](vscode_lm).
 - A mixture-of-experts (MoE) language model with [Mixtral 8x7B](llms/mixtral).
 - Parameter efficient fine-tuning with [LoRA or QLoRA](lora).
 - Text-to-text multi-task Transformers with [T5](t5).

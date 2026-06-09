@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Local MLX",
+    "vendor": "customendpoint",
+    "apiType": "chat-completions",
+    "models": [
+      {
+        "id": "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
+        "name": "Qwen2.5 Coder 1.5B (MLX)",
+        "url": "http://127.0.0.1:8000/v1/chat/completions",
+        "streaming": true,
+        "toolCalling": true,
+        "editTools": [
+          "find-replace",
+          "multi-find-replace",
+          "apply-patch",
+          "code-rewrite"
+        ],
+        "maxInputTokens": 32768,
+        "maxOutputTokens": 2048
+      }
+    ]
+  }
+]
