@@ -2,7 +2,7 @@
 
 import zlib
 from dataclasses import dataclass, field, replace
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import mlx.core as mx
 import numpy as np
@@ -114,6 +114,7 @@ class DecodingOptions:
 
     # implementation details
     fp16: bool = True  # use fp16 for most of the calculation
+    return_candidates: bool = False  # include all ranked decoding candidates
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,7 @@ class DecodingResult:
     no_speech_prob: float = np.nan
     temperature: float = np.nan
     compression_ratio: float = np.nan
+    candidates: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class Inference:
@@ -152,6 +154,15 @@ class Inference:
 
 
 class SequenceRanker:
+    def scores(
+        self, tokens: List[List[mx.array]], sum_logprobs: List[List[float]]
+    ) -> List[List[float]]:
+        """
+        Given a list of groups of samples and their cumulative log probabilities,
+        return the score used to rank each sample in each group
+        """
+        raise NotImplementedError
+
     def rank(
         self, tokens: List[List[mx.array]], sum_logprobs: List[List[float]]
     ) -> List[int]:
@@ -171,7 +182,9 @@ class MaximumLikelihoodRanker(SequenceRanker):
     def __init__(self, length_penalty: Optional[float]):
         self.length_penalty = length_penalty
 
-    def rank(self, tokens: List[List[List[int]]], sum_logprobs: List[List[float]]):
+    def scores(
+        self, tokens: List[List[List[int]]], sum_logprobs: List[List[float]]
+    ) -> List[List[float]]:
         def scores(logprobs, lengths):
             result = []
             for logprob, length in zip(logprobs, lengths):
@@ -183,9 +196,12 @@ class MaximumLikelihoodRanker(SequenceRanker):
                 result.append(logprob / penalty)
             return result
 
-        # get the sequence with the highest score
         lengths = [[len(t) for t in s] for s in tokens]
-        return [np.argmax(scores(p, l)) for p, l in zip(sum_logprobs, lengths)]
+        return [scores(p, l) for p, l in zip(sum_logprobs, lengths)]
+
+    def rank(self, tokens: List[List[List[int]]], sum_logprobs: List[List[float]]):
+        # get the sequence with the highest score
+        return [np.argmax(scores) for scores in self.scores(tokens, sum_logprobs)]
 
 
 class TokenDecoder:
@@ -666,10 +682,55 @@ class DecodingTask:
         tokens = tokens.tolist()
         sum_logprobs = sum_logprobs.tolist()
         no_speech_probs = no_speech_probs.tolist()
-        tokens = [[t[: t.index(tokenizer.eot)] for t in s] for s in tokens]
+        ended_with_eot = [[tokenizer.eot in t for t in s] for s in tokens]
+        tokens = [
+            [t[: t.index(tokenizer.eot)] if tokenizer.eot in t else t for t in s]
+            for s in tokens
+        ]
 
         # select the top-ranked sample in each group
-        selected = self.sequence_ranker.rank(tokens, sum_logprobs)
+        selected = [int(i) for i in self.sequence_ranker.rank(tokens, sum_logprobs)]
+        candidate_groups: List[List[Dict[str, Any]]] = []
+        if self.options.return_candidates:
+            scores = self.sequence_ranker.scores(tokens, sum_logprobs)
+            for (
+                group_tokens,
+                group_logprobs,
+                group_scores,
+                group_eot,
+                selected_idx,
+            ) in zip(
+                tokens,
+                sum_logprobs,
+                scores,
+                ended_with_eot,
+                selected,
+            ):
+                ranked_indices = sorted(
+                    range(len(group_tokens)),
+                    key=lambda index: group_scores[index],
+                    reverse=True,
+                )
+                candidates = []
+                for rank, index in enumerate(ranked_indices):
+                    candidate_tokens = group_tokens[index]
+                    candidate_text = tokenizer.decode(candidate_tokens).strip()
+                    sum_logprob = float(group_logprobs[index])
+                    candidates.append(
+                        {
+                            "rank": rank,
+                            "index": int(index),
+                            "selected": int(index) == selected_idx,
+                            "text": candidate_text,
+                            "tokens": candidate_tokens,
+                            "sum_logprob": sum_logprob,
+                            "avg_logprob": sum_logprob / (len(candidate_tokens) + 1),
+                            "score": float(group_scores[index]),
+                            "ended_with_eot": bool(group_eot[index]),
+                            "compression_ratio": compression_ratio(candidate_text),
+                        }
+                    )
+                candidate_groups.append(candidates)
         tokens: List[List[int]] = [t[i] for i, t in zip(selected, tokens)]
         texts: List[str] = [tokenizer.decode(t).strip() for t in tokens]
 
@@ -688,6 +749,10 @@ class DecodingTask:
         )
         if len(set(map(len, fields))) != 1:
             raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
+        if self.options.return_candidates and len(candidate_groups) != len(texts):
+            raise RuntimeError(
+                f"inconsistent candidate lengths: {len(candidate_groups)} != {len(texts)}"
+            )
 
         return [
             DecodingResult(
@@ -699,10 +764,18 @@ class DecodingTask:
                 no_speech_prob=no_speech_prob,
                 temperature=self.options.temperature,
                 compression_ratio=compression_ratio(text),
+                candidates=(
+                    candidate_groups[index] if self.options.return_candidates else []
+                ),
             )
-            for text, language, tokens, features, avg_logprob, no_speech_prob in zip(
-                *fields
-            )
+            for index, (
+                text,
+                language,
+                tokens,
+                features,
+                avg_logprob,
+                no_speech_prob,
+            ) in enumerate(zip(*fields))
         ]
 
 
