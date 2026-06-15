@@ -76,6 +76,13 @@ output = mlx_whisper.transcribe(speech_file, word_timestamps=True)
 print(output["segments"][0]["words"])
 ```
 
+To inspect ranked decoding candidates, set `return_candidates=True`:
+
+```python
+output = mlx_whisper.transcribe(speech_file, return_candidates=True)
+print(output["segments"][0]["candidates"])
+```
+
 To see more transcription options use:
 
 ```

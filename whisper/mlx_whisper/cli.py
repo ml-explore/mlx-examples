@@ -93,6 +93,12 @@ def build_parser():
         help="Number of candidates when sampling with non-zero temperature",
     )
     parser.add_argument(
+        "--beam-size",
+        type=optional_int,
+        default=None,
+        help="Number of beams in beam search, only applicable when temperature is zero",
+    )
+    parser.add_argument(
         "--patience",
         type=float,
         default=None,
