@@ -143,9 +143,16 @@ class Inference:
 
     def rearrange_kv_cache(self, source_indices):
         """Update the key-value cache according to the updated beams"""
-        # update the key/value cache to contain the selected sequences
+        # update the key/value cache to contain the selected sequences; the cache
+        # mixes self-attention entries (batch = n_audio * n_group) with
+        # cross-attention entries (batch = n_audio, broadcast over the group), so
+        # only arrays whose batch dimension matches the selection are reindexed
         if source_indices != list(range(len(source_indices))):
-            self.kv_cache = tree_map(lambda x: x[source_indices], self.kv_cache)
+            n = len(source_indices)
+            self.kv_cache = tree_map(
+                lambda x: x[source_indices] if x.shape[0] == n else x,
+                self.kv_cache,
+            )
 
     def reset(self):
         self.kv_cache = None
@@ -281,6 +288,144 @@ class GreedyDecoder(TokenDecoder):
         # make sure each sequence has at least one EOT token at the end
         tokens = mx.pad(tokens, [(0, 0), (0, 0), (0, 1)], constant_values=self.eot)
         return tokens, sum_logprobs
+
+
+class BeamSearchDecoder(TokenDecoder):
+    def __init__(
+        self,
+        beam_size: int,
+        eot: int,
+        inference: Inference,
+        patience: Optional[float] = None,
+    ):
+        self.beam_size = beam_size
+        self.eot = eot
+        self.inference = inference
+        self.patience = patience or 1.0
+        self.max_candidates: int = round(beam_size * self.patience)
+        self.finished_sequences = None
+        self._rows = None
+
+        assert (
+            self.max_candidates > 0
+        ), f"Invalid beam size ({beam_size}) or patience ({patience})"
+
+    def reset(self):
+        self.finished_sequences = None
+        self._rows = None
+
+    def update(
+        self, tokens: mx.array, logits: mx.array, sum_logprobs: mx.array
+    ) -> Tuple[mx.array, bool, mx.array]:
+        if tokens.shape[0] % self.beam_size != 0:
+            raise ValueError(f"{tokens.shape}[0] % {self.beam_size} != 0")
+
+        n_audio = tokens.shape[0] // self.beam_size
+        if self.finished_sequences is None:  # for the first update
+            self.finished_sequences = [{} for _ in range(n_audio)]
+
+        # select the top candidates on the device and only move
+        # (beam_size + 1) tokens and log probabilities per beam to the host
+        k = self.beam_size + 1
+        logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        top_indices = mx.argpartition(logprobs, -k, axis=-1)[:, -k:]
+        top_values = mx.take_along_axis(logprobs, top_indices, axis=-1)
+        top_indices = np.array(top_indices)
+        top_values = np.array(top_values)
+        sums = np.array(sum_logprobs)
+
+        # the candidate prefixes are rebuilt in python each step, so reuse them
+        # instead of pulling the whole growing token matrix off the device
+        rows = self._rows
+        if rows is None:
+            rows = np.array(tokens).tolist()
+
+        next_tokens, source_indices, next_sum_logprobs = [], [], []
+        finished_sequences = []
+        for i in range(n_audio):
+            scores, sources, finished = {}, {}, {}
+
+            # STEP 1: calculate the cumulative log probabilities for possible candidates
+            for j in range(self.beam_size):
+                idx = i * self.beam_size + j
+                prefix = rows[idx]
+                for logprob, token in zip(top_values[idx], top_indices[idx]):
+                    new_logprob = float(sums[idx] + logprob)
+                    sequence = tuple(prefix + [int(token)])
+                    scores[sequence] = new_logprob
+                    sources[sequence] = idx
+
+            # STEP 2: rank the candidates and keep the top beam_size sequences for each audio
+            saved = 0
+            for sequence in sorted(scores, key=scores.get, reverse=True):
+                if sequence[-1] == self.eot:
+                    finished[sequence] = scores[sequence]
+                else:
+                    next_sum_logprobs.append(scores[sequence])
+                    next_tokens.append(list(sequence))
+                    source_indices.append(sources[sequence])
+
+                    saved += 1
+                    if saved == self.beam_size:
+                        break
+
+            finished_sequences.append(finished)
+
+        self._rows = next_tokens
+        tokens = mx.array(next_tokens)
+        self.inference.rearrange_kv_cache(source_indices)
+        sum_logprobs = mx.array(next_sum_logprobs)
+
+        # add newly finished sequences to self.finished_sequences
+        assert len(self.finished_sequences) == len(finished_sequences)
+        for previously_finished, newly_finished in zip(
+            self.finished_sequences, finished_sequences
+        ):
+            for seq in sorted(newly_finished, key=newly_finished.get, reverse=True):
+                if len(previously_finished) >= self.max_candidates:
+                    break  # the candidate list is full
+                previously_finished[seq] = newly_finished[seq]
+
+        # mark as completed if all audio has enough number of samples
+        completed = all(
+            len(sequences) >= self.max_candidates
+            for sequences in self.finished_sequences
+        )
+        return tokens, completed, sum_logprobs
+
+    def finalize(self, preceding_tokens: mx.array, sum_logprobs: mx.array):
+        # collect all finished sequences, including patience, and add unfinished ones
+        # if not enough finished ones are collected. the caller slices and truncates
+        # each row at its first EOT token, so rows are padded with EOT to stay
+        # rectangular
+        sums = np.array(sum_logprobs)
+        preceding = np.array(preceding_tokens).tolist()
+        for i, sequences in enumerate(self.finished_sequences):
+            if (
+                len(sequences) < self.beam_size
+            ):  # when not enough sequences are finished
+                for j in list(np.argsort(sums[i]))[::-1]:
+                    sequence = tuple(preceding[i][j] + [self.eot])
+                    sequences.setdefault(sequence, float(sums[i][j]))
+                    if len(sequences) >= self.beam_size:
+                        break
+
+        count = max(len(sequences) for sequences in self.finished_sequences)
+        length = 1 + max(
+            len(seq) for sequences in self.finished_sequences for seq in sequences
+        )
+        tokens = []
+        logprobs = []
+        for sequences in self.finished_sequences:
+            ordered = sorted(sequences.items(), key=lambda kv: kv[1], reverse=True)
+            while len(ordered) < count:
+                ordered.append(ordered[0])
+            tokens.append(
+                [list(seq) + [self.eot] * (length - len(seq)) for seq, _ in ordered]
+            )
+            logprobs.append([score for _, score in ordered])
+
+        return mx.array(tokens), mx.array(logprobs)
 
 
 class LogitFilter:
@@ -434,7 +579,9 @@ class DecodingTask:
 
         # decoder: implements how to select the next tokens, given the autoregressive distribution
         if options.beam_size is not None:
-            raise NotImplementedError("Beam search decoder is not yet implemented")
+            self.decoder = BeamSearchDecoder(
+                options.beam_size, tokenizer.eot, self.inference, options.patience
+            )
         else:
             self.decoder = GreedyDecoder(options.temperature, tokenizer.eot)
 
