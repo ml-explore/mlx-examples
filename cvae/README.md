@@ -25,7 +25,7 @@ To see the supported options, do `python main.py -h`.
 Training with the default options should give:
 
 ```shell
-$ python train.py 
+$ python main.py 
 Options: 
   Device: GPU
   Seed: 0
