@@ -60,5 +60,5 @@ $ cat >hostfile.json
     {"ssh": "host-to-ssh-to", "ips": ["ip-to-bind-to"]},
     {"ssh": "host-to-ssh-to", "ips": ["ip-to-bind-to"]}
 ]
-$ mlx.launch --verbose --hostfile hostfile.json main.py --batch 256 --epochs 5 --arch resnet20
+$ mlx.launch --verbose --hostfile hostfile.json main.py --batch_size 256 --epochs 5 --arch resnet20
 ```
