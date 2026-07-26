@@ -2,7 +2,7 @@
 
 import itertools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 import mlx.core as mx
 import numba
@@ -116,6 +116,7 @@ def find_alignment(
     mel: mx.array,
     num_frames: int,
     *,
+    audio_features: Optional[mx.array] = None,
     medfilt_width: int = 7,
     qk_scale: float = 1.0,
 ) -> List[WordTiming]:
@@ -131,7 +132,13 @@ def find_alignment(
         ]
     )
 
-    logits, cross_qk = model.forward_with_cross_qk(mel[None, :], tokens[None, :])
+    if audio_features is not None and audio_features.ndim == 2:
+        audio_features = audio_features[None, :]
+    logits, cross_qk = model.forward_with_cross_qk(
+        mel[None, :],
+        tokens[None, :],
+        audio_features=audio_features,
+    )
     # consider only the logits associated with predicting text
     sampled_logits = logits[0][len(tokenizer.sot_sequence) : -2, : tokenizer.eot]
     token_probs = mx.softmax(sampled_logits, precise=True, axis=-1)

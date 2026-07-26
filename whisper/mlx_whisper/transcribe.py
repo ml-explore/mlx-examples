@@ -418,6 +418,7 @@ def transcribe(
                         tokenizer=tokenizer,
                         mel=mel_segment,
                         num_frames=segment_size,
+                        audio_features=result.audio_features,
                         prepend_punctuations=prepend_punctuations,
                         append_punctuations=append_punctuations,
                         last_speech_timestamp=last_speech_timestamp,

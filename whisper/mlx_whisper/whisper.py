@@ -247,8 +247,10 @@ class Whisper(nn.Module):
     def logits(self, tokens, audio_features):
         return self.decoder(tokens, audio_features)[0]
 
-    def forward_with_cross_qk(self, mel, tokens):
-        logits, _, cross_qk = self.decoder(tokens, self.encoder(mel))
+    def forward_with_cross_qk(self, mel, tokens, audio_features=None):
+        if audio_features is None:
+            audio_features = self.encoder(mel)
+        logits, _, cross_qk = self.decoder(tokens, audio_features)
         return logits, cross_qk
 
     def __call__(self, mel, tokens):
