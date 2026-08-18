@@ -21,6 +21,7 @@ from mlx_whisper.whisper import ModelDimensions, Whisper
 from tqdm import tqdm
 
 _VALID_DTYPES = {"float16", "float32"}
+_WEIGHTS_FILE_NAME = "weights.safetensors"
 
 _MODELS = {
     "tiny.en": "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt",
@@ -107,6 +108,11 @@ def _download(url: str, root: str) -> str:
 def available_models() -> List[str]:
     """Returns the names of available models"""
     return list(_MODELS.keys())
+
+
+def save_weights(mlx_path: Path, weights) -> None:
+    """Save converted weights using the filename supported by released clients."""
+    mx.save_safetensors(str(mlx_path / _WEIGHTS_FILE_NAME), weights)
 
 
 def hf_to_pt(weights, config):
@@ -382,7 +388,7 @@ if __name__ == "__main__":
 
     # Save weights
     print("[INFO] Saving")
-    mx.save_safetensors(str(mlx_path / "model.safetensors"), weights)
+    save_weights(mlx_path, weights)
 
     # Save config.json with model_type
     with open(str(mlx_path / "config.json"), "w") as f:

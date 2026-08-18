@@ -112,7 +112,7 @@ python convert.py --help
 ```
 
 By default, the conversion script will make the directory `mlx_models`
-and save the converted `weights.npz` and `config.json` there.
+and save the converted `weights.safetensors` and `config.json` there.
 
 Each time it is run, `convert.py` will overwrite any model in the provided
 path. To save different models, make sure to set `--mlx-path` to a unique

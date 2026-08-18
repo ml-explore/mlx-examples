@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
@@ -13,7 +14,7 @@ import mlx_whisper.decoding as decoding
 import mlx_whisper.load_models as load_models
 import numpy as np
 import torch
-from convert import convert, load_torch_model, quantize
+from convert import convert, load_torch_model, quantize, save_weights
 from mlx.utils import tree_flatten
 
 MODEL_NAME = "tiny"
@@ -73,6 +74,28 @@ def forward_mlx(model, mels, tokens):
     tokens = mx.array(tokens, mx.int32)
     logits = model(mels, tokens)
     return np.array(logits)
+
+
+class TestWeightSerialization(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.model = convert(MODEL_NAME, dtype=mx.float32)
+
+    def test_save_weights_uses_released_client_filename(self):
+        weights = dict(tree_flatten(self.model.parameters()))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir)
+            save_weights(model_dir, weights)
+            with open(model_dir / "config.json", "w") as f:
+                config = asdict(self.model.dims)
+                config["model_type"] = "whisper"
+                json.dump(config, f)
+
+            weights_path = model_dir / "weights.safetensors"
+            self.assertTrue(weights_path.is_file())
+            self.assertEqual(set(mx.load(str(weights_path))), set(weights))
+            loaded_model = load_models.load_model(str(model_dir))
+            self.assertEqual(loaded_model.dims, self.model.dims)
 
 
 class TestWhisper(unittest.TestCase):
