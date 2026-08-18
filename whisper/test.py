@@ -185,6 +185,25 @@ class TestWhisper(unittest.TestCase):
         self.assertAlmostEqual(result.no_speech_prob, 0.009631240740418434, places=4)
         self.assertAlmostEqual(result.compression_ratio, 1.2359550561797752)
 
+    def test_decode_beam_search(self):
+        result = decoding.decode(self.model, self.mels, beam_size=3, fp16=False)
+
+        self.assertEqual(result.language, "en")
+        self.assertTrue(result.tokens)
+        self.assertTrue(result.text)
+        self.assertTrue(np.isfinite(result.avg_logprob))
+
+    def test_beam_search_options(self):
+        with self.assertRaises(ValueError):
+            decoding.DecodingTask(
+                self.model, decoding.DecodingOptions(beam_size=0, fp16=False)
+            )
+        with self.assertRaises(ValueError):
+            decoding.DecodingTask(
+                self.model,
+                decoding.DecodingOptions(beam_size=2, patience=0.5, fp16=False),
+            )
+
     def test_transcribe(self):
         result = mlx_whisper.transcribe(
             TEST_AUDIO, path_or_hf_repo=MLX_FP32_MODEL_PATH, fp16=False

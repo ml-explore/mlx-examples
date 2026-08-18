@@ -189,8 +189,11 @@ class MaximumLikelihoodRanker(SequenceRanker):
 
 
 class TokenDecoder:
+    source_indices: Optional[List[int]] = None
+
     def reset(self):
         """Initialize any stateful variables for decoding a new sequence"""
+        self.source_indices = None
 
     def update(
         self, tokens: mx.array, logits: mx.array, sum_logprobs: mx.array
@@ -281,6 +284,123 @@ class GreedyDecoder(TokenDecoder):
         # make sure each sequence has at least one EOT token at the end
         tokens = mx.pad(tokens, [(0, 0), (0, 0), (0, 1)], constant_values=self.eot)
         return tokens, sum_logprobs
+
+
+class BeamSearchDecoder(TokenDecoder):
+    """Conventional beam search with optional patience-based early stopping."""
+
+    def __init__(self, beam_size: int, eot: int, patience: Optional[float] = None):
+        self.beam_size = beam_size
+        self.eot = eot
+        self.max_candidates = round(beam_size * (patience or 1.0))
+        if self.max_candidates < beam_size:
+            raise ValueError("patience must be greater than or equal to 1")
+        self.finished_sequences: Optional[List[Dict[Tuple[int, ...], float]]] = None
+        self.source_indices = None
+
+    def reset(self):
+        self.finished_sequences = None
+        self.source_indices = None
+
+    def update(
+        self, tokens: mx.array, logits: mx.array, sum_logprobs: mx.array
+    ) -> Tuple[mx.array, bool, mx.array]:
+        if tokens.shape[0] % self.beam_size != 0:
+            raise ValueError("the number of sequences must be a multiple of beam_size")
+
+        n_audio = tokens.shape[0] // self.beam_size
+        if self.finished_sequences is None:
+            self.finished_sequences = [{} for _ in range(n_audio)]
+
+        logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        candidate_tokens = mx.argpartition(
+            -logprobs, kth=self.beam_size, axis=-1
+        )[:, : self.beam_size + 1]
+        candidate_logprobs = logprobs[
+            mx.arange(logprobs.shape[0])[:, None], candidate_tokens
+        ]
+        mx.eval(candidate_tokens, candidate_logprobs, tokens, sum_logprobs)
+
+        candidate_tokens = np.array(candidate_tokens)
+        candidate_logprobs = np.array(candidate_logprobs)
+        current_tokens = tokens.tolist()
+        current_logprobs = sum_logprobs.tolist()
+
+        next_tokens: List[List[int]] = []
+        next_logprobs: List[float] = []
+        source_indices: List[int] = []
+        for audio_index in range(n_audio):
+            scores: Dict[Tuple[int, ...], float] = {}
+            sources: Dict[Tuple[int, ...], int] = {}
+            for beam_index in range(self.beam_size):
+                index = audio_index * self.beam_size + beam_index
+                for token, logprob in zip(
+                    candidate_tokens[index], candidate_logprobs[index]
+                ):
+                    if not np.isfinite(logprob):
+                        continue
+                    sequence = tuple(current_tokens[index] + [int(token)])
+                    score = current_logprobs[index] + float(logprob)
+                    if score > scores.get(sequence, -np.inf):
+                        scores[sequence] = score
+                        sources[sequence] = index
+
+            saved = 0
+            for sequence in sorted(scores, key=scores.get, reverse=True):
+                if sequence[-1] == self.eot:
+                    self.finished_sequences[audio_index][sequence] = scores[sequence]
+                else:
+                    next_tokens.append(list(sequence))
+                    next_logprobs.append(scores[sequence])
+                    source_indices.append(sources[sequence])
+                    saved += 1
+                    if saved == self.beam_size:
+                        break
+
+            # Keep the batch shape stable when every top candidate reached EOT.
+            if saved < self.beam_size:
+                for sequence in sorted(scores, key=scores.get, reverse=True):
+                    if sequence[-1] != self.eot or saved >= self.beam_size:
+                        continue
+                    next_tokens.append(list(sequence[:-1]) + [self.eot])
+                    next_logprobs.append(scores[sequence])
+                    source_indices.append(sources[sequence])
+                    saved += 1
+
+        self.source_indices = source_indices
+        completed = all(
+            len(sequences) >= self.max_candidates
+            for sequences in self.finished_sequences
+        )
+        return mx.array(next_tokens), completed, mx.array(next_logprobs)
+
+    def finalize(self, tokens: mx.array, sum_logprobs: mx.array):
+        if self.finished_sequences is None:
+            raise RuntimeError("beam search has not been initialized")
+
+        mx.eval(tokens, sum_logprobs)
+        active_tokens = tokens.tolist()
+        active_logprobs = sum_logprobs.tolist()
+        candidates: List[List[List[int]]] = []
+        candidate_logprobs: List[List[float]] = []
+        max_length = 0
+
+        for audio_index, finished in enumerate(self.finished_sequences):
+            sequences = dict(finished)
+            for beam_index in range(self.beam_size):
+                sequence = tuple(active_tokens[audio_index][beam_index] + [self.eot])
+                sequences.setdefault(sequence, active_logprobs[audio_index][beam_index])
+
+            best = sorted(sequences, key=sequences.get, reverse=True)[: self.beam_size]
+            candidates.append([list(sequence) for sequence in best])
+            candidate_logprobs.append([sequences[sequence] for sequence in best])
+            max_length = max(max_length, *(len(sequence) for sequence in best))
+
+        padded = [
+            [sequence + [self.eot] * (max_length - len(sequence)) for sequence in group]
+            for group in candidates
+        ]
+        return mx.array(padded), mx.array(candidate_logprobs)
 
 
 class LogitFilter:
@@ -434,7 +554,9 @@ class DecodingTask:
 
         # decoder: implements how to select the next tokens, given the autoregressive distribution
         if options.beam_size is not None:
-            raise NotImplementedError("Beam search decoder is not yet implemented")
+            self.decoder = BeamSearchDecoder(
+                options.beam_size, tokenizer.eot, options.patience
+            )
         else:
             self.decoder = GreedyDecoder(options.temperature, tokenizer.eot)
 
@@ -470,6 +592,10 @@ class DecodingTask:
                 raise ValueError("best_of with greedy sampling (T=0) is not compatible")
         if options.patience is not None and options.beam_size is None:
             raise ValueError("patience requires beam_size to be given")
+        if options.beam_size is not None and options.beam_size <= 0:
+            raise ValueError("beam_size must be a positive integer")
+        if options.patience is not None and options.patience < 1:
+            raise ValueError("patience must be greater than or equal to 1")
         if options.length_penalty is not None and not (
             0 <= options.length_penalty <= 1
         ):
@@ -587,6 +713,8 @@ class DecodingTask:
             tokens, completed, sum_logprobs = self.decoder.update(
                 tokens, logits, sum_logprobs
             )
+            if self.decoder.source_indices is not None:
+                self.inference.rearrange_kv_cache(self.decoder.source_indices)
             return tokens, completed, sum_logprobs, pre_logits
 
         tokens, completed, sum_logprobs, pre_logits = _step(
@@ -645,6 +773,7 @@ class DecodingTask:
                 tokens, [n_audio, self.n_group, len(self.initial_tokens)]
             )
             tokens = tokens.reshape((n_audio * self.n_group, len(self.initial_tokens)))
+            audio_features = mx.repeat(audio_features, self.n_group, axis=0)
 
         # call the main sampling loop
         tokens, sum_logprobs, no_speech_probs = self._main_loop(audio_features, tokens)
