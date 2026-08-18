@@ -35,6 +35,13 @@ Use `-f` to specify the output format and `--model` to specify the model. There
 are many other supported command line options. To see them all, run
 `mlx_whisper -h`.
 
+For deterministic beam-search decoding, set `--beam-size` (and optionally
+`--patience` or `--length-penalty`):
+
+```sh
+mlx_whisper audio_file.mp3 --beam-size 5
+```
+
 You can also pipe the audio content of other programs via stdin:
 
 ```sh
@@ -59,6 +66,12 @@ setting `path_or_hf_repo`. For example:
 
 ```python
 result = mlx_whisper.transcribe(speech_file, path_or_hf_repo="models/large")
+```
+
+The same option is available through the Python API:
+
+```python
+result = mlx_whisper.transcribe(speech_file, beam_size=5)
 ```
 
 This will load the model contained in `models/large`. The `path_or_hf_repo` can
