@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
@@ -73,6 +74,28 @@ def forward_mlx(model, mels, tokens):
     tokens = mx.array(tokens, mx.int32)
     logits = model(mels, tokens)
     return np.array(logits)
+
+
+class TestWeightSerialization(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.model = convert(MODEL_NAME, dtype=mx.float32)
+
+    def test_weights_safetensors_are_loadable(self):
+        weights = dict(tree_flatten(self.model.parameters()))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir)
+            weights_path = model_dir / "weights.safetensors"
+            mx.save_safetensors(str(weights_path), weights)
+            with open(model_dir / "config.json", "w") as f:
+                config = asdict(self.model.dims)
+                config["model_type"] = "whisper"
+                json.dump(config, f)
+
+            self.assertTrue(weights_path.is_file())
+            self.assertEqual(set(mx.load(str(weights_path))), set(weights))
+            loaded_model = load_models.load_model(str(model_dir))
+            self.assertEqual(loaded_model.dims, self.model.dims)
 
 
 class TestWhisper(unittest.TestCase):
