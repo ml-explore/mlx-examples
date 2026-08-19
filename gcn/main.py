@@ -26,10 +26,23 @@ def eval_fn(x, y):
     return mx.mean(mx.argmax(x, axis=1) == y)
 
 
+def evaluate(model, x, adj, y, mask):
+    training = model.training
+    model.eval()
+    try:
+        y_hat = model(x, adj)
+        loss = loss_fn(y_hat[mask], y[mask])
+        accuracy = eval_fn(y_hat[mask], y[mask])
+        mx.eval(loss, accuracy)
+    finally:
+        model.train(training)
+    return loss, accuracy
+
+
 def forward_fn(gcn, x, adj, y, train_mask, weight_decay):
     y_hat = gcn(x, adj)
     loss = loss_fn(y_hat[train_mask], y[train_mask], weight_decay, gcn.parameters())
-    return loss, y_hat
+    return loss
 
 
 def main(args):
@@ -54,11 +67,9 @@ def main(args):
     @partial(mx.compile, inputs=state, outputs=state)
     def step():
         loss_and_grad_fn = nn.value_and_grad(gcn, forward_fn)
-        (loss, y_hat), grads = loss_and_grad_fn(
-            gcn, x, adj, y, train_mask, args.weight_decay
-        )
+        loss, grads = loss_and_grad_fn(gcn, x, adj, y, train_mask, args.weight_decay)
         optimizer.update(gcn, grads)
-        return loss, y_hat
+        return loss
 
     best_val_loss = float("inf")
     cnt = 0
@@ -66,12 +77,11 @@ def main(args):
     # Training loop
     for epoch in range(args.epochs):
         tic = time.time()
-        loss, y_hat = step()
+        loss = step()
         mx.eval(state)
 
         # Validation
-        val_loss = loss_fn(y_hat[val_mask], y[val_mask])
-        val_acc = eval_fn(y_hat[val_mask], y[val_mask])
+        val_loss, val_acc = evaluate(gcn, x, adj, y, val_mask)
         toc = time.time()
 
         # Early stopping
@@ -96,9 +106,7 @@ def main(args):
         )
 
     # Test
-    test_y_hat = gcn(x, adj)
-    test_loss = loss_fn(y_hat[test_mask], y[test_mask])
-    test_acc = eval_fn(y_hat[test_mask], y[test_mask])
+    test_loss, test_acc = evaluate(gcn, x, adj, y, test_mask)
 
     print(f"Test loss: {test_loss.item():.3f}  |  Test acc: {test_acc.item():.2f}")
 
