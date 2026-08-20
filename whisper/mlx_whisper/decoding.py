@@ -332,54 +332,67 @@ class ApplyTimestampRules(LogitFilter):
         self.tokenizer = tokenizer
         self.sample_begin = sample_begin
         self.max_initial_timestamp_index = max_initial_timestamp_index
+        self._vocab = None
 
     def apply(self, logits: mx.array, tokens: mx.array) -> mx.array:
-        mask = np.zeros(logits.shape, np.float32)
+        if self._vocab is None:
+            self._vocab = mx.arange(logits.shape[-1])[None, :]
+        vocab = self._vocab
+        mask = mx.zeros(logits.shape, dtype=mx.bool_)
+
         # suppress <|notimestamps|> which is handled by without_timestamps
         if self.tokenizer.no_timestamps is not None:
-            mask[:, self.tokenizer.no_timestamps] = -np.inf
+            mask = mask | (vocab == self.tokenizer.no_timestamps)
 
         ## timestamps have to appear in pairs, except directly before EOT; mask logits accordingly
-        tokens = tokens.tolist()
-        for k in range(len(tokens)):
-            seq = tokens[k][self.sample_begin :]
-            last_was_timestamp = (
-                len(seq) >= 1 and seq[-1] >= self.tokenizer.timestamp_begin
-            )
+        sampled = tokens.shape[1] - self.sample_begin
+        if sampled >= 1:
+            seq = tokens[:, self.sample_begin :]
+            last_was_timestamp = seq[:, -1] >= self.tokenizer.timestamp_begin
             penultimate_was_timestamp = (
-                len(seq) < 2 or seq[-2] >= self.tokenizer.timestamp_begin
+                mx.ones_like(last_was_timestamp)
+                if sampled < 2
+                else seq[:, -2] >= self.tokenizer.timestamp_begin
+            )
+            mask = mask | (
+                (last_was_timestamp & penultimate_was_timestamp)[:, None]
+                & (vocab >= self.tokenizer.timestamp_begin)
+            )
+            mask = mask | (
+                (last_was_timestamp & ~penultimate_was_timestamp)[:, None]
+                & (vocab < self.tokenizer.eot)
             )
 
-            if last_was_timestamp:
-                if penultimate_was_timestamp:  # has to be non-timestamp
-                    mask[k, self.tokenizer.timestamp_begin :] = -np.inf
-                else:  # cannot be normal text tokens
-                    mask[k, : self.tokenizer.eot] = -np.inf
+            # Preserve the legacy position-based lower bound for output parity.
+            # Token-value semantics are tracked separately in KT-642.
+            timestamp_positions = mx.where(
+                seq > self.tokenizer.timestamp_begin,
+                mx.arange(sampled)[None, :],
+                -1,
+            )
+            last_timestamp = timestamp_positions.max(axis=-1)
+            has_timestamp = last_timestamp >= 0
+            last_timestamp = last_timestamp + (
+                (last_timestamp == 0) | penultimate_was_timestamp
+            )
+            mask = mask | (
+                has_timestamp[:, None]
+                & (vocab >= self.tokenizer.timestamp_begin)
+                & (vocab < last_timestamp[:, None])
+            )
 
-            timestamps = [
-                i for i, v in enumerate(seq) if v > self.tokenizer.timestamp_begin
-            ]
-            if len(timestamps) > 0:
-                # timestamps shouldn't decrease; forbid timestamp tokens smaller than the last
-                # also force each segment to have a nonzero length, to prevent infinite looping
-                last_timestamp = timestamps[-1]
-                if not last_timestamp or penultimate_was_timestamp:
-                    last_timestamp += 1
-                mask[k, self.tokenizer.timestamp_begin : last_timestamp] = -np.inf
-
-        if len(tokens[0]) == self.sample_begin:
+        if tokens.shape[1] == self.sample_begin:
             # suppress generating non-timestamp tokens at the beginning
-            mask[:, : self.tokenizer.timestamp_begin] = -np.inf
+            mask = mask | (vocab < self.tokenizer.timestamp_begin)
 
             # apply the `max_initial_timestamp` option
             if self.max_initial_timestamp_index is not None:
                 last_allowed = (
                     self.tokenizer.timestamp_begin + self.max_initial_timestamp_index
                 )
-                mask[:, last_allowed + 1 :] = -np.inf
+                mask = mask | (vocab > last_allowed)
 
         # if sum of probability over timestamps is above any other token, sample timestamp
-        mask = mx.array(mask)
         logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
         timestamp_logprob = logprobs[:, self.tokenizer.timestamp_begin :].logsumexp(
             axis=-1, keepdims=True
@@ -387,12 +400,11 @@ class ApplyTimestampRules(LogitFilter):
         max_text_token_logprob = logprobs[:, : self.tokenizer.timestamp_begin].max(
             axis=-1, keepdims=True
         )
-        mask[:, : self.tokenizer.timestamp_begin] = mx.where(
-            timestamp_logprob > max_text_token_logprob,
-            -mx.inf,
-            mask[:, : self.tokenizer.timestamp_begin],
+        mask = mask | (
+            (timestamp_logprob > max_text_token_logprob)
+            & (vocab < self.tokenizer.timestamp_begin)
         )
-        return logits + mask
+        return logits + mx.where(mask, -mx.inf, 0.0)
 
 
 class DecodingTask:

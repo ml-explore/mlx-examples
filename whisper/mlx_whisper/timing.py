@@ -2,12 +2,11 @@
 
 import itertools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 import mlx.core as mx
 import numba
 import numpy as np
-from scipy import signal
 
 from .audio import HOP_LENGTH, SAMPLE_RATE, TOKENS_PER_SECOND
 from .tokenizer import Tokenizer
@@ -20,28 +19,33 @@ def median_filter(x: np.ndarray, filter_width: int):
     """Apply a median filter of width `filter_width` along the last dimension of `x`"""
     pad_width = filter_width // 2
     if x.shape[-1] <= pad_width:
-        # F.pad requires the padding width to be smaller than the input dimension
+        # Reflect padding requires the padding width to be smaller than the input.
         return x
-
-    if (ndim := x.ndim) <= 2:
-        # `F.pad` does not support 1D or 2D inputs for reflect padding but supports 3D and 4D
-        x = x[None, None, :]
 
     assert (
         filter_width > 0 and filter_width % 2 == 1
     ), "`filter_width` should be an odd number"
+    if filter_width == 1:
+        return x.astype(np.float32, copy=False)
 
-    x = np.pad(x, ((0, 0), (0, 0), (pad_width, pad_width)), mode="reflect")
-
-    # todo: more efficient version in mlx
-    result = signal.medfilt(x.astype(np.float32), kernel_size=(1, 1, filter_width))[
-        ..., pad_width:-pad_width
-    ]
-
-    if ndim <= 2:
-        result = result[0, 0]
-
-    return result
+    values = mx.array(x.astype(np.float32, copy=False))
+    size = values.shape[-1]
+    left = mx.take(
+        values,
+        mx.array(list(range(pad_width, 0, -1))),
+        axis=-1,
+    )
+    right = mx.take(
+        values,
+        mx.array(list(range(size - 2, size - pad_width - 2, -1))),
+        axis=-1,
+    )
+    padded = mx.concatenate([left, values, right], axis=-1)
+    windows = mx.stack(
+        [padded[..., offset : offset + size] for offset in range(filter_width)],
+        axis=-1,
+    )
+    return np.array(mx.partition(windows, pad_width, axis=-1)[..., pad_width])
 
 
 @numba.jit(nopython=True)
@@ -69,7 +73,7 @@ def backtrace(trace: np.ndarray):
     return result[::-1, :].T
 
 
-@numba.jit(nopython=True, parallel=True)
+@numba.jit(nopython=True, parallel=True, cache=True)
 def dtw_cpu(x: np.ndarray):
     N, M = x.shape
     cost = np.ones((N + 1, M + 1), dtype=np.float32) * np.inf
@@ -116,6 +120,7 @@ def find_alignment(
     mel: mx.array,
     num_frames: int,
     *,
+    audio_features: Optional[mx.array] = None,
     medfilt_width: int = 7,
     qk_scale: float = 1.0,
 ) -> List[WordTiming]:
@@ -131,14 +136,19 @@ def find_alignment(
         ]
     )
 
-    logits, cross_qk = model.forward_with_cross_qk(mel[None, :], tokens[None, :])
+    if audio_features is not None and audio_features.ndim == 2:
+        audio_features = audio_features[None, :]
+    logits, cross_qk = model.forward_with_cross_qk(
+        mel[None, :],
+        tokens[None, :],
+        audio_features=audio_features,
+    )
     # consider only the logits associated with predicting text
     sampled_logits = logits[0][len(tokenizer.sot_sequence) : -2, : tokenizer.eot]
     token_probs = mx.softmax(sampled_logits, precise=True, axis=-1)
     text_token_probs = mx.take_along_axis(
         token_probs, mx.array(text_tokens)[:, None], axis=1
     ).squeeze(1)
-    text_token_probs = np.array(text_token_probs)
 
     # heads * tokens * frames
     weights = mx.stack(
@@ -150,6 +160,8 @@ def find_alignment(
     mean = mx.mean(weights, axis=-2, keepdims=True)
     std = mx.var(weights, axis=-2, keepdims=True, ddof=0).sqrt()
     weights = (weights - mean) / std
+    mx.eval(text_token_probs, weights)
+    text_token_probs = np.array(text_token_probs)
     weights = median_filter(np.array(weights), medfilt_width)
 
     matrix = weights.mean(axis=0)
