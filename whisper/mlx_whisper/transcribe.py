@@ -209,6 +209,7 @@ def transcribe(
             [temperature] if isinstance(temperature, (int, float)) else temperature
         )
         decode_result = None
+        audio_features = None
 
         for t in temperatures:
             kwargs = {**decode_options}
@@ -221,7 +222,11 @@ def transcribe(
                 kwargs.pop("best_of", None)
 
             options = DecodingOptions(**kwargs, temperature=t)
-            decode_result = model.decode(segment, options)
+            decode_result = model.decode(
+                segment if audio_features is None else audio_features,
+                options,
+            )
+            audio_features = decode_result.audio_features
 
             needs_fallback = False
             if (
