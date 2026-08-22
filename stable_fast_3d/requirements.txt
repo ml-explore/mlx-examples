@@ -1,0 +1,8 @@
+mlx>=0.18
+numpy
+pillow
+huggingface-hub
+safetensors
+rembg
+onnxruntime
+trimesh
