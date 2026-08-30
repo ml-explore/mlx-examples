@@ -237,16 +237,16 @@ def main():
             # receive the contents from stdin rather than read a file
             audio_obj = audio.load_audio(from_stdin=True)
 
-            output_name = output_name or "content"
+            file_output_name = output_name or "content"
         else:
-            output_name = output_name or pathlib.Path(audio_obj).stem
+            file_output_name = output_name or pathlib.Path(audio_obj).stem
         try:
             result = transcribe(
                 audio_obj,
                 path_or_hf_repo=path_or_hf_repo,
                 **args,
             )
-            writer(result, output_name, **writer_args)
+            writer(result, file_output_name, **writer_args)
         except Exception as e:
             traceback.print_exc()
             print(f"Skipping {audio_obj} due to {type(e).__name__}: {str(e)}")
