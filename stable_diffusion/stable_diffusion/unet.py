@@ -95,7 +95,9 @@ class Transformer2D(nn.Module):
     ):
         super().__init__()
 
-        self.norm = nn.GroupNorm(norm_num_groups, in_channels, pytorch_compatible=True)
+        self.norm = nn.GroupNorm(
+            norm_num_groups, in_channels, eps=1e-6, pytorch_compatible=True
+        )
         self.proj_in = nn.Linear(in_channels, model_dims)
         self.transformer_blocks = [
             TransformerBlock(model_dims, num_heads, memory_dims=encoder_dims)
