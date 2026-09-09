@@ -283,6 +283,10 @@ def transcribe(
     ) as pbar:
         last_speech_timestamp = 0.0
         for seek_clip_start, seek_clip_end in seek_clips:
+            # Jump to the start of the clip. Without this the decoder keeps
+            # `seek` wherever the previous clip left it and transcribes the
+            # gap in between, so the requested clips are not honoured.
+            seek = max(seek, seek_clip_start)
             while seek < seek_clip_end:
                 time_offset = float(seek * HOP_LENGTH / SAMPLE_RATE)
                 window_end_time = float((seek + N_FRAMES) * HOP_LENGTH / SAMPLE_RATE)
