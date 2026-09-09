@@ -197,6 +197,36 @@ class TestWhisper(unittest.TestCase):
             ),
         )
 
+    def test_transcribe_clip_timestamps(self):
+        # Every clip must be decoded starting from its own start time. If `seek`
+        # is instead carried over from the previous clip, the decoder walks into
+        # the gap between them: with the clips below it decodes a window that
+        # starts at 1.0s, in the middle of the excluded 1s-3s stretch.
+        clips = [(0.0, 1.0), (3.0, 4.0)]
+        result = mlx_whisper.transcribe(
+            TEST_AUDIO,
+            path_or_hf_repo=MLX_FP32_MODEL_PATH,
+            fp16=False,
+            clip_timestamps="0,1,3,4",
+            # Decode every window, so that each one shows up in the output and
+            # the seek positions the loop visited are all observable.
+            no_speech_threshold=None,
+            condition_on_previous_text=False,
+            temperature=0.0,
+        )
+
+        visited = [s["seek"] / audio.FRAMES_PER_SECOND for s in result["segments"]]
+        for window_start in visited:
+            self.assertTrue(
+                any(start <= window_start < end for start, end in clips),
+                f"decoded a window starting at {window_start}s, outside {clips}",
+            )
+        for start, end in clips:
+            self.assertTrue(
+                any(start <= w < end for w in visited),
+                f"clip {start}-{end} was never decoded (visited {visited})",
+            )
+
     def test_transcribe_alice(self):
         audio_file = os.path.join(
             os.path.expanduser("~"),
