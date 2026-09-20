@@ -1,3 +1,7 @@
+<p align="center">
+  <b>English</b> · <a href="README.zh.md">简体中文</a>
+</p>
+
 # MLX Examples
 
 This repo contains a variety of standalone examples using the [MLX
