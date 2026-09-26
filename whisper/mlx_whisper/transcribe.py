@@ -137,6 +137,11 @@ def transcribe(
         When word_timestamps is True, skip silent periods longer than this threshold (in seconds)
         when a possible hallucination is detected
 
+    beam_size: Union[int, None]
+        Number of beams to use in beam search decoding. A higher number can improve results for
+        languages with a lot of compound words, but will make decoding slower. If None, greedy
+        decoding is used.
+
     Returns
     -------
     A dictionary containing the resulting text ("text") and segment-level details ("segments"), and

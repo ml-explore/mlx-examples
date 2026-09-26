@@ -142,10 +142,20 @@ class Inference:
         return logits.astype(mx.float32)
 
     def rearrange_kv_cache(self, source_indices):
-        """Update the key-value cache according to the updated beams"""
-        # update the key/value cache to contain the selected sequences
+        """Update the key-value cache according to the updated beams.
+
+        Only the self-attention cache is gathered. The cross-attention K/V is
+        computed from the audio features, which ``DecodingTask.run`` repeats for
+        every beam of an audio item, and a beam only ever takes over a beam of
+        the same audio item, so gathering it would copy identical rows (~1.2 GB
+        per step on large models at beam 5). The result is bit-identical to a
+        full gather of both caches.
+        """
         if source_indices != list(range(len(source_indices))):
-            self.kv_cache = tree_map(lambda x: x[source_indices], self.kv_cache)
+            self.kv_cache = [
+                (tree_map(lambda x: x[source_indices], self_kv), cross_kv)
+                for self_kv, cross_kv in self.kv_cache
+            ]
 
     def reset(self):
         self.kv_cache = None
@@ -252,6 +262,280 @@ def categorical(logits, temp):
     return mx.random.categorical(logits / temp)
 
 
+class BeamSearchDecoder(TokenDecoder):
+    """Beam search decoder using dict-keyed sequence tracking.
+
+    Mirrors OpenAI's original torch BeamSearchDecoder almost line-for-line.
+    Each candidate sequence is stored as a full tuple of token ids in a dict,
+    which simultaneously deduplicates, scores, and tracks history.
+
+    Args:
+        beam_size: Number of beams to maintain during search.
+        eot: End-of-text token id.
+        inference: Inference object with ``rearrange_kv_cache`` method.
+        patience: Multiplier for how many finished candidates to accumulate
+            before stopping. ``None`` defaults to 1.0.
+    """
+
+    def __init__(
+        self,
+        beam_size: int,
+        eot: int,
+        inference,
+        patience: float | None = None,
+    ):
+        self.beam_size = beam_size
+        self.eot = eot
+        self.inference = inference
+        self.patience = patience or 1.0
+        self.max_candidates: int = round(beam_size * self.patience)
+        self.finished_sequences: list[dict[tuple[int, ...], float]] | None = None
+
+        assert (
+            self.max_candidates > 0
+        ), f"Invalid beam size ({beam_size}) or patience ({patience})"
+
+    def reset(self):
+        """Reset state for a new decoding run."""
+        self.finished_sequences = None
+
+    def _validate_input_shape(self, tokens: mx.array):
+        """Validate that the input tokens shape is compatible with beam size."""
+        if tokens.shape[0] % self.beam_size != 0:
+            raise ValueError(f"{tokens.shape}[0] % {self.beam_size} != 0")
+
+    def _initialize_state_if_needed(self, n_audio: int):
+        """Initialize finished sequences state if not already done."""
+        if self.finished_sequences is None:
+            self.finished_sequences = [{} for _ in range(n_audio)]
+
+    def _calculate_log_probs(self, logits: mx.array, sum_logprobs: mx.array):
+        """Calculate log probabilities from logits."""
+        # Log-softmax in MLX, then move to numpy for the dict loop.
+        logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        mx.eval(logprobs, sum_logprobs)
+        logprobs_np = np.array(logprobs)
+        sum_logprobs_np = np.array(sum_logprobs)
+        return logprobs_np, sum_logprobs_np
+
+    def _score_candidates_for_audio(
+        self,
+        i: int,
+        tokens_list: list,
+        logprobs_np: np.ndarray,
+        sum_logprobs_np: np.ndarray,
+    ) -> tuple[dict, dict]:
+        """Score candidates for a single audio sample.
+
+        Returns:
+            tuple of (scores, sources) dictionaries
+        """
+        scores: dict[tuple[int, ...], float] = {}
+        sources: dict[tuple[int, ...], int] = {}
+
+        # Score all candidates: each beam proposes its top-(beam_size+1).
+        for j in range(self.beam_size):
+            idx = i * self.beam_size + j
+            prefix = tokens_list[idx]
+            top_k = self.beam_size + 1
+            top_indices = np.argpartition(logprobs_np[idx], -top_k)[-top_k:]
+            top_indices = top_indices[np.argsort(-logprobs_np[idx][top_indices])]
+
+            for tok_idx in top_indices:
+                token = int(tok_idx)
+                new_logprob = float(sum_logprobs_np[idx] + logprobs_np[idx][tok_idx])
+                sequence = tuple(prefix + [token])
+                scores[sequence] = new_logprob
+                sources[sequence] = idx
+
+        return scores, sources
+
+    def _select_top_beams_and_finished(
+        self, scores: dict, sources: dict
+    ) -> tuple[list, list, dict]:
+        """Select top beams and separate finished (EOT) sequences.
+
+        Returns:
+            tuple of (next_tokens, source_indices, finished) lists/dict
+        """
+        next_tokens: list[list[int]] = []
+        source_indices: list[int] = []
+        finished: dict[tuple[int, ...], float] = {}
+
+        # Pick the top beam_size non-EOT sequences; collect EOT sequences.
+        saved = 0
+        for sequence in sorted(scores, key=scores.get, reverse=True):
+            if sequence[-1] == self.eot:
+                finished[sequence] = scores[sequence]
+            else:
+                next_tokens.append(list(sequence))
+                source_indices.append(sources[sequence])
+                saved += 1
+                if saved == self.beam_size:
+                    break
+
+        return next_tokens, source_indices, finished
+
+    def _update_kv_cache(self, source_indices: list[int]):
+        """Update the KV cache based on selected source indices."""
+        self.inference.rearrange_kv_cache(source_indices)
+
+    def _merge_finished_sequences(
+        self, finished_sequences: list[dict[tuple[int, ...], float]]
+    ) -> bool:
+        """Merge newly finished sequences and check if decoding is complete.
+
+        Returns:
+            bool indicating if all audio samples have enough candidates
+        """
+        # Merge newly finished sequences into the persistent store.
+        assert len(self.finished_sequences) == len(finished_sequences)
+        for previously_finished, newly_finished in zip(
+            self.finished_sequences, finished_sequences
+        ):
+            for seq in sorted(newly_finished, key=newly_finished.get, reverse=True):
+                if len(previously_finished) >= self.max_candidates:
+                    break
+                previously_finished[seq] = newly_finished[seq]
+
+        completed = all(
+            len(seqs) >= self.max_candidates for seqs in self.finished_sequences
+        )
+        return completed
+
+    def update(
+        self,
+        tokens: mx.array,
+        logits: mx.array,
+        sum_logprobs: mx.array,
+    ) -> tuple[mx.array, bool, mx.array]:
+        """Select next tokens via beam search.
+
+        Args:
+            tokens: All tokens so far, shape ``(n_batch, seq_len)``.
+            logits: Decoder output logits, shape ``(n_batch, vocab_size)``.
+            sum_logprobs: Cumulative log-probs per beam, shape ``(n_batch,)``.
+
+        Returns:
+            A 3-tuple ``(tokens, completed, sum_logprobs)``.
+        """
+        self._validate_input_shape(tokens)
+
+        n_audio = tokens.shape[0] // self.beam_size
+        self._initialize_state_if_needed(n_audio)
+
+        logprobs_np, sum_logprobs_np = self._calculate_log_probs(logits, sum_logprobs)
+        tokens_list = np.array(tokens).tolist()
+
+        next_tokens: list[list[int]] = []
+        source_indices: list[int] = []
+        finished_sequences: list[dict[tuple[int, ...], float]] = []
+        new_sum_logprobs: list[float] = []
+
+        for i in range(n_audio):
+            scores, sources = self._score_candidates_for_audio(
+                i, tokens_list, logprobs_np, sum_logprobs_np
+            )
+
+            beam_next_tokens, beam_source_indices, finished = (
+                self._select_top_beams_and_finished(scores, sources)
+            )
+
+            next_tokens.extend(beam_next_tokens)
+            source_indices.extend(beam_source_indices)
+            # Convert beam_next_tokens to tuples to look up scores
+            new_sum_logprobs.extend([scores[tuple(seq)] for seq in beam_next_tokens])
+            finished_sequences.append(finished)
+
+        tokens = mx.array(next_tokens)
+        sum_logprobs = mx.array(new_sum_logprobs)
+        self._update_kv_cache(source_indices)
+
+        completed = self._merge_finished_sequences(finished_sequences)
+        return tokens, completed, sum_logprobs
+
+    def drain_unfinished_beams(
+        self, n_audio: int, sum_logprobs_np: np.ndarray, tokens_np: np.ndarray
+    ):
+        """Drain unfinished beams into finished sequences, sorted by score descending."""
+        for i in range(n_audio):
+            if len(self.finished_sequences[i]) < self.beam_size:
+                for j in list(np.argsort(sum_logprobs_np[i]))[::-1]:
+                    sequence = tuple(tokens_np[i, j].tolist()) + (self.eot,)
+                    self.finished_sequences[i][sequence] = float(sum_logprobs_np[i][j])
+                    if len(self.finished_sequences[i]) >= self.beam_size:
+                        break
+
+    def _build_sequence_output(
+        self, n_audio: int, tokens_np: np.ndarray
+    ) -> tuple[list[list[list[int]]], list[list[float]]]:
+        """Build padded sequence output from finished sequences.
+
+        Returns:
+            tuple of (all_seqs, all_scores) where:
+            - all_seqs: list of sequences per audio sample
+            - all_scores: list of scores per audio sample
+        """
+        all_seqs: list[list[list[int]]] = []
+        all_scores: list[list[float]] = []
+
+        for i in range(n_audio):
+            seqs = [list(s) for s in self.finished_sequences[i].keys()]
+            scores = list(self.finished_sequences[i].values())
+
+            if not seqs:
+                seqs = [list(tokens_np[i, 0]) + [self.eot]]
+                scores = [float("-inf")]
+
+            max_len = max(len(s) for s in seqs)
+            seqs = [s + [self.eot] * (max_len - len(s)) for s in seqs]
+            all_seqs.append(seqs)
+            all_scores.append(scores)
+
+        return all_seqs, all_scores
+
+    def _pad_sequences_to_global_max(
+        self, all_seqs: list[list[list[int]]]
+    ) -> list[list[list[int]]]:
+        """Pad all sequences to the global maximum length across all audio samples."""
+        global_max_len = max(len(s) for seqs in all_seqs for s in seqs)
+        padded_seqs = [
+            [s + [self.eot] * (global_max_len - len(s)) for s in seqs]
+            for seqs in all_seqs
+        ]
+        return padded_seqs
+
+    def finalize(
+        self,
+        tokens: mx.array,
+        sum_logprobs: mx.array,
+    ) -> tuple[mx.array, mx.array]:
+        """Finalize beam search and return padded candidate sequences.
+
+        Args:
+            tokens: Shape ``(n_audio, n_group, seq_len)``.
+            sum_logprobs: Shape ``(n_audio, n_group)``.
+
+        Returns:
+            A 2-tuple ``(tokens, sum_logprobs)`` as padded ``mx.array``s.
+        """
+        n_audio, n_group, seq_len = tokens.shape
+        mx.eval(tokens, sum_logprobs)
+        sum_logprobs_np = np.array(sum_logprobs)
+        tokens_np = np.array(tokens)
+
+        if self.finished_sequences is None:
+            self.finished_sequences = [{} for _ in range(n_audio)]
+
+        self.drain_unfinished_beams(n_audio, sum_logprobs_np, tokens_np)
+
+        all_seqs, all_scores = self._build_sequence_output(n_audio, tokens_np)
+
+        padded_seqs = self._pad_sequences_to_global_max(all_seqs)
+
+        return mx.array(padded_seqs), mx.array(all_scores)
+
+
 class GreedyDecoder(TokenDecoder):
     def __init__(self, temperature: float, eot: int):
         self.temperature = temperature
@@ -356,15 +640,14 @@ class ApplyTimestampRules(LogitFilter):
                 else:  # cannot be normal text tokens
                     mask[k, : self.tokenizer.eot] = -np.inf
 
-            timestamps = [
-                i for i, v in enumerate(seq) if v > self.tokenizer.timestamp_begin
-            ]
+            timestamps = [v for v in seq if v >= self.tokenizer.timestamp_begin]
             if len(timestamps) > 0:
                 # timestamps shouldn't decrease; forbid timestamp tokens smaller than the last
                 # also force each segment to have a nonzero length, to prevent infinite looping
-                last_timestamp = timestamps[-1]
-                if not last_timestamp or penultimate_was_timestamp:
-                    last_timestamp += 1
+                if last_was_timestamp and not penultimate_was_timestamp:
+                    last_timestamp = timestamps[-1]
+                else:
+                    last_timestamp = timestamps[-1] + 1
                 mask[k, self.tokenizer.timestamp_begin : last_timestamp] = -np.inf
 
         if len(tokens[0]) == self.sample_begin:
@@ -379,8 +662,12 @@ class ApplyTimestampRules(LogitFilter):
                 mask[:, last_allowed + 1 :] = -np.inf
 
         # if sum of probability over timestamps is above any other token, sample timestamp
+        # decide on the masked logits, as openai/whisper and transformers do — deciding
+        # on the raw logits can mask every token after a closed timestamp pair, because
+        # the pair mask has already zeroed the timestamps
         mask = mx.array(mask)
-        logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        masked = logits + mask
+        logprobs = masked - mx.logsumexp(masked, axis=-1, keepdims=True)
         timestamp_logprob = logprobs[:, self.tokenizer.timestamp_begin :].logsumexp(
             axis=-1, keepdims=True
         )
@@ -434,7 +721,12 @@ class DecodingTask:
 
         # decoder: implements how to select the next tokens, given the autoregressive distribution
         if options.beam_size is not None:
-            raise NotImplementedError("Beam search decoder is not yet implemented")
+            self.decoder = BeamSearchDecoder(
+                options.beam_size,
+                tokenizer.eot,
+                self.inference,
+                options.patience,
+            )
         else:
             self.decoder = GreedyDecoder(options.temperature, tokenizer.eot)
 
@@ -645,6 +937,13 @@ class DecodingTask:
                 tokens, [n_audio, self.n_group, len(self.initial_tokens)]
             )
             tokens = tokens.reshape((n_audio * self.n_group, len(self.initial_tokens)))
+            # Expand audio_features to match tokens batch dim so that the decoder's
+            # cross-attention KV cache is initialised with the correct batch size.
+            # Without this, the KV cache has shape (n_audio, ...) while self-attention
+            # queries have shape (n_audio * n_group, ...), causing NaN logits from the
+            # very first step.  mx.repeat interleaves each row n_group times, which is
+            # the layout expected by rearrange_kv_cache and the [::n_group] slice below.
+            audio_features = mx.repeat(audio_features, self.n_group, axis=0)
 
         # call the main sampling loop
         tokens, sum_logprobs, no_speech_probs = self._main_loop(audio_features, tokens)
