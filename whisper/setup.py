@@ -26,7 +26,7 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
-    packages=find_namespace_packages(),
+    packages=find_namespace_packages(include=["mlx_whisper*"]),
     include_package_data=True,
     python_requires=">=3.8",
     entry_points={
