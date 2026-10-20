@@ -43,9 +43,7 @@ class ResultWriter:
     def __call__(
         self, result: dict, output_name: str, options: Optional[dict] = None, **kwargs
     ):
-        output_path = (pathlib.Path(self.output_dir) / output_name).with_suffix(
-            f".{self.extension}"
-        )
+        output_path = pathlib.Path(self.output_dir) / f"{output_name}.{self.extension}"
 
         with output_path.open("wt", encoding="utf-8") as f:
             self.write_result(result, file=f, options=options, **kwargs)
