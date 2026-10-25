@@ -89,6 +89,9 @@ To see more transcription options use:
 > Face Hub. There are a few available in the [MLX
 > Community](https://huggingface.co/mlx-community) organization.
 
+> [!NOTE]
+> Converting models requires PyTorch (`pip install "mlx-whisper[conversion]"` or `pip install torch`).
+
 To convert a model, first clone the MLX Examples repo:
 
 ```
