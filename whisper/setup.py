@@ -26,6 +26,10 @@ setup(
     url="https://github.com/ml-explore/mlx-examples",
     license="MIT",
     install_requires=requirements,
+    extras_require={
+        "conversion": ["torch"],
+        "dev": ["torch"],
+    },
     packages=find_namespace_packages(),
     include_package_data=True,
     python_requires=">=3.8",
