@@ -2,7 +2,7 @@
 
 import sys
 import warnings
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import mlx.core as mx
 import numpy as np
@@ -75,6 +75,7 @@ def transcribe(
     append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
     clip_timestamps: Union[str, List[float]] = "0",
     hallucination_silence_threshold: Optional[float] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
     **decode_options,
 ):
     """
@@ -136,6 +137,11 @@ def transcribe(
     hallucination_silence_threshold: Optional[float]
         When word_timestamps is True, skip silent periods longer than this threshold (in seconds)
         when a possible hallucination is detected
+
+    progress_callback: Optional[Callable[[int, int], None]]
+        If given, called after each 30-second window is decoded or skipped as silence,
+        with `(frames_done, total_frames)`, where a frame is 10 ms of audio. It is called
+        regardless of `verbose`, so it can drive a progress display other than the tqdm bar.
 
     Returns
     -------
@@ -312,6 +318,8 @@ def transcribe(
                         seek += (
                             segment_size  # fast-forward to the next segment boundary
                         )
+                        if progress_callback is not None:
+                            progress_callback(min(content_frames, seek), content_frames)
                         continue
 
                 previous_seek = seek
@@ -535,6 +543,8 @@ def transcribe(
 
                 # update progress bar
                 pbar.update(min(content_frames, seek) - previous_seek)
+                if progress_callback is not None:
+                    progress_callback(min(content_frames, seek), content_frames)
 
     return dict(
         text=tokenizer.decode(all_tokens[len(initial_prompt_tokens) :]),
