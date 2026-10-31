@@ -197,6 +197,25 @@ class TestWhisper(unittest.TestCase):
             ),
         )
 
+    def test_transcribe_progress_callback(self):
+        # Trailing silence spans several windows, and the last one is skipped
+        # as no-speech; progress should still reach the end.
+        data = audio.load_audio(TEST_AUDIO)
+        data = mx.concatenate([data, mx.zeros(60 * audio.SAMPLE_RATE)])
+        calls = []
+        mlx_whisper.transcribe(
+            data,
+            path_or_hf_repo=MLX_FP32_MODEL_PATH,
+            fp16=False,
+            progress_callback=lambda done, total: calls.append((done, total)),
+        )
+        self.assertGreater(len(calls), 1)
+        total = calls[0][1]
+        self.assertTrue(all(t == total for _, t in calls))
+        done = [d for d, _ in calls]
+        self.assertEqual(done, sorted(done))
+        self.assertEqual(calls[-1], (total, total))
+
     def test_transcribe_alice(self):
         audio_file = os.path.join(
             os.path.expanduser("~"),
