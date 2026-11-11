@@ -75,6 +75,19 @@ def forward_mlx(model, mels, tokens):
     return np.array(logits)
 
 
+class TestSampling(unittest.TestCase):
+    def test_categorical_advances_rng(self):
+        logits = mx.zeros((8, 16))
+        mx.random.seed(42)
+        expected = [mx.random.categorical(logits).tolist() for _ in range(2)]
+        expected_key = mx.random.state[0].tolist()
+
+        mx.random.seed(42)
+        actual = [decoding.categorical(logits, 1.0).tolist() for _ in range(2)]
+        self.assertEqual(actual, expected)
+        self.assertEqual(mx.random.state[0].tolist(), expected_key)
+
+
 class TestWhisper(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
