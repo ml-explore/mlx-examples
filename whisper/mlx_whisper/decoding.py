@@ -2,6 +2,7 @@
 
 import zlib
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import mlx.core as mx
@@ -247,7 +248,7 @@ class TokenDecoder:
         raise NotImplementedError
 
 
-@mx.compile
+@partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
 def categorical(logits, temp):
     return mx.random.categorical(logits / temp)
 
