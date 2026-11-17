@@ -72,18 +72,30 @@ class MultiHeadAttention(nn.Module):
 
     def qkv_attention(self, q, k, v, mask=None):
         n_batch, n_ctx, n_state = q.shape
-        scale = (n_state // self.n_head) ** -0.25
-        q = q.reshape(*q.shape[:2], self.n_head, -1).transpose(0, 2, 1, 3) * scale
-        k = k.reshape(*k.shape[:2], self.n_head, -1).transpose(0, 2, 3, 1) * scale
+        head_dim = n_state // self.n_head
+        q = q.reshape(*q.shape[:2], self.n_head, -1).transpose(0, 2, 1, 3)
+        k = k.reshape(*k.shape[:2], self.n_head, -1).transpose(0, 2, 1, 3)
         v = v.reshape(*v.shape[:2], self.n_head, -1).transpose(0, 2, 1, 3)
-
-        qk = q @ k
         if mask is not None:
-            qk = qk + mask[:n_ctx, :n_ctx]
+            mask = mask[:n_ctx, :n_ctx]
 
-        w = mx.softmax(qk, axis=-1, precise=True)
-        out = (w @ v).transpose(0, 2, 1, 3)
-        out = out.reshape(n_batch, n_ctx, n_state)
+        # Fused attention for the output. The attention logits are only read by
+        # word timestamps (forward_with_cross_qk); MLX computes them lazily, so
+        # ordinary decoding no longer rescales and transposes the cached
+        # cross-attention keys at every step.
+        out = mx.fast.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            scale=head_dim**-0.5,
+            mask=mask.astype(q.dtype) if mask is not None else None,
+        )
+        out = out.transpose(0, 2, 1, 3).reshape(n_batch, n_ctx, n_state)
+
+        scale = head_dim**-0.25
+        qk = (q * scale) @ (k * scale).transpose(0, 1, 3, 2)
+        if mask is not None:
+            qk = qk + mask
         return out, qk
 
 
