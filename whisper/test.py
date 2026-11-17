@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 import unittest
 from dataclasses import asdict
 from pathlib import Path
@@ -458,6 +460,34 @@ class TestAudio(unittest.TestCase):
         mels = audio.log_mel_spectrogram(TEST_AUDIO)
         self.assertTrue(mels.shape, [80, 400])
         self.assertTrue(mels.dtype, mx.float32)
+
+
+class TestImports(unittest.TestCase):
+    def imported(self, code):
+        # A fresh interpreter, so modules imported by other tests do not count.
+        out = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                code + "; import sys, json; "
+                "print(json.dumps(sorted(m for m in ('mlx_whisper.timing', 'numba', 'scipy') "
+                "if m in sys.modules)))",
+            ],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return json.loads(out)
+
+    def test_transcribe_does_not_import_alignment(self):
+        self.assertEqual(self.imported("import mlx_whisper"), [])
+
+    def test_alignment_still_importable(self):
+        self.assertEqual(
+            self.imported("from mlx_whisper.timing import add_word_timestamps"),
+            ["mlx_whisper.timing", "numba", "scipy"],
+        )
 
 
 if __name__ == "__main__":
